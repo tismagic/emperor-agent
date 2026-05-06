@@ -13,9 +13,17 @@ python -m venv .venv
 source .venv/bin/activate                 # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
 
-cp .env.example .env                      # 填入 ANTHROPIC_API_KEY
+cp model_config.example.json model_config.json
+# 在 model_config.json 中选择 provider/model，并填入对应 apiKey
 
 python agent.py
+```
+
+启动网页工作台：
+
+```bash
+python webui.py
+# 打开 http://127.0.0.1:8765
 ```
 
 ---
@@ -25,6 +33,9 @@ python agent.py
 - 多轮对话：保留当前会话工作记忆。
 - 三层记忆：工作记忆、情景记忆、长期记忆协同运转。
 - 自动压缩：上下文过长时自动归档旧对话，保留关键事实。
+- 多厂家模型：支持 DeepSeek、Anthropic、OpenAI-compatible、Azure OpenAI、Bedrock、OpenAI Codex、GitHub Copilot 等 provider 配置。
+- 流式 WebUI：网页聊天通过 WebSocket 接收模型文本 delta 和工具执行事件。
+- Token 统计：按日期、provider/model、使用种类（主 Agent / 子代理 / 记忆压缩）汇总调用次数与 token。
 - 工具调用：支持命令执行、网页抓取、文件读写、搜索和技能加载。
 - 任务规划：通过 todolist 维护当前差事的状态。
 - 子代理派遣：把独立任务交给不同身份的子代理处理，再汇总给主智能体。
@@ -41,21 +52,53 @@ agent/
 ├── runner.py               单轮模型调用、tool_use 循环、安全工具并发
 ├── memory.py               三层记忆存储
 ├── compactor.py            历史压缩与长期记忆更新
+├── model_config.py         多 provider 模型配置读取与装配
 ├── context.py              system prompt 组装
 ├── skills.py               技能加载器
 ├── telemetry.py            token 用量记录与压缩触发判断
+├── providers/              多厂家 provider 抽象与实现
 ├── subagents/              子代理 spec 与 registry
 └── tools/                  内置工具
 
+webui/                      本地网页工作台（单一聊天主线 / model / skills / tools / 配置 / 记忆）
 templates/
 ├── SOUL.md                 智能体灵魂档案
+├── TOOL.md                 工具使用配置
 ├── USER.md                 用户偏好档案
 ├── agent/                  主智能体 prompt 模板
 └── subagents/              子代理身份模板
 
 skills/                     可插拔技能包
 memory/                     运行期记忆产物，已被 gitignore
+model_config.json           本地私密模型配置，已被 gitignore
 ```
+
+---
+
+## 模型配置
+
+模型配置使用本地 `model_config.json`，允许明文保存 API key。该文件已加入 `.gitignore`，请不要提交到仓库。
+
+默认配置：
+
+```json
+{
+  "agents": {
+    "defaults": {
+      "model": "deepseek-v4-flash",
+      "provider": "deepseek",
+      "maxTokens": 20000,
+      "temperature": 0.1,
+      "reasoningEffort": null,
+      "contextWindowTokens": 200000
+    }
+  }
+}
+```
+
+WebUI 的 `Model` 面板可以编辑 provider、model、apiBase、apiKey、temperature、maxTokens、reasoningEffort 和上下文窗口。主 Agent、子代理和记忆压缩共用这份配置。
+
+Token 用量在独立的 `Tokens` 面板查看，包含总量、按 provider/model、按使用种类和按日期的汇总。
 
 ---
 
@@ -118,7 +161,4 @@ memory/                     运行期记忆产物，已被 gitignore
 
 ## 环境变量
 
-| 变量 | 说明 |
-|------|------|
-| `ANTHROPIC_API_KEY` | Anthropic API Key |
-| `ANTHROPIC_BASE_URL` | API 代理地址，可选 |
+模型 API Key 默认从 `model_config.json` 读取。`.env` 仍可保留给你自己的工具或脚本使用，但主 Agent 不再依赖 `ANTHROPIC_API_KEY`。

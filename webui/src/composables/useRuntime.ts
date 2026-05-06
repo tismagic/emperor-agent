@@ -1,0 +1,492 @@
+import { computed, reactive, ref, watch, type Ref } from 'vue'
+import type { AssistantMessage, BootstrapPayload, ChatMessage, PendingState, RuntimeHistoryItem, RuntimeStatus, SubagentState, ToolSegment, ToolStatus, WsEvent } from '../types'
+
+const RUNTIME_STORAGE_KEY = 'emperor-agent:runtime-view'
+const LEGACY_IN_FLIGHT_STORAGE_KEY = 'emperor-agent:in-flight-runtime'
+const RUNTIME_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000
+
+function nextId(prefix: string) {
+  const random = typeof crypto !== 'undefined' && 'randomUUID' in crypto ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(16).slice(2)}`
+  return `${prefix}-${random}`
+}
+
+function compactJson(value: unknown, limit = 180) {
+  if (!value || typeof value !== 'object') return ''
+  const text = JSON.stringify(value)
+  return text.length > limit ? `${text.slice(0, limit)}...` : text
+}
+
+export function useRuntime(options: {
+  boot: Ref<BootstrapPayload | null>
+  refreshMemory: (shouldToast?: boolean) => Promise<void>
+  showToast: (message: string) => void
+}) {
+  const messages = ref<ChatMessage[]>([])
+  const busy = ref(false)
+  const status = ref<RuntimeStatus>('connecting')
+  const currentAssistantId = ref<string | null>(null)
+  const pending = reactive<PendingState>({ label: '', detail: '' })
+  const reconnectAttempts = ref(0)
+  const socket = ref<WebSocket | null>(null)
+  const lastSeq = ref(0)
+  let reconnectTimer: number | undefined
+
+  const currentAssistant = computed(() => messages.value.find((message) => message.id === currentAssistantId.value && message.role === 'assistant') as AssistantMessage | undefined)
+
+  watch(
+    [messages, currentAssistantId, busy, lastSeq],
+    persistRuntimeSnapshot,
+    { deep: true },
+  )
+
+  function runtimeText() {
+    if (busy.value) return '正在办差'
+    if (status.value === 'ready') return '流式在线'
+    if (status.value === 'error') return '连接异常'
+    return '连接中'
+  }
+
+  function updatePending(label = '', detail = '') {
+    pending.label = label
+    pending.detail = detail
+  }
+
+  function connectSocket() {
+    const active = socket.value
+    if (active && (active.readyState === WebSocket.OPEN || active.readyState === WebSocket.CONNECTING)) return
+    status.value = 'connecting'
+    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
+    const params = new URLSearchParams({ last_seq: String(lastSeq.value) })
+    const ws = new WebSocket(`${protocol}//${window.location.host}/ws?${params.toString()}`)
+    socket.value = ws
+
+    ws.addEventListener('open', () => {
+      status.value = 'ready'
+      reconnectAttempts.value = 0
+      if (reconnectTimer) window.clearTimeout(reconnectTimer)
+    })
+    ws.addEventListener('message', (event) => handleSocketEvent(event.data))
+    ws.addEventListener('close', () => {
+      status.value = 'error'
+      if (currentAssistant.value?.streaming) {
+        busy.value = true
+        updatePending('WebSocket 断开，正在续接回复...', `已收到事件 #${lastSeq.value}`)
+      } else {
+        busy.value = false
+        updatePending()
+        currentAssistantId.value = null
+      }
+      scheduleReconnect()
+    })
+    ws.addEventListener('error', () => {
+      status.value = 'error'
+    })
+  }
+
+  function scheduleReconnect() {
+    const delay = Math.min(1000 * Math.pow(1.5, reconnectAttempts.value), 30000)
+    reconnectAttempts.value += 1
+    options.showToast(`WebSocket 已断开，${Math.round(delay / 1000)} 秒后重连`)
+    if (reconnectTimer) window.clearTimeout(reconnectTimer)
+    reconnectTimer = window.setTimeout(() => {
+      status.value = 'connecting'
+      connectSocket()
+    }, delay)
+  }
+
+  function sendMessage(content: string) {
+    const text = content.trim()
+    if (!text || busy.value) return false
+    if (!socket.value || socket.value.readyState !== WebSocket.OPEN) {
+      connectSocket()
+      options.showToast('WebSocket 还没连上，请稍后再发')
+      return false
+    }
+
+    const assistantId = nextId('assistant')
+    messages.value.push({ id: nextId('user'), role: 'user', content: text })
+    messages.value.push({ id: assistantId, role: 'assistant', content: '', segments: [], todos: null, streaming: true })
+    currentAssistantId.value = assistantId
+    busy.value = true
+    status.value = 'ready'
+
+    try {
+      socket.value.send(JSON.stringify({ type: 'message', content: text }))
+      return true
+    } catch (err) {
+      handleChatError(err instanceof Error ? err.message : String(err))
+      return false
+    }
+  }
+
+  function clearChat() {
+    messages.value = []
+    currentAssistantId.value = null
+    busy.value = false
+    updatePending()
+    clearRuntimeSnapshot()
+    options.showToast('当前屏幕已清空')
+  }
+
+  function addLocalCommand(command: string, content: string) {
+    messages.value.push({ id: nextId('command'), role: 'user', content: command, local: true })
+    messages.value.push({
+      id: nextId('command-result'),
+      role: 'assistant',
+      content,
+      segments: content ? [{ id: nextId('segment'), type: 'text', content }] : [],
+      todos: null,
+      streaming: false,
+      local: true,
+    })
+  }
+
+  function restoreFromHistory(history: RuntimeHistoryItem[] = []) {
+    const snapshot = loadRuntimeSnapshot(history)
+    if (snapshot) {
+      messages.value = snapshot.messages
+      currentAssistantId.value = snapshot.currentAssistantId
+      busy.value = Boolean(snapshot.currentAssistantId)
+      lastSeq.value = snapshot.lastSeq
+      if (busy.value) updatePending('正在恢复刷新前的回复...', `已收到事件 #${lastSeq.value}`)
+      return
+    }
+
+    messages.value = history
+      .filter((item) => item.role === 'user' || item.role === 'assistant')
+      .map((item) => {
+        if (item.role === 'user') {
+          return { id: nextId('user'), role: 'user', content: item.content } satisfies ChatMessage
+        }
+        return {
+          id: nextId('assistant'),
+          role: 'assistant',
+          content: item.content,
+          segments: item.content ? [{ id: nextId('segment'), type: 'text', content: item.content }] : [],
+          todos: null,
+          streaming: false,
+        } satisfies ChatMessage
+      })
+  }
+
+  function handleSocketEvent(raw: string) {
+    const data = JSON.parse(raw) as WsEvent
+    if (typeof data.seq === 'number' && data.seq > 0) {
+      if (data.seq <= lastSeq.value) return
+      lastSeq.value = data.seq
+    }
+
+    if (data.event === 'ready') {
+      status.value = 'ready'
+      if (options.boot.value) {
+        options.boot.value.model = data.model || options.boot.value.model
+        options.boot.value.provider = data.provider || options.boot.value.provider
+      }
+      if (currentAssistant.value?.streaming && data.replay_count) {
+        updatePending('WebSocket 已重连，正在补齐回复...', `回放 ${data.replay_count} 个事件`)
+      }
+      return
+    }
+
+    if (data.event === 'message_delta') {
+      const assistant = currentAssistant.value
+      if (assistant) {
+        const delta = data.delta || ''
+        assistant.content += delta
+        const last = assistant.segments[assistant.segments.length - 1]
+        if (last?.type === 'text') {
+          last.content += delta
+        } else {
+          assistant.segments.push({ id: nextId('segment'), type: 'text', content: delta })
+        }
+      }
+      updatePending('AI 正在思量...', '')
+      return
+    }
+
+    if (data.event === 'tool_call') {
+      const assistant = currentAssistant.value
+      if (assistant) {
+        assistant.segments.push({
+          id: nextId('segment'),
+          type: 'tool',
+          toolId: data.id,
+          name: data.name,
+          arguments: data.arguments || {},
+          status: 'running',
+          summary: '',
+          subagents: [],
+        })
+      }
+      updatePending(`正在执行: ${data.name}`, compactJson(data.arguments))
+      return
+    }
+
+    if (data.event === 'tool_result') {
+      const assistant = currentAssistant.value
+      const seg = findToolSegment(assistant, data.id)
+      if (seg) {
+        seg.summary = data.summary || '已完成'
+        seg.status = 'done'
+        if (data.name === 'update_todos' && data.todos) assistant!.todos = data.todos
+      }
+      const running = (assistant?.segments || []).filter((seg): seg is ToolSegment => seg.type === 'tool' && seg.status === 'running')
+      if (running.length) updatePending(`正在执行: ${running[0].name}`, `剩余 ${running.length} 个工具`)
+      return
+    }
+
+    if (data.event === 'tool_error') {
+      const assistant = currentAssistant.value
+      const seg = findToolSegment(assistant, data.id)
+      if (seg) {
+        seg.status = 'error'
+        seg.summary = data.message || '工具执行出错'
+      }
+      updatePending(`工具 ${data.name || ''} 执行出错`, data.message || '')
+      return
+    }
+
+    if (data.event === 'assistant_done') {
+      const assistant = currentAssistant.value
+      if (assistant) {
+        assistant.content = data.content || assistant.content
+        assistant.streaming = false
+      }
+      currentAssistantId.value = null
+      busy.value = false
+      status.value = 'ready'
+      updatePending()
+      void options.refreshMemory(false)
+      return
+    }
+
+    if (data.event === 'error') {
+      updatePending()
+      handleChatError(data.message || '未知错误')
+      return
+    }
+
+    handleSubagentEvent(data)
+  }
+
+  function handleSubagentEvent(data: WsEvent) {
+    const assistant = currentAssistant.value
+    if (!assistant) return
+
+    if (data.event === 'subagent_start') {
+      const seg = findToolSegment(assistant, data.parent_id)
+      if (seg) {
+        seg.subagents ||= []
+        seg.subagents.push({
+          id: data.subagent_id,
+          agent_type: data.agent_type,
+          purpose: data.purpose,
+          status: 'running',
+          content: '',
+          tools: [],
+        })
+      }
+      updatePending(`派遣小太监: ${data.agent_type || 'subagent'}`, data.purpose || '')
+      return
+    }
+
+    if (data.event === 'subagent_delta') {
+      const sub = findSubagent(assistant, data.parent_id, data.subagent_id)
+      if (sub) sub.content = `${sub.content || ''}${data.delta || ''}`
+      updatePending(`小太监 ${data.agent_type || 'subagent'} 处理中...`, '')
+      return
+    }
+
+    if (data.event === 'subagent_tool_call') {
+      const sub = findSubagent(assistant, data.parent_id, data.subagent_id)
+      if (sub) {
+        sub.tools ||= []
+        sub.tools.push({ id: data.id, name: data.name, arguments: data.arguments || {}, status: 'running' })
+      }
+      updatePending(`小太监调用: ${data.name}`, '')
+      return
+    }
+
+    if (data.event === 'subagent_tool_result') {
+      const tool = findSubagentTool(assistant, data.parent_id, data.subagent_id, data.id)
+      if (tool) {
+        tool.summary = data.summary || '已完成'
+        tool.status = 'done'
+      }
+      return
+    }
+
+    if (data.event === 'subagent_tool_error') {
+      const tool = findSubagentTool(assistant, data.parent_id, data.subagent_id, data.id)
+      if (tool) {
+        tool.summary = data.message || '工具执行出错'
+        tool.status = 'error'
+      }
+      updatePending(`小太监工具 ${data.name || ''} 出错`, data.message || '')
+      return
+    }
+
+    if (data.event === 'subagent_done') {
+      const sub = findSubagent(assistant, data.parent_id, data.subagent_id)
+      if (sub) {
+        sub.status = 'done'
+        sub.summary = data.summary
+      }
+      updatePending('AI 正在整理结果...', '')
+      return
+    }
+
+    if (data.event === 'subagent_error') {
+      const sub = findSubagent(assistant, data.parent_id, data.subagent_id)
+      if (sub) {
+        sub.status = 'error'
+        sub.error = data.message
+      }
+      updatePending(`小太监 ${data.agent_type || ''} 出错`, data.message || '')
+    }
+  }
+
+  function handleChatError(message: string) {
+    const assistant = currentAssistant.value
+    if (assistant) {
+      if (!assistant.content) {
+        const content = `出错了：${message}`
+        assistant.content = content
+        assistant.segments.push({ id: nextId('segment'), type: 'text', content })
+      }
+      assistant.streaming = false
+      markRunningAsAborted(assistant)
+    } else {
+      messages.value.push({ id: nextId('assistant'), role: 'assistant', content: `出错了：${message}`, segments: [{ id: nextId('segment'), type: 'text', content: `出错了：${message}` }], streaming: false })
+    }
+    currentAssistantId.value = null
+    busy.value = false
+    status.value = 'error'
+  }
+
+  function markRunningAsAborted(assistant?: AssistantMessage) {
+    if (!assistant) return
+    assistant.streaming = false
+    for (const seg of assistant.segments) {
+      if (seg.type !== 'tool') continue
+      if (seg.status === 'running') seg.status = 'error_aborted'
+      for (const sub of seg.subagents || []) {
+        if (sub.status === 'running') sub.status = 'error_aborted'
+        for (const tool of sub.tools || []) {
+          if (tool.status === 'running') tool.status = 'error_aborted'
+        }
+      }
+    }
+  }
+
+  function findToolSegment(assistant?: AssistantMessage, toolId?: string) {
+    return assistant?.segments.find((seg): seg is ToolSegment => seg.type === 'tool' && seg.toolId === toolId)
+  }
+
+  function findSubagent(assistant: AssistantMessage, parentId?: string, subId?: string): SubagentState | undefined {
+    return findToolSegment(assistant, parentId)?.subagents?.find((sub) => sub.id === subId)
+  }
+
+  function findSubagentTool(assistant: AssistantMessage, parentId?: string, subId?: string, toolId?: string) {
+    return findSubagent(assistant, parentId, subId)?.tools?.find((tool) => tool.id === toolId)
+  }
+
+  function persistRuntimeSnapshot() {
+    if (!messages.value.length) {
+      clearRuntimeSnapshot()
+      return
+    }
+    const snapshot: RuntimeSnapshot = {
+      messages: messages.value,
+      currentAssistantId: currentAssistantId.value,
+      lastSeq: lastSeq.value,
+      savedAt: Date.now(),
+      transcript: transcriptFromMessages(messages.value),
+    }
+    try {
+      window.localStorage.setItem(RUNTIME_STORAGE_KEY, JSON.stringify(snapshot))
+    } catch {
+      // localStorage can be full or unavailable; backend history remains the text fallback.
+    }
+  }
+
+  function clearRuntimeSnapshot() {
+    try {
+      window.localStorage.removeItem(RUNTIME_STORAGE_KEY)
+      window.localStorage.removeItem(LEGACY_IN_FLIGHT_STORAGE_KEY)
+    } catch {
+      // Ignore storage failures; backend history remains the source of truth after completion.
+    }
+  }
+
+  return {
+    messages,
+    busy,
+    status,
+    pending,
+    runtimeText,
+    connectSocket,
+    sendMessage,
+    clearChat,
+    addLocalCommand,
+    restoreFromHistory,
+  }
+}
+
+interface RuntimeSnapshot {
+  messages: ChatMessage[]
+  currentAssistantId: string | null
+  lastSeq: number
+  savedAt: number
+  transcript?: RuntimeHistoryItem[]
+}
+
+function loadRuntimeSnapshot(history: RuntimeHistoryItem[]): RuntimeSnapshot | null {
+  try {
+    const raw = window.localStorage.getItem(RUNTIME_STORAGE_KEY) || window.localStorage.getItem(LEGACY_IN_FLIGHT_STORAGE_KEY)
+    if (!raw) return null
+    const snapshot = JSON.parse(raw) as RuntimeSnapshot
+    if (!snapshot.savedAt || Date.now() - snapshot.savedAt > RUNTIME_MAX_AGE_MS) {
+      window.localStorage.removeItem(RUNTIME_STORAGE_KEY)
+      window.localStorage.removeItem(LEGACY_IN_FLIGHT_STORAGE_KEY)
+      return null
+    }
+    if (!Array.isArray(snapshot.messages)) return null
+    if (snapshot.currentAssistantId) return snapshot
+    if (!matchesBackendHistory(snapshot, history)) return null
+    return snapshot
+  } catch {
+    return null
+  }
+}
+
+function matchesBackendHistory(snapshot: RuntimeSnapshot, history: RuntimeHistoryItem[]) {
+  const expected = normalizeTranscript(history)
+  if (!expected.length) return false
+  const actual = normalizeTranscript(snapshot.transcript?.length ? snapshot.transcript : transcriptFromMessages(snapshot.messages))
+  if (actual.length !== expected.length) return false
+  return expected.every((item, index) => item.role === actual[index]?.role && item.content === actual[index]?.content)
+}
+
+function normalizeTranscript(items: RuntimeHistoryItem[]) {
+  return items
+    .filter((item) => (item.role === 'user' || item.role === 'assistant') && typeof item.content === 'string')
+    .map((item) => ({ role: item.role, content: item.content }))
+}
+
+function transcriptFromMessages(items: ChatMessage[]): RuntimeHistoryItem[] {
+  return items
+    .filter((message) => !message.local)
+    .map((message) => {
+      if (message.role === 'user') return { role: 'user', content: message.content }
+      return { role: 'assistant', content: assistantText(message) }
+    })
+}
+
+function assistantText(message: AssistantMessage) {
+  if (message.content) return message.content
+  return message.segments
+    .filter((segment) => segment.type === 'text')
+    .map((segment) => segment.content)
+    .join('')
+}

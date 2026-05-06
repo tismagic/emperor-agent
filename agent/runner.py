@@ -1,83 +1,236 @@
 from __future__ import annotations
-from concurrent.futures import ThreadPoolExecutor
 
+import asyncio
+from collections.abc import Awaitable, Callable
+from typing import Any
+
+from .providers import LLMProvider, ToolCallRequest
+from .providers.base import run_sync
 from .tools.registry import ToolRegistry
+
+
+StreamEmitter = Callable[[dict[str, Any]], Awaitable[None]]
 
 
 class AgentRunner:
     def __init__(
         self,
-        client,
+        provider: LLMProvider,
         model: str,
         registry: ToolRegistry,
         system_prompt: str,
         max_tokens: int = 20000,
+        temperature: float = 0.1,
+        reasoning_effort: str | None = None,
+        provider_name: str | None = None,
+        usage_type: str = "main_agent",
         memory_store=None,
         token_tracker=None,
         compactor=None,
+        todo_store=None,
         max_context: int = 200_000,
         compact_threshold: float = 0.7,
         max_turns: int | None = None,
     ):
-        self.client = client
+        self.provider = provider
         self.model = model
         self.registry = registry
         self.system_prompt = system_prompt
         self.max_tokens = max_tokens
+        self.temperature = temperature
+        self.reasoning_effort = reasoning_effort
+        self.provider_name = provider_name
+        self.usage_type = usage_type
         self.memory_store = memory_store
         self.token_tracker = token_tracker
         self.compactor = compactor
+        self.todo_store = todo_store
         self.max_context = max_context
         self.compact_threshold = compact_threshold
         self.max_turns = max_turns
 
-    def step(self, history: list) -> str:
-        """Run one full turn (user→...→final-text). Mutates `history` in place."""
+    def step(self, history: list[dict[str, Any]]) -> str:
+        """Run one full turn synchronously. Mutates `history` in place."""
+        return run_sync(self.step_async(history))
+
+    async def step_stream(self, history: list[dict[str, Any]], emit: StreamEmitter) -> str:
+        """Run one full turn and stream UI-friendly events."""
+        reply = await self.step_async(history, emit=emit)
+        await emit({"event": "assistant_done", "content": reply})
+        return reply
+
+    async def step_async(
+        self,
+        history: list[dict[str, Any]],
+        emit: StreamEmitter | None = None,
+    ) -> str:
         turns = 0
+        final_parts: list[str] = []
         while True:
             if self.max_turns is not None and turns >= self.max_turns:
-                return f"（达到 max_turns={self.max_turns} 上限, 未办妥；history 中已有部分进展）"
-            turns += 1
-            message = self.client.messages.create(
-                model=self.model,
-                max_tokens=self.max_tokens,
-                system=self.system_prompt,
-                tools=self.registry.get_definitions(),
-                messages=history,
-            )
-            if self.token_tracker:
-                self.token_tracker.record(self.model, message.usage)
-            history.append({"role": "assistant", "content": message.content})
-
-            if message.stop_reason != "tool_use":
-                reply = next(b.text for b in message.content if b.type == "text")
+                reply = f"（达到 max_turns={self.max_turns} 上限，未办妥；history 中已有部分进展）"
+                history.append({"role": "assistant", "content": reply})
                 if self.memory_store:
                     self.memory_store.append_history("assistant", reply)
-                self._maybe_compact(history)
                 return reply
+            turns += 1
 
-            tool_blocks = [block for block in message.content if block.type == "tool_use"]
-            tool_results = self._execute_tool_blocks(tool_blocks)
+            response = await self._ask_model(history, emit)
+            if self.token_tracker and response.usage:
+                self.token_tracker.record(
+                    self.model,
+                    response.usage,
+                    provider=self.provider_name,
+                    usage_type=self.usage_type,
+                )
 
-            history.append({"role": "user", "content": tool_results})
+            if response.should_execute_tools:
+                assistant_content = response.content or ""
+                if assistant_content:
+                    final_parts.append(assistant_content)
+                assistant_message = {
+                    "role": "assistant",
+                    "content": assistant_content,
+                    "tool_calls": [call.to_openai_tool_call() for call in response.tool_calls],
+                }
+                if response.reasoning_content is not None:
+                    assistant_message["reasoning_content"] = response.reasoning_content
+                history.append(assistant_message)
+                tool_messages = await self._execute_tool_calls(response.tool_calls, emit)
+                history.extend(tool_messages)
+                continue
 
-    def _execute_tool_blocks(self, tool_blocks: list) -> list[dict]:
-        """Execute tool_use blocks, parallelizing contiguous safe groups.
+            reply = response.content or ""
+            final_parts.append(reply)
+            final_reply = "".join(final_parts)
+            assistant_message = {"role": "assistant", "content": reply}
+            if response.reasoning_content is not None:
+                assistant_message["reasoning_content"] = response.reasoning_content
+            history.append(assistant_message)
+            if self.memory_store:
+                self.memory_store.append_history("assistant", final_reply)
 
-        The Anthropic API expects one tool_result per tool_use. We may execute
-        independent calls concurrently, but the returned list must preserve the
-        original block order.
+            if self.todo_store and self.todo_store.todos:
+                unfinished = [t for t in self.todo_store.todos if t["status"] != "completed"]
+                if unfinished:
+                    nudge = (
+                        "差事尚未办妥，以下任务仍未完成，请按计划继续执行，"
+                        "并按规矩更新 todolist 状态：\n" + _render_todos(unfinished)
+                    )
+                    print("\n[计划尚未办妥，继续执行...]")
+                    print(_render_todos(self.todo_store.todos))
+                    print()
+                    history.append({"role": "user", "content": nudge})
+                    continue
+                print("\n[最终计划状态 - 全部办妥]")
+                print(_render_todos(self.todo_store.todos))
+                print()
+                self.todo_store.todos = []
+
+            await self._maybe_compact(history)
+            return final_reply
+
+    async def _ask_model(self, history: list[dict[str, Any]], emit: StreamEmitter | None):
+        messages = [
+            {"role": "system", "content": self.system_prompt},
+            *self._pair_tool_calls(history),
+        ]
+
+        async def on_delta(delta: str) -> None:
+            if emit:
+                await emit({"event": "message_delta", "delta": delta})
+
+        if emit:
+            return await self.provider.chat_stream(
+                messages=messages,
+                tools=self.registry.get_definitions(),
+                model=self.model,
+                max_tokens=self.max_tokens,
+                temperature=self.temperature,
+                reasoning_effort=self.reasoning_effort,
+                on_content_delta=on_delta,
+            )
+        return await self.provider.chat(
+            messages=messages,
+            tools=self.registry.get_definitions(),
+            model=self.model,
+            max_tokens=self.max_tokens,
+            temperature=self.temperature,
+            reasoning_effort=self.reasoning_effort,
+        )
+
+    @staticmethod
+    def _pair_tool_calls(history: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        """Ensure assistant tool_calls are 1:1 paired with following tool messages.
+
+        Drops orphan tool messages and fills missing tool replies with a placeholder,
+        so a half-completed turn (interrupted execution, bad compaction cut) cannot
+        poison subsequent API calls with an "insufficient tool messages" error.
         """
+        cleaned: list[dict[str, Any]] = []
+        expected: list[tuple[str, str]] = []
+
+        def flush_expected() -> None:
+            for tid, tname in expected:
+                cleaned.append({
+                    "role": "tool",
+                    "tool_call_id": tid,
+                    "name": tname,
+                    "content": "(tool execution interrupted)",
+                })
+            expected.clear()
+
+        for msg in history:
+            role = msg.get("role")
+            if role == "tool":
+                tid = msg.get("tool_call_id")
+                idx = next((i for i, (eid, _) in enumerate(expected) if eid == tid), None)
+                if idx is None:
+                    continue
+                cleaned.append(msg)
+                expected.pop(idx)
+                continue
+            flush_expected()
+            cleaned.append(msg)
+            if role == "assistant":
+                for tc in msg.get("tool_calls") or []:
+                    fn = tc.get("function") or {}
+                    expected.append((tc.get("id") or "", fn.get("name", "")))
+        flush_expected()
+        return cleaned
+
+    async def _execute_tool_calls(
+        self,
+        tool_calls: list[ToolCallRequest],
+        emit: StreamEmitter | None,
+    ) -> list[dict[str, Any]]:
+        async def _report_tool_error(call: ToolCallRequest, err_msg: str) -> None:
+            if emit:
+                await emit({
+                    "event": "tool_error",
+                    "id": call.id,
+                    "name": call.name,
+                    "message": err_msg,
+                })
+
+        async def _run_and_collect(call: ToolCallRequest) -> str:
+            try:
+                return await self._run_tool(call, emit)
+            except Exception as exc:
+                err_msg = str(exc)
+                await _report_tool_error(call, err_msg)
+                return f"Error: {err_msg}"
+
         results_by_id: dict[str, str] = {}
         i = 0
-        while i < len(tool_blocks):
-            block = tool_blocks[i]
-            tool = self.registry.get(block.name)
+        while i < len(tool_calls):
+            call = tool_calls[i]
+            tool = self.registry.get(call.name)
 
             if tool is not None and tool.concurrency_safe:
-                group = []
-                while i < len(tool_blocks):
-                    candidate = tool_blocks[i]
+                group: list[ToolCallRequest] = []
+                while i < len(tool_calls):
+                    candidate = tool_calls[i]
                     candidate_tool = self.registry.get(candidate.name)
                     if candidate_tool is None or not candidate_tool.concurrency_safe:
                         break
@@ -85,35 +238,109 @@ class AgentRunner:
                     i += 1
 
                 if len(group) > 1:
-                    names = ", ".join(b.name for b in group)
+                    names = ", ".join(item.name for item in group)
                     print(f"\n[并发执行 {len(group)} 个工具]: {names}\n")
-                    with ThreadPoolExecutor(max_workers=len(group)) as pool:
-                        contents = list(pool.map(
-                            lambda b: self.registry.execute(b.name, b.input),
-                            group,
-                        ))
-                    for b, content in zip(group, contents):
-                        results_by_id[b.id] = content
+                    for item in group:
+                        await self._emit_tool_call(item, emit)
+                    tasks = [self._run_tool(item, emit) for item in group]
+                    gathered = await asyncio.gather(*tasks, return_exceptions=True)
+                    for item, raw in zip(group, gathered):
+                        if isinstance(raw, Exception):
+                            err_msg = str(raw)
+                            results_by_id[item.id] = f"Error: {err_msg}"
+                            await _report_tool_error(item, err_msg)
+                        else:
+                            results_by_id[item.id] = raw
+                            await self._emit_tool_result(item, raw, emit)
                 else:
-                    b = group[0]
-                    results_by_id[b.id] = self.registry.execute(b.name, b.input)
+                    item = group[0]
+                    await self._emit_tool_call(item, emit)
+                    content = await _run_and_collect(item)
+                    results_by_id[item.id] = content
+                    if not content.startswith("Error:"):
+                        await self._emit_tool_result(item, content, emit)
                 continue
 
-            results_by_id[block.id] = self.registry.execute(block.name, block.input)
+            await self._emit_tool_call(call, emit)
+            content = await _run_and_collect(call)
+            results_by_id[call.id] = content
+            if not content.startswith("Error:"):
+                await self._emit_tool_result(call, content, emit)
             i += 1
 
         return [
             {
-                "type": "tool_result",
-                "tool_use_id": block.id,
-                "content": results_by_id[block.id],
+                "role": "tool",
+                "tool_call_id": call.id,
+                "name": call.name,
+                "content": results_by_id.get(call.id, ""),
             }
-            for block in tool_blocks
+            for call in tool_calls
         ]
 
-    def _maybe_compact(self, history: list) -> None:
+    async def _run_tool(self, call: ToolCallRequest, emit: StreamEmitter | None = None) -> str:
+        if emit and call.name == "dispatch_subagent":
+            loop = asyncio.get_running_loop()
+            return await asyncio.to_thread(
+                self.registry.execute, call.name, call.arguments,
+                emit=emit, loop=loop, parent_call_id=call.id,
+            )
+        return await asyncio.to_thread(self.registry.execute, call.name, call.arguments)
+
+    @staticmethod
+    async def _emit_tool_call(call: ToolCallRequest, emit: StreamEmitter | None) -> None:
+        if emit:
+            await emit({
+                "event": "tool_call",
+                "id": call.id,
+                "name": call.name,
+                "arguments": call.arguments,
+            })
+
+    async def _emit_tool_result(
+        self,
+        call: ToolCallRequest,
+        content: str,
+        emit: StreamEmitter | None,
+    ) -> None:
+        if emit:
+            payload: dict[str, Any] = {
+                "event": "tool_result",
+                "id": call.id,
+                "name": call.name,
+                "summary": _summarize_tool_result(content),
+            }
+            if call.name == "update_todos" and self.todo_store is not None:
+                payload["todos"] = [
+                    {"id": t["id"], "content": t["content"], "status": t["status"]}
+                    for t in self.todo_store.todos
+                ]
+            await emit(payload)
+
+    async def _maybe_compact(self, history: list[dict[str, Any]]) -> None:
         if not (self.compactor and self.token_tracker):
             return
         if not self.token_tracker.should_compact(self.max_context, self.compact_threshold):
             return
-        history[:] = self.compactor.compact(history)
+        if hasattr(self.compactor, "compact_async"):
+            history[:] = await self.compactor.compact_async(history)
+        else:
+            history[:] = await asyncio.to_thread(self.compactor.compact, history)
+
+
+_TODO_ICON = {"pending": "[ ]", "in_progress": "[~]", "completed": "[x]"}
+
+
+def _render_todos(todos: list[dict]) -> str:
+    lines = []
+    for t in todos:
+        icon = _TODO_ICON.get(t.get("status", "pending"), "[?]")
+        lines.append(f"  {icon} {t.get('id')}. {t.get('content', '')}")
+    return "\n".join(lines)
+
+
+def _summarize_tool_result(content: str, limit: int = 560) -> str:
+    text = " ".join(str(content or "").split())
+    if len(text) <= limit:
+        return text
+    return f"{text[:limit].rstrip()}..."

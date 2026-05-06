@@ -12,7 +12,7 @@ if TYPE_CHECKING:
 
 
 class ContextBuilder:
-    _BOOTSTRAP_FILES = ["SOUL.md", "USER.md"]
+    _BOOTSTRAP_FILES = ["SOUL.md", "TOOL.md", "USER.md"]
 
     def __init__(
         self,

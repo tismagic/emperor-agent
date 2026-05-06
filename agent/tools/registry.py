@@ -53,12 +53,15 @@ class ToolRegistry:
             return tool, None, f"Error: invalid params for '{name}': {e}"
         return tool, cast, None
 
-    def execute(self, name: str, params: Any) -> str:
+    def execute(self, name: str, params: Any, emit=None, loop=None, parent_call_id=None) -> str:
         tool, cast, err = self.prepare_call(name, params)
         if err:
             return f"{err}\n{self._HINT}"
         try:
-            result = tool.execute(**cast)
+            if name == "dispatch_subagent":
+                result = tool.execute(**cast, emit=emit, loop=loop, parent_call_id=parent_call_id)
+            else:
+                result = tool.execute(**cast)
             if isinstance(result, str) and result.startswith("Error"):
                 return f"{result}\n{self._HINT}"
             return result

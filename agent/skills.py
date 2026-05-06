@@ -9,9 +9,10 @@ class SkillsLoader:
     def __init__(self, skills_dir: Path):
         self.skills_dir = skills_dir
         self.skills: dict[str, dict] = {}
-        self._load_all()
+        self.reload()
 
-    def _load_all(self) -> None:
+    def reload(self) -> None:
+        self.skills = {}
         if not self.skills_dir.exists():
             return
         for f in sorted(self.skills_dir.rglob("SKILL.md")):

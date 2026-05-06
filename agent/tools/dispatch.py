@@ -4,6 +4,7 @@ from threading import Lock
 from .base import Tool
 from .registry import ToolRegistry
 from .schema import StringSchema, tool_parameters_schema
+from ..providers.base import run_sync
 
 
 class DispatchSubagentTool(Tool):
@@ -59,7 +60,10 @@ class DispatchSubagentTool(Tool):
             ),
         )
 
-    def execute(self, *, agent_type: str, task: str, purpose: str | None = None) -> str:
+    def execute(self, *, agent_type: str, task: str, purpose: str | None = None,
+                emit=None, loop=None, parent_call_id=None) -> str:
+        import asyncio as asyncio_mod
+
         spec = self._subagent_registry.get(agent_type)
         if spec is None:
             return (
@@ -67,7 +71,6 @@ class DispatchSubagentTool(Tool):
                 f"Available: {self._subagent_registry.names(include_aliases=True)}"
             )
 
-        # 子 registry: 从父 registry 借出白名单 Tool 实例 (Tool 多为无状态, 共享指针即可)
         sub_registry = ToolRegistry()
         for tool_name in spec.tool_names:
             tool = self._parent_registry.get(tool_name)
@@ -85,11 +88,58 @@ class DispatchSubagentTool(Tool):
         print("  ┌── subagent context start ──")
 
         history: list = [{"role": "user", "content": task}]
-        try:
-            final = runner.step(history)
-        except Exception as exc:
-            print(f"  └── subagent context end (异常: {exc}) ──")
-            return f"Error: subagent '{agent_type}' raised: {exc}"
+
+        if emit is not None and loop is not None and parent_call_id is not None:
+            subagent_id = f"sub_{counter}"
+
+            def bridge_emit(evt):
+                asyncio_mod.run_coroutine_threadsafe(emit(evt), loop)
+
+            async def sub_emit(evt):
+                evt_type = evt.get("event", "")
+                if evt_type == "message_delta":
+                    evt_type = "subagent_delta"
+                elif evt_type == "tool_call":
+                    evt_type = "subagent_tool_call"
+                elif evt_type == "tool_result":
+                    evt_type = "subagent_tool_result"
+                elif evt_type == "assistant_done":
+                    evt_type = "subagent_done"
+                base = {"parent_id": parent_call_id, "subagent_id": subagent_id, "event": evt_type}
+                for k, v in evt.items():
+                    if k == "event":
+                        continue
+                    if evt_type == "subagent_done" and k == "content":
+                        base["summary"] = v
+                    else:
+                        base[k] = v
+                bridge_emit(base)
+
+            bridge_emit({
+                "event": "subagent_start",
+                "parent_id": parent_call_id,
+                "subagent_id": subagent_id,
+                "agent_type": agent_type,
+                "purpose": purpose or task[:60],
+            })
+
+            try:
+                final = run_sync(runner.step_stream(history, sub_emit))
+            except Exception as exc:
+                bridge_emit({
+                    "event": "subagent_error",
+                    "parent_id": parent_call_id,
+                    "subagent_id": subagent_id,
+                    "message": str(exc),
+                })
+                print(f"  └── subagent context end (异常: {exc}) ──")
+                return f"Error: subagent '{agent_type}' raised: {exc}"
+        else:
+            try:
+                final = runner.step(history)
+            except Exception as exc:
+                print(f"  └── subagent context end (异常: {exc}) ──")
+                return f"Error: subagent '{agent_type}' raised: {exc}"
 
         print(f"  └── subagent context end (内部 history {len(history)} 条, 回传 {len(final)} 字) ──")
         print(f"[小太监回禀]: {final}")

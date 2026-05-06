@@ -1,0 +1,98 @@
+{
+  "agents": {
+    "defaults": {
+      "model": "deepseek-v4-flash",
+      "provider": "deepseek",
+      "maxTokens": 20000,
+      "temperature": 0.1,
+      "reasoningEffort": null,
+      "contextWindowTokens": 200000
+    }
+  },
+  "providers": {
+    "deepseek": {
+      "apiKey": "",
+      "apiBase": "https://api.deepseek.com",
+      "extraHeaders": null,
+      "extraBody": null
+    },
+    "deepseekAnthropic": {
+      "apiKey": "",
+      "apiBase": "https://api.deepseek.com/anthropic",
+      "extraHeaders": null,
+      "extraBody": null
+    },
+    "anthropic": {
+      "apiKey": "",
+      "apiBase": null,
+      "extraHeaders": null,
+      "extraBody": null
+    },
+    "openai": {
+      "apiKey": "",
+      "apiBase": null,
+      "extraHeaders": null,
+      "extraBody": null
+    },
+    "openrouter": {
+      "apiKey": "",
+      "apiBase": "https://openrouter.ai/api/v1",
+      "extraHeaders": null,
+      "extraBody": null
+    },
+    "dashscope": {
+      "apiKey": "",
+      "apiBase": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+      "extraHeaders": null,
+      "extraBody": null
+    },
+    "siliconflow": {
+      "apiKey": "",
+      "apiBase": "https://api.siliconflow.cn/v1",
+      "extraHeaders": null,
+      "extraBody": null
+    },
+    "ollama": {
+      "apiKey": "",
+      "apiBase": "http://localhost:11434/v1",
+      "extraHeaders": null,
+      "extraBody": null
+    },
+    "vllm": {
+      "apiKey": "",
+      "apiBase": "http://localhost:8000/v1",
+      "extraHeaders": null,
+      "extraBody": null
+    },
+    "azure_openai": {
+      "apiKey": "",
+      "apiBase": "",
+      "extraHeaders": null,
+      "extraBody": null
+    },
+    "bedrock": {
+      "apiKey": "",
+      "apiBase": null,
+      "extraHeaders": null,
+      "extraBody": null
+    },
+    "openai_codex": {
+      "apiKey": "",
+      "apiBase": "https://chatgpt.com/backend-api",
+      "extraHeaders": null,
+      "extraBody": null
+    },
+    "github_copilot": {
+      "apiKey": "",
+      "apiBase": "https://api.githubcopilot.com",
+      "extraHeaders": null,
+      "extraBody": null
+    },
+    "custom": {
+      "apiKey": "",
+      "apiBase": "",
+      "extraHeaders": null,
+      "extraBody": null
+    }
+  }
+}
