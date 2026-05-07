@@ -22,7 +22,13 @@ const ctx = useAppContext()
     </div>
 
     <div class="composer-wrap">
-      <Composer :busy="ctx.busy.value" :commands="ctx.commands" @send="ctx.submitFromComposer($event)" />
+      <Composer
+        :busy="ctx.busy.value"
+        :commands="ctx.commands"
+        :context-used="ctx.boot.value?.context_used ?? 0"
+        :context-max="ctx.boot.value?.modelConfig?.current?.contextWindowTokens ?? 0"
+        @send="ctx.submitFromComposer($event)"
+      />
     </div>
   </section>
 </template>

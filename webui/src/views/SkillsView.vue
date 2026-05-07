@@ -32,6 +32,14 @@ function onNew(name: string) {
 function onSave(content: string) {
   void ctx.runSafely(() => ctx.saveSkill(content))
 }
+
+function onDelete(name: string) {
+  void ctx.runSafely(() => ctx.deleteSkill(name))
+}
+
+async function onImport(formData: FormData) {
+  await ctx.importSkill(formData)
+}
 </script>
 
 <template>
@@ -39,7 +47,7 @@ function onSave(content: string) {
     <header class="view-head">
       <div class="min-w-0">
         <h1>能力包 · Skills</h1>
-        <p>查看与编辑当前 Agent 可加载的 SKILL.md</p>
+        <p>查看、编辑、导入与删除当前 Agent 可加载的 SKILL.md</p>
       </div>
       <button class="tool-button asset-button refresh-action" title="刷新" @click="ctx.refreshAll()">
         <img class="action-icon" :src="actionAssets.refresh" alt="" width="26" height="26" />
@@ -54,6 +62,8 @@ function onSave(content: string) {
         @load="onLoad"
         @new="onNew"
         @save="onSave"
+        @delete="onDelete"
+        @import="onImport"
       />
     </div>
   </section>

@@ -3,6 +3,8 @@ import re
 import urllib.request
 from html.parser import HTMLParser
 
+from loguru import logger
+
 from .base import Tool
 from .schema import StringSchema, IntegerSchema
 
@@ -37,6 +39,7 @@ def _fetch(url: str, extract_mode: str = "text", max_chars: int = 8000) -> str:
         with urllib.request.urlopen(req, timeout=10) as resp:
             raw = resp.read().decode("utf-8", errors="replace")
     except Exception as e:
+        logger.warning(f"Web fetch failed: {url}: {e}")
         return f"Error fetching {url}: {e}"
 
     if extract_mode == "text":
@@ -72,5 +75,5 @@ class WebFetch(Tool):
         }
 
     def execute(self, url: str, extract_mode: str = "text", max_chars: int = 8000) -> str:
-        print(f"[网页获取]: {url}")
+        logger.info(f"[网页获取]: {url}")
         return _fetch(url, extract_mode, max_chars)

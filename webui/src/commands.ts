@@ -12,7 +12,7 @@ export const slashCommands: SlashCommand[] = [
   { name: '/tokens', usage: '/tokens', description: '输出 Token 消耗统计', aliases: ['/token'] },
   { name: '/tools', usage: '/tools', description: '输出可用工具摘要' },
   { name: '/skills', usage: '/skills', description: '输出可用 Skill 摘要' },
-  { name: '/config', usage: '/config', description: '输出可编辑配置文件列表', aliases: ['/configs'] },
+  { name: '/config', usage: '/config', description: '查看并编辑用户配置文件 (USER.local.md)', aliases: ['/configs'] },
   { name: '/memory', usage: '/memory', description: '输出记忆状态摘要' },
   { name: '/compact', usage: '/compact', description: '触发未归档会话压缩，写入 MEMORY/情景记忆' },
   { name: '/clear', usage: '/clear', description: '清空当前屏幕，不删除运行期记忆' },

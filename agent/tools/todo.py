@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from loguru import logger
+
 from .base import Tool
 from .schema import (
     ArraySchema,
@@ -50,9 +52,7 @@ class TodoStore:
             return "Error: 同一时间只能有一个 in_progress 任务，请重新规划。"
 
         self.todos = cleaned
-        print("\n[计划已更新]")
-        print(_render(self.todos))
-        print()
+        logger.info(f"\n[计划已更新]\n{_render(self.todos)}\n")
 
         completed = sum(1 for t in self.todos if t["status"] == "completed")
         pending = sum(1 for t in self.todos if t["status"] == "pending")

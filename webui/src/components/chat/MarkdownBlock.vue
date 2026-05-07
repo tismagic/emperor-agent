@@ -1,16 +1,9 @@
 <script setup lang="ts">
-import MarkdownIt from 'markdown-it'
-import { computed } from 'vue'
+import { useMarkdown } from '../../composables/useMarkdown'
+import { toRef } from 'vue'
 
 const props = defineProps<{ content: string }>()
-
-const md = new MarkdownIt({
-  html: false,
-  linkify: true,
-  breaks: true,
-})
-
-const rendered = computed(() => md.render(props.content || ''))
+const { rendered } = useMarkdown(toRef(() => props.content))
 </script>
 
 <template>

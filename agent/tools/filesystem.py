@@ -6,6 +6,8 @@ import os
 from pathlib import Path
 from typing import Any
 
+from loguru import logger
+
 from .base import Tool, tool_parameters
 
 
@@ -22,7 +24,17 @@ class _FsTool(Tool):
         p = Path(path).expanduser()
         if not p.is_absolute() and self._workspace:
             p = self._workspace / p
-        return p.resolve()
+        p = p.resolve()
+        if self._workspace is not None:
+            ws = self._workspace.resolve()
+            try:
+                p.relative_to(ws)
+            except ValueError:
+                raise ValueError(
+                    f"Path outside workspace: {path} -> {p} "
+                    f"(workspace: {ws})"
+                )
+        return p
 
 
 @tool_parameters({
@@ -87,6 +99,7 @@ class ReadFileTool(_FsTool):
         except PermissionError as e:
             return f"Error: {e}"
         except Exception as e:
+            logger.warning(f"[read_file] {e}")
             return f"Error reading file: {e}"
 
 
@@ -111,6 +124,7 @@ class WriteFileTool(_FsTool):
         except PermissionError as e:
             return f"Error: {e}"
         except Exception as e:
+            logger.warning(f"[write_file] {e}")
             return f"Error writing file: {e}"
 
 
@@ -272,4 +286,5 @@ class EditFileTool(_FsTool):
         except PermissionError as e:
             return f"Error: {e}"
         except Exception as e:
+            logger.warning(f"[edit_file] {e}")
             return f"Error editing file: {e}"

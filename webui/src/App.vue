@@ -5,6 +5,7 @@ import NavRail from './components/layout/NavRail.vue'
 import { parseSlashCommand, slashCommands, type SlashCommand } from './commands'
 import { useBootstrap } from './composables/useBootstrap'
 import { useRuntime } from './composables/useRuntime'
+import { useTokens } from './composables/useTokens'
 import { provideAppContext } from './composables/useAppContext'
 import type { CompactResult, TokenStatsRow } from './types'
 import { brandAssets } from './assets'
@@ -27,7 +28,6 @@ const {
   error,
   activeSkill,
   skillContent,
-  activeConfig,
   configContent,
   loadBootstrap,
   refreshMemory,
@@ -36,8 +36,13 @@ const {
   loadSkill,
   startNewSkill,
   saveSkill,
+  deleteSkill,
+  importSkill,
   loadConfig,
   saveConfig,
+  saveMemory,
+  loadEpisode,
+  saveEpisode,
 } = bootstrap
 
 const runtime = useRuntime({ boot, refreshMemory, showToast })
@@ -53,6 +58,9 @@ const {
   addLocalCommand,
   restoreFromHistory,
 } = runtime
+
+const tokensClient = useTokens(showToast)
+const { data: tokensData, loading: tokensLoading, load: loadTokens } = tokensClient
 
 onMounted(async () => {
   await loadBootstrap()
@@ -249,13 +257,16 @@ function renderSkillsInfo() {
 }
 
 function renderConfigInfo() {
-  const configs = boot.value?.configs || []
+  const content = configContent.value || ''
+  const lines = content.split('\n').length
   return [
-    `## 可编辑配置 (${configs.length})`,
+    '## 配置文件',
     '',
-    ...configs.map((config) => `- ${inlineCode(config.path)}：${config.name}`),
+    `- 文件：${inlineCode('templates/USER.local.md')}`,
+    `- 行数：${lines}`,
+    `- 字符数：${formatNumber(content.length)}`,
     '',
-    '当前只允许查看和编辑 `templates/TOOL.md` 与 `templates/USER.md`。',
+    '可直接在「配置文件」页面查看和编辑。',
   ].join('\n')
 }
 
@@ -302,7 +313,6 @@ provideAppContext({
   error,
   activeSkill,
   skillContent,
-  activeConfig,
   configContent,
   messages,
   busy,
@@ -317,13 +327,21 @@ provideAppContext({
   loadSkill,
   startNewSkill,
   saveSkill,
+  deleteSkill,
+  importSkill,
   loadConfig,
   saveConfig,
+  saveMemory,
+  loadEpisode,
+  saveEpisode,
   sendMessage,
   clearChat,
   submitFromComposer,
   showToast,
   runSafely,
+  tokens: tokensData,
+  tokensLoading,
+  loadTokens,
 })
 </script>
 

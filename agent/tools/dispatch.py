@@ -1,6 +1,8 @@
 from __future__ import annotations
 from threading import Lock
 
+from loguru import logger
+
 from .base import Tool
 from .registry import ToolRegistry
 from .schema import StringSchema, tool_parameters_schema
@@ -84,8 +86,8 @@ class DispatchSubagentTool(Tool):
             counter = self._counter
 
         label = (purpose or task)[:60]
-        print(f"\n[派遣小太监 #{counter} · {spec.name}]: {label}")
-        print("  ┌── subagent context start ──")
+        logger.info(f"[派遣小太监 #{counter} · {spec.name}]: {label}")
+        logger.info("  ┌── subagent context start ──")
 
         history: list = [{"role": "user", "content": task}]
 
@@ -132,16 +134,16 @@ class DispatchSubagentTool(Tool):
                     "subagent_id": subagent_id,
                     "message": str(exc),
                 })
-                print(f"  └── subagent context end (异常: {exc}) ──")
+                logger.warning(f"  └── subagent context end (异常: {exc}) ──")
                 return f"Error: subagent '{agent_type}' raised: {exc}"
         else:
             try:
                 final = runner.step(history)
             except Exception as exc:
-                print(f"  └── subagent context end (异常: {exc}) ──")
+                logger.warning(f"  └── subagent context end (异常: {exc}) ──")
                 return f"Error: subagent '{agent_type}' raised: {exc}"
 
-        print(f"  └── subagent context end (内部 history {len(history)} 条, 回传 {len(final)} 字) ──")
-        print(f"[小太监回禀]: {final}")
-        print(f"[主上下文压缩]: 子代理仅向主 history 追加 {len(final)} 字\n")
+        logger.info(f"  └── subagent context end (内部 history {len(history)} 条, 回传 {len(final)} 字) ──")
+        logger.info(f"[小太监回禀]: {final}")
+        logger.info(f"[主上下文压缩]: 子代理仅向主 history 追加 {len(final)} 字")
         return final

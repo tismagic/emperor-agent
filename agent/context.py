@@ -4,6 +4,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from jinja2 import Environment, FileSystemLoader, select_autoescape
+from loguru import logger
 
 from .skills import SkillsLoader
 
@@ -33,6 +34,7 @@ class ContextBuilder:
             template = self._env.get_template(name)
             return template.render(**kwargs)
         except Exception:
+            logger.warning(f"Template render failed: {name}")
             return ""
 
     def build_system_prompt(self) -> str:

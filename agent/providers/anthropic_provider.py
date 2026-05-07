@@ -68,6 +68,8 @@ class AnthropicProvider(LLMProvider):
         reasoning_effort: str | None,
     ) -> dict[str, Any]:
         system, anthropic_messages = self._convert_messages(messages)
+        if self._needs_reasoning_content_backfill(reasoning_effort):
+            self._backfill_reasoning_content(anthropic_messages)
         kwargs: dict[str, Any] = {
             "model": self._strip_prefix(model or self.default_model),
             "max_tokens": max(1, max_tokens),
@@ -110,7 +112,10 @@ class AnthropicProvider(LLMProvider):
                 self._append_tool_result(converted, msg)
                 continue
             if role == "assistant":
-                converted.append({"role": "assistant", "content": self._assistant_blocks(msg)})
+                assistant_msg = {"role": "assistant", "content": self._assistant_blocks(msg)}
+                if "reasoning_content" in msg:
+                    assistant_msg["reasoning_content"] = str(msg.get("reasoning_content") or "")
+                converted.append(assistant_msg)
                 continue
             if role == "user":
                 converted.append({"role": "user", "content": content or "(empty)"})
@@ -136,6 +141,19 @@ class AnthropicProvider(LLMProvider):
     def _assistant_blocks(self, msg: dict[str, Any]) -> list[dict[str, Any]]:
         blocks = []
         content = msg.get("content")
+        for block in msg.get("thinking_blocks") or []:
+            if not isinstance(block, dict):
+                continue
+            if block.get("type") == "thinking":
+                item = {
+                    "type": "thinking",
+                    "thinking": block.get("thinking", ""),
+                }
+                if block.get("signature"):
+                    item["signature"] = block["signature"]
+                blocks.append(item)
+            elif block.get("type") == "redacted_thinking":
+                blocks.append(dict(block))
         if content:
             blocks.append({"type": "text", "text": str(content)})
         for tc in msg.get("tool_calls") or []:
@@ -172,10 +190,27 @@ class AnthropicProvider(LLMProvider):
             merged.insert(0, {"role": "user", "content": "(conversation continued)"})
         return merged
 
+    def _needs_reasoning_content_backfill(self, reasoning_effort: str | None) -> bool:
+        if not reasoning_effort or reasoning_effort.lower() in {"none", "minimal", "minimum"}:
+            return False
+        base = (self.api_base or "").lower()
+        return bool(base and "anthropic.com" not in base)
+
+    @staticmethod
+    def _backfill_reasoning_content(messages: list[dict[str, Any]]) -> None:
+        for msg in messages:
+            if msg.get("role") == "assistant" and "reasoning_content" not in msg:
+                msg["reasoning_content"] = ""
+
     @staticmethod
     def _parse_response(response: Any) -> LLMResponse:
         parts: list[str] = []
         tools: list[ToolCallRequest] = []
+        reasoning_parts: list[str] = []
+        thinking_blocks: list[dict[str, Any]] = []
+        response_reasoning = getattr(response, "reasoning_content", None) or getattr(response, "reasoning", None)
+        if isinstance(response_reasoning, str) and response_reasoning:
+            reasoning_parts.append(response_reasoning)
         for block in response.content:
             if block.type == "text":
                 parts.append(block.text)
@@ -185,6 +220,25 @@ class AnthropicProvider(LLMProvider):
                     name=block.name,
                     arguments=block.input if isinstance(block.input, dict) else {},
                 ))
+            elif block.type in {"thinking", "reasoning", "reasoning_content"}:
+                thinking = getattr(block, "thinking", None) or getattr(block, "reasoning", None) or getattr(block, "reasoning_content", None) or ""
+                if not isinstance(thinking, str):
+                    thinking = str(thinking)
+                reasoning_parts.append(thinking)
+                thinking_block = {
+                    "type": "thinking",
+                    "thinking": thinking,
+                }
+                signature = getattr(block, "signature", "")
+                if signature:
+                    thinking_block["signature"] = signature
+                thinking_blocks.append(thinking_block)
+            elif block.type == "redacted_thinking":
+                thinking_blocks.append({
+                    key: value
+                    for key, value in getattr(block, "__dict__", {}).items()
+                    if not key.startswith("_")
+                } or {"type": "redacted_thinking"})
         usage = {}
         if getattr(response, "usage", None):
             usage = {
@@ -198,4 +252,6 @@ class AnthropicProvider(LLMProvider):
             tool_calls=tools,
             finish_reason="tool_calls" if tools else (response.stop_reason or "stop"),
             usage=usage,
+            reasoning_content="".join(reasoning_parts) or None,
+            thinking_blocks=thinking_blocks or None,
         )

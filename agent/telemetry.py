@@ -14,7 +14,7 @@ class TokenTracker:
     def __init__(self, log_file: Path):
         self.log_file = log_file
         self.log_file.parent.mkdir(parents=True, exist_ok=True)
-        self._last_input_tokens = 0
+        self._last_input_tokens = self._load_last_input_tokens()
 
     def record(
         self,
@@ -68,6 +68,12 @@ class TokenTracker:
                 except json.JSONDecodeError:
                     continue
 
+    def _load_last_input_tokens(self) -> int:
+        last: dict | None = None
+        for row in self._iter_rows() or []:
+            last = row
+        return _input_total(last or {})
+
     def stats_by_date(self) -> dict[str, dict[str, int]]:
         out: dict[str, dict[str, int]] = defaultdict(_empty_stats)
         for r in self._iter_rows():
@@ -107,6 +113,86 @@ class TokenTracker:
             _add_row(out, r)
         return out
 
+    def stats_by_date_model(self) -> dict[str, dict[str, dict[str, int | str]]]:
+        out: dict[str, dict[str, dict[str, int | str]]] = defaultdict(dict)
+        for r in self._iter_rows():
+            date = r.get("ts", "")[:10]
+            if not date:
+                continue
+            provider = r.get("provider") or "unknown"
+            model = r.get("model") or "unknown"
+            key = f"{provider}/{model}" if provider != "unknown" else model
+            bucket = out[date].setdefault(key, _empty_stats())
+            bucket["provider"] = provider
+            bucket["model"] = model
+            _add_row(bucket, r)
+        return dict(out)
+
+    def stats_by_hour(self) -> dict[str, dict[str, int]]:
+        out: dict[str, dict[str, int]] = {f"{h:02d}": _empty_stats() for h in range(24)}
+        for r in self._iter_rows():
+            ts = r.get("ts", "")
+            hour = ts[11:13] if len(ts) >= 13 else ""
+            if hour not in out:
+                continue
+            _add_row(out[hour], r)
+        return out
+
+    def streak_metrics(self) -> dict[str, int]:
+        dates = sorted({r.get("ts", "")[:10] for r in self._iter_rows() if r.get("ts")})
+        if not dates:
+            return {"active_days": 0, "current_streak": 0, "longest_streak": 0}
+
+        longest = current = 1
+        for prev, curr in zip(dates, dates[1:]):
+            try:
+                gap = (datetime.fromisoformat(curr) - datetime.fromisoformat(prev)).days
+            except ValueError:
+                gap = 99
+            if gap == 1:
+                current += 1
+                longest = max(longest, current)
+            else:
+                current = 1
+
+        today = datetime.now().date().isoformat()
+        if dates[-1] != today:
+            current_streak = 0
+        else:
+            current_streak = 1
+            for prev, curr in zip(reversed(dates[:-1]), reversed(dates[1:])):
+                try:
+                    gap = (datetime.fromisoformat(curr) - datetime.fromisoformat(prev)).days
+                except ValueError:
+                    break
+                if gap == 1:
+                    current_streak += 1
+                else:
+                    break
+        return {
+            "active_days": len(dates),
+            "current_streak": current_streak,
+            "longest_streak": longest,
+        }
+
+    def session_count(self, gap_minutes: int = 30) -> int:
+        timestamps = []
+        for r in self._iter_rows():
+            ts = r.get("ts", "")
+            try:
+                timestamps.append(datetime.fromisoformat(ts))
+            except ValueError:
+                continue
+        if not timestamps:
+            return 0
+        timestamps.sort()
+        sessions = 1
+        gap = gap_minutes * 60
+        for prev, curr in zip(timestamps, timestamps[1:]):
+            if (curr - prev).total_seconds() > gap:
+                sessions += 1
+        return sessions
+
 
 def _empty_stats() -> dict[str, int]:
     return {"calls": 0, "input": 0, "output": 0, "cache_read": 0, "cache_create": 0, "total": 0}
@@ -120,3 +206,10 @@ def _add_row(bucket: dict, row: dict) -> None:
         bucket[key] = int(bucket.get(key, 0)) + value
         total += value
     bucket["total"] = int(bucket.get("total", 0)) + total
+
+
+def _input_total(row: dict) -> int:
+    input_tokens = int(row.get("input", row.get("prompt_tokens", 0)) or 0)
+    cache_read = int(row.get("cache_read", row.get("cache_read_input_tokens", 0)) or 0)
+    cache_create = int(row.get("cache_create", row.get("cache_creation_input_tokens", 0)) or 0)
+    return input_tokens + cache_read + cache_create

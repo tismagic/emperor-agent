@@ -1,5 +1,8 @@
 from __future__ import annotations
 from typing import Any
+
+from loguru import logger
+
 from .base import Tool
 
 
@@ -66,4 +69,5 @@ class ToolRegistry:
                 return f"{result}\n{self._HINT}"
             return result
         except Exception as e:
+            logger.warning(f"Tool execution error: {name}: {e}")
             return f"Error executing {name}: {e}\n{self._HINT}"

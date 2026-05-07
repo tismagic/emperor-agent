@@ -6,6 +6,7 @@ import type {
   ModelConfigRaw,
   PendingState,
   RuntimeStatus,
+  TokensPayload,
 } from '../types'
 import type { SlashCommand } from '../commands'
 
@@ -15,7 +16,6 @@ export interface AppContext {
   error: Ref<string>
   activeSkill: Ref<string | null>
   skillContent: Ref<string>
-  activeConfig: Ref<string | null>
   configContent: Ref<string>
 
   messages: Ref<ChatMessage[]>
@@ -33,8 +33,13 @@ export interface AppContext {
   loadSkill: (name: string) => Promise<void>
   startNewSkill: (name: string) => void
   saveSkill: (content: string) => Promise<void>
-  loadConfig: (path: string) => Promise<void>
+  deleteSkill: (name: string) => Promise<void>
+  importSkill: (formData: FormData) => Promise<string>
+  loadConfig: () => Promise<void>
   saveConfig: (content: string) => Promise<void>
+  saveMemory: (content: string) => Promise<void>
+  loadEpisode: (date: string) => Promise<{ date: string; content: string }>
+  saveEpisode: (date: string, content: string) => Promise<void>
 
   sendMessage: (content: string) => boolean
   clearChat: () => void
@@ -42,6 +47,10 @@ export interface AppContext {
 
   showToast: (message: string) => void
   runSafely: (task: () => Promise<void>) => Promise<void>
+
+  tokens: Ref<TokensPayload | null>
+  tokensLoading: Ref<boolean>
+  loadTokens: (silent?: boolean) => Promise<void>
 }
 
 export const APP_CONTEXT_KEY: InjectionKey<AppContext> = Symbol('emperor-agent:app-context')

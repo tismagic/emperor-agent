@@ -1,13 +1,14 @@
 from __future__ import annotations
 
-import sys
 import shutil
 from pathlib import Path
 
 from dotenv import load_dotenv
+from loguru import logger
 
 from .compactor import Compactor
 from .context import ContextBuilder
+from .logger import configure as configure_logging
 from .memory import MemoryStore
 from .model_config import build_provider_snapshot
 from .runner import AgentRunner
@@ -40,6 +41,7 @@ class AgentLoop:
     ):
         load_dotenv()
         self.root = root or Path(__file__).parent.parent
+        configure_logging(self.root)
         self.verbose = verbose
         self._model_override = model
         self.user_file = self._ensure_local_user_file()
@@ -60,7 +62,7 @@ class AgentLoop:
 
         workspace = self.root
         self.registry = ToolRegistry()
-        self.registry.register(RunCommand())
+        self.registry.register(RunCommand(workspace))
         self.registry.register(WebFetch())
         self.registry.register(LoadSkill(self.skills))
         self.registry.register(ReadFileTool(workspace))
@@ -82,11 +84,11 @@ class AgentLoop:
 
         unarchived = self.memory.load_unarchived_history()
         if startup_compaction and len(unarchived) >= 2:
-            print(f"[Startup: found {len(unarchived)} unarchived turns, compacting...]")
+            logger.info(f"[Startup: found {len(unarchived)} unarchived turns, compacting...]")
             try:
                 self.compactor.compact_startup(unarchived)
             except Exception as exc:
-                print(f"[warning] startup compaction failed: {exc}", file=sys.stderr)
+                logger.warning(f"startup compaction failed: {exc}")
             unarchived = []
 
         self.history: list = list(unarchived)
@@ -122,7 +124,7 @@ class AgentLoop:
         )
         system_prompt = self.context_builder.build_system_prompt()
         if self.verbose and initial:
-            print(f"[System Prompt]\n{system_prompt}\n{'='*60}\n")
+            logger.info(f"[System Prompt]\n{system_prompt}\n{'='*60}\n")
 
         if initial or not hasattr(self, "runner"):
             self.runner = AgentRunner(
@@ -166,7 +168,7 @@ class AgentLoop:
             self.history.append({"role": "user", "content": user_input})
             self.memory.append_history("user", user_input)
             reply = self.runner.step(self.history)
-            print(f"大内总管🧟\u200d♂️: {reply}\n")
+            logger.info(f"大内总管: {reply}")
 
     def _handle_cli_command(self, user_input: str) -> bool:
         text = user_input.strip()
@@ -174,7 +176,7 @@ class AgentLoop:
             return False
         command = text.split()[0].lower()
         if command in {"/help", "/commands"}:
-            print(
+            logger.info(
                 "\n可用命令:\n"
                 "  /help      显示命令列表\n"
                 "  /status    查看模型、Provider、Token、工具和技能数量\n"
@@ -184,7 +186,7 @@ class AgentLoop:
             return True
         if command == "/status":
             totals = self.token_tracker.totals()
-            print(
+            logger.info(
                 "\n当前状态:\n"
                 f"  provider: {self.provider_name}\n"
                 f"  model:    {self.model}\n"
@@ -197,11 +199,11 @@ class AgentLoop:
         if command == "/clear":
             self.history.clear()
             self.todos.todos = []
-            print("\n已清空当前 CLI 屏幕上下文；长期记忆和 history.jsonl 未删除。\n")
+            logger.info("\n已清空当前 CLI 屏幕上下文；长期记忆和 history.jsonl 未删除。")
             return True
         if command in {"/exit", "/quit"}:
             raise SystemExit(0)
-        print(f"\n未知命令: {command}。输入 /help 查看可用命令。\n")
+        logger.warning(f"\n未知命令: {command}。输入 /help 查看可用命令。")
         return True
 
     def _install_subagent_tool(self) -> None:

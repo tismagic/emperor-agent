@@ -4,6 +4,8 @@ import asyncio
 from collections.abc import Awaitable, Callable
 from typing import Any
 
+from loguru import logger
+
 from .providers import LLMProvider, ToolCallRequest
 from .providers.base import run_sync
 from .tools.registry import ToolRegistry
@@ -76,13 +78,22 @@ class AgentRunner:
             turns += 1
 
             response = await self._ask_model(history, emit)
-            if self.token_tracker and response.usage:
-                self.token_tracker.record(
-                    self.model,
-                    response.usage,
-                    provider=self.provider_name,
-                    usage_type=self.usage_type,
-                )
+            if response.usage:
+                if self.token_tracker:
+                    self.token_tracker.record(
+                        self.model,
+                        response.usage,
+                        provider=self.provider_name,
+                        usage_type=self.usage_type,
+                    )
+                if emit:
+                    await emit({
+                        "event": "context_usage",
+                        "used": _context_used_from_usage(response.usage),
+                        "max": self.max_context,
+                        "threshold": int(self.max_context * self.compact_threshold),
+                        "usage_type": self.usage_type,
+                    })
 
             if response.should_execute_tools:
                 assistant_content = response.content or ""
@@ -95,6 +106,10 @@ class AgentRunner:
                 }
                 if response.reasoning_content is not None:
                     assistant_message["reasoning_content"] = response.reasoning_content
+                elif self._reasoning_enabled():
+                    assistant_message["reasoning_content"] = ""
+                if response.thinking_blocks:
+                    assistant_message["thinking_blocks"] = response.thinking_blocks
                 history.append(assistant_message)
                 tool_messages = await self._execute_tool_calls(response.tool_calls, emit)
                 history.extend(tool_messages)
@@ -106,6 +121,10 @@ class AgentRunner:
             assistant_message = {"role": "assistant", "content": reply}
             if response.reasoning_content is not None:
                 assistant_message["reasoning_content"] = response.reasoning_content
+            elif self._reasoning_enabled():
+                assistant_message["reasoning_content"] = ""
+            if response.thinking_blocks:
+                assistant_message["thinking_blocks"] = response.thinking_blocks
             history.append(assistant_message)
             if self.memory_store:
                 self.memory_store.append_history("assistant", final_reply)
@@ -117,14 +136,10 @@ class AgentRunner:
                         "差事尚未办妥，以下任务仍未完成，请按计划继续执行，"
                         "并按规矩更新 todolist 状态：\n" + _render_todos(unfinished)
                     )
-                    print("\n[计划尚未办妥，继续执行...]")
-                    print(_render_todos(self.todo_store.todos))
-                    print()
+                    logger.info(f"\n[计划尚未办妥，继续执行...]\n{_render_todos(self.todo_store.todos)}\n")
                     history.append({"role": "user", "content": nudge})
                     continue
-                print("\n[最终计划状态 - 全部办妥]")
-                print(_render_todos(self.todo_store.todos))
-                print()
+                logger.info(f"\n[最终计划状态 - 全部办妥]\n{_render_todos(self.todo_store.todos)}\n")
                 self.todo_store.todos = []
 
             await self._maybe_compact(history)
@@ -218,6 +233,7 @@ class AgentRunner:
                 return await self._run_tool(call, emit)
             except Exception as exc:
                 err_msg = str(exc)
+                logger.exception(f"Tool execution failed: {call.name}")
                 await _report_tool_error(call, err_msg)
                 return f"Error: {err_msg}"
 
@@ -239,7 +255,7 @@ class AgentRunner:
 
                 if len(group) > 1:
                     names = ", ".join(item.name for item in group)
-                    print(f"\n[并发执行 {len(group)} 个工具]: {names}\n")
+                    logger.info(f"[并发执行 {len(group)} 个工具]: {names}")
                     for item in group:
                         await self._emit_tool_call(item, emit)
                     tasks = [self._run_tool(item, emit) for item in group]
@@ -327,6 +343,9 @@ class AgentRunner:
         else:
             history[:] = await asyncio.to_thread(self.compactor.compact, history)
 
+    def _reasoning_enabled(self) -> bool:
+        return bool(self.reasoning_effort and self.reasoning_effort.lower() not in {"none", "minimal", "minimum"})
+
 
 _TODO_ICON = {"pending": "[ ]", "in_progress": "[~]", "completed": "[x]"}
 
@@ -344,3 +363,10 @@ def _summarize_tool_result(content: str, limit: int = 560) -> str:
     if len(text) <= limit:
         return text
     return f"{text[:limit].rstrip()}..."
+
+
+def _context_used_from_usage(usage: dict[str, int]) -> int:
+    input_tokens = int(usage.get("input", usage.get("prompt_tokens", 0)) or 0)
+    cache_read = int(usage.get("cache_read", usage.get("cache_read_input_tokens", 0)) or 0)
+    cache_create = int(usage.get("cache_create", usage.get("cache_creation_input_tokens", 0)) or 0)
+    return input_tokens + cache_read + cache_create

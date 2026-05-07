@@ -7,6 +7,8 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from typing import Any
 
+from loguru import logger
+
 
 ContentDelta = Callable[[str], Awaitable[None]]
 
@@ -35,6 +37,7 @@ class LLMResponse:
     finish_reason: str = "stop"
     usage: dict[str, int] = field(default_factory=dict)
     reasoning_content: str | None = None
+    thinking_blocks: list[dict[str, Any]] | None = None
 
     @property
     def should_execute_tools(self) -> bool:
@@ -153,6 +156,7 @@ class LLMProvider(ABC):
                 parsed = json_repair.loads(value)
                 return parsed if isinstance(parsed, dict) else {}
             except Exception:
+                logger.debug(f"JSON repair failed for input: {value[:100]}")
                 return {}
 
 

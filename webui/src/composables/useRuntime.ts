@@ -4,6 +4,7 @@ import type { AssistantMessage, BootstrapPayload, ChatMessage, PendingState, Run
 const RUNTIME_STORAGE_KEY = 'emperor-agent:runtime-view'
 const LEGACY_IN_FLIGHT_STORAGE_KEY = 'emperor-agent:in-flight-runtime'
 const RUNTIME_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000
+const IN_FLIGHT_MAX_AGE_MS = 30 * 60 * 1000
 
 function nextId(prefix: string) {
   const random = typeof crypto !== 'undefined' && 'randomUUID' in crypto ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(16).slice(2)}`
@@ -170,22 +171,22 @@ export function useRuntime(options: {
   }
 
   function handleSocketEvent(raw: string) {
-    const data = JSON.parse(raw) as WsEvent
-    if (typeof data.seq === 'number' && data.seq > 0) {
-      if (data.seq <= lastSeq.value) return
-      lastSeq.value = data.seq
+    let data: WsEvent
+    try {
+      data = JSON.parse(raw) as WsEvent
+    } catch {
+      handleChatError('WebSocket 返回了无法解析的数据')
+      return
     }
 
     if (data.event === 'ready') {
-      status.value = 'ready'
-      if (options.boot.value) {
-        options.boot.value.model = data.model || options.boot.value.model
-        options.boot.value.provider = data.provider || options.boot.value.provider
-      }
-      if (currentAssistant.value?.streaming && data.replay_count) {
-        updatePending('WebSocket 已重连，正在补齐回复...', `回放 ${data.replay_count} 个事件`)
-      }
+      handleReadyEvent(data)
       return
+    }
+
+    if (typeof data.seq === 'number' && data.seq > 0) {
+      if (data.seq <= lastSeq.value) return
+      lastSeq.value = data.seq
     }
 
     if (data.event === 'message_delta') {
@@ -201,6 +202,20 @@ export function useRuntime(options: {
         }
       }
       updatePending('AI 正在思量...', '')
+      return
+    }
+
+    if (data.event === 'context_usage') {
+      if (!data.usage_type || data.usage_type === 'main_agent') {
+        const used = Math.max(0, Number(data.used || 0))
+        const max = Math.max(0, Number(data.max || 0))
+        if (options.boot.value) {
+          options.boot.value.context_used = used
+          if (max && options.boot.value.modelConfig?.current) {
+            options.boot.value.modelConfig.current.contextWindowTokens = max
+          }
+        }
+      }
       return
     }
 
@@ -267,6 +282,37 @@ export function useRuntime(options: {
     }
 
     handleSubagentEvent(data)
+  }
+
+  function handleReadyEvent(data: Extract<WsEvent, { event: 'ready' }>) {
+    status.value = 'ready'
+    const latestSeq = Number(data.latest_seq || 0)
+    const serverRestarted = lastSeq.value > 0 && latestSeq < lastSeq.value
+    const hasReplay = Number(data.replay_count || 0) > 0
+
+    if (serverRestarted) {
+      lastSeq.value = latestSeq
+      if (currentAssistant.value?.streaming) {
+        finishInterruptedAssistant(currentAssistant.value, '（服务重启后无法续接上一条回复，请重新发送。）')
+        currentAssistantId.value = null
+        busy.value = false
+        updatePending()
+        options.showToast('服务已重启，上一条未完成回复已停止，请重新发送。')
+      }
+    } else if (currentAssistant.value?.streaming && !data.busy && !hasReplay) {
+      finishInterruptedAssistant(currentAssistant.value, '（连接已恢复，但后端没有正在运行的回复，请重新发送。）')
+      currentAssistantId.value = null
+      busy.value = false
+      updatePending()
+    }
+
+    if (options.boot.value) {
+      options.boot.value.model = data.model || options.boot.value.model
+      options.boot.value.provider = data.provider || options.boot.value.provider
+    }
+    if (!serverRestarted && currentAssistant.value?.streaming && hasReplay) {
+      updatePending('WebSocket 已重连，正在补齐回复...', `回放 ${data.replay_count} 个事件`)
+    }
   }
 
   function handleSubagentEvent(data: WsEvent) {
@@ -379,6 +425,14 @@ export function useRuntime(options: {
     }
   }
 
+  function finishInterruptedAssistant(assistant: AssistantMessage, fallback: string) {
+    if (!assistant.content && !assistant.segments.length) {
+      assistant.content = fallback
+      assistant.segments.push({ id: nextId('segment'), type: 'text', content: fallback })
+    }
+    markRunningAsAborted(assistant)
+  }
+
   function findToolSegment(assistant?: AssistantMessage, toolId?: string) {
     return assistant?.segments.find((seg): seg is ToolSegment => seg.type === 'tool' && seg.toolId === toolId)
   }
@@ -452,12 +506,40 @@ function loadRuntimeSnapshot(history: RuntimeHistoryItem[]): RuntimeSnapshot | n
       return null
     }
     if (!Array.isArray(snapshot.messages)) return null
-    if (snapshot.currentAssistantId) return snapshot
+    if (snapshot.currentAssistantId) {
+      if (Date.now() - snapshot.savedAt > IN_FLIGHT_MAX_AGE_MS) {
+        return finalizedSnapshot(snapshot)
+      }
+      if (!matchesInFlightBackendHistory(snapshot, history)) return null
+      return snapshot
+    }
     if (!matchesBackendHistory(snapshot, history)) return null
     return snapshot
   } catch {
     return null
   }
+}
+
+function finalizedSnapshot(snapshot: RuntimeSnapshot): RuntimeSnapshot {
+  const messages = snapshot.messages.map((message) => {
+    if (message.role !== 'assistant' || message.id !== snapshot.currentAssistantId) return message
+    const fallback = '（上次回复已超时中断，请重新发送。）'
+    const segments = message.segments.length ? message.segments : [{ id: nextId('segment'), type: 'text' as const, content: fallback }]
+    const content = message.content || fallback
+    return { ...message, content, segments, streaming: false } satisfies AssistantMessage
+  })
+  return { ...snapshot, messages, currentAssistantId: null, lastSeq: 0 }
+}
+
+function matchesInFlightBackendHistory(snapshot: RuntimeSnapshot, history: RuntimeHistoryItem[]) {
+  const expected = normalizeTranscript(history)
+  const actual = normalizeTranscript(transcriptFromMessages(withoutCurrentAssistant(snapshot)))
+  if (actual.length !== expected.length) return false
+  return expected.every((item, index) => item.role === actual[index]?.role && item.content === actual[index]?.content)
+}
+
+function withoutCurrentAssistant(snapshot: RuntimeSnapshot) {
+  return snapshot.messages.filter((message) => message.id !== snapshot.currentAssistantId)
 }
 
 function matchesBackendHistory(snapshot: RuntimeSnapshot, history: RuntimeHistoryItem[]) {

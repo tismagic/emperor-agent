@@ -6,6 +6,8 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
+from loguru import logger
+
 from .memory import MemoryStore
 from .providers import LLMProvider
 from .providers.base import run_sync
@@ -104,7 +106,7 @@ class Compactor:
         old = history[: -self.K]
         recent = history[-self.K :]
         await self._compact_messages(old)
-        print(f"[Compacted: {len(old)} turns -> today episode + MEMORY updated]")
+        logger.info(f"[Compacted: {len(old)} turns -> today episode + MEMORY updated]")
         return recent
 
     def compact_startup(self, history: list[dict[str, Any]]) -> None:
@@ -115,7 +117,7 @@ class Compactor:
         if len(history) < 2:
             return
         await self._compact_messages(history)
-        print(f"[Startup compacted: {len(history)} unarchived turns -> MEMORY updated]")
+        logger.info(f"[Startup compacted: {len(history)} unarchived turns -> MEMORY updated]")
 
     async def _compact_messages(self, messages: list[dict[str, Any]]) -> None:
         prompt = _PROMPT_TEMPLATE.format(

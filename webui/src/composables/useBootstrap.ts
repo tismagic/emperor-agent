@@ -1,6 +1,6 @@
 import { ref } from 'vue'
 import { api, cloneJson } from '../api/http'
-import type { BootstrapPayload, CompactResult, ConfigInfo, MemoryPayload, ModelConfigPayload, ModelConfigRaw, SkillInfo } from '../types'
+import type { BootstrapPayload, CompactResult, MemoryPayload, ModelConfigPayload, ModelConfigRaw, SkillInfo } from '../types'
 
 export function useBootstrap(showToast: (message: string) => void) {
   const boot = ref<BootstrapPayload | null>(null)
@@ -9,7 +9,6 @@ export function useBootstrap(showToast: (message: string) => void) {
   const modelDraftProvider = ref<string | null>(null)
   const activeSkill = ref<string | null>(null)
   const skillContent = ref('')
-  const activeConfig = ref<string | null>(null)
   const configContent = ref('')
 
   async function loadBootstrap(showLoading = true) {
@@ -88,21 +87,62 @@ export function useBootstrap(showToast: (message: string) => void) {
     showToast('Skill 已保存，并刷新了 Agent 上下文')
   }
 
-  async function loadConfig(path: string) {
-    const data = await api<{ path: string; content: string }>('/api/config?path=' + encodeURIComponent(path))
-    activeConfig.value = data.path
+  async function deleteSkill(name: string) {
+    await api<{ deleted: string }>('/api/skill?name=' + encodeURIComponent(name), {
+      method: 'DELETE',
+    })
+    if (activeSkill.value === name) {
+      activeSkill.value = null
+      skillContent.value = ''
+    }
+    await loadBootstrap(false)
+    showToast(`Skill「${name}」已删除`)
+  }
+
+  async function importSkill(formData: FormData) {
+    const data = await api<{ imported: string }>('/api/skills/import', {
+      method: 'POST',
+      body: formData,
+    })
+    await loadBootstrap(false)
+    showToast(`Skill「${data.imported}」已导入`)
+    return data.imported
+  }
+
+  async function loadConfig() {
+    const data = await api<{ path: string; content: string }>('/api/config')
     configContent.value = data.content
   }
 
   async function saveConfig(content: string) {
-    if (!activeConfig.value) return
-    await api<ConfigInfo>('/api/config', {
+    await api<{ path: string; content: string }>('/api/config', {
       method: 'POST',
-      body: JSON.stringify({ path: activeConfig.value, content }),
+      body: JSON.stringify({ content }),
     })
     await loadBootstrap(false)
-    await loadConfig(activeConfig.value)
+    await loadConfig()
     showToast('配置已保存，并刷新了 Agent 上下文')
+  }
+
+  async function saveMemory(content: string) {
+    await api<{ path: string; content: string }>('/api/memory', {
+      method: 'POST',
+      body: JSON.stringify({ content }),
+    })
+    await loadBootstrap(false)
+    showToast('长期记忆已保存')
+  }
+
+  async function loadEpisode(date: string) {
+    return api<{ date: string; content: string }>('/api/memory/episode?date=' + encodeURIComponent(date))
+  }
+
+  async function saveEpisode(date: string, content: string) {
+    await api<{ date: string; content: string }>('/api/memory/episode', {
+      method: 'POST',
+      body: JSON.stringify({ date, content }),
+    })
+    showToast(`情景记忆 ${date} 已保存`)
   }
 
   return {
@@ -112,7 +152,6 @@ export function useBootstrap(showToast: (message: string) => void) {
     modelDraftProvider,
     activeSkill,
     skillContent,
-    activeConfig,
     configContent,
     loadBootstrap,
     refreshMemory,
@@ -122,8 +161,13 @@ export function useBootstrap(showToast: (message: string) => void) {
     loadSkill,
     startNewSkill,
     saveSkill,
+    deleteSkill,
+    importSkill,
     loadConfig,
     saveConfig,
+    saveMemory,
+    loadEpisode,
+    saveEpisode,
     cloneJson,
   }
 }

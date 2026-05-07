@@ -33,10 +33,10 @@ const routes: RouteRecordRaw[] = [
     meta: { label: 'Tools', hint: '工具权限' },
   },
   {
-    path: '/configs/:path(.*)?',
+    path: '/configs',
     name: 'configs',
     component: () => import('./views/ConfigsView.vue'),
-    meta: { label: 'Config', hint: '工具 / 用户' },
+    meta: { label: '配置文件', hint: '配置文件' },
   },
   {
     path: '/memory',

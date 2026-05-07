@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from loguru import logger
+
 from .base import Tool
 from .schema import StringSchema, tool_parameters_schema
 
@@ -21,5 +23,5 @@ class LoadSkill(Tool):
         )
 
     def execute(self, skill_name: str) -> str:
-        print(f"[加载技能]: {skill_name}")
+        logger.info(f"[加载技能]: {skill_name}")
         return self._loader.get_content(skill_name)

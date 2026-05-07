@@ -1,31 +1,23 @@
 <script setup lang="ts">
-import { watch } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
+import { onMounted, ref, watch } from 'vue'
 import { useAppContext } from '../composables/useAppContext'
-import ConfigPanel from '../components/panels/ConfigPanel.vue'
 import { actionAssets } from '../assets'
 
 const ctx = useAppContext()
-const route = useRoute()
-const router = useRouter()
+const draft = ref('')
 
-watch(
-  () => route.params.path,
-  (raw) => {
-    const path = Array.isArray(raw) ? raw.join('/') : raw
-    if (!path) return
-    if (ctx.activeConfig.value === path) return
-    void ctx.runSafely(() => ctx.loadConfig(path))
-  },
-  { immediate: true },
-)
+watch(() => ctx.configContent.value, (content) => {
+  draft.value = content
+}, { immediate: true })
 
-function onLoad(path: string) {
-  void router.push({ name: 'configs', params: { path } })
-}
+onMounted(() => {
+  if (!ctx.configContent.value) {
+    void ctx.runSafely(() => ctx.loadConfig())
+  }
+})
 
-function onSave(content: string) {
-  void ctx.runSafely(() => ctx.saveConfig(content))
+function save() {
+  void ctx.runSafely(() => ctx.saveConfig(draft.value))
 }
 </script>
 
@@ -33,8 +25,8 @@ function onSave(content: string) {
   <section class="main-view">
     <header class="view-head">
       <div class="min-w-0">
-        <h1>工具与用户配置</h1>
-        <p>当前可编辑：templates/TOOL.md、templates/USER.md</p>
+        <h1>配置文件</h1>
+        <p>templates/USER.local.md — 用户偏好与档案</p>
       </div>
       <button class="tool-button asset-button refresh-action" title="刷新" @click="ctx.refreshAll()">
         <img class="action-icon" :src="actionAssets.refresh" alt="" width="26" height="26" />
@@ -42,13 +34,19 @@ function onSave(content: string) {
       </button>
     </header>
     <div class="view-body view-body-fill">
-      <ConfigPanel
-        :configs="ctx.boot.value?.configs || []"
-        :active-config="ctx.activeConfig.value"
-        :content="ctx.configContent.value"
-        @load="onLoad"
-        @save="onSave"
-      />
+      <div class="panel-content split-panel compact-split">
+        <div class="editor flex-1">
+          <div class="editor-title">templates/USER.local.md</div>
+          <textarea v-model="draft" />
+          <div class="editor-actions">
+            <span class="status-pill">保存后刷新 Agent 上下文</span>
+            <button class="tool-button ink asset-button primary-action" @click="save">
+              <img class="action-icon" :src="actionAssets.save" alt="" width="18" height="18" />
+              <span>保存配置</span>
+            </button>
+          </div>
+        </div>
+      </div>
     </div>
   </section>
 </template>

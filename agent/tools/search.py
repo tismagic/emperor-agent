@@ -8,6 +8,8 @@ import re
 from pathlib import Path, PurePosixPath
 from typing import Any, Iterable, TypeVar
 
+from loguru import logger
+
 from .filesystem import _FsTool
 
 _DEFAULT_HEAD_LIMIT = 250
@@ -247,6 +249,7 @@ class GlobTool(_SearchTool):
         except PermissionError as e:
             return f"Error: {e}"
         except Exception as e:
+            logger.warning(f"[glob] {e}")
             return f"Error finding files: {e}"
 
 
@@ -552,4 +555,5 @@ class GrepTool(_SearchTool):
         except PermissionError as e:
             return f"Error: {e}"
         except Exception as e:
+            logger.warning(f"[grep] {e}")
             return f"Error searching files: {e}"

@@ -3,7 +3,7 @@ import { computed, nextTick, ref } from 'vue'
 import type { SlashCommand } from '../../commands'
 import { actionAssets } from '../../assets'
 
-const props = defineProps<{ busy: boolean; commands: SlashCommand[] }>()
+const props = defineProps<{ busy: boolean; commands: SlashCommand[]; contextUsed: number; contextMax: number }>()
 const emit = defineEmits<{ send: [content: string] }>()
 const value = ref('')
 const input = ref<HTMLTextAreaElement | null>(null)
@@ -48,6 +48,22 @@ function applySuggestion(command: SlashCommand) {
   input.value?.focus()
   void nextTick(resize)
 }
+
+const pct = computed(() => (props.contextMax > 0 ? props.contextUsed / props.contextMax : 0))
+const arcLength = computed(() => Math.min(Math.round(pct.value * 100), 100))
+const arcColor = computed(() => {
+  if (pct.value <= 0.5) return 'rgb(var(--jade))'
+  if (pct.value <= 0.8) return 'rgb(var(--amber))'
+  return 'rgb(var(--seal))'
+})
+const percentLabel = computed(() => `${Math.min(Math.round(pct.value * 100), 100)}%`)
+const contextLabel = computed(() => `上下文长度 ${fmt(props.contextUsed)} / ${fmt(props.contextMax)}，已用 ${percentLabel.value}`)
+
+function fmt(n: number) {
+  if (n >= 1_000_000) return (n / 1_000_000).toFixed(1) + 'M'
+  if (n >= 1_000) return (n / 1_000).toFixed(1) + 'k'
+  return String(n)
+}
 </script>
 
 <template>
@@ -68,6 +84,31 @@ function applySuggestion(command: SlashCommand) {
         @input="resize"
         @keydown="handleKeydown"
       />
+
+      <div
+        v-if="props.contextMax > 0"
+        class="context-ring"
+        tabindex="0"
+        role="status"
+        :aria-label="contextLabel"
+      >
+        <svg viewBox="0 0 36 36" class="ring-svg">
+          <circle class="ring-track" cx="18" cy="18" r="15.915" />
+          <circle
+            class="ring-arc"
+            cx="18" cy="18" r="15.915"
+            :stroke="arcColor"
+            :stroke-dasharray="`${arcLength} ${100 - arcLength}`"
+            stroke-dashoffset="25"
+          />
+        </svg>
+        <div class="context-tooltip" role="tooltip">
+          <strong>上下文长度</strong>
+          <span>{{ fmt(props.contextUsed) }} / {{ fmt(props.contextMax) }}</span>
+          <em>已用 {{ percentLabel }}</em>
+        </div>
+      </div>
+
       <button class="send-button" :disabled="props.busy || !value.trim()" type="submit">
         <img class="action-icon send-icon" :src="props.busy ? actionAssets.statusBusy : actionAssets.send" alt="" width="24" height="24" />
         <span class="sr-only">{{ props.busy ? '等待' : '发送' }}</span>

@@ -29,7 +29,7 @@ async function copyMessage() {
 <template>
   <article class="message-row assistant">
     <div class="avatar assistant">
-      <img class="pixel-avatar" :src="avatarAssets.eunuch" alt="大内总管" width="40" height="40" />
+      <img class="pixel-avatar" :src="avatarAssets.eunuch" alt="大内总管" />
     </div>
     <div class="flow-body">
       <button v-if="messageText()" class="copy-message-button" type="button" @click="copyMessage">

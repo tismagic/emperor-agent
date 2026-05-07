@@ -16,13 +16,23 @@ const navItems = computed(() => {
     tokens: '用量账本',
     skills: '能力包',
     tools: '工具权限',
-    configs: '工具 / 用户',
+    configs: '配置文件',
     memory: '记忆层',
+  }
+  const labels: Record<(typeof navOrder)[number], string> = {
+    chat: 'Chat',
+    model: 'Model',
+    tokens: 'Tokens',
+    skills: 'Skills',
+    tools: 'Tools',
+    configs: '配置文件',
+    memory: 'Memory',
   }
   return navOrder.map((name) => ({
     name,
     to: name === 'chat' ? '/chat' : `/${name}`,
     hint: hints[name],
+    label: labels[name],
   }))
 })
 
@@ -91,7 +101,7 @@ const statusIcon = computed(() => {
           height="32"
         />
         <div class="nav-label">
-          <span>{{ item.name.charAt(0).toUpperCase() + item.name.slice(1) }}</span>
+          <span>{{ item.label }}</span>
           <small>{{ item.hint }}</small>
         </div>
       </router-link>

@@ -15,11 +15,6 @@ export interface SkillInfo {
   always?: boolean
 }
 
-export interface ConfigInfo {
-  path: string
-  name: string
-}
-
 export interface TokenStatsRow {
   input?: number
   output?: number
@@ -44,6 +39,28 @@ export interface MemoryPayload {
   tokensByUsageType?: Record<string, TokenStatsRow>
   tokenTotals?: TokenTotals
 }
+
+export interface TokensStreak {
+  active_days: number
+  current_streak: number
+  longest_streak: number
+}
+
+export interface TokensPayload {
+  totals: TokenTotals
+  byDate: Record<string, TokenStatsRow>
+  byModel: Record<string, TokenStatsRow>
+  byUsageType: Record<string, TokenStatsRow>
+  byDateModel: Record<string, Record<string, TokenStatsRow>>
+  byHour: Record<string, TokenStatsRow>
+  streak: TokensStreak
+  sessions: number
+  messages: number
+  generatedAt: string
+}
+
+export type TokensRange = 'all' | '30d' | '7d'
+export type TokensTab = 'overview' | 'models'
 
 export interface ProviderOption {
   name: string
@@ -102,9 +119,9 @@ export interface BootstrapPayload {
   providerLabel?: string
   tools: ToolInfo[]
   skills: SkillInfo[]
-  configs: ConfigInfo[]
   memory: MemoryPayload
   modelConfig: ModelConfigPayload
+  context_used?: number
   unarchivedHistory?: RuntimeHistoryItem[]
 }
 
@@ -194,8 +211,9 @@ export interface PendingState {
 export type RuntimeStatus = 'connecting' | 'ready' | 'error'
 
 export type WsEvent = ({ seq?: number } & (
-  | { event: 'ready'; model?: string; provider?: string; latest_seq?: number; replay_count?: number; resume_from?: number }
+  | { event: 'ready'; model?: string; provider?: string; latest_seq?: number; replay_count?: number; resume_from?: number; busy?: boolean }
   | { event: 'message_delta'; delta?: string }
+  | { event: 'context_usage'; used?: number; max?: number; threshold?: number; usage_type?: string }
   | { event: 'tool_call'; id?: string; name: string; arguments?: Record<string, unknown> }
   | { event: 'tool_result'; id?: string; name?: string; summary?: string; todos?: TodoItem[] }
   | { event: 'tool_error'; id?: string; name?: string; message?: string }

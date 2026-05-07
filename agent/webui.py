@@ -2,13 +2,20 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import copy
 import json
 import re
+import shutil
+import tempfile
+import zipfile
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
 from aiohttp import WSMsgType, web
+from loguru import logger
 
+from .logger import configure as configure_logging
 from .loop import AgentLoop
 from .model_config import load_model_config, provider_options, save_model_config
 
@@ -19,6 +26,7 @@ _SKILL_RE = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,80}$")
 class WebUIState:
     def __init__(self, root: Path):
         self.root = root.resolve()
+        configure_logging(self.root)
         self.static_dir = self.root / "webui" / "dist"
         self._ensure_tool_config()
         self.loop = AgentLoop(root=self.root, verbose=False, startup_compaction=False)
@@ -29,6 +37,7 @@ class WebUIState:
         self.event_seq = 0
         self.broadcast_lock = asyncio.Lock()
         self.max_event_log = 5000
+        self.active_turn = False
 
     async def bootstrap(self, request: web.Request) -> web.Response:
         return self._json({
@@ -38,9 +47,9 @@ class WebUIState:
             "providerLabel": self.loop.provider_label,
             "tools": self.tools(),
             "skills": self.skills(),
-            "configs": self.configs(),
             "memory": self.memory(),
             "modelConfig": self.model_config(),
+            "context_used": self.loop.token_tracker.last_input_tokens(),
             "unarchivedHistory": self.unarchived_history(),
         })
 
@@ -88,12 +97,17 @@ class WebUIState:
                 self.history.append({"role": "user", "content": text})
                 self.loop.memory.append_history("user", text)
                 started = True
+                self.active_turn = True
 
                 async def emit(event: dict[str, Any]) -> None:
                     await self._broadcast_event(event)
 
-                await self.loop.runner.step_stream(self.history, emit)
+                try:
+                    await self.loop.runner.step_stream(self.history, emit)
+                finally:
+                    self.active_turn = False
         except Exception as exc:
+            logger.exception("WebSocket message handler error")
             payload = {"event": "error", "message": str(exc), "partial": True}
             if started:
                 await self._broadcast_event(payload)
@@ -135,6 +149,7 @@ class WebUIState:
             "latest_seq": self.event_seq,
             "replay_count": replay_count,
             "resume_from": last_seq,
+            "busy": self.active_turn,
         }
 
     async def get_tools(self, request: web.Request) -> web.Response:
@@ -151,19 +166,93 @@ class WebUIState:
         data = self.write_skill(str(body.get("name") or ""), str(body.get("content") or ""))
         return self._json(data)
 
-    async def get_configs(self, request: web.Request) -> web.Response:
-        return self._json(self.configs())
+    async def delete_skill(self, request: web.Request) -> web.Response:
+        name = request.query.get("name", "")
+        if not _SKILL_RE.match(name):
+            raise web.HTTPBadRequest(reason="Invalid skill name")
+        skill_dir = self.root / "skills" / name
+        if not skill_dir.exists():
+            raise web.HTTPNotFound(reason=f"Skill not found: {name}")
+        shutil.rmtree(skill_dir, ignore_errors=True)
+        self.loop.refresh_runtime_context()
+        return self._json({"deleted": name})
+
+    async def import_skills(self, request: web.Request) -> web.Response:
+        reader = await request.multipart()
+        field = await reader.next()
+        if field is None or field.name != "file":
+            raise web.HTTPBadRequest(reason="Expected multipart field 'file'")
+        tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".zip")
+        try:
+            while True:
+                chunk = await field.read_chunk()
+                if not chunk:
+                    break
+                tmp.write(chunk)
+            tmp.close()
+            with zipfile.ZipFile(tmp.name, "r") as zf:
+                namelist = zf.namelist()
+                if not namelist:
+                    raise web.HTTPBadRequest(reason="Empty zip file")
+                root = namelist[0].split("/")[0]
+                if not root or root == ".":
+                    raise web.HTTPBadRequest(reason="Cannot determine root directory from zip")
+                skill_md = f"{root}/SKILL.md"
+                if skill_md not in namelist and f"{root}SKILL.md" in namelist:
+                    skill_md = f"{root}SKILL.md"
+                if skill_md not in namelist:
+                    raise web.HTTPBadRequest(reason=f"Missing SKILL.md in zip root ({root})")
+                target = self.root / "skills" / root
+                if target.exists():
+                    shutil.rmtree(target, ignore_errors=True)
+                zf.extractall(self.root / "skills")
+            self.loop.refresh_runtime_context()
+            return self._json({"imported": root})
+        finally:
+            Path(tmp.name).unlink(missing_ok=True)
 
     async def get_config(self, request: web.Request) -> web.Response:
-        return self._json(self.read_config(request.query.get("path", "")))
+        return self._json(self.read_user_config())
 
     async def post_config(self, request: web.Request) -> web.Response:
         body = await self._body(request)
-        data = self.write_config(str(body.get("path") or ""), str(body.get("content") or ""))
+        data = self.write_user_config(str(body.get("content") or ""))
         return self._json(data)
 
     async def get_memory(self, request: web.Request) -> web.Response:
         return self._json(self.memory())
+
+    async def post_memory(self, request: web.Request) -> web.Response:
+        body = await self._body(request)
+        content = str(body.get("content") or "")
+        path = self.root / "memory" / "MEMORY.local.md"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(content.rstrip() + "\n", encoding="utf-8")
+        self.loop.refresh_runtime_context()
+        return self._json({"path": "memory/MEMORY.local.md", "content": path.read_text(encoding="utf-8")})
+
+    async def get_memory_episode(self, request: web.Request) -> web.Response:
+        date = request.query.get("date", "")
+        if not date or ".." in date or "/" in date or "\\" in date:
+            raise web.HTTPBadRequest(reason="Invalid date")
+        path = self.root / "memory" / f"{date}.md"
+        if not path.exists():
+            raise web.HTTPNotFound(reason=f"Episode not found: {date}")
+        return self._json({"date": date, "content": path.read_text(encoding="utf-8")})
+
+    async def post_memory_episode(self, request: web.Request) -> web.Response:
+        body = await self._body(request)
+        date = str(body.get("date") or "")
+        content = str(body.get("content") or "")
+        if not date or ".." in date or "/" in date or "\\" in date:
+            raise web.HTTPBadRequest(reason="Invalid date")
+        path = self.root / "memory" / f"{date}.md"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(content.rstrip() + "\n", encoding="utf-8")
+        return self._json({"date": date, "content": path.read_text(encoding="utf-8")})
+
+    async def get_tokens(self, request: web.Request) -> web.Response:
+        return self._json(self.tokens())
 
     async def get_model_config(self, request: web.Request) -> web.Response:
         return self._json(self.model_config())
@@ -172,6 +261,13 @@ class WebUIState:
         body = await self._body(request)
         config = body.get("config") if isinstance(body.get("config"), dict) else body
         async with self.lock:
+            existing = load_model_config(self.root).raw
+            incoming_providers = config.get("providers") or {}
+            existing_providers = existing.get("providers") or {}
+            for name, prov in incoming_providers.items():
+                if isinstance(prov, dict) and isinstance(prov.get("apiKey"), str) and prov["apiKey"].startswith("***"):
+                    original = existing_providers.get(name, {}).get("apiKey", "")
+                    prov["apiKey"] = original
             save_model_config(self.root, config)
             self.loop.refresh_model_config()
         return self._json(self.model_config())
@@ -330,27 +426,15 @@ npm run build</code>
         self.loop.refresh_runtime_context()
         return self.read_skill(name)
 
-    def configs(self) -> list[dict[str, str]]:
-        candidates = [
-            self.root / "templates" / "TOOL.md",
-            self._user_config_path(),
-        ]
-        visible_paths = ["templates/TOOL.md", "templates/USER.md"]
-        return [
-            {"path": visible_paths[index], "name": Path(visible_paths[index]).name}
-            for index, path in enumerate(candidates)
-            if path.exists() and path.is_file()
-        ]
+    def read_user_config(self) -> dict[str, str]:
+        path = self._user_config_path()
+        return {"path": "templates/USER.local.md", "content": path.read_text(encoding="utf-8")}
 
-    def read_config(self, rel_path: str) -> dict[str, str]:
-        path = self._safe_config_path(rel_path)
-        return {"path": rel_path, "content": path.read_text(encoding="utf-8")}
-
-    def write_config(self, rel_path: str, content: str) -> dict[str, str]:
-        path = self._safe_config_path(rel_path)
+    def write_user_config(self, content: str) -> dict[str, str]:
+        path = self._user_config_path()
         path.write_text(content.rstrip() + "\n", encoding="utf-8")
         self.loop.refresh_runtime_context()
-        return self.read_config(rel_path)
+        return self.read_user_config()
 
     def memory(self) -> dict[str, Any]:
         memory_dir = self.root / "memory"
@@ -370,6 +454,42 @@ npm run build</code>
             "tokensByUsageType": self.loop.token_tracker.stats_by_usage_type(),
             "tokenTotals": self.loop.token_tracker.totals(),
         }
+
+    def tokens(self) -> dict[str, Any]:
+        tracker = self.loop.token_tracker
+        return {
+            "totals": tracker.totals(),
+            "byDate": tracker.stats_by_date(),
+            "byModel": tracker.stats_by_provider_model(),
+            "byUsageType": tracker.stats_by_usage_type(),
+            "byDateModel": tracker.stats_by_date_model(),
+            "byHour": tracker.stats_by_hour(),
+            "streak": tracker.streak_metrics(),
+            "sessions": tracker.session_count(),
+            "messages": self._count_history_messages(),
+            "generatedAt": datetime.now().isoformat(timespec="seconds"),
+        }
+
+    def _count_history_messages(self) -> int:
+        history_file = self.loop.memory.history_file
+        if not history_file.exists():
+            return 0
+        count = 0
+        try:
+            with history_file.open("r", encoding="utf-8") as f:
+                for line in f:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    try:
+                        row = json.loads(line)
+                    except json.JSONDecodeError:
+                        continue
+                    if row.get("role") in {"user", "assistant"}:
+                        count += 1
+        except OSError as exc:
+            logger.warning(f"history.jsonl read failed: {exc}")
+        return count
 
     def unarchived_history(self) -> list[dict[str, str]]:
         items = []
@@ -393,24 +513,19 @@ npm run build</code>
                 "reasoningEffort": self.loop.reasoning_effort,
                 "contextWindowTokens": self.loop.max_context,
             },
-            "config": config.raw,
+            "config": self._redact_apikeys(config.raw),
             "providerOptions": provider_options(),
         }
 
-    def _safe_config_path(self, rel_path: str) -> Path:
-        path = (self.root / rel_path).resolve()
-        tool_path = (self.root / "templates" / "TOOL.md").resolve()
-        user_template_path = (self.root / "templates" / "USER.md").resolve()
-        user_init_path = (self.root / "templates" / "init" / "USER.md").resolve()
-        if path == user_template_path:
-            path = self._user_config_path().resolve()
-        elif path == user_init_path:
-            raise web.HTTPForbidden(reason="USER init template is not editable from WebUI")
-        elif path != tool_path:
-            raise web.HTTPForbidden(reason="Path is outside editable config files")
-        if not path.exists() or not path.is_file():
-            raise web.HTTPNotFound(reason=rel_path)
-        return path
+    @staticmethod
+    def _redact_apikeys(raw: dict) -> dict:
+        """Deep-copy config and mask all provider apiKey values."""
+        out = copy.deepcopy(raw)
+        for prov in out.get("providers", {}).values():
+            if isinstance(prov, dict) and isinstance(prov.get("apiKey"), str) and prov["apiKey"]:
+                key = prov["apiKey"]
+                prov["apiKey"] = "***" + key[-4:] if len(key) > 4 else "***"
+        return out
 
     def _user_config_path(self) -> Path:
         template = self.root / "templates" / "init" / "USER.md"
@@ -475,6 +590,7 @@ async def error_middleware(request: web.Request, handler):
             )
         raise
     except Exception as exc:
+        logger.exception(f"Unhandled exception in {request.path}")
         if request.path.startswith("/api/"):
             return web.json_response(
                 {"error": str(exc)},
@@ -494,10 +610,15 @@ def create_app(root: Path) -> web.Application:
     app.router.add_get("/api/skills", state.get_skills)
     app.router.add_get("/api/skill", state.get_skill)
     app.router.add_post("/api/skill", state.post_skill)
-    app.router.add_get("/api/configs", state.get_configs)
+    app.router.add_delete("/api/skill", state.delete_skill)
+    app.router.add_post("/api/skills/import", state.import_skills)
     app.router.add_get("/api/config", state.get_config)
     app.router.add_post("/api/config", state.post_config)
     app.router.add_get("/api/memory", state.get_memory)
+    app.router.add_post("/api/memory", state.post_memory)
+    app.router.add_get("/api/memory/episode", state.get_memory_episode)
+    app.router.add_post("/api/memory/episode", state.post_memory_episode)
+    app.router.add_get("/api/tokens", state.get_tokens)
     app.router.add_get("/api/model-config", state.get_model_config)
     app.router.add_post("/api/model-config", state.post_model_config)
     app.router.add_post("/api/compact", state.post_compact)
@@ -527,7 +648,7 @@ def main() -> None:
     args = parser.parse_args()
 
     root = Path(__file__).parent.parent
-    print(f"Emperor Agent Web UI: http://{args.host}:{args.port}")
+    logger.info(f"Emperor Agent Web UI: http://{args.host}:{args.port}")
     web.run_app(create_app(root), host=args.host, port=args.port, print=None)
 
 

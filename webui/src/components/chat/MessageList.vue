@@ -39,7 +39,7 @@ watch(
       <template v-for="message in props.messages" :key="message.id">
         <article v-if="message.role === 'user'" class="message-row user">
           <div class="avatar user">
-            <img class="pixel-avatar" :src="avatarAssets.emperor" alt="皇帝" width="40" height="40" />
+            <img class="pixel-avatar" :src="avatarAssets.emperor" alt="皇帝" />
           </div>
           <div class="bubble user whitespace-pre-wrap">{{ message.content }}</div>
         </article>
