@@ -38,10 +38,13 @@ watch(
     <div class="message-stack">
       <template v-for="message in props.messages" :key="message.id">
         <article v-if="message.role === 'user'" class="message-row user">
-          <div class="avatar user">
-            <img class="pixel-avatar" :src="avatarAssets.emperor" alt="皇帝" />
+          <div class="avatar user" aria-hidden="true">
+            <img class="pixel-avatar" :src="avatarAssets.emperor" alt="" />
           </div>
-          <div class="bubble user whitespace-pre-wrap">{{ message.content }}</div>
+          <div class="message-cluster user">
+            <div class="message-meta user"><span>皇</span><small>圣旨</small></div>
+            <div class="bubble user whitespace-pre-wrap">{{ message.content }}</div>
+          </div>
         </article>
         <AssistantFlow v-else :message="message" />
       </template>

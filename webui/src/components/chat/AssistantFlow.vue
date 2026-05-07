@@ -28,14 +28,20 @@ async function copyMessage() {
 
 <template>
   <article class="message-row assistant">
-    <div class="avatar assistant">
-      <img class="pixel-avatar" :src="avatarAssets.eunuch" alt="大内总管" />
+    <div class="avatar assistant" aria-hidden="true">
+      <img class="pixel-avatar" :src="avatarAssets.eunuch" alt="" />
     </div>
     <div class="flow-body">
-      <button v-if="messageText()" class="copy-message-button" type="button" @click="copyMessage">
-        <img class="action-icon" :src="actionAssets.copy" alt="" width="16" height="16" />
-        <span>{{ copied ? '已复制' : '复制回复' }}</span>
-      </button>
+      <div v-if="messageText()" class="assistant-toolbar">
+        <div class="message-meta assistant"><span>李</span><small>回奏</small></div>
+        <button class="copy-message-button" type="button" @click="copyMessage">
+          <img class="action-icon" :src="actionAssets.copy" alt="" width="16" height="16" />
+          <span>{{ copied ? '已复制' : '复制' }}</span>
+        </button>
+      </div>
+      <div v-else class="assistant-toolbar ghost">
+        <div class="message-meta assistant"><span>李</span><small>候旨</small></div>
+      </div>
       <template v-if="!props.message.segments.length && props.message.streaming">
         <div class="bubble assistant streaming">正在思量...</div>
       </template>

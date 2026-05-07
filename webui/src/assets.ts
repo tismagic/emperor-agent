@@ -8,6 +8,7 @@ const actionCopy = new URL('../../assets/actions/action-copy.png', import.meta.u
 const actionNew = new URL('../../assets/actions/action-new.png', import.meta.url).href
 const actionRefresh = new URL('../../assets/actions/action-refresh.png', import.meta.url).href
 const actionSave = new URL('../../assets/actions/action-save.png', import.meta.url).href
+const actionAttach = new URL('../../assets/actions/action-attach.png', import.meta.url).href
 const actionSend = new URL('../../assets/actions/action-send.png', import.meta.url).href
 const caretDown = new URL('../../assets/actions/caret-down.png', import.meta.url).href
 const statusBusy = new URL('../../assets/actions/status-busy.png', import.meta.url).href
@@ -58,6 +59,7 @@ export const brandAssets = {
 }
 
 export const actionAssets = {
+  attach: actionAttach,
   clear: actionClear,
   copy: actionCopy,
   new: actionNew,

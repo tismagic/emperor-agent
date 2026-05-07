@@ -415,11 +415,14 @@ body::after {
   }
 
   .messages-pane {
-    @apply min-h-0 flex-1 overflow-y-auto px-5 py-5;
+    @apply min-h-0 flex-1 overflow-y-auto px-5 py-6;
+    background:
+      radial-gradient(circle at 52% 0%, rgb(var(--paper) / 0.76), transparent 36rem),
+      linear-gradient(90deg, transparent, rgb(var(--line) / 0.08) 49%, rgb(var(--line) / 0.08) 51%, transparent);
   }
 
   .message-stack {
-    @apply mx-auto flex max-w-4xl flex-col gap-5 pb-4;
+    @apply mx-auto flex max-w-[980px] flex-col gap-8 pb-5;
   }
 
   .welcome-card {
@@ -443,7 +446,8 @@ body::after {
   }
 
   .message-row {
-    @apply flex items-start gap-5;
+    @apply relative flex items-start gap-4;
+    container-type: inline-size;
   }
 
   .message-row.user {
@@ -454,16 +458,33 @@ body::after {
     @apply order-2;
   }
 
+  .message-cluster {
+    @apply flex min-w-0 flex-col gap-2;
+  }
+
+  .message-cluster.user {
+    @apply items-end;
+  }
+
   .avatar {
-    @apply grid size-20 shrink-0 place-items-center rounded-[1.3rem] font-display text-lg font-black shadow-lg overflow-hidden;
+    @apply relative grid size-[4.35rem] shrink-0 place-items-center overflow-hidden rounded-[1.35rem] border font-display text-lg font-black shadow-lg;
+    position: sticky;
+    top: 1rem;
   }
 
   .avatar.user {
-    @apply bg-ink text-paper shadow-ink/10;
+    @apply border-ink/15 bg-ink text-paper shadow-ink/10;
   }
 
   .avatar.assistant {
-    @apply bg-seal text-paper shadow-seal/20;
+    @apply border-seal/25 bg-seal text-paper shadow-seal/20;
+  }
+
+  .avatar.assistant::after,
+  .avatar.user::after {
+    content: '';
+    @apply pointer-events-none absolute inset-0 rounded-[1.35rem];
+    box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.18), inset 0 -0.8rem 1.2rem rgb(0 0 0 / 0.16);
   }
 
   .pixel-avatar {
@@ -485,16 +506,82 @@ body::after {
     transform: scale(1.18);
   }
 
+  .message-meta {
+    @apply inline-flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-muted;
+  }
+
+  .message-meta span {
+    @apply grid size-6 place-items-center rounded-full border bg-paper font-display text-xs font-black tracking-normal;
+  }
+
+  .message-meta small {
+    @apply font-normal tracking-[0.2em];
+  }
+
+  .message-meta.user {
+    @apply mr-1 text-paper/70;
+  }
+
+  .message-meta.user span {
+    @apply border-paper/20 bg-paper/10 text-paper;
+  }
+
+  .message-meta.assistant {
+    @apply ml-1 text-seal/70;
+  }
+
+  .message-meta.assistant span {
+    @apply border-seal/20 bg-seal/10 text-seal;
+  }
+
   .bubble {
-    @apply max-w-[min(760px,calc(100vw-8rem))] rounded-[1.45rem] border px-5 py-4 text-[15px] leading-8 shadow-sm;
+    @apply relative max-w-[min(780px,calc(100vw-8rem))] border px-6 py-5 text-[15px] leading-8;
+    text-wrap: pretty;
+    box-shadow:
+      0 1.2rem 2.4rem rgb(var(--ink) / 0.08),
+      0 0.18rem 0.45rem rgb(var(--ink) / 0.06);
   }
 
   .bubble.user {
-    @apply border-ink/20 bg-ink text-paper;
+    @apply rounded-[1.45rem] rounded-tr-[0.55rem] border-ink/20 text-paper;
+    max-width: min(560px, calc(100vw - 8rem));
+    background:
+      radial-gradient(circle at 16% 12%, rgb(var(--seal) / 0.24), transparent 13rem),
+      linear-gradient(145deg, rgb(var(--ink)), rgb(36 25 20));
+    box-shadow:
+      0 1rem 2rem rgb(var(--ink) / 0.16),
+      inset 0 1px 0 rgb(255 255 255 / 0.08);
   }
 
   .bubble.assistant {
-    @apply border-line/70 bg-paper/80 text-ink;
+    @apply rounded-[1.55rem] rounded-tl-[0.65rem] border-line/75 text-ink;
+    background:
+      linear-gradient(90deg, rgb(var(--seal) / 0.1), transparent 0.42rem),
+      radial-gradient(circle at 100% 0%, rgb(var(--amber) / 0.1), transparent 16rem),
+      linear-gradient(180deg, rgb(var(--paper) / 0.96), rgb(var(--paper-2) / 0.66));
+    box-shadow:
+      0 1rem 2.4rem rgb(var(--ink) / 0.08),
+      inset 0 1px 0 rgb(255 255 255 / 0.58),
+      inset 0 -1px 0 rgb(var(--line) / 0.22);
+  }
+
+  .bubble.user::after,
+  .bubble.assistant::after {
+    content: '';
+    @apply absolute top-4 size-3 rotate-45 border;
+  }
+
+  .bubble.user::after {
+    @apply -right-1 border-ink/20 bg-ink;
+  }
+
+  .bubble.assistant::after {
+    @apply -left-1 border-line/70 bg-paper;
+  }
+
+  .bubble.assistant::before {
+    content: '回';
+    @apply pointer-events-none absolute right-5 top-4 font-display text-4xl font-black leading-none text-seal/5;
   }
 
   .bubble.streaming {
@@ -507,16 +594,26 @@ body::after {
   }
 
   .flow-body {
-    @apply flex max-w-4xl flex-col items-start gap-3;
+    @apply flex max-w-[820px] flex-col items-start gap-3;
+  }
+
+  .assistant-toolbar {
+    @apply flex w-full items-center justify-between gap-3 px-1;
+  }
+
+  .assistant-toolbar.ghost {
+    @apply justify-start;
   }
 
   .copy-message-button {
-    @apply ml-1 inline-flex min-h-8 items-center gap-1.5 rounded-full border border-line/60 bg-paper/80 px-3 py-1 text-[11px] font-semibold text-muted opacity-0 shadow-sm transition hover:border-seal/35 hover:bg-seal/10 hover:text-seal;
+    @apply inline-flex min-h-8 items-center gap-1.5 rounded-full border border-line/60 bg-paper/80 px-3 py-1 text-[11px] font-semibold text-muted opacity-0 shadow-sm transition hover:border-seal/35 hover:bg-seal/10 hover:text-seal;
+    backdrop-filter: blur(10px);
   }
 
   .copy-message-button .action-icon {
-    @apply size-5;
-    transform: scale(1.12);
+    @apply size-4;
+    image-rendering: pixelated;
+    transform: scale(1.2);
     transform-origin: center;
   }
 
@@ -526,12 +623,16 @@ body::after {
   }
 
   .tool-event {
-    @apply flex max-w-3xl items-start gap-3 rounded-[1.35rem] border border-line/70 bg-paper2/70 p-4 text-sm shadow-insetPaper;
+    @apply flex max-w-[760px] items-start gap-3 rounded-[1.25rem] border border-line/70 bg-paper2/65 p-3.5 text-sm shadow-insetPaper;
+    box-shadow:
+      inset 0 1px 0 rgb(255 255 255 / 0.35),
+      0 0.65rem 1.4rem rgb(var(--ink) / 0.05);
   }
 
   .tool-image {
-    @apply size-12 shrink-0 rounded-[1rem] border border-line/50 bg-paper/70 p-1 shadow-sm;
-    transform: scale(1.16);
+    @apply size-11 shrink-0 rounded-[0.95rem] border border-line/50 bg-paper/80 p-1 shadow-sm;
+    image-rendering: pixelated;
+    transform: scale(1.12);
   }
 
   .tool-event.done {
@@ -666,7 +767,8 @@ body::after {
   }
 
   .todo-panel {
-    @apply max-w-3xl rounded-[1.4rem] border border-amber/30 bg-amber/10 p-4;
+    @apply max-w-[760px] rounded-[1.35rem] border border-amber/30 bg-amber/10 p-4;
+    box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.35);
   }
 
   .todo-item {
@@ -690,16 +792,18 @@ body::after {
   }
 
   .composer-wrap {
-    @apply border-t border-line/70 p-4;
-    background: linear-gradient(180deg, rgb(var(--paper) / 0.45), rgb(var(--paper-2) / 0.9));
+    @apply border-t border-line/70 px-4 py-3;
+    background:
+      linear-gradient(180deg, rgb(var(--paper) / 0.24), rgb(var(--paper-2) / 0.92)),
+      radial-gradient(circle at 50% 0%, rgb(var(--amber) / 0.1), transparent 28rem);
   }
 
   .composer-shell {
-    @apply relative mx-auto max-w-4xl;
+    @apply relative mx-auto max-w-[900px];
   }
 
   .slash-menu {
-    @apply absolute bottom-[calc(100%+0.75rem)] left-0 right-16 z-20 overflow-hidden rounded-[1.4rem] border border-line/70 bg-paper/95 p-2 shadow-imperial backdrop-blur-xl;
+    @apply absolute bottom-[calc(100%+0.75rem)] left-0 right-14 z-20 overflow-hidden rounded-[1.35rem] border border-line/70 bg-paper/95 p-2 shadow-imperial backdrop-blur-xl;
   }
 
   .slash-menu button {
@@ -715,30 +819,98 @@ body::after {
   }
 
   .composer {
-    @apply flex items-end gap-3 rounded-[1.7rem] border border-line/70 bg-paper/90 p-2 shadow-imperial;
+    @apply relative flex items-end gap-2 overflow-visible rounded-[1.55rem] border border-line/70 bg-paper/90 p-2 shadow-imperial;
+    box-shadow:
+      0 1.1rem 2.4rem rgb(var(--ink) / 0.1),
+      inset 0 1px 0 rgb(255 255 255 / 0.62),
+      inset 0 -1px 0 rgb(var(--line) / 0.28);
+  }
+
+  .composer::before {
+    content: '';
+    @apply pointer-events-none absolute left-5 right-5 top-1 h-px bg-line/55;
   }
 
   .composer textarea {
-    @apply max-h-44 min-h-12 flex-1 border-none bg-transparent px-4 py-3 text-base shadow-none ring-0 focus:ring-0;
+    @apply max-h-44 min-h-11 flex-1 rounded-[1rem] border border-transparent bg-paper2/45 px-4 py-2.5 text-[15px] leading-7 shadow-none ring-0 transition focus:border-line/60 focus:bg-paper/70 focus:ring-0;
+    text-wrap: pretty;
+  }
+
+  .attach-button,
+  .send-button {
+    @apply grid shrink-0 place-items-center overflow-hidden border font-display font-black transition hover:-translate-y-0.5 disabled:translate-y-0 disabled:text-muted;
+    width: 3.05rem;
+    height: 3.05rem;
+    border-radius: 1.05rem;
   }
 
   .send-button {
-    @apply grid shrink-0 place-items-center overflow-hidden border border-seal/30 bg-seal/90 font-display font-black text-paper shadow-sm transition hover:bg-ink disabled:border-line/70 disabled:bg-paper2 disabled:text-muted;
-    width: 2.75rem;
-    height: 2.75rem;
-    border-radius: 1rem;
+    @apply border-seal/55 text-paper disabled:border-line/70;
+    background:
+      radial-gradient(circle at 34% 22%, rgb(var(--amber) / 0.45), transparent 46%),
+      linear-gradient(145deg, rgb(var(--seal)), rgb(var(--ink)));
+    box-shadow:
+      0 0.7rem 1.25rem rgb(var(--seal) / 0.24),
+      inset 0 1px 0 rgb(255 255 255 / 0.2),
+      inset 0 -0.25rem 0.55rem rgb(0 0 0 / 0.18);
+  }
+
+  .send-button:hover:not(:disabled) {
+    background:
+      radial-gradient(circle at 34% 22%, rgb(var(--amber) / 0.55), transparent 48%),
+      linear-gradient(145deg, rgb(178 50 35), rgb(var(--ink)));
+    box-shadow:
+      0 0.9rem 1.5rem rgb(var(--seal) / 0.28),
+      inset 0 1px 0 rgb(255 255 255 / 0.22),
+      inset 0 -0.25rem 0.55rem rgb(0 0 0 / 0.2);
+  }
+
+  .send-button:disabled {
+    background:
+      linear-gradient(145deg, rgb(var(--line) / 0.52), rgb(var(--paper-2) / 0.9));
+    box-shadow:
+      inset 0 1px 0 rgb(255 255 255 / 0.35),
+      0 0.35rem 0.8rem rgb(var(--ink) / 0.06);
   }
 
   .send-button .send-icon {
-    @apply size-7;
-    transform: scale(1);
+    @apply size-8;
+    image-rendering: pixelated;
+    transform: scale(1.15);
     transform-origin: center;
   }
 
+  .attach-button {
+    @apply self-center border-amber/55 text-ink hover:border-seal/35 hover:text-seal;
+    background:
+      radial-gradient(circle at 32% 18%, rgb(255 255 255 / 0.52), transparent 44%),
+      linear-gradient(145deg, rgb(var(--amber) / 0.58), rgb(var(--paper-2) / 0.98));
+    box-shadow:
+      0 0.65rem 1.15rem rgb(var(--amber) / 0.2),
+      inset 0 1px 0 rgb(255 255 255 / 0.54),
+      inset 0 -0.22rem 0.55rem rgb(var(--ink) / 0.08);
+  }
+
+  .attach-button:hover {
+    background:
+      radial-gradient(circle at 32% 18%, rgb(255 255 255 / 0.58), transparent 46%),
+      linear-gradient(145deg, rgb(var(--amber) / 0.72), rgb(var(--paper) / 0.98));
+    box-shadow:
+      0 0.8rem 1.35rem rgb(var(--amber) / 0.24),
+      inset 0 1px 0 rgb(255 255 255 / 0.52),
+      inset 0 -0.2rem 0.5rem rgb(var(--ink) / 0.07);
+  }
+
+  .attach-button .action-icon {
+    @apply size-8;
+    image-rendering: pixelated;
+    transform: scale(1.18);
+  }
+
   .context-ring {
-    @apply relative grid shrink-0 place-items-center rounded-full outline-none;
-    width: 2.75rem;
-    height: 2.75rem;
+    @apply relative grid shrink-0 place-items-center self-center rounded-full border border-line/45 bg-paper2/35 outline-none transition hover:-translate-y-0.5 hover:border-seal/25;
+    width: 2.45rem;
+    height: 2.45rem;
   }
 
   .context-ring:focus-visible {
@@ -1805,5 +1977,11 @@ body::after {
 
   .bubble {
     @apply max-w-[calc(100vw-6rem)] px-4;
+  }
+
+  .attach-button,
+  .send-button {
+    width: 2.8rem;
+    height: 2.8rem;
   }
 }

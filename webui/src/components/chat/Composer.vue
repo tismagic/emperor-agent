@@ -75,6 +75,10 @@ function fmt(n: number) {
       </button>
     </div>
     <form class="composer" @submit.prevent="submit">
+      <button type="button" class="attach-button" title="添加附件" aria-label="添加附件">
+        <img class="action-icon" :src="actionAssets.attach" alt="" width="24" height="24" />
+      </button>
+
       <textarea
         ref="input"
         v-model="value"
