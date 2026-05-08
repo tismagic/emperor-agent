@@ -97,6 +97,8 @@ class MemoryStore:
         for r in rows[last_marker + 1:]:
             if "role" not in r or "content" not in r:
                 continue
+            if r.get("type") == "model_call":
+                continue
             item: dict[str, Any] = {"role": r["role"], "content": r["content"]}
             if isinstance(r.get("attachments"), list):
                 item["attachments"] = r["attachments"]

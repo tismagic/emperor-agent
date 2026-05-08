@@ -110,6 +110,30 @@ class AgentRunner:
                         "threshold": int(self.max_context * self.compact_threshold),
                         "usage_type": self.usage_type,
                     })
+            if self.memory_store:
+                last_user = next((m for m in reversed(history) if m.get("role") == "user"), None)
+                user_input = str(last_user.get("content", ""))[:500] if last_user else ""
+                ai_output = str(response.content or "")[:500]
+                cmd_event = None
+                if user_input.startswith("/"):
+                    cmd_event = user_input.split()[0]
+                input_tokens = int(response.usage.get("input", 0) or 0) if response.usage else 0
+                output_tokens = int(response.usage.get("output", 0) or 0) if response.usage else 0
+                self.memory_store.append_history(
+                    "model_call",
+                    f"{self.model} call: input={input_tokens} output={output_tokens}",
+                    extra={
+                        "type": "model_call",
+                        "model": self.model,
+                        "provider": self.provider_name,
+                        "usage_type": self.usage_type,
+                        "user_input": user_input,
+                        "ai_output": ai_output,
+                        "command_event": cmd_event,
+                        "input_tokens": input_tokens,
+                        "output_tokens": output_tokens,
+                    },
+                )
 
             if response.should_execute_tools:
                 empty_retries = 0

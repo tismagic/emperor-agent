@@ -102,61 +102,69 @@ function submitFromComposer(payload: string | { content: string; attachments?: i
 }
 
 async function executeSlashCommand(raw: string, name: string, command: SlashCommand | undefined) {
-  if (!command) {
-    addLocalCommand(raw, `未知命令：${inlineCode(name)}\n\n输入 ${inlineCode('/help')} 查看可用命令。`)
-    return
-  }
-
-  if (command.name === '/help') {
-    addLocalCommand(raw, renderCommandHelp())
-    return
-  }
-  if (command.name === '/status') {
-    addLocalCommand(raw, renderStatus())
-    return
-  }
-  if (command.name === '/model') {
-    addLocalCommand(raw, renderModelInfo())
-    return
-  }
-  if (command.name === '/tokens') {
-    addLocalCommand(raw, renderTokenInfo())
-    return
-  }
-  if (command.name === '/tools') {
-    addLocalCommand(raw, renderToolsInfo())
-    return
-  }
-  if (command.name === '/skills') {
-    addLocalCommand(raw, renderSkillsInfo())
-    return
-  }
-  if (command.name === '/config') {
-    addLocalCommand(raw, renderConfigInfo())
-    return
-  }
-  if (command.name === '/memory') {
-    addLocalCommand(raw, renderMemoryInfo())
-    return
-  }
-  if (command.name === '/compact') {
-    showToast('/compact 正在压缩未归档会话，会写入 memory/MEMORY.local.md')
-    try {
-      const result = await compactMemory()
-      addLocalCommand(raw, renderCompactResult(result))
-    } catch (err) {
-      addLocalCommand(raw, `压缩失败：${err instanceof Error ? err.message : String(err)}`)
+  busy.value = true
+  try {
+    if (!command) {
+      addLocalCommand(raw, `未知命令：${inlineCode(name)}\n\n输入 ${inlineCode('/help')} 查看可用命令。`)
+      return
     }
-    return
-  }
-  if (command.name === '/clear') {
-    clearChat()
-    return
-  }
-  if (command.name === '/reload') {
-    await refreshAll()
-    addLocalCommand(raw, '工作台状态已刷新。')
-    return
+
+    if (command.name === '/help') {
+      addLocalCommand(raw, renderCommandHelp())
+      return
+    }
+    if (command.name === '/status') {
+      addLocalCommand(raw, renderStatus())
+      return
+    }
+    if (command.name === '/model') {
+      addLocalCommand(raw, renderModelInfo())
+      return
+    }
+    if (command.name === '/tokens') {
+      addLocalCommand(raw, renderTokenInfo())
+      return
+    }
+    if (command.name === '/tools') {
+      addLocalCommand(raw, renderToolsInfo())
+      return
+    }
+    if (command.name === '/skills') {
+      addLocalCommand(raw, renderSkillsInfo())
+      return
+    }
+    if (command.name === '/config') {
+      addLocalCommand(raw, renderConfigInfo())
+      return
+    }
+    if (command.name === '/memory') {
+      addLocalCommand(raw, renderMemoryInfo())
+      return
+    }
+    if (command.name === '/compact') {
+      pending.label = '正在压缩未归档会话...'
+      pending.detail = ''
+      try {
+        const result = await compactMemory()
+        addLocalCommand(raw, renderCompactResult(result))
+      } catch (err) {
+        addLocalCommand(raw, `压缩失败：${err instanceof Error ? err.message : String(err)}`)
+      }
+      return
+    }
+    if (command.name === '/clear') {
+      clearChat()
+      return
+    }
+    if (command.name === '/reload') {
+      await refreshAll()
+      addLocalCommand(raw, '工作台状态已刷新。')
+      return
+    }
+  } finally {
+    busy.value = false
+    pending.label = ''
+    pending.detail = ''
   }
 }
 
