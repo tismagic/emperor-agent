@@ -126,7 +126,7 @@ class WebUIState:
                 self.history.append(user_msg)
                 if attachment_ids:
                     self.loop.memory.append_history(
-                        "user", content, extra={"attachments": attachment_ids},
+                        "user", content, extra={"attachments": attachment_ids, "displayContent": text},
                     )
                 else:
                     self.loop.memory.append_history("user", content)
@@ -728,7 +728,7 @@ npm run build</code>
             content = item.get("content")
             if role not in {"user", "assistant"}:
                 continue
-            text = self._extract_text_content(content)
+            text = self._history_display_content(item, content)
             out: dict[str, Any] = {"role": role, "content": text}
             ids = item.get("attachments")
             if isinstance(ids, list) and ids:
@@ -744,6 +744,15 @@ npm run build</code>
             items.append(out)
         return items
 
+    def _history_display_content(self, item: dict[str, Any], content: Any) -> str:
+        display = item.get("displayContent")
+        if isinstance(display, str):
+            return display
+        text = self._extract_text_content(content)
+        if item.get("role") == "user" and isinstance(item.get("attachments"), list):
+            return self._strip_attachment_sidecars(text)
+        return text
+
     @staticmethod
     def _extract_text_content(content: Any) -> str:
         """从 string / OpenAI 多模态 list 中抽出可读 text 部分。"""
@@ -756,6 +765,21 @@ npm run build</code>
                     parts.append(str(block.get("text", "")))
             return "".join(parts)
         return ""
+
+    @staticmethod
+    def _strip_attachment_sidecars(text: str) -> str:
+        """旧 history 没有 displayContent 时，移除附件抽取/落盘说明，只保留用户原话。"""
+        patterns = (
+            r"\n*\[附件 [^\]]+ 提取文本\]\n.*?\n\[/附件 [^\]]+\]",
+            r"\n*\[附件 [^\]]+ 已落盘[^\]]*\]",
+            r"\n*\[图片附件 [^\]]+（当前模型未标记视觉，已忽略；可在 /model 测试视觉激活）\]",
+            r"\n*\[图片附件 [^\]]+ 编码失败：[^\]]+\]",
+            r"\n*\[已落盘: [^\]]+\]",
+        )
+        cleaned = text
+        for pattern in patterns:
+            cleaned = re.sub(pattern, "", cleaned, flags=re.DOTALL)
+        return cleaned.strip()
 
     def model_config(self) -> dict[str, Any]:
         config = load_model_config(self.root)

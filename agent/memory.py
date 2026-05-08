@@ -100,6 +100,8 @@ class MemoryStore:
             item: dict[str, Any] = {"role": r["role"], "content": r["content"]}
             if isinstance(r.get("attachments"), list):
                 item["attachments"] = r["attachments"]
+            if isinstance(r.get("displayContent"), str):
+                item["displayContent"] = r["displayContent"]
             out.append(item)
         return out
 

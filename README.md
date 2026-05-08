@@ -102,8 +102,8 @@ python webui.py
 - **上下文治理** — 每次 LLM 调用前自动跑两步：单条工具结果硬截断（`_cap_tool_result`，留头尾，默认 8KB 上限）+ 旧大体积工具消息摘要化（`_shrink_old_tool_results`，最近 10 条保留原文，更早的替换为 `[shrunk] name → N chars omitted`）。让长对话从 8-10 轮稳定到 30+ 轮不撞 token 上限。
 - **LLM 错误恢复** — `step_async` 内置两个状态机：模型偶发空响应时自动注入 nudge 重试（≤2 次）；`finish_reason="length" / "max_tokens"` 时自动续写并拼接（≤3 次）。前端通过既有 `tool_error` 事件可见 `_empty_response` / `_length_truncation` 提示。
 - **中断恢复 Checkpoint** — `MemoryStore.write_checkpoint` 在每次工具批次完成后把 history 原子写到 `memory/_checkpoint.json`（gitignore），关 tab / Ctrl-C / 模型超时都不丢。`AgentLoop` 启动时 `read_checkpoint` 优先于 `history.jsonl` 未归档段恢复 in-memory history，再 `clear_checkpoint`；`_pair_tool_calls` 兜底处理任何 orphan tool_call。turn 正常落地时自动清理。
-- **对话附件** — Composer 支持点选 / 拖拽上传图片（png / jpeg / webp / gif，≤10MB）和文档（pdf / json / csv / text / markdown，≤25MB），单条消息至多 5 个。文件落盘到 `memory/attachments/YYYY-MM/{hash8}-{name}.{ext}`，PDF 与文本文档同步抽取 sidecar 文本（`pypdf`），发消息时按 OpenAI 多模态格式装配 user content：vision-capable entry 走 `image_url` block，否则替换为占位提示；文档总把抽出的文本内联进 prompt，并在末尾附落盘路径供 `read_file` 兜底读取。User 多模态消息在 cap/shrink 链上原样保留，不会被截断。
-- **视觉徽章 + 连通测试** — `/model` 编辑器内置「测试文本」「测试视觉」两个按钮：发一次最小 ping 或一张内置 2×2 红色 PNG 探测图，返回延迟、模型名、响应 sample。视觉测试通过会自动把 `entry.supports_vision = true` 持久化到 `model_config.json`，entry 列表立刻在该条目右侧显示 👁 徽章；Composer 的附件按钮 tooltip 与图片上传路径都依据该徽章决定走视觉链还是占位文字。
+- **对话附件** — Composer 支持点选 / 拖拽上传图片（png / jpeg / webp / gif，≤10MB）和文档（pdf / json / csv / text / markdown，≤25MB），单条消息至多 5 个。文件落盘到 `memory/attachments/YYYY-MM/{hash8}-{name}.{ext}`，PDF 与文本文档同步抽取 sidecar 文本（`pypdf`），发消息时按 OpenAI 多模态格式装配 user content：vision-capable entry 走 `image_url` block，否则替换为占位提示；文档总把抽出的文本内联进 prompt，并在末尾附落盘路径供 `read_file` 兜底读取。User 多模态消息在 cap/shrink 链上原样保留，不会被截断；WebUI 刷新恢复时只显示用户原话与附件卡片，不把模型侧提取文本 / 落盘说明塞回气泡。
+- **视觉徽章 + 连通测试** — `/model` 编辑器内置「测试文本」「测试视觉」两个按钮：发一次最小 ping 或一张内置 2×2 红色 PNG 探测图，返回延迟、模型名、响应 sample。视觉测试通过会自动把 `entry.supports_vision = true` 持久化到 `model_config.json`，entry 列表立刻在该条目右侧显示视觉能力像素徽章；Composer 的附件按钮 tooltip 与图片上传路径都依据该徽章决定走视觉链还是占位文字。
 
 ---
 
@@ -159,10 +159,12 @@ memory/                         运行期产物（gitignore，首启自动创建
 model_config.json               本地私密模型配置（gitignore，需手动从 example 复制）
 model_config.example.json       配置范例（已提交）
 
-assets/                         WebUI 像素风素材库（已提交，56 张 PNG）
+assets/                         WebUI 像素风素材库（已提交，58 张 PNG）
 ├── nav/                        14 张导航图标（默认 + 激活）
 ├── tools/                      11 张工具事件图标
 ├── actions/                    10 张操作 / 状态图标
+├── attachments/                5 张附件类型图标（image / pdf / markdown / text / file）
+├── model/                      4 张模型能力图标（text / vision / test ok / test fail）
 ├── avatars/                    3 张角色头像
 ├── brand/                      logo / favicon / og-cover
 ├── empty/                      4 张空态插画
@@ -177,7 +179,7 @@ webui/                          前端工作台（Vue 3 + Vite + Tailwind + vue-
     ├── main.ts                 应用入口，加载 router + brandAssets 设置 favicon
     ├── App.vue                 二列 shell：NavRail + RouterView，provide/inject 全局状态
     ├── router.ts               7 条一级路由 + SPA fallback
-    ├── assets.ts               assets/ PNG 引用聚合（brandAssets / actionAssets / navIcon ...）
+    ├── assets.ts               assets/ PNG 引用聚合（brandAssets / actionAssets / attachmentIcon / navIcon ...）
     ├── styles.css              Tailwind layer + 自定义 .nav-rail / .main-view / .view-head 等
     ├── api/http.ts             fetch 封装
     ├── commands.ts             斜杠命令解析

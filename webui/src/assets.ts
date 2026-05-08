@@ -19,10 +19,21 @@ const avatarEmperor = new URL('../../assets/avatars/avatar-emperor.png', import.
 const avatarEunuch = new URL('../../assets/avatars/avatar-eunuch.png', import.meta.url).href
 const avatarSubagent = new URL('../../assets/avatars/avatar-subagent.png', import.meta.url).href
 
+const attachmentFile = new URL('../../assets/attachments/attachment-file.png', import.meta.url).href
+const attachmentImage = new URL('../../assets/attachments/attachment-image.png', import.meta.url).href
+const attachmentMarkdown = new URL('../../assets/attachments/attachment-markdown.png', import.meta.url).href
+const attachmentPdf = new URL('../../assets/attachments/attachment-pdf.png', import.meta.url).href
+const attachmentText = new URL('../../assets/attachments/attachment-text.png', import.meta.url).href
+
 const emptyMemory = new URL('../../assets/empty/empty-memory.png', import.meta.url).href
 const emptySkills = new URL('../../assets/empty/empty-skills.png', import.meta.url).href
 const emptyTools = new URL('../../assets/empty/empty-tools.png', import.meta.url).href
 const emptyWelcome = new URL('../../assets/empty/welcome-hero.png', import.meta.url).href
+
+const modelText = new URL('../../assets/model/model-text.png', import.meta.url).href
+const modelTestFail = new URL('../../assets/model/model-test-fail.png', import.meta.url).href
+const modelTestOk = new URL('../../assets/model/model-test-ok.png', import.meta.url).href
+const modelVision = new URL('../../assets/model/model-vision.png', import.meta.url).href
 
 const navChat = new URL('../../assets/nav/nav-chat.png', import.meta.url).href
 const navChatActive = new URL('../../assets/nav/nav-chat-active.png', import.meta.url).href
@@ -78,11 +89,26 @@ export const avatarAssets = {
   subagent: avatarSubagent,
 }
 
+export const attachmentAssets = {
+  file: attachmentFile,
+  image: attachmentImage,
+  markdown: attachmentMarkdown,
+  pdf: attachmentPdf,
+  text: attachmentText,
+}
+
 export const emptyAssets = {
   memory: emptyMemory,
   skills: emptySkills,
   tools: emptyTools,
   welcome: emptyWelcome,
+}
+
+export const modelAssets = {
+  text: modelText,
+  testFail: modelTestFail,
+  testOk: modelTestOk,
+  vision: modelVision,
 }
 
 export const navAssets = {
@@ -134,4 +160,26 @@ export function toolIcon(name: string) {
   if (lower.includes('web') || lower.includes('fetch')) return toolAssets.web
   if (lower.includes('run') || lower.includes('command') || lower.includes('shell')) return toolAssets.shell
   return toolAssets.default
+}
+
+export function attachmentIcon(kind: string, mime?: string, name?: string) {
+  const lowerMime = (mime || '').toLowerCase()
+  const lowerName = (name || '').toLowerCase()
+  if (kind === 'image' || lowerMime.startsWith('image/')) return attachmentAssets.image
+  if (lowerMime === 'application/pdf' || lowerName.endsWith('.pdf')) return attachmentAssets.pdf
+  if (
+    lowerMime.includes('markdown') ||
+    lowerName.endsWith('.md') ||
+    lowerName.endsWith('.markdown') ||
+    lowerName.endsWith('.mdx')
+  ) return attachmentAssets.markdown
+  if (
+    kind === 'text' ||
+    lowerMime.startsWith('text/') ||
+    lowerMime.includes('json') ||
+    lowerName.endsWith('.json') ||
+    lowerName.endsWith('.csv') ||
+    lowerName.endsWith('.txt')
+  ) return attachmentAssets.text
+  return attachmentAssets.file
 }

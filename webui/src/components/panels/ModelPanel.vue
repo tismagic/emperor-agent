@@ -10,7 +10,7 @@ import type {
   ProviderOption,
   ProviderRegion,
 } from '../../types'
-import { actionAssets, brandAssets } from '../../assets'
+import { actionAssets, brandAssets, modelAssets } from '../../assets'
 
 const props = defineProps<{ payload: ModelConfigPayload | null }>()
 const emit = defineEmits<{
@@ -372,7 +372,7 @@ async function runTest(kind: 'text' | 'vision') {
     if (!result.ok && result.error) {
       // 失败也展示在 chip 上，不再重复 toast
     }
-    // 视觉测试通过 → 后端已写入 supportsVision，刷新让 entry 列表 👁 立刻点亮
+    // 视觉测试通过 → 后端已写入 supportsVision，刷新让 entry 列表立刻点亮。
     if (result.ok && kind === 'vision' && result.visionMarked) {
       emit('refresh')
     }
@@ -431,7 +431,9 @@ function truncate(s: string | undefined, n: number): string {
                   class="entry-vision-eye"
                   title="此条目已通过视觉测试，可接收图片附件"
                   aria-label="视觉已激活"
-                >👁</span>
+                >
+                  <img :src="modelAssets.vision" alt="" width="18" height="18" />
+                </span>
               </div>
               <div class="entry-sub">
                 <code>{{ e.provider }}</code> · <code>{{ e.id || '(no id)' }}</code>
@@ -590,34 +592,36 @@ function truncate(s: string | undefined, n: number): string {
             </div>
           </details>
 
-          <!-- 连通测试：文本 / 视觉 ─ 视觉通过后自动给本条目打 👁 -->
+          <!-- 连通测试：文本 / 视觉 ─ 视觉通过后自动给本条目打能力标记 -->
           <div class="test-row">
             <div class="test-label">
               <span>连通测试</span>
               <small class="hint">
-                用一次最小请求验证 entry 是否能跑；视觉测试通过会自动给本条目打 👁 视觉标记
+                用一次最小请求验证 entry 是否能跑；视觉测试通过会自动给本条目打视觉标记
               </small>
             </div>
             <div class="test-actions">
               <button
                 type="button"
-                class="tool-button"
+                class="tool-button model-test-button"
                 :disabled="hasChanges || testing.text"
                 :title="hasChanges ? '请先保存配置再测试' : '发一次 ping（约消耗几十 token）'"
                 @click="runTest('text')"
               >
+                <img class="model-test-icon" :src="modelAssets.text" alt="" width="22" height="22" />
                 <span v-if="testing.text">…测试中</span>
                 <span v-else>测试文本</span>
               </button>
               <button
                 type="button"
-                class="tool-button"
+                class="tool-button model-test-button"
                 :disabled="hasChanges || testing.vision"
                 :title="hasChanges
                   ? '请先保存配置再测试'
-                  : '发一张红色测试图（约几十 token）；通过即标 👁'"
+                  : '发一张红色测试图（约几十 token）；通过即标视觉能力'"
                 @click="runTest('vision')"
               >
+                <img class="model-test-icon" :src="modelAssets.vision" alt="" width="22" height="22" />
                 <span v-if="testing.vision">…测试中</span>
                 <span v-else>测试视觉</span>
               </button>
@@ -628,7 +632,10 @@ function truncate(s: string | undefined, n: number): string {
               :class="{ ok: lastResult.ok, fail: !lastResult.ok }"
             >
               <template v-if="lastResult.ok">
-                <span class="badge">✓ {{ lastResult.kind === 'vision' ? '视觉通' : '文本通' }}</span>
+                <span class="badge with-icon">
+                  <img :src="modelAssets.testOk" alt="" width="18" height="18" />
+                  {{ lastResult.kind === 'vision' ? '视觉通' : '文本通' }}
+                </span>
                 <span class="meta">
                   {{ lastResult.latencyMs }}ms · {{ lastResult.model }}
                 </span>
@@ -636,10 +643,13 @@ function truncate(s: string | undefined, n: number): string {
                 <span
                   v-if="lastResult.kind === 'vision' && lastResult.visionMarked"
                   class="meta jade"
-                >已自动写入 👁 视觉标记</span>
+                >已自动写入视觉标记</span>
               </template>
               <template v-else>
-                <span class="badge">✗ 失败</span>
+                <span class="badge with-icon">
+                  <img :src="modelAssets.testFail" alt="" width="18" height="18" />
+                  失败
+                </span>
                 <span class="meta" :title="lastResult.error">
                   {{ truncate(lastResult.error, 100) }}
                 </span>

@@ -230,7 +230,11 @@ body::after {
   .usage-mark,
   .welcome-hero,
   .subagent-avatar,
-  .note-mark {
+  .note-mark,
+  .attach-doc-icon img,
+  .entry-vision-eye img,
+  .model-test-icon,
+  .test-result .badge img {
     image-rendering: pixelated;
     display: block;
     object-fit: contain;
@@ -411,18 +415,18 @@ body::after {
 
 
   .chat-body {
-    @apply relative flex min-h-0 flex-1 flex-col;
+    @apply relative flex min-h-0 flex-1 flex-col overflow-x-hidden;
   }
 
   .messages-pane {
-    @apply min-h-0 flex-1 overflow-y-auto px-5 py-6;
+    @apply min-h-0 flex-1 overflow-x-hidden overflow-y-auto px-5 py-6;
     background:
       radial-gradient(circle at 52% 0%, rgb(var(--paper) / 0.76), transparent 36rem),
       linear-gradient(90deg, transparent, rgb(var(--line) / 0.08) 49%, rgb(var(--line) / 0.08) 51%, transparent);
   }
 
   .message-stack {
-    @apply mx-auto flex max-w-[980px] flex-col gap-8 pb-5;
+    @apply mx-auto flex w-full max-w-[980px] min-w-0 flex-col gap-8 pb-5;
   }
 
   .welcome-card {
@@ -446,7 +450,7 @@ body::after {
   }
 
   .message-row {
-    @apply relative flex items-start gap-4;
+    @apply relative flex w-full min-w-0 items-start gap-4;
     container-type: inline-size;
   }
 
@@ -460,6 +464,7 @@ body::after {
 
   .message-cluster {
     @apply flex min-w-0 flex-col gap-2;
+    max-width: min(820px, calc(100% - 5.5rem));
   }
 
   .message-cluster.user {
@@ -535,7 +540,8 @@ body::after {
   }
 
   .bubble {
-    @apply relative max-w-[min(780px,calc(100vw-8rem))] border px-6 py-5 text-[15px] leading-8;
+    @apply relative min-w-0 max-w-full border px-6 py-5 text-[15px] leading-8;
+    overflow-wrap: anywhere;
     text-wrap: pretty;
     box-shadow:
       0 1.2rem 2.4rem rgb(var(--ink) / 0.08),
@@ -544,7 +550,7 @@ body::after {
 
   .bubble.user {
     @apply rounded-[1.45rem] rounded-tr-[0.55rem] border-ink/20 text-paper;
-    max-width: min(560px, calc(100vw - 8rem));
+    max-width: min(560px, 100%);
     background:
       radial-gradient(circle at 16% 12%, rgb(var(--seal) / 0.24), transparent 13rem),
       linear-gradient(145deg, rgb(var(--ink)), rgb(36 25 20));
@@ -594,7 +600,8 @@ body::after {
   }
 
   .flow-body {
-    @apply flex max-w-[820px] flex-col items-start gap-3;
+    @apply flex min-w-0 flex-col items-start gap-3;
+    max-width: min(820px, calc(100% - 5.5rem));
   }
 
   .assistant-toolbar {
@@ -623,7 +630,7 @@ body::after {
   }
 
   .tool-event {
-    @apply flex max-w-[760px] items-start gap-3 rounded-[1.25rem] border border-line/70 bg-paper2/65 p-3.5 text-sm shadow-insetPaper;
+    @apply flex min-w-0 max-w-full items-start gap-3 rounded-[1.25rem] border border-line/70 bg-paper2/65 p-3.5 text-sm shadow-insetPaper;
     box-shadow:
       inset 0 1px 0 rgb(255 255 255 / 0.35),
       0 0.65rem 1.4rem rgb(var(--ink) / 0.05);
@@ -673,7 +680,8 @@ body::after {
   }
 
   .markdown-body {
-    @apply text-[15px] leading-8 text-ink;
+    @apply min-w-0 max-w-full text-[15px] leading-8 text-ink;
+    overflow-wrap: anywhere;
   }
 
   .markdown-body > :first-child {
@@ -728,7 +736,7 @@ body::after {
   }
 
   .markdown-body pre {
-    @apply overflow-x-auto rounded-2xl border border-line/70 bg-ink p-4 text-paper;
+    @apply max-w-full overflow-x-auto rounded-2xl border border-line/70 bg-ink p-4 text-paper;
   }
 
   .markdown-body pre code {
@@ -736,7 +744,7 @@ body::after {
   }
 
   .markdown-body table {
-    @apply block w-full overflow-x-auto rounded-2xl border border-line/70 text-sm;
+    @apply block w-full max-w-full overflow-x-auto rounded-2xl border border-line/70 text-sm;
   }
 
   .markdown-body th,
@@ -2009,8 +2017,12 @@ body::after {
     flex-shrink: 0;
   }
   .attach-chip .attach-doc-icon {
-    @apply grid h-12 w-12 place-items-center rounded-lg bg-paper2 text-2xl;
+    @apply grid h-12 w-12 place-items-center rounded-lg border border-line/45 bg-paper2;
     flex-shrink: 0;
+  }
+  .attach-chip .attach-doc-icon img {
+    @apply h-9 w-9;
+    transform: scale(1.08);
   }
   .attach-chip.uploading {
     @apply border-amber/40 bg-amber/10;
@@ -2041,8 +2053,12 @@ body::after {
     @apply flex items-center gap-2;
   }
   .entry-vision-eye {
-    @apply inline-flex h-5 w-5 items-center justify-center rounded-full border border-jade/40 bg-jade/10 text-xs leading-none text-jade;
+    @apply inline-flex h-7 w-7 items-center justify-center rounded-full border border-jade/40 bg-jade/10 leading-none text-jade shadow-sm;
     cursor: help;
+  }
+  .entry-vision-eye img {
+    @apply h-5 w-5;
+    transform: scale(1.2);
   }
 
   .test-row {
@@ -2060,6 +2076,13 @@ body::after {
   .test-actions {
     @apply flex flex-wrap gap-2;
   }
+  .model-test-button {
+    @apply min-h-11 gap-2 rounded-[1rem] px-3.5;
+  }
+  .model-test-icon {
+    @apply h-7 w-7;
+    transform: scale(1.16);
+  }
   .test-result {
     @apply flex flex-wrap items-center gap-2 rounded-lg border px-2.5 py-1.5 font-mono text-xs;
   }
@@ -2071,6 +2094,13 @@ body::after {
   }
   .test-result .badge {
     @apply font-bold;
+  }
+  .test-result .badge.with-icon {
+    @apply inline-flex items-center gap-1.5;
+  }
+  .test-result .badge img {
+    @apply h-6 w-6;
+    transform: scale(1.18);
   }
   .test-result.ok .badge {
     @apply text-jade;

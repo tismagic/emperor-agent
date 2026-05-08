@@ -38,10 +38,12 @@ assets/
 ├── nav/        14 PNG（7 default + 7 active）
 ├── tools/      11 PNG
 ├── actions/    10 PNG
+├── attachments/ 5 PNG（image/pdf/markdown/text/file）
+├── model/       4 PNG（text/vision/test ok/test fail）
 ├── avatars/     6 PNG（3 base + 3 @2x）
 ├── brand/       2 PNG + favicon.ico + og-cover.png
 ├── empty/       4 PNG
 └── textures/    2 PNG
 ```
 
-总计：49 张 PNG + 1 个 ICO
+总计：58 张 PNG + 1 个 ICO
