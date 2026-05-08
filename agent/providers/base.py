@@ -44,6 +44,13 @@ class LLMResponse:
         return bool(self.tool_calls) and self.finish_reason in {"tool_calls", "stop"}
 
 
+TRUNCATED_FINISH_REASONS = frozenset({"length", "max_tokens", "model_max_tokens"})
+
+
+def is_truncated(finish_reason: str | None) -> bool:
+    return (finish_reason or "").lower() in TRUNCATED_FINISH_REASONS
+
+
 @dataclass(frozen=True)
 class GenerationSettings:
     max_tokens: int = 20_000

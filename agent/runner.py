@@ -7,11 +7,21 @@ from typing import Any
 from loguru import logger
 
 from .providers import LLMProvider, ToolCallRequest
-from .providers.base import run_sync
+from .providers.base import is_truncated, run_sync
 from .tools.registry import ToolRegistry
 
 
 StreamEmitter = Callable[[dict[str, Any]], Awaitable[None]]
+
+
+# —— 上下文治理 / 错误恢复参数 ——
+_SHRINK_KEEP_RECENT = 10              # 最近 N 条工具消息保留原文
+_SHRINK_MIN_BYTES = 1500              # 小于此字节的工具结果不动
+_TOOL_RESULT_BUDGET = 8000            # 单条工具结果硬上限
+_TOOL_RESULT_HEAD = _TOOL_RESULT_BUDGET - 200
+_TOOL_RESULT_TAIL = 200
+_MAX_EMPTY_RETRIES = 2
+_MAX_LENGTH_RECOVERIES = 3
 
 
 class AgentRunner:
@@ -68,6 +78,8 @@ class AgentRunner:
     ) -> str:
         turns = 0
         final_parts: list[str] = []
+        empty_retries = 0
+        length_retries = 0
         while True:
             if self.max_turns is not None and turns >= self.max_turns:
                 reply = f"（达到 max_turns={self.max_turns} 上限，未办妥；history 中已有部分进展）"
@@ -96,6 +108,8 @@ class AgentRunner:
                     })
 
             if response.should_execute_tools:
+                empty_retries = 0
+                length_retries = 0
                 assistant_content = response.content or ""
                 if assistant_content:
                     final_parts.append(assistant_content)
@@ -116,6 +130,41 @@ class AgentRunner:
                 continue
 
             reply = response.content or ""
+
+            # —— 空响应救援 ——
+            if not reply.strip() and not response.tool_calls:
+                if empty_retries < _MAX_EMPTY_RETRIES:
+                    empty_retries += 1
+                    history.append({
+                        "role": "user",
+                        "content": "（上一轮无任何输出，请继续推进或给出最终答复）",
+                    })
+                    if emit:
+                        await emit({
+                            "event": "tool_error",
+                            "name": "_empty_response",
+                            "message": f"empty response, retry {empty_retries}/{_MAX_EMPTY_RETRIES}",
+                        })
+                    continue
+
+            # —— 截断续写 ——
+            if is_truncated(response.finish_reason) and length_retries < _MAX_LENGTH_RECOVERIES:
+                length_retries += 1
+                if reply:
+                    final_parts.append(reply)
+                    history.append({"role": "assistant", "content": reply})
+                history.append({
+                    "role": "user",
+                    "content": "（上一轮被 max_tokens 截断，请从中断处续写，不要重复已输出内容）",
+                })
+                if emit:
+                    await emit({
+                        "event": "tool_error",
+                        "name": "_length_truncation",
+                        "message": f"truncated, continuing {length_retries}/{_MAX_LENGTH_RECOVERIES}",
+                    })
+                continue
+
             final_parts.append(reply)
             final_reply = "".join(final_parts)
             assistant_message = {"role": "assistant", "content": reply}
@@ -146,9 +195,12 @@ class AgentRunner:
             return final_reply
 
     async def _ask_model(self, history: list[dict[str, Any]], emit: StreamEmitter | None):
+        governed = self._pair_tool_calls(history)
+        governed = self._cap_tool_result(governed)
+        governed = self._shrink_old_tool_results(governed)
         messages = [
             {"role": "system", "content": self.system_prompt},
-            *self._pair_tool_calls(history),
+            *governed,
         ]
 
         async def on_delta(delta: str) -> None:
@@ -213,6 +265,49 @@ class AgentRunner:
                     expected.append((tc.get("id") or "", fn.get("name", "")))
         flush_expected()
         return cleaned
+
+    @staticmethod
+    def _cap_tool_result(
+        history: list[dict[str, Any]],
+        per_call_limit: int = _TOOL_RESULT_BUDGET,
+    ) -> list[dict[str, Any]]:
+        """单条工具结果硬截断，留头尾，避免单次返回撑爆窗口。"""
+        out: list[dict[str, Any]] = []
+        for msg in history:
+            if msg.get("role") == "tool":
+                text = str(msg.get("content", ""))
+                if len(text) > per_call_limit:
+                    head = text[:_TOOL_RESULT_HEAD]
+                    tail = text[-_TOOL_RESULT_TAIL:]
+                    msg = {
+                        **msg,
+                        "content": (
+                            f"{head}\n...[truncated, total {len(text)} chars]...\n{tail}"
+                        ),
+                    }
+            out.append(msg)
+        return out
+
+    @staticmethod
+    def _shrink_old_tool_results(
+        history: list[dict[str, Any]],
+        keep_recent: int = _SHRINK_KEEP_RECENT,
+    ) -> list[dict[str, Any]]:
+        """把 keep_recent 之外的大体积工具消息替换为一行摘要。"""
+        cutoff = max(0, len(history) - keep_recent)
+        out: list[dict[str, Any]] = []
+        for i, msg in enumerate(history):
+            if (
+                msg.get("role") == "tool"
+                and i < cutoff
+                and len(str(msg.get("content", ""))) > _SHRINK_MIN_BYTES
+            ):
+                name = msg.get("name") or msg.get("tool_call_id") or "tool"
+                size = len(str(msg["content"]))
+                out.append({**msg, "content": f"[shrunk] {name} → {size} chars omitted"})
+            else:
+                out.append(msg)
+        return out
 
     async def _execute_tool_calls(
         self,
