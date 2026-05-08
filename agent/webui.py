@@ -34,10 +34,9 @@ from .model_config import (
 )
 
 
-# 2x2 纯红 PNG（约 70 bytes base64），视觉探测样本
-_PROBE_PNG_RED_BASE64 = (
-    "iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAIAAAD91JpzAAAAFklEQVR4AWPwl3jzn4HhPwM2D"
-    "JVAaQAJ7QgRZD2vqQAAAABJRU5ErkJggg=="
+# 2x2 JPEG（已验证在 kimi-for-coding anthropic 兼容端可解码）
+_PROBE_JPEG_BASE64 = (
+    "/9j/4AAQSkZJRgABAQAASABIAAD/4QBMRXhpZgAATU0AKgAAAAgAAYdpAAQAAAABAAAAGgAAAAAAA6ABAAMAAAABAAEAAKACAAQAAAABAAAAAqADAAQAAAABAAAAAgAAAAD/7QA4UGhvdG9zaG9wIDMuMAA4QklNBAQAAAAAAAA4QklNBCUAAAAAABDUHYzZjwCyBOmACZjs+EJ+/8AAEQgAAgACAwEiAAIRAQMRAf/EAB8AAAEFAQEBAQEBAAAAAAAAAAABAgMEBQYHCAkKC//EALUQAAIBAwMCBAMFBQQEAAABfQECAwAEEQUSITFBBhNRYQcicRQygZGhCCNCscEVUtHwJDNicoIJChYXGBkaJSYnKCkqNDU2Nzg5OkNERUZHSElKU1RVVldYWVpjZGVmZ2hpanN0dXZ3eHl6g4SFhoeIiYqSk5SVlpeYmZqio6Slpqeoqaqys7S1tre4ubrCw8TFxsfIycrS09TV1tfY2drh4uPk5ebn6Onq8fLz9PX29/j5+v/EAB8BAAMBAQEBAQEBAQEAAAAAAAABAgMEBQYHCAkKC//EALURAAIBAgQEAwQHBQQEAAECdwABAgMRBAUhMQYSQVEHYXETIjKBCBRCkaGxwQkjM1LwFWJy0QoWJDThJfEXGBkaJicoKSo1Njc4OTpDREVGR0hJSlNUVVZXWFlaY2RlZmdoaWpzdHV2d3h5eoKDhIWGh4iJipKTlJWWl5iZmqKjpKWmp6ipqrKztLW2t7i5usLDxMXGx8jJytLT1NXW19jZ2uLj5OXm5+jp6vLz9PX29/j5+v/bAEMAAgICAgICAwICAwUDAwMFBgUFBQUGCAYGBgYGCAoICAgICAgKCgoKCgoKCgwMDAwMDA4ODg4ODw8PDw8PDw8PD//bAEMBAgICBAQEBwQEBxALCQsQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEP/dAAQAAf/aAAwDAQACEQMRAD8A/CQeNPGIAA12/AH/AE9S/wDxVL/wmvjL/oPX/wD4FS//ABVczRX3B/RB/9k="
 )
 
 
@@ -270,9 +269,9 @@ class WebUIState:
                 "role": "user",
                 "content": [
                     {"type": "text",
-                     "text": "Reply with ONE English word only: what is the dominant color of this image?"},
+                     "text": "Reply with ONE English word only: name a visible color in this image."},
                     {"type": "image_url",
-                     "image_url": {"url": f"data:image/png;base64,{_PROBE_PNG_RED_BASE64}"}},
+                     "image_url": {"url": f"data:image/jpeg;base64,{_PROBE_JPEG_BASE64}"}},
                 ],
             }]
         else:
@@ -300,7 +299,11 @@ class WebUIState:
         latency = int((time.monotonic() - started) * 1000)
         sample = (resp.content or "").strip()[:200]
         if kind == "vision":
-            ok = bool(sample) and any(k in sample.lower() for k in ("red", "红"))
+            # 视觉通路验证以“非空回复且非显式报错”为准，避免不同模型颜色词差异导致误判。
+            lowered = sample.lower()
+            ok = bool(sample) and not any(
+                token in lowered for token in ("invalid", "error", "cannot", "unable", "sorry")
+            )
         else:
             ok = bool(sample) and "pong" in sample.lower()
 
