@@ -39,6 +39,12 @@ const routes: RouteRecordRaw[] = [
     meta: { label: '配置文件', hint: '配置文件' },
   },
   {
+    path: '/mcp',
+    name: 'mcp',
+    component: () => import('./views/McpView.vue'),
+    meta: { label: 'MCP', hint: '外部工具' },
+  },
+  {
     path: '/memory',
     name: 'memory',
     component: () => import('./views/MemoryView.vue'),
@@ -52,5 +58,5 @@ export const router = createRouter({
   routes,
 })
 
-export const navOrder = ['chat', 'model', 'tokens', 'skills', 'tools', 'configs', 'memory'] as const
+export const navOrder = ['chat', 'model', 'tokens', 'skills', 'tools', 'configs', 'mcp', 'memory'] as const
 export type NavRouteName = (typeof navOrder)[number]

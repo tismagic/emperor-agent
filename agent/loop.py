@@ -10,6 +10,7 @@ from .compactor import Compactor
 from .context import ContextBuilder
 from .logger import configure as configure_logging
 from .memory import MemoryStore
+from .mcp import MCPClient
 from .model_config import build_provider_snapshot
 from .runner import AgentRunner
 from .skills import SkillsLoader
@@ -79,6 +80,12 @@ class AgentLoop:
             skills_loader=self.skills,
         )
         self._install_subagent_tool()
+
+        self.mcp_client: MCPClient | None = None
+        try:
+            self.mcp_client = MCPClient(self.root)
+        except Exception as exc:
+            logger.warning(f"MCP client init failed: {exc}")
 
         self.refresh_model_config(initial=True)
 
@@ -169,7 +176,33 @@ class AgentLoop:
         self.skills.reload()
         self.runner.system_prompt = self.context_builder.build_system_prompt()
 
+    def init_mcp(self) -> None:
+        """同步初始化 MCP（CLI / WebUI 启动时调用）。"""
+        if not self.mcp_client:
+            return
+        if getattr(self.mcp_client, "_initialized", False):
+            return
+        from .providers.base import run_sync
+        try:
+            run_sync(self.mcp_client.initialize())
+            tools = self.mcp_client.get_tools()
+            for tool in tools:
+                self.registry.register(tool)
+            logger.info(f"[MCP] registered {len(tools)} tools")
+        except Exception as exc:
+            logger.warning(f"MCP initialization failed: {exc}")
+
+    def close_mcp(self) -> None:
+        """关闭所有 MCP 连接。"""
+        if self.mcp_client:
+            from .providers.base import run_sync
+            try:
+                run_sync(self.mcp_client.close())
+            except Exception:
+                pass
+
     def run(self) -> None:
+        self.init_mcp()
         while True:
             user_input = input("You🫅 : ")
             if self._handle_cli_command(user_input):
@@ -195,13 +228,16 @@ class AgentLoop:
             return True
         if command == "/status":
             totals = self.token_tracker.totals()
+            all_defs = self.registry.get_definitions()
+            mcp_count = len([d for d in all_defs if d["name"].startswith("mcp_")])
+            builtin_count = len(all_defs) - mcp_count
             logger.info(
                 "\n当前状态:\n"
                 f"  provider: {self.provider_name}\n"
                 f"  model:    {self.model}\n"
                 f"  tokens:   {totals.get('total', 0)} total / {totals.get('calls', 0)} calls\n"
                 f"  skills:   {len(self.skills.skills)}\n"
-                f"  tools:    {len(self.registry.get_definitions())}\n"
+                f"  tools:    {len(all_defs)} (builtin: {builtin_count}, mcp: {mcp_count})\n"
                 f"  history:  {len(self.history)} in-memory turns\n"
             )
             return True

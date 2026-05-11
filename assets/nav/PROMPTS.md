@@ -218,6 +218,44 @@ outline #7A1F1F, fill #B53A3A / #D9776E.
 
 ---
 
+---
+
+### nav-mcp.png（默认色）
+
+```
+16-bit pixel art, crisp pixel-perfect rendering, no anti-aliasing, no blur,
+strict limited palette only from: #1A1612 #2A2622 #5A5048 #6B6058 #F5EFE0 #EBE3D0 #FBF7E8
+#7A1F1F #B53A3A #D9776E #2D6B4F #3F8C6E #6FB39A #9C6925 #C68A3A #E5B568,
+sharp 1px black-ink outline (#2A2622) on subjects, dithering allowed for shading,
+transparent background, centered composition, no text, no signature, no watermark,
+style reference: Stardew Valley × Eastward × Octopath, ancient imperial Chinese theme,
+output as exact pixel grid size specified,
+32x32 pixel art icon of a jade tally (符节) — an ancient diplomatic credential split into two matching halves,
+connected by a silk cord loop at top, carved groove pattern on surface,
+symbolizing protocol and external connection, simplified 16-bit JRPG style,
+outline #2A2622, fill #5A5048 / #6B6058.
+```
+
+---
+
+### nav-mcp-active.png（激活色）
+
+```
+16-bit pixel art, crisp pixel-perfect rendering, no anti-aliasing, no blur,
+strict limited palette only from: #1A1612 #2A2622 #5A5048 #6B6058 #F5EFE0 #EBE3D0 #FBF7E8
+#7A1F1F #B53A3A #D9776E #2D6B4F #3F8C6E #6FB39A #9C6925 #C68A3A #E5B568,
+sharp 1px black-ink outline (#2A2622) on subjects, dithering allowed for shading,
+transparent background, centered composition, no text, no signature, no watermark,
+style reference: Stardew Valley × Eastward × Octopath, ancient imperial Chinese theme,
+output as exact pixel grid size specified,
+32x32 pixel art icon of a jade tally (符节) — an ancient diplomatic credential split into two matching halves,
+connected by a silk cord loop at top, carved groove pattern on surface,
+symbolizing protocol and external connection, simplified 16-bit JRPG style,
+outline #7A1F1F, fill #B53A3A / #D9776E.
+```
+
+---
+
 ### nav-memory.png（默认色）
 
 ```

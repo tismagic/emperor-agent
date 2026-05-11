@@ -1,6 +1,6 @@
 import { ref } from 'vue'
 import { api, cloneJson } from '../api/http'
-import type { BootstrapPayload, CompactResult, MemoryPayload, ModelConfigPayload, ModelConfigRaw, SkillInfo } from '../types'
+import type { BootstrapPayload, CompactResult, MemoryPayload, ModelConfigPayload, ModelConfigRaw, McpConfigPayload, SkillInfo } from '../types'
 
 export function useBootstrap(showToast: (message: string) => void) {
   const boot = ref<BootstrapPayload | null>(null)
@@ -10,6 +10,7 @@ export function useBootstrap(showToast: (message: string) => void) {
   const activeSkill = ref<string | null>(null)
   const skillContent = ref('')
   const configContent = ref('')
+  const mcpContent = ref('')
 
   async function loadBootstrap(showLoading = true) {
     try {
@@ -131,6 +132,27 @@ export function useBootstrap(showToast: (message: string) => void) {
     showToast('配置已保存，并刷新了 Agent 上下文')
   }
 
+  async function loadMcpConfig() {
+    const data = await api<McpConfigPayload>('/api/mcp-config')
+    mcpContent.value = JSON.stringify(data, null, 2)
+  }
+
+  async function saveMcpConfig(content: string) {
+    let parsed: McpConfigPayload
+    try {
+      parsed = JSON.parse(content) as McpConfigPayload
+    } catch (e) {
+      throw new Error('JSON 格式错误：' + (e instanceof Error ? e.message : String(e)))
+    }
+    await api<{ saved: boolean }>('/api/mcp-config', {
+      method: 'POST',
+      body: JSON.stringify(parsed),
+    })
+    await loadBootstrap(false)
+    await loadMcpConfig()
+    showToast('MCP 配置已保存，工具已重新加载')
+  }
+
   async function saveMemory(content: string) {
     await api<{ path: string; content: string }>('/api/memory', {
       method: 'POST',
@@ -160,6 +182,7 @@ export function useBootstrap(showToast: (message: string) => void) {
     activeSkill,
     skillContent,
     configContent,
+    mcpContent,
     loadBootstrap,
     refreshMemory,
     refreshModelConfig,
@@ -172,6 +195,8 @@ export function useBootstrap(showToast: (message: string) => void) {
     importSkill,
     loadConfig,
     saveConfig,
+    loadMcpConfig,
+    saveMcpConfig,
     saveMemory,
     loadEpisode,
     saveEpisode,

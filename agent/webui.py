@@ -25,6 +25,7 @@ from .attachments import (
 )
 from .logger import configure as configure_logging
 from .loop import AgentLoop
+from .mcp.config import load_mcp_config, save_mcp_config
 from .model_config import (
     build_provider_snapshot,
     load_model_config,
@@ -50,6 +51,7 @@ class WebUIState:
         self.static_dir = self.root / "webui" / "dist"
         self._ensure_tool_config()
         self.loop = AgentLoop(root=self.root, verbose=False, startup_compaction=False)
+        self.loop.init_mcp()
         self.history = self.loop.history
         self.attachments = AttachmentStore(self.root)
         self.lock = asyncio.Lock()
@@ -613,6 +615,11 @@ npm run build</code>
         out = []
         for definition in self.loop.registry.get_definitions():
             tool = self.loop.registry.get(definition["name"])
+            is_mcp = definition["name"].startswith("mcp_")
+            server = ""
+            if is_mcp:
+                parts = definition["name"].split("_", 2)
+                server = parts[1] if len(parts) >= 2 else ""
             out.append({
                 "name": definition["name"],
                 "description": definition["description"],
@@ -620,8 +627,37 @@ npm run build</code>
                 "read_only": bool(getattr(tool, "read_only", False)),
                 "exclusive": bool(getattr(tool, "exclusive", False)),
                 "concurrency_safe": bool(getattr(tool, "concurrency_safe", False)),
+                "source": "mcp" if is_mcp else "builtin",
+                "server": server,
             })
         return out
+
+    async def get_mcp_config(self, request: web.Request) -> web.Response:
+        config = load_mcp_config(self.root)
+        raw: dict[str, Any] = {"servers": {}, "defaults": config.defaults}
+        for name, server in config.servers.items():
+            raw["servers"][name] = {
+                "transport": server.transport,
+                "command": server.command,
+                "args": list(server.args),
+                "env": server.env,
+                "url": server.url,
+                "headers": server.headers,
+                "enabled": server.enabled,
+                "tool_overrides": server.tool_overrides,
+            }
+        return self._json(raw)
+
+    async def post_mcp_config(self, request: web.Request) -> web.Response:
+        body = await self._body(request)
+        if not isinstance(body.get("servers"), dict):
+            raise web.HTTPBadRequest(reason="mcp_config: 'servers' must be an object")
+        save_mcp_config(self.root, body)
+        # 重新加载 MCP：关闭旧连接，重新初始化
+        self.loop.close_mcp()
+        self.loop.registry.unregister_mcp_tools()
+        self.loop.init_mcp()
+        return self._json({"saved": True})
 
     def skills(self) -> list[dict[str, Any]]:
         items = []
@@ -918,6 +954,8 @@ def create_app(root: Path) -> web.Application:
     app.router.add_post("/api/attachments", state.upload_attachment)
     app.router.add_get("/api/attachments/{id}/raw", state.attachment_raw)
     app.router.add_post("/api/compact", state.post_compact)
+    app.router.add_get("/api/mcp-config", state.get_mcp_config)
+    app.router.add_post("/api/mcp-config", state.post_mcp_config)
     app.router.add_get("/{tail:.*}", state.static)
     return app
 

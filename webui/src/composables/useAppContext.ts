@@ -38,6 +38,9 @@ export interface AppContext {
   importSkill: (formData: FormData) => Promise<string>
   loadConfig: () => Promise<void>
   saveConfig: (content: string) => Promise<void>
+  mcpContent: Ref<string>
+  loadMcpConfig: () => Promise<void>
+  saveMcpConfig: (content: string) => Promise<void>
   saveMemory: (content: string) => Promise<void>
   loadEpisode: (date: string) => Promise<{ date: string; content: string }>
   saveEpisode: (date: string, content: string) => Promise<void>

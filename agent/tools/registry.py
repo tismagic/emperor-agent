@@ -56,6 +56,14 @@ class ToolRegistry:
             return tool, None, f"Error: invalid params for '{name}': {e}"
         return tool, cast, None
 
+    def unregister_mcp_tools(self) -> None:
+        """移除所有 mcp_ 前缀的工具（用于重连时刷新）。"""
+        mcp_names = [name for name in self._tools if name.startswith("mcp_")]
+        for name in mcp_names:
+            del self._tools[name]
+        if mcp_names:
+            self._defs_cache = None
+
     def execute(self, name: str, params: Any, emit=None, loop=None, parent_call_id=None) -> str:
         tool, cast, err = self.prepare_call(name, params)
         if err:

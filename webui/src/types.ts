@@ -5,6 +5,27 @@ export interface ToolInfo {
   read_only?: boolean
   exclusive?: boolean
   concurrency_safe?: boolean
+  source?: 'builtin' | 'mcp'
+  server?: string
+}
+
+export interface McpServerConfig {
+  transport?: string
+  command?: string | null
+  args?: string[]
+  env?: Record<string, string>
+  url?: string | null
+  headers?: Record<string, string>
+  enabled?: boolean
+  tool_overrides?: Record<string, { read_only?: boolean; exclusive?: boolean }>
+}
+
+export interface McpConfigPayload {
+  servers: Record<string, McpServerConfig>
+  defaults?: {
+    read_only?: boolean
+    exclusive?: boolean
+  }
 }
 
 export interface SkillInfo {

@@ -1,4 +1,5 @@
 from __future__ import annotations
+import re
 import subprocess
 from pathlib import Path
 
@@ -7,17 +8,19 @@ from loguru import logger
 from .base import Tool, tool_parameters
 from .schema import StringSchema, tool_parameters_schema
 
-_DENY_PREFIXES = (
-    "rm -rf /",
-    "rm -rf /*",
-    "mkfs.",
-    "dd if=",
-    "dd if=/",
-    ":(){",
-    "> /dev/sda",
-    "> /dev/nvme",
-    "curl ",
-    "wget ",
+# 危险命令模式（regex）——匹配即拒绝
+_DENY_PATTERNS = (
+    re.compile(r"\brm\s+-rf\s+/"),
+    re.compile(r"\bmkfs\."),
+    re.compile(r"\bdd\s+if="),
+    re.compile(r":\s*\(\)\s*\{"),
+    re.compile(r">\s*/dev/sda"),
+    re.compile(r">\s*/dev/nvme"),
+    re.compile(r"\bcurl\b"),
+    re.compile(r"\bwget\b"),
+    re.compile(r"\bpython3?\s+-c\b"),
+    re.compile(r"\|.*\bsh\b"),
+    re.compile(r"\|.*\bbash\b"),
 )
 
 
@@ -35,11 +38,10 @@ class RunCommand(Tool):
     def execute(self, command: str) -> str:
         logger.info(f"[执行命令]: {command}")
 
-        stripped = command.lstrip()
-        for prefix in _DENY_PREFIXES:
-            if stripped.startswith(prefix):
+        for pattern in _DENY_PATTERNS:
+            if pattern.search(command):
                 logger.warning(f"Blocked dangerous command: {command[:120]}")
-                return f"Error: command refused by safety policy (matches dangerous prefix: {prefix!r})"
+                return f"Error: command refused by safety policy (matches dangerous pattern: {pattern.pattern!r})"
 
         try:
             result = subprocess.run(

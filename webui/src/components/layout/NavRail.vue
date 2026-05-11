@@ -17,6 +17,7 @@ const navItems = computed(() => {
     skills: '能力包',
     tools: '工具权限',
     configs: '配置文件',
+    mcp: '外部工具',
     memory: '记忆层',
   }
   const labels: Record<(typeof navOrder)[number], string> = {
@@ -26,6 +27,7 @@ const navItems = computed(() => {
     skills: 'Skills',
     tools: 'Tools',
     configs: '配置文件',
+    mcp: 'MCP',
     memory: 'Memory',
   }
   return navOrder.map((name) => ({

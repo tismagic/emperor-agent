@@ -47,6 +47,8 @@ const navTools = new URL('../../assets/nav/nav-tools.png', import.meta.url).href
 const navToolsActive = new URL('../../assets/nav/nav-tools-active.png', import.meta.url).href
 const navConfigs = new URL('../../assets/nav/nav-configs.png', import.meta.url).href
 const navConfigsActive = new URL('../../assets/nav/nav-configs-active.png', import.meta.url).href
+const navMcp = new URL('../../assets/nav/nav-mcp.png', import.meta.url).href
+const navMcpActive = new URL('../../assets/nav/nav-mcp-active.png', import.meta.url).href
 const navMemory = new URL('../../assets/nav/nav-memory.png', import.meta.url).href
 const navMemoryActive = new URL('../../assets/nav/nav-memory-active.png', import.meta.url).href
 
@@ -124,6 +126,8 @@ export const navAssets = {
   toolsActive: navToolsActive,
   configs: navConfigs,
   configsActive: navConfigsActive,
+  mcp: navMcp,
+  mcpActive: navMcpActive,
   memory: navMemory,
   memoryActive: navMemoryActive,
 }
