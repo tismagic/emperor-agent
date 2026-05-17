@@ -6,6 +6,7 @@ from typing import Any
 
 from loguru import logger
 
+from .control import TurnPaused, parse_pause_result
 from .providers import LLMProvider, ToolCallRequest
 from .providers.base import is_truncated, run_sync
 from .tools.registry import ToolRegistry
@@ -40,6 +41,7 @@ class AgentRunner:
         token_tracker=None,
         compactor=None,
         todo_store=None,
+        control_manager=None,
         max_context: int = 200_000,
         compact_threshold: float = 0.7,
         max_turns: int | None = None,
@@ -57,6 +59,7 @@ class AgentRunner:
         self.token_tracker = token_tracker
         self.compactor = compactor
         self.todo_store = todo_store
+        self.control_manager = control_manager
         self.max_context = max_context
         self.compact_threshold = compact_threshold
         self.max_turns = max_turns
@@ -153,7 +156,25 @@ class AgentRunner:
                 if response.thinking_blocks:
                     assistant_message["thinking_blocks"] = response.thinking_blocks
                 history.append(assistant_message)
-                tool_messages = await self._execute_tool_calls(response.tool_calls, emit)
+                try:
+                    tool_messages = await self._execute_tool_calls(response.tool_calls, emit)
+                except TurnPaused as pause:
+                    history.extend(pause.tool_messages)
+                    if self.memory_store is not None:
+                        self.memory_store.write_checkpoint(history)
+                    if emit:
+                        for msg in pause.tool_messages:
+                            if msg.get("tool_call_id") == pause.interaction.get("parent_call_id"):
+                                await emit({
+                                    "event": "tool_result",
+                                    "id": msg.get("tool_call_id"),
+                                    "name": msg.get("name"),
+                                    "summary": msg.get("content"),
+                                })
+                                break
+                        await emit(_control_interaction_event(pause.interaction))
+                        await emit({"event": "turn_paused", "interaction": pause.interaction})
+                    raise
                 history.extend(tool_messages)
                 # 工具批次刚完成 → 此刻 history 处于"tool_calls 与 tool 消息严格配对"的一致点，
                 # 写入 checkpoint；如果 LLM 下一次调用前进程被杀，重启可从此处续命。
@@ -233,8 +254,14 @@ class AgentRunner:
         governed = self._pair_tool_calls(history)
         governed = self._cap_tool_result(governed)
         governed = self._shrink_old_tool_results(governed)
+        system_prompt = self.system_prompt
+        if self.control_manager is not None:
+            system_prompt = f"{system_prompt}\n\n---\n\n{self.control_manager.system_prompt()}"
+            tool_definitions = self.control_manager.tool_definitions(self.registry)
+        else:
+            tool_definitions = self.registry.get_definitions()
         messages = [
-            {"role": "system", "content": self.system_prompt},
+            {"role": "system", "content": system_prompt},
             *governed,
         ]
 
@@ -245,7 +272,7 @@ class AgentRunner:
         if emit:
             return await self.provider.chat_stream(
                 messages=messages,
-                tools=self.registry.get_definitions(),
+                tools=tool_definitions,
                 model=self.model,
                 max_tokens=self.max_tokens,
                 temperature=self.temperature,
@@ -254,7 +281,7 @@ class AgentRunner:
             )
         return await self.provider.chat(
             messages=messages,
-            tools=self.registry.get_definitions(),
+            tools=tool_definitions,
             model=self.model,
             max_tokens=self.max_tokens,
             temperature=self.temperature,
@@ -416,6 +443,7 @@ class AgentRunner:
                     await self._emit_tool_call(item, emit)
                     content = await _run_and_collect(item)
                     results_by_id[item.id] = content
+                    self._maybe_pause_for_control(content, tool_calls, results_by_id)
                     if not content.startswith("Error:"):
                         await self._emit_tool_result(item, content, emit)
                 continue
@@ -423,6 +451,7 @@ class AgentRunner:
             await self._emit_tool_call(call, emit)
             content = await _run_and_collect(call)
             results_by_id[call.id] = content
+            self._maybe_pause_for_control(content, tool_calls, results_by_id)
             if not content.startswith("Error:"):
                 await self._emit_tool_result(call, content, emit)
             i += 1
@@ -438,6 +467,11 @@ class AgentRunner:
         ]
 
     async def _run_tool(self, call: ToolCallRequest, emit: StreamEmitter | None = None) -> str:
+        if self.control_manager is not None and not self.control_manager.is_tool_allowed(call.name, self.registry):
+            return (
+                f"Error: tool '{call.name}' is unavailable in Plan mode. "
+                "Only read-only tools plus ask_user/propose_plan are allowed until the plan is approved."
+            )
         tool = self.registry.get(call.name)
         if emit and tool is not None and getattr(tool, "requires_runtime_context", False):
             loop = asyncio.get_running_loop()
@@ -446,6 +480,42 @@ class AgentRunner:
                 emit=emit, loop=loop, parent_call_id=call.id,
             )
         return await asyncio.to_thread(self.registry.execute, call.name, call.arguments)
+
+    def _maybe_pause_for_control(
+        self,
+        content: str,
+        tool_calls: list[ToolCallRequest],
+        results_by_id: dict[str, str],
+    ) -> None:
+        interaction = parse_pause_result(content)
+        if interaction is None:
+            return
+        tool_messages = self._tool_messages_for_pause(tool_calls, results_by_id, interaction)
+        raise TurnPaused(interaction=interaction, tool_messages=tool_messages)
+
+    @staticmethod
+    def _tool_messages_for_pause(
+        tool_calls: list[ToolCallRequest],
+        results_by_id: dict[str, str],
+        interaction: dict[str, Any],
+    ) -> list[dict[str, Any]]:
+        messages = []
+        current_id = str(interaction.get("parent_call_id") or "")
+        for call in tool_calls:
+            content = results_by_id.get(call.id)
+            if content and parse_pause_result(content):
+                content = f"waiting for user ({interaction.get('kind')}:{interaction.get('id')})"
+            elif content is None:
+                content = "skipped because the turn paused for user input"
+            messages.append({
+                "role": "tool",
+                "tool_call_id": call.id,
+                "name": call.name,
+                "content": content,
+            })
+            if current_id and call.id == current_id:
+                current_id = ""
+        return messages
 
     @staticmethod
     async def _emit_tool_call(call: ToolCallRequest, emit: StreamEmitter | None) -> None:
@@ -514,3 +584,8 @@ def _context_used_from_usage(usage: dict[str, int]) -> int:
     cache_read = int(usage.get("cache_read", usage.get("cache_read_input_tokens", 0)) or 0)
     cache_create = int(usage.get("cache_create", usage.get("cache_creation_input_tokens", 0)) or 0)
     return input_tokens + cache_read + cache_create
+
+
+def _control_interaction_event(interaction: dict[str, Any]) -> dict[str, Any]:
+    event = "ask_request" if interaction.get("kind") == "ask" else "plan_draft"
+    return {"event": event, "interaction": interaction}

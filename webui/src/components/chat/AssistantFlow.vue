@@ -5,6 +5,8 @@ import { actionAssets, avatarAssets } from '../../assets'
 import MarkdownBlock from './MarkdownBlock.vue'
 import TodoPanel from './TodoPanel.vue'
 import ToolEvent from './ToolEvent.vue'
+import AskCard from './AskCard.vue'
+import PlanCard from './PlanCard.vue'
 
 const props = defineProps<{ message: AssistantMessage }>()
 const copied = ref(false)
@@ -53,7 +55,9 @@ async function copyMessage() {
         >
           <MarkdownBlock :content="segment.content" />
         </div>
-        <ToolEvent v-else :segment="segment" />
+        <ToolEvent v-else-if="segment.type === 'tool'" :segment="segment" />
+        <AskCard v-else-if="segment.type === 'ask'" :interaction="segment.interaction" />
+        <PlanCard v-else-if="segment.type === 'plan'" :interaction="segment.interaction" />
       </template>
       <TodoPanel v-if="props.message.todos?.length" :todos="props.message.todos" />
     </div>

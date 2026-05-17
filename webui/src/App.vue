@@ -57,6 +57,10 @@ const {
   runtimeText,
   connectSocket,
   sendMessage,
+  sendInteractionAnswer,
+  sendPlanComment,
+  approvePlan,
+  cancelInteraction,
   clearChat,
   addLocalCommand,
   restoreFromHistory,
@@ -144,6 +148,10 @@ async function executeSlashCommand(raw: string, name: string, command: SlashComm
       addLocalCommand(raw, renderMemoryInfo())
       return
     }
+    if (command.name === '/plan') {
+      await handlePlanCommand(raw)
+      return
+    }
     if (command.name === '/compact') {
       pending.label = '正在压缩未归档会话...'
       pending.detail = ''
@@ -197,9 +205,44 @@ function renderStatus() {
     `- 模型调用：${Number(totals.calls || 0).toLocaleString('zh-CN')} 次`,
     `- Skills：${boot.value?.skills?.length || 0}`,
     `- Tools：${boot.value?.tools?.length || 0}`,
+    `- Control：${inlineCode(boot.value?.control?.mode || 'normal')}`,
     `- 未归档消息：${unarchived}`,
     `- 当前页：${inlineCode(router.currentRoute.value.name?.toString() || 'chat')}`,
   ].join('\n')
+}
+
+async function handlePlanCommand(raw: string) {
+  const [, arg = 'status'] = raw.trim().split(/\s+/, 2)
+  const normalized = arg.toLowerCase()
+  if (normalized === 'on' || normalized === 'plan') {
+    await setControlMode('plan')
+    addLocalCommand(raw, 'Plan 模式已开启：只读探索、提问、计划预览；批准前不会执行写操作。')
+    return
+  }
+  if (normalized === 'off' || normalized === 'normal') {
+    await setControlMode('normal')
+    addLocalCommand(raw, 'Plan 模式已关闭。')
+    return
+  }
+  const pending = boot.value?.control?.pending
+  addLocalCommand(raw, [
+    '## Plan 模式',
+    '',
+    `- 当前模式：${inlineCode(boot.value?.control?.mode || 'normal')}`,
+    `- 等待交互：${pending ? inlineCode(`${pending.kind}:${pending.id}`) : '无'}`,
+  ].join('\n'))
+}
+
+async function setControlMode(mode: 'normal' | 'plan') {
+  const res = await fetch('/api/control/mode', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ mode }),
+  })
+  const data = await res.json()
+  if (!res.ok) throw new Error(data?.error || '切换 Plan 模式失败')
+  if (boot.value) boot.value.control = data
+  showToast(mode === 'plan' ? 'Plan 模式已开启' : 'Plan 模式已关闭')
 }
 
 function renderModelInfo() {
@@ -354,7 +397,12 @@ provideAppContext({
   saveMemory,
   loadEpisode,
   saveEpisode,
+  setControlMode,
   sendMessage,
+  sendInteractionAnswer,
+  sendPlanComment,
+  approvePlan,
+  cancelInteraction,
   clearChat,
   submitFromComposer,
   showToast,

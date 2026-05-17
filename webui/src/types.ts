@@ -212,6 +212,7 @@ export interface BootstrapPayload {
   memory: MemoryPayload
   modelConfig: ModelConfigPayload
   team?: TeamPayload
+  control?: ControlPayload
   context_used?: number
   unarchivedHistory?: RuntimeHistoryItem[]
 }
@@ -258,7 +259,61 @@ export interface ToolSegment {
   durationMs?: number
 }
 
-export type AssistantSegment = TextSegment | ToolSegment
+export interface ControlQuestionOption {
+  label: string
+  description?: string
+}
+
+export interface ControlQuestion {
+  id: string
+  header: string
+  question: string
+  options: ControlQuestionOption[]
+}
+
+export type ControlMode = 'normal' | 'plan' | string
+export type InteractionKind = 'ask' | 'plan' | string
+export type InteractionStatus = 'waiting' | 'answered' | 'commented' | 'approved' | 'cancelled' | string
+
+export interface ControlInteraction {
+  id: string
+  kind: InteractionKind
+  status: InteractionStatus
+  created_at?: number
+  updated_at?: number
+  parent_call_id?: string | null
+  context?: string
+  questions?: ControlQuestion[]
+  answers?: Record<string, unknown>
+  title?: string
+  summary?: string
+  plan_markdown?: string
+  assumptions?: string[]
+  risk_level?: string
+  comments?: Array<{ content?: string; timestamp?: number }>
+}
+
+export interface ControlPayload {
+  version?: number
+  mode: ControlMode
+  pending?: ControlInteraction | null
+  last_interaction?: ControlInteraction | null
+  updated_at?: number
+}
+
+export interface AskSegment {
+  id: string
+  type: 'ask'
+  interaction: ControlInteraction
+}
+
+export interface PlanSegment {
+  id: string
+  type: 'plan'
+  interaction: ControlInteraction
+}
+
+export type AssistantSegment = TextSegment | ToolSegment | AskSegment | PlanSegment
 
 export interface SubagentToolState {
   id?: string
@@ -363,7 +418,7 @@ export interface TeamMemberPayload {
 }
 
 export type WsEvent = ({ seq?: number } & (
-  | { event: 'ready'; model?: string; provider?: string; latest_seq?: number; replay_count?: number; resume_from?: number; busy?: boolean }
+  | { event: 'ready'; model?: string; provider?: string; latest_seq?: number; replay_count?: number; resume_from?: number; busy?: boolean; control?: ControlPayload }
   | { event: 'message_delta'; delta?: string }
   | { event: 'context_usage'; used?: number; max?: number; threshold?: number; usage_type?: string }
   | { event: 'tool_call'; id?: string; name: string; arguments?: Record<string, unknown> }
@@ -371,6 +426,14 @@ export type WsEvent = ({ seq?: number } & (
   | { event: 'tool_error'; id?: string; name?: string; message?: string }
   | { event: 'assistant_done'; content?: string }
   | { event: 'error'; message?: string; partial?: boolean }
+  | { event: 'control_mode_update'; control?: ControlPayload }
+  | { event: 'ask_request'; interaction?: ControlInteraction }
+  | { event: 'ask_answered'; interaction?: ControlInteraction }
+  | { event: 'plan_draft'; interaction?: ControlInteraction }
+  | { event: 'plan_comment_added'; interaction?: ControlInteraction; comment?: string }
+  | { event: 'plan_approved'; interaction?: ControlInteraction; control?: ControlPayload }
+  | { event: 'interaction_cancelled'; interaction?: ControlInteraction; control?: ControlPayload }
+  | { event: 'turn_paused'; interaction?: ControlInteraction }
   | { event: 'subagent_start'; parent_id?: string; subagent_id?: string; agent_type?: string; purpose?: string }
   | { event: 'subagent_delta'; parent_id?: string; subagent_id?: string; agent_type?: string; delta?: string }
   | { event: 'subagent_tool_call'; parent_id?: string; subagent_id?: string; id?: string; name: string; arguments?: Record<string, unknown> }

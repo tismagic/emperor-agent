@@ -8,6 +8,7 @@ from loguru import logger
 
 from .compactor import Compactor
 from .context import ContextBuilder
+from .control import AskUserTool, ControlManager, ControlMode, InteractionKind, ProposePlanTool, TurnPaused
 from .logger import configure as configure_logging
 from .memory import MemoryStore
 from .mcp import MCPClient
@@ -81,6 +82,10 @@ class AgentLoop:
         self.registry.register(GlobTool(workspace))
         self.registry.register(GrepTool(workspace))
 
+        self.control_manager = ControlManager(self.root)
+        self.registry.register(AskUserTool(self.control_manager))
+        self.registry.register(ProposePlanTool(self.control_manager))
+
         self.todos = TodoStore()
         self.registry.register(UpdateTodosTool(self.todos))
 
@@ -105,7 +110,10 @@ class AgentLoop:
         if checkpoint:
             logger.info(f"[Startup: restored checkpoint with {len(checkpoint)} messages]")
             self.history: list = list(checkpoint)
-            self.memory.clear_checkpoint()
+            if self.control_manager.payload().get("pending"):
+                logger.info("[Startup: control interaction pending; keeping checkpoint until resume/cancel]")
+            else:
+                self.memory.clear_checkpoint()
         else:
             unarchived = self.memory.load_unarchived_history()
             if startup_compaction and len(unarchived) >= 2:
@@ -167,6 +175,7 @@ class AgentLoop:
                 token_tracker=self.token_tracker,
                 compactor=self.compactor,
                 todo_store=self.todos,
+                control_manager=self.control_manager,
                 max_context=self.max_context,
             )
             return
@@ -180,6 +189,7 @@ class AgentLoop:
         self.runner.provider_name = self.provider_name
         self.runner.usage_type = "main_agent"
         self.runner.compactor = self.compactor
+        self.runner.control_manager = self.control_manager
         self.runner.max_context = self.max_context
 
     def refresh_runtime_context(self) -> None:
@@ -219,7 +229,11 @@ class AgentLoop:
                 continue
             self.history.append({"role": "user", "content": user_input})
             self.memory.append_history("user", user_input)
-            reply = self.runner.step(self.history)
+            try:
+                reply = self.runner.step(self.history)
+            except TurnPaused:
+                self._drive_cli_control()
+                continue
             logger.info(f"大内总管: {reply}")
 
     def _handle_cli_command(self, user_input: str) -> bool:
@@ -232,6 +246,7 @@ class AgentLoop:
                 "\n可用命令:\n"
                 "  /help      显示命令列表\n"
                 "  /status    查看模型、Provider、Token、工具和技能数量\n"
+                "  /plan      查看 / 开关 Plan 模式：/plan on|off|status\n"
                 "  /clear     清空当前 CLI 运行上下文, 不删除 memory/history.jsonl\n"
                 "  /exit      退出 CLI\n"
             )
@@ -249,6 +264,29 @@ class AgentLoop:
                 f"  skills:   {len(self.skills.skills)}\n"
                 f"  tools:    {len(all_defs)} (builtin: {builtin_count}, mcp: {mcp_count})\n"
                 f"  history:  {len(self.history)} in-memory turns\n"
+                f"  control:  {self.control_manager.mode}\n"
+            )
+            return True
+        if command == "/plan":
+            parts = text.split(maxsplit=1)
+            arg = parts[1].strip().lower() if len(parts) > 1 else "status"
+            if arg in {"on", "plan"}:
+                self.control_manager.set_mode(ControlMode.PLAN.value)
+                logger.info("\nPlan 模式已开启：只读探索 + 提问 + 计划预览；批准前不执行。")
+                return True
+            if arg in {"off", "normal"}:
+                self.control_manager.set_mode(ControlMode.NORMAL.value)
+                logger.info("\nPlan 模式已关闭。")
+                return True
+            payload = self.control_manager.payload()
+            pending = payload.get("pending")
+            pending_label = "-"
+            if pending:
+                pending_label = f"{pending.get('kind')}:{pending.get('id')}"
+            logger.info(
+                "\nControl 状态:\n"
+                f"  mode: {payload.get('mode')}\n"
+                f"  pending: {pending_label}\n"
             )
             return True
         if command == "/clear":
@@ -260,6 +298,76 @@ class AgentLoop:
             raise SystemExit(0)
         logger.warning(f"\n未知命令: {command}。输入 /help 查看可用命令。")
         return True
+
+    def _drive_cli_control(self) -> None:
+        while True:
+            pending = self.control_manager.payload().get("pending")
+            if not pending:
+                return
+            if pending.get("kind") == InteractionKind.ASK.value:
+                logger.info(self._render_cli_ask(pending))
+                answers = {}
+                for question in pending.get("questions") or []:
+                    qid = question.get("id")
+                    raw = input(f"回答 {question.get('header') or qid}: ").strip()
+                    answers[qid] = {"choice": raw, "freeform": ""}
+                resume = self.control_manager.answer(pending["id"], answers)
+            elif pending.get("kind") == InteractionKind.PLAN.value:
+                logger.info(self._render_cli_plan(pending))
+                while True:
+                    raw = input("plan> approve / comment <内容> / cancel: ").strip()
+                    if raw == "approve":
+                        resume = self.control_manager.approve(pending["id"])
+                        break
+                    if raw.startswith("comment "):
+                        resume = self.control_manager.comment(pending["id"], raw[len("comment "):].strip())
+                        break
+                    if raw == "cancel":
+                        event = self.control_manager.cancel(pending["id"])
+                        message = str(event.get("message") or "")
+                        if message:
+                            self.history.append({"role": "user", "content": message})
+                            self.memory.append_history("user", message, extra={"type": "control_response"})
+                        self.memory.clear_checkpoint()
+                        logger.info(f"已取消：{event.get('interaction', {}).get('id')}")
+                        return
+                    logger.info("请输入 approve、comment <内容> 或 cancel。")
+            else:
+                return
+
+            self.history.append({"role": "user", "content": resume.message})
+            self.memory.append_history("user", resume.message, extra={"type": "control_response"})
+            try:
+                reply = self.runner.step(self.history)
+            except TurnPaused:
+                continue
+            logger.info(f"大内总管: {reply}")
+            return
+
+    @staticmethod
+    def _render_cli_ask(interaction: dict) -> str:
+        lines = ["\n需要你先定夺几个问题："]
+        for question in interaction.get("questions") or []:
+            lines.append(f"\n[{question.get('header')}] {question.get('question')}")
+            for idx, option in enumerate(question.get("options") or [], start=1):
+                lines.append(f"  {idx}. {option.get('label')} — {option.get('description')}")
+            lines.append("  也可直接输入自由回答。")
+        return "\n".join(lines)
+
+    @staticmethod
+    def _render_cli_plan(interaction: dict) -> str:
+        assumptions = interaction.get("assumptions") or []
+        lines = [
+            "\n计划待预览：",
+            f"# {interaction.get('title') or 'Plan'}",
+            "",
+            str(interaction.get("summary") or ""),
+            "",
+            str(interaction.get("plan_markdown") or ""),
+        ]
+        if assumptions:
+            lines.extend(["", "Assumptions:", *[f"- {item}" for item in assumptions]])
+        return "\n".join(lines)
 
     def _install_subagent_tool(self) -> None:
         def _make_subagent_runner(*, spec, sub_registry):

@@ -23,6 +23,7 @@ from .attachments import (
     encode_for_openai_block,
     ref_to_json,
 )
+from .control import InteractionKind, TurnPaused
 from .logger import configure as configure_logging
 from .loop import AgentLoop
 from .mcp.config import load_mcp_config, save_mcp_config
@@ -73,6 +74,7 @@ class WebUIState:
             "memory": self.memory(),
             "modelConfig": self.model_config(),
             "team": self.team(),
+            "control": self.control(),
             "context_used": self.loop.token_tracker.last_input_tokens(),
             "unarchivedHistory": self.unarchived_history(),
         })
@@ -112,7 +114,11 @@ class WebUIState:
         started = False
         try:
             payload = json.loads(raw)
-            if payload.get("type") != "message":
+            msg_type = payload.get("type")
+            if msg_type in {"interaction_answer", "plan_comment", "plan_approve", "interaction_cancel"}:
+                await self._handle_control_ws_payload(payload)
+                return
+            if msg_type != "message":
                 raise ValueError("Unsupported WebSocket message type")
             text = str(payload.get("content") or "").strip()
             attachment_ids = payload.get("attachments") or []
@@ -121,6 +127,12 @@ class WebUIState:
             attachment_ids = [str(a) for a in attachment_ids if isinstance(a, (str, int))]
             if not text and not attachment_ids:
                 raise ValueError("Message is empty")
+            if self.control().get("pending"):
+                if attachment_ids:
+                    raise ValueError("当前有 Ask / Plan 正在等待处理，请先回答、评论、批准或取消后再发送附件。")
+                if text:
+                    await self._handle_pending_text_message(text)
+                    return
             content = self._build_user_content(text, attachment_ids)
             user_msg: dict[str, Any] = {"role": "user", "content": content}
             if attachment_ids:
@@ -141,8 +153,12 @@ class WebUIState:
 
                 try:
                     await self.loop.runner.step_stream(self.history, emit)
+                except TurnPaused:
+                    pass
                 finally:
                     self.active_turn = False
+        except TurnPaused:
+            self.active_turn = False
         except Exception as exc:
             logger.exception("WebSocket message handler error")
             payload = {"event": "error", "message": str(exc), "partial": True}
@@ -153,6 +169,89 @@ class WebUIState:
                     await self._send_ws(ws, payload)
                 except ConnectionResetError:
                     pass
+
+    async def _handle_control_ws_payload(self, payload: dict[str, Any]) -> None:
+        msg_type = str(payload.get("type") or "")
+        interaction_id = str(payload.get("interaction_id") or "")
+        if not interaction_id:
+            raise ValueError("interaction_id is required")
+        if msg_type == "interaction_cancel":
+            event = self.loop.control_manager.cancel(interaction_id)
+            await self._record_control_cancel(str(event.get("message") or ""), "已取消等待中的交互")
+            await self._broadcast_event(event)
+            await self._broadcast_event({"event": "control_mode_update", "control": self.control()})
+            return
+        if msg_type == "interaction_answer":
+            answers = payload.get("answers") if isinstance(payload.get("answers"), dict) else {}
+            resume = self.loop.control_manager.answer(interaction_id, answers)
+            display = "已回答澄清问题"
+        elif msg_type == "plan_comment":
+            resume = self.loop.control_manager.comment(interaction_id, str(payload.get("comment") or ""))
+            display = f"评论计划：{str(payload.get('comment') or '').strip()[:120]}"
+        elif msg_type == "plan_approve":
+            resume = self.loop.control_manager.approve(interaction_id)
+            display = "已批准计划，开始执行"
+        else:
+            raise ValueError(f"Unsupported control message type: {msg_type}")
+        await self._broadcast_event(resume.event)
+        await self._broadcast_event({"event": "control_mode_update", "control": self.control()})
+        await self._resume_control_turn(resume.message, display)
+
+    async def _handle_pending_text_message(self, text: str) -> None:
+        pending = self.control().get("pending") or {}
+        interaction_id = str(pending.get("id") or "")
+        if not interaction_id:
+            raise ValueError("pending interaction is missing id")
+        if pending.get("kind") == InteractionKind.ASK.value:
+            resume = self.loop.control_manager.answer(
+                interaction_id,
+                {"_freeform": {"choice": "", "freeform": text}},
+            )
+            display = "已回答澄清问题"
+        elif pending.get("kind") == InteractionKind.PLAN.value:
+            if text.strip().lower() in {"approve", "批准", "执行"}:
+                resume = self.loop.control_manager.approve(interaction_id)
+                display = "已批准计划，开始执行"
+            else:
+                resume = self.loop.control_manager.comment(interaction_id, text)
+                display = f"评论计划：{text[:120]}"
+        else:
+            raise ValueError("unknown pending interaction")
+        await self._broadcast_event(resume.event)
+        await self._broadcast_event({"event": "control_mode_update", "control": self.control()})
+        await self._resume_control_turn(resume.message, display)
+
+    async def _record_control_cancel(self, message: str, display: str) -> None:
+        if not message:
+            return
+        async with self.lock:
+            self.history.append({"role": "user", "content": message})
+            self.loop.memory.append_history(
+                "user",
+                message,
+                extra={"type": "control_response", "displayContent": display},
+            )
+            self.loop.memory.clear_checkpoint()
+
+    async def _resume_control_turn(self, message: str, display: str) -> None:
+        async with self.lock:
+            self.history.append({"role": "user", "content": message})
+            self.loop.memory.append_history(
+                "user",
+                message,
+                extra={"type": "control_response", "displayContent": display},
+            )
+            self.active_turn = True
+
+            async def emit(event: dict[str, Any]) -> None:
+                await self._broadcast_event(event)
+
+            try:
+                await self.loop.runner.step_stream(self.history, emit)
+            except TurnPaused:
+                pass
+            finally:
+                self.active_turn = False
 
     def _build_user_content(self, text: str, attachment_ids: list[str]) -> Any:
         """把用户文本 + 附件 IDs 装配成内部统一格式。
@@ -365,6 +464,7 @@ class WebUIState:
             "replay_count": replay_count,
             "resume_from": last_seq,
             "busy": self.active_turn,
+            "control": self.control(),
         }
 
     async def get_tools(self, request: web.Request) -> web.Response:
@@ -468,6 +568,24 @@ class WebUIState:
 
     async def get_tokens(self, request: web.Request) -> web.Response:
         return self._json(self.tokens())
+
+    async def get_control(self, request: web.Request) -> web.Response:
+        return self._json(self.control())
+
+    async def post_control_mode(self, request: web.Request) -> web.Response:
+        body = await self._body(request)
+        mode = str(body.get("mode") or "")
+        data = self.loop.control_manager.set_mode(mode)
+        await self._broadcast_event({"event": "control_mode_update", "control": data})
+        return self._json(data)
+
+    async def post_control_cancel(self, request: web.Request) -> web.Response:
+        interaction_id = request.match_info.get("id", "")
+        event = self.loop.control_manager.cancel(interaction_id)
+        await self._record_control_cancel(str(event.get("message") or ""), "已取消等待中的交互")
+        await self._broadcast_event(event)
+        await self._broadcast_event({"event": "control_mode_update", "control": self.control()})
+        return self._json(self.control())
 
     async def get_team(self, request: web.Request) -> web.Response:
         return self._json(self.team())
@@ -830,6 +948,9 @@ npm run build</code>
     def team(self) -> dict[str, Any]:
         return self.loop.team_manager.payload()
 
+    def control(self) -> dict[str, Any]:
+        return self.loop.control_manager.payload()
+
     def _count_history_messages(self) -> int:
         history_file = self.loop.memory.history_file
         if not history_file.exists():
@@ -1042,6 +1163,9 @@ def create_app(root: Path) -> web.Application:
     app.router.add_get("/api/memory/episode", state.get_memory_episode)
     app.router.add_post("/api/memory/episode", state.post_memory_episode)
     app.router.add_get("/api/tokens", state.get_tokens)
+    app.router.add_get("/api/control", state.get_control)
+    app.router.add_post("/api/control/mode", state.post_control_mode)
+    app.router.add_post("/api/control/interactions/{id}/cancel", state.post_control_cancel)
     app.router.add_get("/api/team", state.get_team)
     app.router.add_post("/api/team/members", state.post_team_member)
     app.router.add_get("/api/team/members/{name}", state.get_team_member)

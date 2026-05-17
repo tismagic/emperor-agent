@@ -1,5 +1,5 @@
 import { computed, reactive, ref, watch, type Ref } from 'vue'
-import type { AssistantMessage, AttachmentRef, BootstrapPayload, ChatMessage, PendingState, RuntimeHistoryItem, RuntimeStatus, SubagentState, TeamMessage, ToolSegment, ToolStatus, WsEvent } from '../types'
+import type { AssistantMessage, AttachmentRef, BootstrapPayload, ChatMessage, ControlInteraction, PendingState, RuntimeHistoryItem, RuntimeStatus, SubagentState, TeamMessage, ToolSegment, ToolStatus, WsEvent } from '../types'
 
 const RUNTIME_STORAGE_KEY = 'emperor-agent:runtime-view'
 const LEGACY_IN_FLIGHT_STORAGE_KEY = 'emperor-agent:in-flight-runtime'
@@ -123,6 +123,64 @@ export function useRuntime(options: {
         content: text,
         attachments: attachments.map((a) => a.id),
       }))
+      return true
+    } catch (err) {
+      handleChatError(err instanceof Error ? err.message : String(err))
+      return false
+    }
+  }
+
+  function sendInteractionAnswer(interactionId: string, answers: Record<string, unknown>) {
+    return sendControlPayload(
+      { type: 'interaction_answer', interaction_id: interactionId, answers },
+      '已回答澄清问题',
+      true,
+    )
+  }
+
+  function sendPlanComment(interactionId: string, comment: string) {
+    const text = comment.trim()
+    if (!text) return false
+    return sendControlPayload(
+      { type: 'plan_comment', interaction_id: interactionId, comment: text },
+      `评论计划：${text.slice(0, 80)}`,
+      true,
+    )
+  }
+
+  function approvePlan(interactionId: string) {
+    return sendControlPayload(
+      { type: 'plan_approve', interaction_id: interactionId },
+      '批准计划，开始执行',
+      true,
+    )
+  }
+
+  function cancelInteraction(interactionId: string) {
+    return sendControlPayload(
+      { type: 'interaction_cancel', interaction_id: interactionId },
+      '已取消等待中的交互',
+      false,
+    )
+  }
+
+  function sendControlPayload(payload: Record<string, unknown>, userLabel: string, expectAssistant: boolean) {
+    if (busy.value) return false
+    if (!socket.value || socket.value.readyState !== WebSocket.OPEN) {
+      connectSocket()
+      options.showToast('WebSocket 还没连上，请稍后再试')
+      return false
+    }
+    messages.value.push({ id: nextId('user'), role: 'user', content: userLabel })
+    if (expectAssistant) {
+      const assistantId = nextId('assistant')
+      messages.value.push({ id: assistantId, role: 'assistant', content: '', segments: [], todos: null, streaming: true })
+      currentAssistantId.value = assistantId
+      busy.value = true
+      updatePending('正在继续执行...', userLabel)
+    }
+    try {
+      socket.value.send(JSON.stringify(payload))
       return true
     } catch (err) {
       handleChatError(err instanceof Error ? err.message : String(err))
@@ -291,6 +349,39 @@ export function useRuntime(options: {
       return
     }
 
+    if (data.event === 'control_mode_update') {
+      if (options.boot.value && data.control) options.boot.value.control = data.control
+      return
+    }
+
+    if (data.event === 'ask_request' || data.event === 'plan_draft') {
+      handleControlDraft(data)
+      return
+    }
+
+    if (
+      data.event === 'ask_answered' ||
+      data.event === 'plan_comment_added' ||
+      data.event === 'plan_approved' ||
+      data.event === 'interaction_cancelled'
+    ) {
+      if ('control' in data && data.control && options.boot.value) options.boot.value.control = data.control
+      if (data.interaction) updateControlSegment(data.interaction)
+      if (data.event === 'plan_approved') updatePending('计划已批准，开始执行', '', 'done')
+      if (data.event === 'interaction_cancelled') updatePending('已取消等待', '', 'done')
+      return
+    }
+
+    if (data.event === 'turn_paused') {
+      const assistant = currentAssistant.value
+      if (assistant) assistant.streaming = false
+      currentAssistantId.value = null
+      busy.value = false
+      status.value = 'ready'
+      updatePending('等待你定夺', data.interaction?.kind === 'plan' ? '计划待预览' : '问题待回答', 'done')
+      return
+    }
+
     if (data.event === 'error') {
       updatePending()
       handleChatError(data.message || '未知错误')
@@ -330,9 +421,48 @@ export function useRuntime(options: {
     if (options.boot.value) {
       options.boot.value.model = data.model || options.boot.value.model
       options.boot.value.provider = data.provider || options.boot.value.provider
+      if (data.control) options.boot.value.control = data.control
     }
     if (!serverRestarted && currentAssistant.value?.streaming && hasReplay) {
       updatePending('WebSocket 已重连，正在补齐回复...', `回放 ${data.replay_count} 个事件`)
+    }
+  }
+
+  function handleControlDraft(data: Extract<WsEvent, { event: 'ask_request' | 'plan_draft' }>) {
+    if (!data.interaction) return
+    if (options.boot.value) {
+      options.boot.value.control ||= { mode: 'normal', pending: null }
+      options.boot.value.control.pending = data.interaction
+    }
+    const assistant = currentAssistant.value || createAssistantForIncomingControl()
+    const type = data.event === 'ask_request' ? 'ask' : 'plan'
+    const existing = assistant.segments.find((seg) =>
+      (seg.type === 'ask' || seg.type === 'plan') && seg.interaction.id === data.interaction!.id
+    )
+    if (existing && (existing.type === 'ask' || existing.type === 'plan')) {
+      existing.interaction = data.interaction
+    } else {
+      assistant.segments.push({ id: nextId(type), type, interaction: data.interaction })
+    }
+    updatePending(type === 'plan' ? '计划待预览' : '等待你回答', data.interaction.title || data.interaction.context || '', 'done')
+  }
+
+  function createAssistantForIncomingControl() {
+    const assistantId = nextId('assistant')
+    const assistant: AssistantMessage = { id: assistantId, role: 'assistant', content: '', segments: [], todos: null, streaming: true }
+    messages.value.push(assistant)
+    currentAssistantId.value = assistantId
+    return assistant
+  }
+
+  function updateControlSegment(interaction: ControlInteraction) {
+    for (const message of messages.value) {
+      if (message.role !== 'assistant') continue
+      for (const segment of message.segments) {
+        if ((segment.type === 'ask' || segment.type === 'plan') && segment.interaction.id === interaction.id) {
+          segment.interaction = interaction
+        }
+      }
     }
   }
 
@@ -681,6 +811,10 @@ export function useRuntime(options: {
     runtimeText,
     connectSocket,
     sendMessage,
+    sendInteractionAnswer,
+    sendPlanComment,
+    approvePlan,
+    cancelInteraction,
     clearChat,
     addLocalCommand,
     restoreFromHistory,

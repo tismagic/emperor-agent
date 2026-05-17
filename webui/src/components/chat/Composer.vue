@@ -2,7 +2,7 @@
 import { computed, nextTick, ref } from 'vue'
 import type { SlashCommand } from '../../commands'
 import type { AttachmentRef } from '../../types'
-import { actionAssets } from '../../assets'
+import { actionAssets, toolAssets } from '../../assets'
 import { uploadAttachment } from '../../api/attachments'
 import AttachmentChip from './AttachmentChip.vue'
 
@@ -11,11 +11,13 @@ const props = defineProps<{
   commands: SlashCommand[]
   contextUsed: number
   contextMax: number
+  controlMode?: string
   supportsVision?: boolean
 }>()
 const emit = defineEmits<{
   send: [payload: { content: string; attachments: AttachmentRef[] }]
   error: [message: string]
+  'set-mode': [mode: 'normal' | 'plan']
 }>()
 const value = ref('')
 const input = ref<HTMLTextAreaElement | null>(null)
@@ -23,6 +25,7 @@ const fileInput = ref<HTMLInputElement | null>(null)
 const drafts = ref<AttachmentRef[]>([])
 const uploading = ref<Set<string>>(new Set())
 const dragActive = ref(false)
+const modeMenuOpen = ref(false)
 
 const ACCEPT_LIST =
   'image/png,image/jpeg,image/webp,image/gif,application/pdf,application/json,text/csv,text/plain,text/markdown'
@@ -42,6 +45,26 @@ const attachTitle = computed(() => {
   return `添加附件（最多 ${MAX_DRAFTS} 个）· ${cap}`
 })
 
+const modeOptions = [
+  {
+    value: 'normal',
+    label: '正常模式',
+    short: '正常',
+    description: '直接执行工具与代码改动',
+    icon: actionAssets.statusOnline,
+  },
+  {
+    value: 'plan',
+    label: '计划模式',
+    short: '计划',
+    description: '只读探索，提交计划，批准后执行',
+    icon: toolAssets.todo,
+  },
+] as const
+
+const currentMode = computed(() => modeOptions.find((item) => item.value === props.controlMode) || modeOptions[0])
+const modeTitle = computed(() => props.busy ? 'AI 正在执行，结束后再切换模式' : '切换对话模式')
+
 function resize() {
   const el = input.value
   if (!el) return
@@ -56,6 +79,7 @@ function submit() {
   emit('send', { content, attachments: [...drafts.value] })
   value.value = ''
   drafts.value = []
+  modeMenuOpen.value = false
   void nextTick(resize)
 }
 
@@ -73,8 +97,35 @@ function handleKeydown(event: KeyboardEvent) {
 
 function applySuggestion(command: SlashCommand) {
   value.value = command.usage
+  modeMenuOpen.value = false
   input.value?.focus()
   void nextTick(resize)
+}
+
+function showSlashCommands() {
+  if (props.busy) return
+  if (!value.value.trim()) value.value = '/'
+  modeMenuOpen.value = false
+  input.value?.focus()
+  void nextTick(resize)
+}
+
+function toggleModeMenu() {
+  if (props.busy) return
+  modeMenuOpen.value = !modeMenuOpen.value
+}
+
+function selectMode(mode: 'normal' | 'plan') {
+  if (props.busy) return
+  modeMenuOpen.value = false
+  if (mode !== props.controlMode) emit('set-mode', mode)
+  input.value?.focus()
+}
+
+function scheduleModeMenuClose() {
+  window.setTimeout(() => {
+    modeMenuOpen.value = false
+  }, 140)
 }
 
 function pickFiles() {
@@ -194,7 +245,7 @@ const sendDisabled = computed(() => props.busy || (!value.value.trim() && drafts
       </div>
     </div>
 
-    <form class="composer" @submit.prevent="submit">
+    <form class="composer" @submit.prevent="submit" @keydown.esc="modeMenuOpen = false">
       <input
         ref="fileInput"
         type="file"
@@ -204,55 +255,114 @@ const sendDisabled = computed(() => props.busy || (!value.value.trim() && drafts
         @change="onFileInput"
       />
 
-      <button
-        type="button"
-        class="attach-button"
-        :title="attachTitle"
-        :aria-label="attachTitle"
-        :disabled="props.busy"
-        @click="pickFiles"
-      >
-        <img class="action-icon" :src="actionAssets.attach" alt="" width="24" height="24" />
-      </button>
-
-      <textarea
-        ref="input"
-        v-model="value"
-        rows="1"
-        :disabled="props.busy"
-        :placeholder="props.busy ? 'AI 正在执行...' : '向李公公交办一件差事... 输入 / 查看命令；可拖入图片或文档'"
-        @input="resize"
-        @keydown="handleKeydown"
-      />
-
-      <div
-        v-if="props.contextMax > 0"
-        class="context-ring"
-        tabindex="0"
-        role="status"
-        :aria-label="contextLabel"
-      >
-        <svg viewBox="0 0 36 36" class="ring-svg">
-          <circle class="ring-track" cx="18" cy="18" r="15.915" />
-          <circle
-            class="ring-arc"
-            cx="18" cy="18" r="15.915"
-            :stroke="arcColor"
-            :stroke-dasharray="`${arcLength} ${100 - arcLength}`"
-            stroke-dashoffset="25"
-          />
-        </svg>
-        <div class="context-tooltip" role="tooltip">
-          <strong>上下文长度</strong>
-          <span>{{ fmt(props.contextUsed) }} / {{ fmt(props.contextMax) }}</span>
-          <em>已用 {{ percentLabel }}</em>
-        </div>
+      <div class="composer-input-row">
+        <textarea
+          ref="input"
+          v-model="value"
+          rows="2"
+          :disabled="props.busy"
+          :placeholder="props.busy ? 'AI 正在执行...' : '向李公公交办一件差事... 输入 / 查看命令；可拖入图片或文档'"
+          @focus="modeMenuOpen = false"
+          @input="resize"
+          @keydown="handleKeydown"
+        />
       </div>
 
-      <button class="send-button" :disabled="sendDisabled" type="submit">
-        <img class="action-icon send-icon" :src="props.busy ? actionAssets.statusBusy : actionAssets.send" alt="" width="24" height="24" />
-        <span class="sr-only">{{ props.busy ? '等待' : '发送' }}</span>
-      </button>
+      <div class="composer-action-row">
+        <div class="composer-left-actions">
+          <button
+            type="button"
+            class="attach-button"
+            :title="attachTitle"
+            :aria-label="attachTitle"
+            :disabled="props.busy"
+            @click="pickFiles"
+          >
+            <img class="action-icon" :src="actionAssets.attach" alt="" width="24" height="24" />
+          </button>
+
+          <button
+            type="button"
+            class="slash-hint-button"
+            title="显示斜杠命令"
+            :disabled="props.busy"
+            @click="showSlashCommands"
+          >
+            <span>/</span>
+            <em>命令</em>
+          </button>
+        </div>
+
+        <div class="composer-right-actions">
+          <div class="mode-picker" @focusout="scheduleModeMenuClose">
+            <button
+              type="button"
+              class="mode-button"
+              :data-active="currentMode.value === 'plan'"
+              :aria-expanded="modeMenuOpen"
+              :title="modeTitle"
+              :disabled="props.busy"
+              @click="toggleModeMenu"
+            >
+              <img class="mode-icon" :src="currentMode.icon" alt="" width="18" height="18" />
+              <span>{{ currentMode.label }}</span>
+              <em>{{ currentMode.value === 'plan' ? '预览计划' : '直接执行' }}</em>
+              <img class="mode-caret" :src="actionAssets.caretDown" alt="" width="14" height="14" />
+            </button>
+
+            <div v-if="modeMenuOpen" class="mode-menu">
+              <div class="mode-menu-head">
+                <span>对话模式</span>
+                <em>切换后立即生效</em>
+              </div>
+              <button
+                v-for="option in modeOptions"
+                :key="option.value"
+                type="button"
+                class="mode-option"
+                :data-active="currentMode.value === option.value"
+                @click="selectMode(option.value)"
+              >
+                <img class="mode-option-icon" :src="option.icon" alt="" width="20" height="20" />
+                <span>
+                  <strong>{{ option.label }}</strong>
+                  <small>{{ option.description }}</small>
+                </span>
+                <b>{{ option.short }}</b>
+              </button>
+            </div>
+          </div>
+
+          <div
+            v-if="props.contextMax > 0"
+            class="context-ring"
+            tabindex="0"
+            role="status"
+            :aria-label="contextLabel"
+          >
+            <svg viewBox="0 0 36 36" class="ring-svg">
+              <circle class="ring-track" cx="18" cy="18" r="15.915" />
+              <circle
+                class="ring-arc"
+                cx="18" cy="18" r="15.915"
+                :stroke="arcColor"
+                :stroke-dasharray="`${arcLength} ${100 - arcLength}`"
+                stroke-dashoffset="25"
+              />
+            </svg>
+            <div class="context-tooltip" role="tooltip">
+              <strong>上下文长度</strong>
+              <span>{{ fmt(props.contextUsed) }} / {{ fmt(props.contextMax) }}</span>
+              <em>已用 {{ percentLabel }}</em>
+            </div>
+          </div>
+
+          <button class="send-button" :disabled="sendDisabled" type="submit">
+            <img class="action-icon send-icon" :src="props.busy ? actionAssets.statusBusy : actionAssets.send" alt="" width="24" height="24" />
+            <span class="sr-only">{{ props.busy ? '等待' : '发送' }}</span>
+          </button>
+        </div>
+      </div>
     </form>
   </div>
 </template>

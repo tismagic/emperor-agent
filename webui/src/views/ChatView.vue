@@ -27,7 +27,9 @@ const ctx = useAppContext()
         :commands="ctx.commands"
         :context-used="ctx.boot.value?.context_used ?? 0"
         :context-max="ctx.boot.value?.modelConfig?.current?.contextWindowTokens ?? 0"
+        :control-mode="ctx.boot.value?.control?.mode || 'normal'"
         :supports-vision="ctx.boot.value?.modelConfig?.current?.supportsVision ?? false"
+        @set-mode="ctx.setControlMode"
         @send="ctx.submitFromComposer($event)"
         @error="ctx.showToast"
       />

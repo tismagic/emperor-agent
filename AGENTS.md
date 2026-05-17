@@ -12,6 +12,7 @@
 - 多 Provider LLM 调用层
 - 工具调用与子代理派遣
 - Agent Team 持久队友协作
+- Ask / Plan 会话控制与可暂停执行
 - 三层记忆 + 自动压缩
 - WebSocket 流式 WebUI（Vue3 + Vite + Tailwind）
 - 附件上传（图像/文档）与多模态输入链路
@@ -27,8 +28,9 @@
 5. `agent/memory.py` + `agent/compactor.py`（记忆与压缩）
 6. `agent/model_config.py` + `agent/providers/*`（模型配置与 provider 实现）
 7. `agent/tools/*` + `agent/subagents/*`（工具与子代理能力边界）
-8. `agent/team/*`（持久队友、MessageBus、TeamStore、team tools）
-9. `webui/src/composables/useRuntime.ts` + `useBootstrap.ts` + `components/panels/ModelPanel.vue` + `components/panels/TeamPanel.vue`
+8. `agent/control/*`（Ask / Plan pending 状态、模式、工具门禁）
+9. `agent/team/*`（持久队友、MessageBus、TeamStore、team tools）
+10. `webui/src/composables/useRuntime.ts` + `useBootstrap.ts` + `components/panels/ModelPanel.vue` + `components/panels/TeamPanel.vue`
 
 ## 3. 关键目录地图
 
@@ -42,6 +44,7 @@
 - `agent/model_config.py`：新旧 schema 兼容、entry 激活、保存与脱敏
 - `agent/providers/`：OpenAI-compatible / Anthropic / Bedrock
 - `agent/tools/`：内建工具实现（命令、读写、搜索、todo、子代理）
+- `agent/control/`：Ask / Plan 会话控制、pending interaction、工具暴露策略
 - `agent/team/`：Agent Team 子系统（持久队友、inbox、thread、状态机、team tools）
 - `agent/attachments.py`：附件落盘、MIME 校验、PDF/文本抽取、图片 base64 编码
 - `agent/memory.py`：长期记忆、历史日志、checkpoint 恢复
@@ -53,6 +56,7 @@
 - `webui/src/composables/useRuntime.ts`：WS 生命周期、事件流、消息状态机
 - `webui/src/composables/useBootstrap.ts`：bootstrap 与 CRUD API 客户端
 - `webui/src/components/chat/Composer.vue`：输入框、附件上传、上下文用量环
+- `webui/src/components/chat/AskCard.vue` / `PlanCard.vue`：Ask / Plan 内联交互卡
 - `webui/src/components/panels/ModelPanel.vue`：模型条目管理、文本/视觉连通测试
 - `webui/src/components/panels/TeamPanel.vue`：Agent Team 队友工作台
 - `webui/src/views/*`：一级路由页面
@@ -130,6 +134,13 @@ Vite 会代理 `/api` 与 `/ws` 到 `127.0.0.1:8765`。
   - `memory/MEMORY.local.md`
   - `templates/USER.local.md`
 
+### 5.5 Ask / Plan 暂停恢复
+
+- `agent/control/` 统一管理当前 `mode` 与 pending interaction，状态写入 `memory/control/state.json`
+- `ask_user` / `propose_plan` 会生成有效 tool result，占位为 waiting，并抛出内部 `TurnPaused`
+- Runner 在暂停前写 checkpoint，WebUI / CLI 收到用户回答、评论或批准后，把结构化反馈追加到 history 再恢复执行
+- Plan 模式是工具层硬门禁：只暴露只读工具 + `ask_user` + `propose_plan`；写文件、命令执行、子代理派遣、Team 写操作不可用
+
 ## 6. WebSocket 事件协议（前后端联动改动必看）
 
 核心事件：
@@ -138,6 +149,11 @@ Vite 会代理 `/api` 与 `/ws` 到 `127.0.0.1:8765`。
 - `tool_call` / `tool_result` / `tool_error`
 - `subagent_*`（start/delta/tool_call/tool_result/done/error）
 - `team_*`（member_update/message/run_start/run_delta/run_tool_call/run_tool_result/run_done/run_error）
+- `control_mode_update`
+- `ask_request` / `ask_answered`
+- `plan_draft` / `plan_comment_added` / `plan_approved`
+- `interaction_cancelled`
+- `turn_paused`
 - `assistant_done`
 - `ready`
 - `context_usage`
@@ -180,6 +196,7 @@ Vite 会代理 `/api` 与 `/ws` 到 `127.0.0.1:8765`。
 ### 内建工具
 
 - `run_command`, `web_fetch`, `read_file`, `write_file`, `edit_file`, `glob`, `grep`, `load_skill`, `update_todos`, `dispatch_subagent`
+- Control：`ask_user`, `propose_plan`
 - Agent Team：`spawn_teammate`, `list_teammates`, `send_message`, `read_inbox`, `broadcast`, `shutdown_teammate`
 
 ### 并发规则
@@ -197,6 +214,12 @@ Vite 会代理 `/api` 与 `/ws` 到 `127.0.0.1:8765`。
 - v1 采用“按消息唤醒”：Lead 通过 `send_message(..., wake=true)` 或 `broadcast(..., wake=true)` 驱动队友执行一次，不启动后台常驻轮询。
 - Teammate 只能使用自身 `agent_type` 白名单工具 + `send_message` / `read_inbox`，不能再派遣 subagent 或创建队友。
 - 启动时 stale `working` 会变为 `offline`，下次 wake 再恢复。
+
+### Ask / Plan
+
+- Ask 用于目标不清时主动发问：最多 3 个问题，每题 2-4 个选项，并允许自由补充。
+- Plan 需要显式开启（WebUI toggle 或 `/plan on`）：只读探索、提问、提交计划；用户可评论修订，批准后自动切回 normal 并继续执行。
+- v1 同一时间只允许一个 pending ask 或 plan；扩展时优先保持 `agent/control/` 的模型、store、manager、policy 分层。
 
 ## 10. 修改代码时的项目内规
 
@@ -216,6 +239,7 @@ Vite 会代理 `/api` 与 `/ws` 到 `127.0.0.1:8765`。
 
 - 新 provider：`agent/providers/registry.py` + `factory.py` + 对应 provider 文件
 - 新工具：`agent/tools/` 新建类 + `agent/loop.py` 注册
+- 新 Control 能力：优先放在 `agent/control/`，同步 `runner` 暂停/恢复语义、`webui.py` API/WS、`webui/src/types.ts` 与 chat 卡片组件
 - 新 Team 能力：优先放在 `agent/team/`，同步 `agent/webui.py` API、`webui/src/types.ts` 与 `TeamPanel.vue`
 - 新子代理：`templates/subagents/*.md` + `subagents/registry.py` 白名单
 - 新技能：`skills/<name>/SKILL.md`

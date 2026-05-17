@@ -45,7 +45,12 @@ export interface AppContext {
   loadEpisode: (date: string) => Promise<{ date: string; content: string }>
   saveEpisode: (date: string, content: string) => Promise<void>
 
+  setControlMode: (mode: 'normal' | 'plan') => Promise<void>
   sendMessage: (payload: string | { content: string; attachments?: AttachmentRef[] }) => boolean
+  sendInteractionAnswer: (interactionId: string, answers: Record<string, unknown>) => boolean
+  sendPlanComment: (interactionId: string, comment: string) => boolean
+  approvePlan: (interactionId: string) => boolean
+  cancelInteraction: (interactionId: string) => boolean
   clearChat: () => void
   submitFromComposer: (payload: string | { content: string; attachments?: AttachmentRef[] }) => void
 
