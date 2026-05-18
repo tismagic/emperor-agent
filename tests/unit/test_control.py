@@ -127,6 +127,28 @@ def test_plan_policy_filters_write_tools(tmp_path: Path) -> None:
     assert not manager.is_tool_allowed("write_file", registry)
 
 
+def test_clarification_policy_requires_ask_for_ambiguous_high_impact_work(tmp_path: Path) -> None:
+    manager = ControlManager(tmp_path)
+    assessment = manager.assess_clarification([
+        {"role": "user", "content": "阅读项目找到问题作出修改，不要打补丁，要工程化实现"},
+    ])
+
+    assert assessment.required
+    assert assessment.questions
+
+
+def test_clarification_policy_skips_decision_complete_plan(tmp_path: Path) -> None:
+    manager = ControlManager(tmp_path)
+    assessment = manager.assess_clarification([
+        {
+            "role": "user",
+            "content": "# Summary\n\nPLEASE IMPLEMENT THIS PLAN:\n\n## Key Changes\n- 做 A\n\n## Test Plan\n- pytest",
+        },
+    ])
+
+    assert not assessment.required
+
+
 @pytest.mark.anyio
 async def test_runner_pauses_on_ask_and_writes_checkpoint(tmp_path: Path) -> None:
     manager = ControlManager(tmp_path)
@@ -168,6 +190,59 @@ async def test_runner_pauses_on_ask_and_writes_checkpoint(tmp_path: Path) -> Non
     assert any(event.get("event") == "turn_paused" for event in emitted)
     assert history[-1]["role"] == "tool"
     assert "waiting for user" in history[-1]["content"]
+
+
+@pytest.mark.anyio
+async def test_runner_plan_mode_wraps_plain_final_as_plan(tmp_path: Path) -> None:
+    manager = ControlManager(tmp_path)
+    manager.set_mode(ControlMode.PLAN.value)
+    registry = make_registry(manager, tmp_path)
+    provider = FakeProvider([LLMResponse(content="我会先读代码，然后实现并测试。")])
+    runner = AgentRunner(
+        provider=provider,
+        model="fake",
+        registry=registry,
+        system_prompt="system",
+        control_manager=manager,
+    )
+    emitted: list[dict[str, Any]] = []
+
+    async def emit(event: dict[str, Any]) -> None:
+        emitted.append(event)
+
+    with pytest.raises(TurnPaused):
+        await runner.step_async([{"role": "user", "content": "做一个计划"}], emit=emit)
+
+    assert manager.payload()["pending"]["kind"] == "plan"
+    assert any(event.get("event") == "plan_draft" for event in emitted)
+    assert not any(event.get("event") == "assistant_done" for event in emitted)
+
+
+@pytest.mark.anyio
+async def test_runner_ask_guard_pauses_plain_final_for_ambiguous_task(tmp_path: Path) -> None:
+    manager = ControlManager(tmp_path)
+    registry = make_registry(manager, tmp_path)
+    provider = FakeProvider([LLMResponse(content="我直接开始改。")])
+    runner = AgentRunner(
+        provider=provider,
+        model="fake",
+        registry=registry,
+        system_prompt="system",
+        control_manager=manager,
+    )
+    emitted: list[dict[str, Any]] = []
+
+    async def emit(event: dict[str, Any]) -> None:
+        emitted.append(event)
+
+    with pytest.raises(TurnPaused):
+        await runner.step_async(
+            [{"role": "user", "content": "阅读项目找到问题作出修改，不要打补丁，要工程化实现"}],
+            emit=emit,
+        )
+
+    assert manager.payload()["pending"]["kind"] == "ask"
+    assert any(event.get("event") == "ask_request" for event in emitted)
 
 
 @pytest.mark.anyio

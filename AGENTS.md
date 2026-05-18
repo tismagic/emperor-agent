@@ -29,8 +29,9 @@
 6. `agent/model_config.py` + `agent/providers/*`（模型配置与 provider 实现）
 7. `agent/tools/*` + `agent/subagents/*`（工具与子代理能力边界）
 8. `agent/control/*`（Ask / Plan pending 状态、模式、工具门禁）
-9. `agent/team/*`（持久队友、MessageBus、TeamStore、team tools）
-10. `webui/src/composables/useRuntime.ts` + `useBootstrap.ts` + `components/panels/ModelPanel.vue` + `components/panels/TeamPanel.vue`
+9. `agent/runtime/*`（WebUI 行为事件冷记录与刷新重放）
+10. `agent/team/*`（持久队友、MessageBus、TeamStore、team tools）
+11. `webui/src/composables/useRuntime.ts` + `useBootstrap.ts` + `components/panels/ModelPanel.vue` + `components/panels/TeamPanel.vue`
 
 ## 3. 关键目录地图
 
@@ -45,6 +46,7 @@
 - `agent/providers/`：OpenAI-compatible / Anthropic / Bedrock
 - `agent/tools/`：内建工具实现（命令、读写、搜索、todo、子代理）
 - `agent/control/`：Ask / Plan 会话控制、pending interaction、工具暴露策略
+- `agent/runtime/`：Chat 行为事件冷记录，支持刷新/重启后恢复工具、队友、Ask/Plan 细节
 - `agent/team/`：Agent Team 子系统（持久队友、inbox、thread、状态机、team tools）
 - `agent/attachments.py`：附件落盘、MIME 校验、PDF/文本抽取、图片 base64 编码
 - `agent/memory.py`：长期记忆、历史日志、checkpoint 恢复
@@ -111,7 +113,7 @@ Vite 会代理 `/api` 与 `/ws` 到 `127.0.0.1:8765`。
 - 每个 turn 开始先写 `memory/_checkpoint.json`
 - 工具批次结束再写一次 checkpoint（保证 tool_calls 与 tool result 成对）
 - turn 正常落地后清 checkpoint
-- 重启时优先恢复 checkpoint，否则加载 `history.jsonl` 未归档段
+- 重启时优先恢复 checkpoint，否则加载热 `history.jsonl` 活跃段；已压缩原始行在 `memory/history_archive/*.jsonl.gz`
 
 ### 5.2 上下文治理（防爆 token）
 
@@ -133,18 +135,30 @@ Vite 会代理 `/api` 与 `/ws` 到 `127.0.0.1:8765`。
   - `memory/YYYY-MM-DD.md`
   - `memory/MEMORY.local.md`
   - `templates/USER.local.md`
+- 压缩成功后 `HistoryLog` 会把已压缩原始行写入 `memory/history_archive/YYYY-MM.jsonl.gz`，再原子重写热 `memory/history.jsonl`
 
 ### 5.5 Ask / Plan 暂停恢复
 
 - `agent/control/` 统一管理当前 `mode` 与 pending interaction，状态写入 `memory/control/state.json`
 - `ask_user` / `propose_plan` 会生成有效 tool result，占位为 waiting，并抛出内部 `TurnPaused`
 - Runner 在暂停前写 checkpoint，WebUI / CLI 收到用户回答、评论或批准后，把结构化反馈追加到 history 再恢复执行
-- Plan 模式是工具层硬门禁：只暴露只读工具 + `ask_user` + `propose_plan`；写文件、命令执行、子代理派遣、Team 写操作不可用
+- Ask Guard 在高影响歧义下强制先问：大范围工程化、重构、UI 取舍、提交推送、删除覆盖、发布部署、安全/权限/成本边界不清时，写操作和最终答复前必须进入 `ask_user`
+- Plan 模式是工具层 + 输出层硬门禁：只暴露只读工具 + `ask_user` + `propose_plan`；写文件、命令执行、子代理派遣、Team 写操作不可用；普通最终回复会被包装为 PlanCard 并暂停
+- 执行中或存在 pending Ask/Plan 时，不允许切换 control mode，HTTP API 返回 409
+
+### 5.6 Chat 行为流持久化
+
+- `agent/runtime/RuntimeEventStore` 把 WebUI runtime 事件 append 到 `memory/runtime/events.jsonl`
+- 每个用户 turn 生成 `turn_id`，写入 `history.jsonl`、checkpoint 上下文和所有 runtime 事件
+- `/api/bootstrap.runtime.events` 只返回未压缩 turn 的事件；`useRuntime.ts` 用它重建工具调用、队友轨迹、AskCard、PlanCard 与错误状态
+- localStorage 只是热缓存兜底；后端冷记录是刷新/重启恢复的事实来源
+- 压缩前的细节仍保留在 `memory/runtime/events.jsonl`，但 Chat 当前页面只展示未压缩 turn
 
 ## 6. WebSocket 事件协议（前后端联动改动必看）
 
 核心事件：
 
+- `user_message`
 - `message_delta`
 - `tool_call` / `tool_result` / `tool_error`
 - `subagent_*`（start/delta/tool_call/tool_result/done/error）
@@ -161,8 +175,9 @@ Vite 会代理 `/api` 与 `/ws` 到 `127.0.0.1:8765`。
 `useRuntime.ts` 负责：
 
 - 本地消息状态机
+- 从 `/api/bootstrap.runtime.events` 重放未压缩 Chat 行为流
 - 断线重连（带 `last_seq` 回放）
-- localStorage 快照恢复
+- localStorage 快照兜底
 - 未完成 assistant 的中断收尾
 
 凡是新增后端事件，必须同步更新前端 `types.ts` 和 `useRuntime.ts` 分支逻辑。
@@ -217,8 +232,8 @@ Vite 会代理 `/api` 与 `/ws` 到 `127.0.0.1:8765`。
 
 ### Ask / Plan
 
-- Ask 用于目标不清时主动发问：最多 3 个问题，每题 2-4 个选项，并允许自由补充。
-- Plan 需要显式开启（WebUI toggle 或 `/plan on`）：只读探索、提问、提交计划；用户可评论修订，批准后自动切回 normal 并继续执行。
+- Ask 用于目标不清时主动发问：最多 3 个问题，每题 2-4 个选项，并允许自由补充。高影响歧义由 `ClarificationPolicy` 统一判断，避免把主动提问散落到 prompt 文案里。
+- Plan 需要显式开启（WebUI toggle 或 `/plan on`）：只读探索、提问、提交计划；用户可评论修订，批准后自动切回 normal 并继续执行。Plan 模式必须产出 PlanCard，不能用普通文字最终答复绕过。
 - v1 同一时间只允许一个 pending ask 或 plan；扩展时优先保持 `agent/control/` 的模型、store、manager、policy 分层。
 
 ## 10. 修改代码时的项目内规
@@ -240,6 +255,7 @@ Vite 会代理 `/api` 与 `/ws` 到 `127.0.0.1:8765`。
 - 新 provider：`agent/providers/registry.py` + `factory.py` + 对应 provider 文件
 - 新工具：`agent/tools/` 新建类 + `agent/loop.py` 注册
 - 新 Control 能力：优先放在 `agent/control/`，同步 `runner` 暂停/恢复语义、`webui.py` API/WS、`webui/src/types.ts` 与 chat 卡片组件
+- 新 Chat 行为事件：优先接入 `agent/runtime/` 持久化，事件需带 `turn_id`，并同步 `webui/src/types.ts` 与 `useRuntime.ts` replay 分支
 - 新 Team 能力：优先放在 `agent/team/`，同步 `agent/webui.py` API、`webui/src/types.ts` 与 `TeamPanel.vue`
 - 新子代理：`templates/subagents/*.md` + `subagents/registry.py` 白名单
 - 新技能：`skills/<name>/SKILL.md`

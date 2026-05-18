@@ -1,4 +1,5 @@
 from .exceptions import TurnPaused
+from .clarification import ClarificationAssessment, ClarificationPolicy
 from .manager import ControlManager, ControlResume
 from .models import (
     ControlMode,
@@ -15,6 +16,8 @@ from .tools import AskUserTool, ProposePlanTool, parse_pause_result
 
 __all__ = [
     "AskUserTool",
+    "ClarificationAssessment",
+    "ClarificationPolicy",
     "CONTROL_TOOL_NAMES",
     "ControlManager",
     "ControlMode",

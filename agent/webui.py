@@ -9,6 +9,7 @@ import re
 import shutil
 import tempfile
 import time
+import uuid
 import zipfile
 from datetime import datetime
 from pathlib import Path
@@ -34,6 +35,7 @@ from .model_config import (
     provider_options,
     save_model_config,
 )
+from .runtime import RuntimeEventStore
 
 
 # 2x2 JPEG（已验证在 kimi-for-coding anthropic 兼容端可解码）
@@ -57,10 +59,11 @@ class WebUIState:
         self.attachments = AttachmentStore(self.root)
         self.lock = asyncio.Lock()
         self.clients: set[web.WebSocketResponse] = set()
-        self.event_log: list[dict[str, Any]] = []
-        self.event_seq = 0
+        self.runtime_events = RuntimeEventStore(self.root)
         self.broadcast_lock = asyncio.Lock()
         self.max_event_log = 5000
+        self.event_log: list[dict[str, Any]] = self.runtime_events.recent(self.max_event_log)
+        self.event_seq = self.runtime_events.latest_seq
         self.active_turn = False
 
     async def bootstrap(self, request: web.Request) -> web.Response:
@@ -77,6 +80,7 @@ class WebUIState:
             "control": self.control(),
             "context_used": self.loop.token_tracker.last_input_tokens(),
             "unarchivedHistory": self.unarchived_history(),
+            "runtime": self.runtime(),
         })
 
     async def ws_handler(self, request: web.Request) -> web.WebSocketResponse:
@@ -97,11 +101,7 @@ class WebUIState:
 
     async def _attach_client(self, ws: web.WebSocketResponse, last_seq: int) -> None:
         async with self.broadcast_lock:
-            replay = [
-                event
-                for event in self.event_log
-                if last_seq > 0 and int(event.get("seq") or 0) > last_seq
-            ]
+            replay = self.runtime_events.replay_after(last_seq, limit=self.max_event_log) if last_seq > 0 else []
             self.clients.add(ws)
             try:
                 await self._send_ws(ws, self.ready_event(last_seq=last_seq, replay_count=len(replay)))
@@ -112,6 +112,7 @@ class WebUIState:
 
     async def _handle_ws_text(self, ws: web.WebSocketResponse, raw: str) -> None:
         started = False
+        turn_id = ""
         try:
             payload = json.loads(raw)
             msg_type = payload.get("type")
@@ -131,28 +132,45 @@ class WebUIState:
                 if attachment_ids:
                     raise ValueError("当前有 Ask / Plan 正在等待处理，请先回答、评论、批准或取消后再发送附件。")
                 if text:
-                    await self._handle_pending_text_message(text)
+                    await self._handle_pending_text_message(
+                        text,
+                        client_message_id=str(payload.get("client_message_id") or ""),
+                    )
                     return
             content = self._build_user_content(text, attachment_ids)
+            turn_id = self._new_turn_id()
+            client_message_id = str(payload.get("client_message_id") or "")
             user_msg: dict[str, Any] = {"role": "user", "content": content}
+            user_msg["turn_id"] = turn_id
             if attachment_ids:
                 user_msg["attachments"] = attachment_ids
             async with self.lock:
                 self.history.append(user_msg)
+                extra: dict[str, Any] = {"turn_id": turn_id}
                 if attachment_ids:
+                    extra.update({"attachments": attachment_ids, "displayContent": text})
                     self.loop.memory.append_history(
-                        "user", content, extra={"attachments": attachment_ids, "displayContent": text},
+                        "user", content, extra=extra,
                     )
                 else:
-                    self.loop.memory.append_history("user", content)
+                    self.loop.memory.append_history("user", content, extra=extra)
+                await self._broadcast_event(
+                    {
+                        "event": "user_message",
+                        "content": text,
+                        "attachments": self._attachment_refs(attachment_ids),
+                        "client_message_id": client_message_id,
+                    },
+                    turn_id=turn_id,
+                )
                 started = True
                 self.active_turn = True
 
                 async def emit(event: dict[str, Any]) -> None:
-                    await self._broadcast_event(event)
+                    await self._broadcast_event(event, turn_id=turn_id)
 
                 try:
-                    await self.loop.runner.step_stream(self.history, emit)
+                    await self.loop.runner.step_stream(self.history, emit, turn_id=turn_id)
                 except TurnPaused:
                     pass
                 finally:
@@ -163,7 +181,7 @@ class WebUIState:
             logger.exception("WebSocket message handler error")
             payload = {"event": "error", "message": str(exc), "partial": True}
             if started:
-                await self._broadcast_event(payload)
+                await self._broadcast_event(payload, turn_id=turn_id or None)
             elif not ws.closed:
                 try:
                     await self._send_ws(ws, payload)
@@ -175,10 +193,17 @@ class WebUIState:
         interaction_id = str(payload.get("interaction_id") or "")
         if not interaction_id:
             raise ValueError("interaction_id is required")
+        turn_id = self._new_turn_id()
+        client_message_id = str(payload.get("client_message_id") or "")
         if msg_type == "interaction_cancel":
             event = self.loop.control_manager.cancel(interaction_id)
-            await self._record_control_cancel(str(event.get("message") or ""), "已取消等待中的交互")
-            await self._broadcast_event(event)
+            await self._record_control_cancel(
+                str(event.get("message") or ""),
+                "已取消等待中的交互",
+                turn_id=turn_id,
+                client_message_id=client_message_id,
+            )
+            await self._broadcast_event(event, turn_id=turn_id)
             await self._broadcast_event({"event": "control_mode_update", "control": self.control()})
             return
         if msg_type == "interaction_answer":
@@ -193,11 +218,16 @@ class WebUIState:
             display = "已批准计划，开始执行"
         else:
             raise ValueError(f"Unsupported control message type: {msg_type}")
-        await self._broadcast_event(resume.event)
+        await self._broadcast_event(resume.event, turn_id=turn_id)
         await self._broadcast_event({"event": "control_mode_update", "control": self.control()})
-        await self._resume_control_turn(resume.message, display)
+        await self._resume_control_turn(
+            resume.message,
+            display,
+            turn_id=turn_id,
+            client_message_id=client_message_id,
+        )
 
-    async def _handle_pending_text_message(self, text: str) -> None:
+    async def _handle_pending_text_message(self, text: str, *, client_message_id: str = "") -> None:
         pending = self.control().get("pending") or {}
         interaction_id = str(pending.get("id") or "")
         if not interaction_id:
@@ -217,37 +247,75 @@ class WebUIState:
                 display = f"评论计划：{text[:120]}"
         else:
             raise ValueError("unknown pending interaction")
-        await self._broadcast_event(resume.event)
+        turn_id = self._new_turn_id()
+        await self._broadcast_event(resume.event, turn_id=turn_id)
         await self._broadcast_event({"event": "control_mode_update", "control": self.control()})
-        await self._resume_control_turn(resume.message, display)
+        await self._resume_control_turn(
+            resume.message,
+            display,
+            turn_id=turn_id,
+            client_message_id=client_message_id,
+        )
 
-    async def _record_control_cancel(self, message: str, display: str) -> None:
+    async def _record_control_cancel(
+        self,
+        message: str,
+        display: str,
+        *,
+        turn_id: str,
+        client_message_id: str = "",
+    ) -> None:
         if not message:
             return
         async with self.lock:
-            self.history.append({"role": "user", "content": message})
+            self.history.append({"role": "user", "content": message, "turn_id": turn_id})
             self.loop.memory.append_history(
                 "user",
                 message,
-                extra={"type": "control_response", "displayContent": display},
+                extra={"type": "control_response", "displayContent": display, "turn_id": turn_id},
+            )
+            await self._broadcast_event(
+                {
+                    "event": "user_message",
+                    "content": display,
+                    "attachments": [],
+                    "client_message_id": client_message_id,
+                },
+                turn_id=turn_id,
             )
             self.loop.memory.clear_checkpoint()
 
-    async def _resume_control_turn(self, message: str, display: str) -> None:
+    async def _resume_control_turn(
+        self,
+        message: str,
+        display: str,
+        *,
+        turn_id: str,
+        client_message_id: str = "",
+    ) -> None:
         async with self.lock:
-            self.history.append({"role": "user", "content": message})
+            self.history.append({"role": "user", "content": message, "turn_id": turn_id})
             self.loop.memory.append_history(
                 "user",
                 message,
-                extra={"type": "control_response", "displayContent": display},
+                extra={"type": "control_response", "displayContent": display, "turn_id": turn_id},
+            )
+            await self._broadcast_event(
+                {
+                    "event": "user_message",
+                    "content": display,
+                    "attachments": [],
+                    "client_message_id": client_message_id,
+                },
+                turn_id=turn_id,
             )
             self.active_turn = True
 
             async def emit(event: dict[str, Any]) -> None:
-                await self._broadcast_event(event)
+                await self._broadcast_event(event, turn_id=turn_id)
 
             try:
-                await self.loop.runner.step_stream(self.history, emit)
+                await self.loop.runner.step_stream(self.history, emit, turn_id=turn_id)
             except TurnPaused:
                 pass
             finally:
@@ -431,9 +499,9 @@ class WebUIState:
 
         return self._json(payload)
 
-    async def _broadcast_event(self, event: dict[str, Any]) -> None:
+    async def _broadcast_event(self, event: dict[str, Any], *, turn_id: str | None = None) -> None:
         async with self.broadcast_lock:
-            payload = self._remember_event(event)
+            payload = self._remember_event(event, turn_id=turn_id)
             disconnected = []
             for client in list(self.clients):
                 if client.closed:
@@ -446,10 +514,9 @@ class WebUIState:
             for client in disconnected:
                 self.clients.discard(client)
 
-    def _remember_event(self, event: dict[str, Any]) -> dict[str, Any]:
-        self.event_seq += 1
-        payload = dict(event)
-        payload["seq"] = self.event_seq
+    def _remember_event(self, event: dict[str, Any], *, turn_id: str | None = None) -> dict[str, Any]:
+        payload = self.runtime_events.append(event, turn_id=turn_id)
+        self.event_seq = int(payload.get("seq") or self.event_seq)
         self.event_log.append(payload)
         if len(self.event_log) > self.max_event_log:
             self.event_log = self.event_log[-self.max_event_log:]
@@ -573,6 +640,10 @@ class WebUIState:
         return self._json(self.control())
 
     async def post_control_mode(self, request: web.Request) -> web.Response:
+        if self.active_turn:
+            raise web.HTTPConflict(reason="Cannot change control mode while a turn is running")
+        if self.control().get("pending"):
+            raise web.HTTPConflict(reason="Cannot change control mode while Ask / Plan is pending")
         body = await self._body(request)
         mode = str(body.get("mode") or "")
         data = self.loop.control_manager.set_mode(mode)
@@ -581,9 +652,14 @@ class WebUIState:
 
     async def post_control_cancel(self, request: web.Request) -> web.Response:
         interaction_id = request.match_info.get("id", "")
+        turn_id = self._new_turn_id()
         event = self.loop.control_manager.cancel(interaction_id)
-        await self._record_control_cancel(str(event.get("message") or ""), "已取消等待中的交互")
-        await self._broadcast_event(event)
+        await self._record_control_cancel(
+            str(event.get("message") or ""),
+            "已取消等待中的交互",
+            turn_id=turn_id,
+        )
+        await self._broadcast_event(event, turn_id=turn_id)
         await self._broadcast_event({"event": "control_mode_update", "control": self.control()})
         return self._json(self.control())
 
@@ -926,6 +1002,7 @@ npm run build</code>
             "tokensByModel": self.loop.token_tracker.stats_by_provider_model(),
             "tokensByUsageType": self.loop.token_tracker.stats_by_usage_type(),
             "tokenTotals": self.loop.token_tracker.totals(),
+            "history": self.loop.memory.history_stats(),
         }
 
     def tokens(self) -> dict[str, Any]:
@@ -950,6 +1027,14 @@ npm run build</code>
 
     def control(self) -> dict[str, Any]:
         return self.loop.control_manager.payload()
+
+    def runtime(self) -> dict[str, Any]:
+        turn_ids = self.loop.memory.load_unarchived_turn_ids()
+        return {
+            "latestSeq": self.event_seq,
+            "scope": "unarchived",
+            "events": self.runtime_events.events_for_turns(turn_ids, limit=self.max_event_log),
+        }
 
     def _count_history_messages(self) -> int:
         history_file = self.loop.memory.history_file
@@ -981,6 +1066,8 @@ npm run build</code>
                 continue
             text = self._history_display_content(item, content)
             out: dict[str, Any] = {"role": role, "content": text}
+            if isinstance(item.get("turn_id"), str):
+                out["turn_id"] = item["turn_id"]
             ids = item.get("attachments")
             if isinstance(ids, list) and ids:
                 refs = []
@@ -994,6 +1081,17 @@ npm run build</code>
                     out["attachments"] = refs
             items.append(out)
         return items
+
+    def _new_turn_id(self) -> str:
+        return f"turn_{uuid.uuid4().hex[:16]}"
+
+    def _attachment_refs(self, attachment_ids: list[str]) -> list[dict[str, Any]]:
+        refs: list[dict[str, Any]] = []
+        for aid in attachment_ids:
+            ref = self.attachments.get(aid)
+            if ref is not None:
+                refs.append(ref_to_json(ref))
+        return refs
 
     def _history_display_content(self, item: dict[str, Any], content: Any) -> str:
         display = item.get("displayContent")

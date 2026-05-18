@@ -6,6 +6,8 @@ from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from typing import Any
 
+from .memory_history import HistoryLog
+
 
 _UTC8 = timezone(timedelta(hours=8))
 
@@ -19,6 +21,7 @@ class MemoryStore:
         self.user_file = user_file
         self.memory_template = memory_template
         self._ensure()
+        self.history_log = HistoryLog(self.memory_dir, self.history_file)
 
     def _ensure(self) -> None:
         self.memory_dir.mkdir(parents=True, exist_ok=True)
@@ -44,8 +47,7 @@ class MemoryStore:
             for k, v in _json_safe(extra).items():
                 if k not in row:
                     row[k] = v
-        with self.history_file.open("a", encoding="utf-8") as f:
-            f.write(json.dumps(row, ensure_ascii=False) + "\n")
+        self.history_log.append(row)
 
     # ── 中期层（按日历日 UTC+8）────────────────────────────
     def today_episode_path(self) -> Path:
@@ -70,42 +72,45 @@ class MemoryStore:
         self.memory_file.write_text(content.strip() + "\n", encoding="utf-8")
 
     # ── 归档标记 ────────────────────────────────────────────
-    def append_compact_marker(self) -> None:
-        row = {"ts": datetime.now(_UTC8).isoformat(timespec="seconds"), "type": "compact_event"}
-        with self.history_file.open("a", encoding="utf-8") as f:
-            f.write(json.dumps(row, ensure_ascii=False) + "\n")
+    def append_compact_marker(self, active_history: list[dict[str, Any]] | None = None) -> None:
+        if active_history is None:
+            row = {"ts": datetime.now(_UTC8).isoformat(timespec="seconds"), "type": "compact_event"}
+            self.history_log.append(row)
+            return
+        self.history_log.compact(active_history)
+
+    def history_stats(self) -> dict[str, Any]:
+        return self.history_log.stats()
 
     def load_unarchived_history(self) -> list:
         """返回最后一个 compact_event 之后的未归档对话条目。"""
-        if not self.history_file.exists():
-            return []
-        rows = []
-        with self.history_file.open("r", encoding="utf-8") as f:
-            for line in f:
-                line = line.strip()
-                if not line:
-                    continue
-                try:
-                    rows.append(json.loads(line))
-                except json.JSONDecodeError:
-                    continue
-        last_marker = -1
-        for i, row in enumerate(rows):
-            if row.get("type") == "compact_event":
-                last_marker = i
         out: list[dict[str, Any]] = []
-        for r in rows[last_marker + 1:]:
+        for r in self.history_log.load_active_rows():
             if "role" not in r or "content" not in r:
                 continue
             if r.get("type") == "model_call":
                 continue
             item: dict[str, Any] = {"role": r["role"], "content": r["content"]}
+            if isinstance(r.get("turn_id"), str):
+                item["turn_id"] = r["turn_id"]
             if isinstance(r.get("attachments"), list):
                 item["attachments"] = r["attachments"]
             if isinstance(r.get("displayContent"), str):
                 item["displayContent"] = r["displayContent"]
             out.append(item)
         return out
+
+    def load_unarchived_turn_ids(self) -> list[str]:
+        """Return distinct turn ids after the latest compact marker."""
+        ids: list[str] = []
+        seen: set[str] = set()
+        for item in self.load_unarchived_history():
+            turn_id = item.get("turn_id")
+            if not isinstance(turn_id, str) or not turn_id or turn_id in seen:
+                continue
+            seen.add(turn_id)
+            ids.append(turn_id)
+        return ids
 
     # ── 用户偏好 ────────────────────────────────────────────
     def read_user(self) -> str:

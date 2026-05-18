@@ -57,10 +57,32 @@ export interface MemoryPayload {
   long_term?: string
   today_episode?: string
   episodes?: string[]
+  history?: HistoryStats
   tokens?: Record<string, TokenStatsRow>
   tokensByModel?: Record<string, TokenStatsRow>
   tokensByUsageType?: Record<string, TokenStatsRow>
   tokenTotals?: TokenTotals
+}
+
+export interface HistoryArchiveInfo {
+  path: string
+  bytes: number
+  updated_at?: string
+}
+
+export interface HistoryStats {
+  version?: number
+  latest_seq?: number
+  active_lines?: number
+  active_bytes?: number
+  archive_files?: number
+  archive_bytes?: number
+  archives?: HistoryArchiveInfo[]
+  last_archive_at?: string | null
+  migrated_at?: string | null
+  hot_limit_lines?: number
+  hot_limit_bytes?: number
+  needs_rotation?: boolean
 }
 
 export interface TokensStreak {
@@ -213,6 +235,7 @@ export interface BootstrapPayload {
   modelConfig: ModelConfigPayload
   team?: TeamPayload
   control?: ControlPayload
+  runtime?: RuntimeReplayPayload
   context_used?: number
   unarchivedHistory?: RuntimeHistoryItem[]
 }
@@ -229,6 +252,22 @@ export interface RuntimeHistoryItem {
   role: 'user' | 'assistant'
   content: string
   attachments?: AttachmentRef[]
+  turn_id?: string
+}
+
+export interface RuntimeEventEnvelope {
+  event: string
+  seq?: number
+  ts?: number
+  turn_id?: string
+  client_message_id?: string
+  [key: string]: unknown
+}
+
+export interface RuntimeReplayPayload {
+  latestSeq: number
+  scope: 'unarchived' | string
+  events: RuntimeEventEnvelope[]
 }
 
 export type ToolStatus = 'running' | 'done' | 'error' | 'error_aborted'
@@ -348,6 +387,7 @@ export interface UserMessage {
   role: 'user'
   content: string
   attachments?: AttachmentRef[]
+  turn_id?: string
   local?: boolean
 }
 
@@ -358,6 +398,7 @@ export interface AssistantMessage {
   segments: AssistantSegment[]
   todos?: TodoItem[] | null
   streaming: boolean
+  turn_id?: string
   local?: boolean
 }
 
@@ -417,8 +458,9 @@ export interface TeamMemberPayload {
   thread: Array<{ role?: string; content?: string }>
 }
 
-export type WsEvent = ({ seq?: number } & (
+export type WsEvent = ({ seq?: number; ts?: number; turn_id?: string; client_message_id?: string } & (
   | { event: 'ready'; model?: string; provider?: string; latest_seq?: number; replay_count?: number; resume_from?: number; busy?: boolean; control?: ControlPayload }
+  | { event: 'user_message'; content?: string; attachments?: AttachmentRef[] }
   | { event: 'message_delta'; delta?: string }
   | { event: 'context_usage'; used?: number; max?: number; threshold?: number; usage_type?: string }
   | { event: 'tool_call'; id?: string; name: string; arguments?: Record<string, unknown> }

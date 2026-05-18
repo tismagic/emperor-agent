@@ -1,5 +1,5 @@
 import { computed, reactive, ref, watch, type Ref } from 'vue'
-import type { AssistantMessage, AttachmentRef, BootstrapPayload, ChatMessage, ControlInteraction, PendingState, RuntimeHistoryItem, RuntimeStatus, SubagentState, TeamMessage, ToolSegment, ToolStatus, WsEvent } from '../types'
+import type { AssistantMessage, AttachmentRef, BootstrapPayload, ChatMessage, ControlInteraction, PendingState, RuntimeEventEnvelope, RuntimeHistoryItem, RuntimeStatus, SubagentState, TeamMessage, ToolSegment, ToolStatus, WsEvent } from '../types'
 
 const RUNTIME_STORAGE_KEY = 'emperor-agent:runtime-view'
 const LEGACY_IN_FLIGHT_STORAGE_KEY = 'emperor-agent:in-flight-runtime'
@@ -31,6 +31,7 @@ export function useRuntime(options: {
   const socket = ref<WebSocket | null>(null)
   const lastSeq = ref(0)
   let reconnectTimer: number | undefined
+  let rehydrating = false
 
   const currentAssistant = computed(() => messages.value.find((message) => message.id === currentAssistantId.value && message.role === 'assistant') as AssistantMessage | undefined)
 
@@ -122,6 +123,7 @@ export function useRuntime(options: {
         type: 'message',
         content: text,
         attachments: attachments.map((a) => a.id),
+        client_message_id: userMsg.id,
       }))
       return true
     } catch (err) {
@@ -171,7 +173,8 @@ export function useRuntime(options: {
       options.showToast('WebSocket 还没连上，请稍后再试')
       return false
     }
-    messages.value.push({ id: nextId('user'), role: 'user', content: userLabel })
+    const userId = nextId('user')
+    messages.value.push({ id: userId, role: 'user', content: userLabel })
     if (expectAssistant) {
       const assistantId = nextId('assistant')
       messages.value.push({ id: assistantId, role: 'assistant', content: '', segments: [], todos: null, streaming: true })
@@ -180,7 +183,7 @@ export function useRuntime(options: {
       updatePending('正在继续执行...', userLabel)
     }
     try {
-      socket.value.send(JSON.stringify(payload))
+      socket.value.send(JSON.stringify({ ...payload, client_message_id: userId }))
       return true
     } catch (err) {
       handleChatError(err instanceof Error ? err.message : String(err))
@@ -211,6 +214,11 @@ export function useRuntime(options: {
   }
 
   function restoreFromHistory(history: RuntimeHistoryItem[] = []) {
+    const runtimeEvents = options.boot.value?.runtime?.events || []
+    if (runtimeEvents.length) {
+      restoreFromRuntimeEvents(runtimeEvents)
+      return
+    }
     const snapshot = loadRuntimeSnapshot(history)
     if (snapshot) {
       messages.value = snapshot.messages
@@ -240,6 +248,26 @@ export function useRuntime(options: {
       })
   }
 
+  function restoreFromRuntimeEvents(events: RuntimeEventEnvelope[]) {
+    messages.value = []
+    currentAssistantId.value = null
+    busy.value = false
+    updatePending()
+    lastSeq.value = 0
+    rehydrating = true
+    try {
+      const sorted = [...events].sort((a, b) => Number(a.seq || 0) - Number(b.seq || 0))
+      for (const event of sorted) {
+        handleSocketEvent(JSON.stringify(event))
+      }
+    } finally {
+      rehydrating = false
+    }
+    lastSeq.value = Math.max(lastSeq.value, Number(options.boot.value?.runtime?.latestSeq || 0))
+    const assistant = currentAssistant.value
+    busy.value = Boolean(assistant?.streaming)
+  }
+
   function handleSocketEvent(raw: string) {
     let data: WsEvent
     try {
@@ -259,8 +287,13 @@ export function useRuntime(options: {
       lastSeq.value = data.seq
     }
 
+    if (data.event === 'user_message') {
+      handleUserMessageEvent(data)
+      return
+    }
+
     if (data.event === 'message_delta') {
-      const assistant = currentAssistant.value
+      const assistant = assistantForEvent(data)
       if (assistant) {
         const delta = data.delta || ''
         assistant.content += delta
@@ -290,7 +323,7 @@ export function useRuntime(options: {
     }
 
     if (data.event === 'tool_call') {
-      const assistant = currentAssistant.value
+      const assistant = assistantForEvent(data)
       if (assistant) {
         const startedAt = Date.now()
         assistant.segments.push({
@@ -310,7 +343,7 @@ export function useRuntime(options: {
     }
 
     if (data.event === 'tool_result') {
-      const assistant = currentAssistant.value
+      const assistant = assistantForEvent(data, false)
       const seg = findToolSegment(assistant, data.id)
       if (seg) {
         finishTimedState(seg)
@@ -324,7 +357,7 @@ export function useRuntime(options: {
     }
 
     if (data.event === 'tool_error') {
-      const assistant = currentAssistant.value
+      const assistant = assistantForEvent(data, false)
       const seg = findToolSegment(assistant, data.id)
       if (seg) {
         finishTimedState(seg)
@@ -336,7 +369,7 @@ export function useRuntime(options: {
     }
 
     if (data.event === 'assistant_done') {
-      const assistant = currentAssistant.value
+      const assistant = assistantForEvent(data, false) || currentAssistant.value
       if (assistant) {
         assistant.content = data.content || assistant.content
         assistant.streaming = false
@@ -345,7 +378,7 @@ export function useRuntime(options: {
       busy.value = false
       status.value = 'ready'
       updatePending()
-      void options.refreshMemory(false)
+      if (!rehydrating) void options.refreshMemory(false)
       return
     }
 
@@ -373,7 +406,7 @@ export function useRuntime(options: {
     }
 
     if (data.event === 'turn_paused') {
-      const assistant = currentAssistant.value
+      const assistant = assistantForEvent(data, false) || currentAssistant.value
       if (assistant) assistant.streaming = false
       currentAssistantId.value = null
       busy.value = false
@@ -394,6 +427,52 @@ export function useRuntime(options: {
     }
 
     handleSubagentEvent(data)
+  }
+
+  function handleUserMessageEvent(data: Extract<WsEvent, { event: 'user_message' }>) {
+    const turnId = data.turn_id || ''
+    const clientId = data.client_message_id || ''
+    const existing = messages.value.find((message) =>
+      message.role === 'user' && (
+        (clientId && message.id === clientId) ||
+        (turnId && message.turn_id === turnId)
+      )
+    )
+    if (existing && existing.role === 'user') {
+      existing.turn_id = turnId || existing.turn_id
+      existing.content = data.content || existing.content
+      existing.attachments = data.attachments || existing.attachments
+      return
+    }
+    const msg: ChatMessage = {
+      id: clientId || nextId('user'),
+      role: 'user',
+      content: data.content || '',
+      turn_id: turnId || undefined,
+    }
+    if (data.attachments?.length) msg.attachments = data.attachments
+    messages.value.push(msg)
+  }
+
+  function assistantForEvent(data?: { turn_id?: string }, create = true): AssistantMessage | undefined {
+    const turnId = data?.turn_id || ''
+    if (turnId) {
+      const existing = messages.value.find((message): message is AssistantMessage =>
+        message.role === 'assistant' && message.turn_id === turnId
+      )
+      if (existing) {
+        currentAssistantId.value = existing.id
+        return existing
+      }
+      const current = currentAssistant.value
+      if (current && !current.turn_id) {
+        current.turn_id = turnId
+        return current
+      }
+      if (!create) return undefined
+      return createAssistantForIncomingControl(turnId)
+    }
+    return create ? (currentAssistant.value || createAssistantForIncomingControl()) : currentAssistant.value
   }
 
   function handleReadyEvent(data: Extract<WsEvent, { event: 'ready' }>) {
@@ -434,7 +513,8 @@ export function useRuntime(options: {
       options.boot.value.control ||= { mode: 'normal', pending: null }
       options.boot.value.control.pending = data.interaction
     }
-    const assistant = currentAssistant.value || createAssistantForIncomingControl()
+    const assistant = assistantForEvent(data)
+    if (!assistant) return
     const type = data.event === 'ask_request' ? 'ask' : 'plan'
     const existing = assistant.segments.find((seg) =>
       (seg.type === 'ask' || seg.type === 'plan') && seg.interaction.id === data.interaction!.id
@@ -447,9 +527,17 @@ export function useRuntime(options: {
     updatePending(type === 'plan' ? '计划待预览' : '等待你回答', data.interaction.title || data.interaction.context || '', 'done')
   }
 
-  function createAssistantForIncomingControl() {
+  function createAssistantForIncomingControl(turnId = '') {
     const assistantId = nextId('assistant')
-    const assistant: AssistantMessage = { id: assistantId, role: 'assistant', content: '', segments: [], todos: null, streaming: true }
+    const assistant: AssistantMessage = {
+      id: assistantId,
+      role: 'assistant',
+      content: '',
+      segments: [],
+      todos: null,
+      streaming: true,
+      turn_id: turnId || undefined,
+    }
     messages.value.push(assistant)
     currentAssistantId.value = assistantId
     return assistant
@@ -467,7 +555,7 @@ export function useRuntime(options: {
   }
 
   function handleSubagentEvent(data: WsEvent) {
-    const assistant = currentAssistant.value
+    const assistant = assistantForEvent(data, false)
     if (!assistant) return
 
     if (data.event === 'subagent_start') {
@@ -551,7 +639,7 @@ export function useRuntime(options: {
 
   function handleTeamEvent(data: WsEvent) {
     updateTeamBootstrap(data)
-    const assistant = currentAssistant.value
+    const assistant = assistantForEvent(data, false)
 
     if (data.event === 'team_member_update') {
       updatePending(data.member?.status === 'working' ? `队友 ${data.member.name} 正在办差` : '', '')

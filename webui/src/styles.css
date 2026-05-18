@@ -2910,6 +2910,27 @@ body::after {
     @apply text-seal;
   }
 
+  .memory-stats-grid {
+    @apply grid shrink-0 grid-cols-3 gap-3;
+  }
+
+  .memory-stat-card {
+    @apply min-w-0 rounded-lg border border-line/70 bg-paper/75 px-3 py-2 shadow-sm;
+  }
+
+  .memory-stat-card.warning {
+    @apply border-amber/50 bg-amber/10;
+  }
+
+  .memory-stat-card span,
+  .memory-stat-card small {
+    @apply block truncate text-[11px] font-semibold text-muted;
+  }
+
+  .memory-stat-card strong {
+    @apply block truncate font-mono text-base font-black text-ink;
+  }
+
   .episode-card {
     @apply cursor-pointer;
   }
@@ -2966,6 +2987,10 @@ body::after {
 
   .split-body,
   .memory-body {
+    @apply grid-cols-1;
+  }
+
+  .memory-stats-grid {
     @apply grid-cols-1;
   }
 

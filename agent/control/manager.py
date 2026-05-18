@@ -13,6 +13,7 @@ from .models import (
     Question,
     now_ts,
 )
+from .clarification import ClarificationAssessment, ClarificationPolicy
 from .policy import ControlPolicy
 from .store import ControlStore
 
@@ -29,6 +30,7 @@ class ControlManager:
     def __init__(self, root):
         self.store = ControlStore(root)
         self.policy = ControlPolicy(self)
+        self.clarification_policy = ClarificationPolicy()
 
     @property
     def mode(self) -> str:
@@ -95,6 +97,35 @@ class ControlManager:
         )
         self._set_pending(interaction)
         return interaction
+
+    def create_plan_from_text(self, text: str) -> Interaction:
+        body = str(text or "").strip()
+        if not body:
+            body = "Plan 模式要求先提交可预览计划。"
+        title = _first_heading(body) or "计划预览"
+        summary = _plain_summary(body)
+        if not _looks_like_plan(body):
+            body = "\n".join([
+                "# 计划预览",
+                "",
+                body,
+                "",
+                "## 验收",
+                "- 用户批准后再执行任何写入或高影响操作。",
+            ])
+        return self.create_plan(
+            title=title,
+            summary=summary,
+            plan_markdown=body,
+            assumptions=[],
+            risk_level="medium",
+        )
+
+    def assess_clarification(self, history: list[dict[str, Any]]) -> ClarificationAssessment:
+        return self.clarification_policy.assess(history)
+
+    def should_enforce_plan_final(self) -> bool:
+        return self.mode == ControlMode.PLAN.value
 
     def _set_pending(self, interaction: Interaction) -> None:
         state = self.store.load()
@@ -255,11 +286,14 @@ class ControlManager:
                 "- 当前处于 Plan 模式。你必须先通过只读探索理解环境，不允许修改文件、运行命令执行变更、派遣子代理或创建队友。\n"
                 "- 若需求存在会影响方案的偏好或取舍，调用 `ask_user` 提问。\n"
                 "- 当方案足够明确时，必须调用 `propose_plan` 提交完整计划，等待用户评论或批准。\n"
-                "- 用户批准前不要执行计划。"
+                "- 用户批准前不要执行计划。\n"
+                "- 不允许用普通最终回复替代计划卡；最终必须通过 `propose_plan` 进入 PlanCard。"
             )
         return (
             "# Control Tools\n\n"
             "- 当用户目标存在高影响歧义且无法通过读文件/搜索等方式确定时，调用 `ask_user` 提出结构化问题。\n"
+            "- 高影响歧义包括范围/验收不清的大改动、架构/重构/UI 取舍、提交推送、删除覆盖、发布部署、成本/权限/安全边界。\n"
+            "- 可通过只读探索确认的事实先探索；但在写入、高影响操作或最终答复前仍有关键取舍时，必须提问。\n"
             "- 只有在用户显式开启 Plan 模式后，才使用 `propose_plan` 提交等待批准的计划。"
         )
 
@@ -282,3 +316,26 @@ class ControlManager:
             return None
         interaction = raw.get("interaction") if isinstance(raw, dict) else None
         return interaction if isinstance(interaction, dict) else None
+
+
+def _first_heading(text: str) -> str:
+    for line in text.splitlines():
+        stripped = line.strip()
+        if stripped.startswith("#"):
+            return stripped.lstrip("#").strip()[:160]
+    return ""
+
+
+def _plain_summary(text: str) -> str:
+    compact = " ".join(line.strip().lstrip("-*# ") for line in text.splitlines() if line.strip())
+    return (compact or "计划待预览。")[:1200]
+
+
+def _looks_like_plan(text: str) -> bool:
+    return bool(
+        "##" in text
+        or "\n-" in text
+        or "\n1." in text
+        or "验收" in text
+        or "Test Plan" in text
+    )

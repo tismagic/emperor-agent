@@ -56,6 +56,19 @@ const sortedEpisodes = computed(() => {
   const eps = props.memory?.episodes || []
   return [...eps].sort((a, b) => b.localeCompare(a))
 })
+
+const historyStats = computed(() => props.memory?.history || null)
+
+function formatBytes(value?: number) {
+  const bytes = Math.max(0, Number(value || 0))
+  if (bytes < 1024) return `${bytes} B`
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1).replace(/\.0$/, '')} KB`
+  return `${(bytes / 1024 / 1024).toFixed(1).replace(/\.0$/, '')} MB`
+}
+
+function formatNumber(value?: number) {
+  return Math.max(0, Number(value || 0)).toLocaleString('zh-CN')
+}
 </script>
 
 <template>
@@ -76,6 +89,24 @@ const sortedEpisodes = computed(() => {
         >
           情景记忆
         </button>
+      </div>
+    </div>
+
+    <div v-if="historyStats" class="memory-stats-grid">
+      <div class="memory-stat-card" :class="{ warning: historyStats.needs_rotation }">
+        <span>热日志</span>
+        <strong>{{ formatBytes(historyStats.active_bytes) }}</strong>
+        <small>{{ formatNumber(historyStats.active_lines) }} 行 · seq {{ formatNumber(historyStats.latest_seq) }}</small>
+      </div>
+      <div class="memory-stat-card">
+        <span>冷归档</span>
+        <strong>{{ formatBytes(historyStats.archive_bytes) }}</strong>
+        <small>{{ formatNumber(historyStats.archive_files) }} 个 gzip 文件</small>
+      </div>
+      <div class="memory-stat-card">
+        <span>最近归档</span>
+        <strong>{{ historyStats.last_archive_at ? historyStats.last_archive_at.slice(0, 10) : '暂无' }}</strong>
+        <small>{{ historyStats.needs_rotation ? '热日志接近上限' : '容量正常' }}</small>
       </div>
     </div>
 

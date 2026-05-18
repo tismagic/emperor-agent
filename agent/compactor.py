@@ -106,6 +106,7 @@ class Compactor:
         old = history[: -self.K]
         recent = history[-self.K :]
         await self._compact_messages(old)
+        self.memory.append_compact_marker(active_history=recent)
         logger.info(f"[Compacted: {len(old)} turns -> today episode + MEMORY updated]")
         return recent
 
@@ -117,6 +118,7 @@ class Compactor:
         if len(history) < 2:
             return
         await self._compact_messages(history)
+        self.memory.append_compact_marker(active_history=[])
         logger.info(f"[Startup compacted: {len(history)} unarchived turns -> MEMORY updated]")
 
     async def _compact_messages(self, messages: list[dict[str, Any]]) -> None:
@@ -150,4 +152,3 @@ class Compactor:
             self.memory.write_memory(new_memory)
         if new_user := _extract("updated_user", text):
             self.memory.write_user(new_user)
-        self.memory.append_compact_marker()

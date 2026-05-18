@@ -6,7 +6,7 @@ from typing import Any
 
 from loguru import logger
 
-from .control import TurnPaused, parse_pause_result
+from .control import ClarificationAssessment, TurnPaused, parse_pause_result
 from .providers import LLMProvider, ToolCallRequest
 from .providers.base import is_truncated, run_sync
 from .tools.registry import ToolRegistry
@@ -23,6 +23,10 @@ _TOOL_RESULT_HEAD = _TOOL_RESULT_BUDGET - 200
 _TOOL_RESULT_TAIL = 200
 _MAX_EMPTY_RETRIES = 2
 _MAX_LENGTH_RECOVERIES = 3
+_ASK_GUARD_BLOCK = (
+    "Error: Ask Guard requires `ask_user` before this high-impact action. "
+    "Use read-only tools if needed, then ask the user to resolve the ambiguity."
+)
 
 
 class AgentRunner:
@@ -68,9 +72,15 @@ class AgentRunner:
         """Run one full turn synchronously. Mutates `history` in place."""
         return run_sync(self.step_async(history))
 
-    async def step_stream(self, history: list[dict[str, Any]], emit: StreamEmitter) -> str:
+    async def step_stream(
+        self,
+        history: list[dict[str, Any]],
+        emit: StreamEmitter,
+        *,
+        turn_id: str | None = None,
+    ) -> str:
         """Run one full turn and stream UI-friendly events."""
-        reply = await self.step_async(history, emit=emit)
+        reply = await self.step_async(history, emit=emit, turn_id=turn_id)
         await emit({"event": "assistant_done", "content": reply})
         return reply
 
@@ -78,25 +88,32 @@ class AgentRunner:
         self,
         history: list[dict[str, Any]],
         emit: StreamEmitter | None = None,
+        *,
+        turn_id: str | None = None,
     ) -> str:
         turns = 0
         final_parts: list[str] = []
         empty_retries = 0
         length_retries = 0
+        clarification = self._assess_clarification(history)
         # 进入 turn 时先记一次快照，防止 LLM 还没回应就被杀
         if self.memory_store is not None:
             self.memory_store.write_checkpoint(history)
         while True:
             if self.max_turns is not None and turns >= self.max_turns:
                 reply = f"（达到 max_turns={self.max_turns} 上限，未办妥；history 中已有部分进展）"
-                history.append({"role": "assistant", "content": reply})
+                message = {"role": "assistant", "content": reply}
+                if turn_id:
+                    message["turn_id"] = turn_id
+                history.append(message)
                 if self.memory_store:
-                    self.memory_store.append_history("assistant", reply)
+                    extra = {"turn_id": turn_id} if turn_id else None
+                    self.memory_store.append_history("assistant", reply, extra=extra)
                     self.memory_store.clear_checkpoint()
                 return reply
             turns += 1
 
-            response = await self._ask_model(history, emit)
+            response = await self._ask_model(history, emit, clarification=clarification)
             if response.usage:
                 if self.token_tracker:
                     self.token_tracker.record(
@@ -135,6 +152,7 @@ class AgentRunner:
                         "command_event": cmd_event,
                         "input_tokens": input_tokens,
                         "output_tokens": output_tokens,
+                        **({"turn_id": turn_id} if turn_id else {}),
                     },
                 )
 
@@ -149,6 +167,8 @@ class AgentRunner:
                     "content": assistant_content,
                     "tool_calls": [call.to_openai_tool_call() for call in response.tool_calls],
                 }
+                if turn_id:
+                    assistant_message["turn_id"] = turn_id
                 if response.reasoning_content is not None:
                     assistant_message["reasoning_content"] = response.reasoning_content
                 elif self._reasoning_enabled():
@@ -157,7 +177,7 @@ class AgentRunner:
                     assistant_message["thinking_blocks"] = response.thinking_blocks
                 history.append(assistant_message)
                 try:
-                    tool_messages = await self._execute_tool_calls(response.tool_calls, emit)
+                    tool_messages = await self._execute_tool_calls(response.tool_calls, emit, clarification=clarification)
                 except TurnPaused as pause:
                     history.extend(pause.tool_messages)
                     if self.memory_store is not None:
@@ -205,7 +225,10 @@ class AgentRunner:
                 length_retries += 1
                 if reply:
                     final_parts.append(reply)
-                    history.append({"role": "assistant", "content": reply})
+                    message = {"role": "assistant", "content": reply}
+                    if turn_id:
+                        message["turn_id"] = turn_id
+                    history.append(message)
                 history.append({
                     "role": "user",
                     "content": "（上一轮被 max_tokens 截断，请从中断处续写，不要重复已输出内容）",
@@ -218,9 +241,17 @@ class AgentRunner:
                     })
                 continue
 
+            if clarification.required and reply.strip():
+                await self._pause_for_clarification(history, clarification, emit, turn_id=turn_id)
+
+            if self._must_pause_for_plan(reply):
+                await self._pause_for_plan(history, reply, emit, turn_id=turn_id)
+
             final_parts.append(reply)
             final_reply = "".join(final_parts)
             assistant_message = {"role": "assistant", "content": reply}
+            if turn_id:
+                assistant_message["turn_id"] = turn_id
             if response.reasoning_content is not None:
                 assistant_message["reasoning_content"] = response.reasoning_content
             elif self._reasoning_enabled():
@@ -229,7 +260,8 @@ class AgentRunner:
                 assistant_message["thinking_blocks"] = response.thinking_blocks
             history.append(assistant_message)
             if self.memory_store:
-                self.memory_store.append_history("assistant", final_reply)
+                extra = {"turn_id": turn_id} if turn_id else None
+                self.memory_store.append_history("assistant", final_reply, extra=extra)
 
             if self.todo_store and self.todo_store.todos:
                 unfinished = [t for t in self.todo_store.todos if t["status"] != "completed"]
@@ -250,13 +282,21 @@ class AgentRunner:
                 self.memory_store.clear_checkpoint()
             return final_reply
 
-    async def _ask_model(self, history: list[dict[str, Any]], emit: StreamEmitter | None):
+    async def _ask_model(
+        self,
+        history: list[dict[str, Any]],
+        emit: StreamEmitter | None,
+        *,
+        clarification: ClarificationAssessment | None = None,
+    ):
         governed = self._pair_tool_calls(history)
         governed = self._cap_tool_result(governed)
         governed = self._shrink_old_tool_results(governed)
         system_prompt = self.system_prompt
         if self.control_manager is not None:
             system_prompt = f"{system_prompt}\n\n---\n\n{self.control_manager.system_prompt()}"
+            if clarification and clarification.required:
+                system_prompt = f"{system_prompt}\n\n---\n\n{clarification.prompt()}"
             tool_definitions = self.control_manager.tool_definitions(self.registry)
         else:
             tool_definitions = self.registry.get_definitions()
@@ -388,6 +428,8 @@ class AgentRunner:
         self,
         tool_calls: list[ToolCallRequest],
         emit: StreamEmitter | None,
+        *,
+        clarification: ClarificationAssessment | None = None,
     ) -> list[dict[str, Any]]:
         async def _report_tool_error(call: ToolCallRequest, err_msg: str) -> None:
             if emit:
@@ -400,7 +442,7 @@ class AgentRunner:
 
         async def _run_and_collect(call: ToolCallRequest) -> str:
             try:
-                return await self._run_tool(call, emit)
+                return await self._run_tool(call, emit, clarification=clarification)
             except Exception as exc:
                 err_msg = str(exc)
                 logger.exception(f"Tool execution failed: {call.name}")
@@ -428,7 +470,7 @@ class AgentRunner:
                     logger.info(f"[并发执行 {len(group)} 个工具]: {names}")
                     for item in group:
                         await self._emit_tool_call(item, emit)
-                    tasks = [self._run_tool(item, emit) for item in group]
+                    tasks = [self._run_tool(item, emit, clarification=clarification) for item in group]
                     gathered = await asyncio.gather(*tasks, return_exceptions=True)
                     for item, raw in zip(group, gathered):
                         if isinstance(raw, Exception):
@@ -466,12 +508,20 @@ class AgentRunner:
             for call in tool_calls
         ]
 
-    async def _run_tool(self, call: ToolCallRequest, emit: StreamEmitter | None = None) -> str:
+    async def _run_tool(
+        self,
+        call: ToolCallRequest,
+        emit: StreamEmitter | None = None,
+        *,
+        clarification: ClarificationAssessment | None = None,
+    ) -> str:
         if self.control_manager is not None and not self.control_manager.is_tool_allowed(call.name, self.registry):
             return (
                 f"Error: tool '{call.name}' is unavailable in Plan mode. "
                 "Only read-only tools plus ask_user/propose_plan are allowed until the plan is approved."
             )
+        if clarification and clarification.required and self._ask_guard_blocks_tool(call.name):
+            return _ASK_GUARD_BLOCK
         tool = self.registry.get(call.name)
         if emit and tool is not None and getattr(tool, "requires_runtime_context", False):
             loop = asyncio.get_running_loop()
@@ -480,6 +530,81 @@ class AgentRunner:
                 emit=emit, loop=loop, parent_call_id=call.id,
             )
         return await asyncio.to_thread(self.registry.execute, call.name, call.arguments)
+
+    def _assess_clarification(self, history: list[dict[str, Any]]) -> ClarificationAssessment:
+        if self.control_manager is None:
+            return ClarificationAssessment()
+        try:
+            return self.control_manager.assess_clarification(history)
+        except Exception as exc:
+            logger.warning(f"clarification assessment failed: {exc}")
+            return ClarificationAssessment()
+
+    def _ask_guard_blocks_tool(self, name: str) -> bool:
+        if name in {"ask_user", "propose_plan"}:
+            return False
+        tool = self.registry.get(name)
+        if tool is None:
+            return False
+        return not bool(getattr(tool, "read_only", False))
+
+    async def _pause_for_clarification(
+        self,
+        history: list[dict[str, Any]],
+        clarification: ClarificationAssessment,
+        emit: StreamEmitter | None,
+        *,
+        turn_id: str | None = None,
+    ) -> None:
+        if self.control_manager is None:
+            return
+        interaction = self.control_manager.create_ask(
+            questions=clarification.questions,
+            context=f"Ask Guard: {clarification.reason}",
+        )
+        message = {
+            "role": "assistant",
+            "content": "需要先确认关键取舍，已触发 Ask Guard。",
+        }
+        if turn_id:
+            message["turn_id"] = turn_id
+        history.append(message)
+        if self.memory_store is not None:
+            self.memory_store.write_checkpoint(history)
+        payload = interaction.to_dict()
+        if emit:
+            await emit(_control_interaction_event(payload))
+            await emit({"event": "turn_paused", "interaction": payload})
+        raise TurnPaused(interaction=payload, tool_messages=[])
+
+    async def _pause_for_plan(
+        self,
+        history: list[dict[str, Any]],
+        reply: str,
+        emit: StreamEmitter | None,
+        *,
+        turn_id: str | None = None,
+    ) -> None:
+        if self.control_manager is None:
+            return
+        interaction = self.control_manager.create_plan_from_text(reply)
+        message = {"role": "assistant", "content": reply}
+        if turn_id:
+            message["turn_id"] = turn_id
+        history.append(message)
+        if self.memory_store is not None:
+            self.memory_store.write_checkpoint(history)
+        payload = interaction.to_dict()
+        if emit:
+            await emit(_control_interaction_event(payload))
+            await emit({"event": "turn_paused", "interaction": payload})
+        raise TurnPaused(interaction=payload, tool_messages=[])
+
+    def _must_pause_for_plan(self, reply: str) -> bool:
+        return bool(
+            self.control_manager is not None
+            and self.control_manager.should_enforce_plan_final()
+        )
 
     def _maybe_pause_for_control(
         self,
