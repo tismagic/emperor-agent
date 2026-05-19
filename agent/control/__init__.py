@@ -13,6 +13,7 @@ from .models import (
 from .policy import CONTROL_TOOL_NAMES, ControlPolicy
 from .store import ControlStore
 from .tools import AskUserTool, ProposePlanTool, parse_pause_result
+from ..permissions import PermissionDecision, PermissionManager, PermissionMode, PermissionPolicy, RiskLevel
 
 __all__ = [
     "AskUserTool",
@@ -31,6 +32,11 @@ __all__ = [
     "ProposePlanTool",
     "Question",
     "QuestionOption",
+    "PermissionDecision",
+    "PermissionManager",
+    "PermissionMode",
+    "PermissionPolicy",
+    "RiskLevel",
     "TurnPaused",
     "parse_pause_result",
 ]

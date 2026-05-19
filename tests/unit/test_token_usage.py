@@ -124,6 +124,7 @@ def test_token_tracker_recent_calls_normalize_legacy_cache_rows(tmp_path: Path) 
         "ts": "2026-05-01T10:01:00",
         "provider": "anthropic",
         "model": "claude",
+        "model_role": "unknown",
         "usage_type": "main_agent",
         "input": 7,
         "output": 1,

@@ -2,7 +2,7 @@
 import { computed, nextTick, ref } from 'vue'
 import type { SlashPaletteItem } from '../../commands'
 import type { AttachmentRef } from '../../types'
-import { actionAssets, toolAssets } from '../../assets'
+import { actionAssets } from '../../assets'
 import { uploadAttachment } from '../../api/attachments'
 import AttachmentChip from './AttachmentChip.vue'
 
@@ -17,7 +17,7 @@ const props = defineProps<{
 const emit = defineEmits<{
   send: [payload: { content: string; attachments: AttachmentRef[] }]
   error: [message: string]
-  'set-mode': [mode: 'normal' | 'plan']
+  'set-mode': [mode: 'ask_before_edit' | 'auto' | 'plan']
 }>()
 const value = ref('')
 const input = ref<HTMLTextAreaElement | null>(null)
@@ -73,23 +73,31 @@ const attachTitle = computed(() => {
 
 const modeOptions = [
   {
-    value: 'normal',
-    label: '正常模式',
-    short: '正常',
-    description: '直接执行工具与代码改动',
-    icon: actionAssets.statusOnline,
+    value: 'ask_before_edit',
+    label: 'Ask Before Edit',
+    short: 'Ask',
+    description: 'Ask before risky or uncertain actions',
+    icon: actionAssets.modeAskBeforeEdit,
+  },
+  {
+    value: 'auto',
+    label: 'Auto',
+    short: 'Auto',
+    description: 'Run with maximum automatic permission',
+    icon: actionAssets.modeAuto,
   },
   {
     value: 'plan',
-    label: '计划模式',
-    short: '计划',
-    description: '只读探索，提交计划，批准后执行',
-    icon: toolAssets.todo,
+    label: 'Plan',
+    short: 'Plan',
+    description: 'Explore read-only, then present a plan',
+    icon: actionAssets.modePlan,
   },
 ] as const
 
-const currentMode = computed(() => modeOptions.find((item) => item.value === props.controlMode) || modeOptions[0])
-const modeTitle = computed(() => props.busy ? 'AI 正在执行，结束后再切换模式' : '切换对话模式')
+const normalizedControlMode = computed(() => props.controlMode === 'normal' ? 'ask_before_edit' : props.controlMode)
+const currentMode = computed(() => modeOptions.find((item) => item.value === normalizedControlMode.value) || modeOptions[0])
+const modeTitle = computed(() => props.busy ? 'Wait until the current run finishes' : 'Switch mode')
 
 function resize() {
   const el = input.value
@@ -149,7 +157,7 @@ function toggleModeMenu() {
   modeMenuOpen.value = !modeMenuOpen.value
 }
 
-function selectMode(mode: 'normal' | 'plan') {
+function selectMode(mode: 'ask_before_edit' | 'auto' | 'plan') {
   if (props.busy) return
   modeMenuOpen.value = false
   if (mode !== props.controlMode) emit('set-mode', mode)
@@ -378,14 +386,14 @@ const sendDisabled = computed(() => props.busy || (!value.value.trim() && drafts
             >
               <img class="mode-icon" :src="currentMode.icon" alt="" width="18" height="18" />
               <span>{{ currentMode.label }}</span>
-              <em>{{ currentMode.value === 'plan' ? '预览计划' : '直接执行' }}</em>
+              <em>{{ currentMode.value === 'plan' ? 'Plan first' : currentMode.value === 'auto' ? 'Full auto' : 'Ask first' }}</em>
               <img class="mode-caret" :src="actionAssets.caretDown" alt="" width="14" height="14" />
             </button>
 
             <div v-if="modeMenuOpen" class="mode-menu">
               <div class="mode-menu-head">
-                <span>对话模式</span>
-                <em>切换后立即生效</em>
+                <span>Modes</span>
+                <em>Applies immediately</em>
               </div>
               <button
                 v-for="option in modeOptions"

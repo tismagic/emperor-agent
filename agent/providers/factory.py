@@ -19,6 +19,9 @@ class ProviderSnapshot:
     config: dict[str, Any]
     supports_vision: bool = False
     entry_name: str = ""
+    entry_label: str = ""
+    model_role: str = "main"
+    route_reason: str = ""
 
 
 def create_provider(

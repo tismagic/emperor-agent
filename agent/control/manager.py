@@ -16,6 +16,7 @@ from .models import (
 from .clarification import ClarificationAssessment, ClarificationPolicy
 from .policy import ControlPolicy
 from .store import ControlStore
+from ..permissions import PermissionManager
 
 
 @dataclass
@@ -31,6 +32,7 @@ class ControlManager:
         self.store = ControlStore(root)
         self.policy = ControlPolicy(self)
         self.clarification_policy = ClarificationPolicy()
+        self.permission_manager = PermissionManager(self)
 
     @property
     def mode(self) -> str:
@@ -44,11 +46,17 @@ class ControlManager:
         value = str(mode or "").strip().lower()
         if value in {"on", "plan"}:
             value = ControlMode.PLAN.value
-        elif value in {"off", "normal"}:
-            value = ControlMode.NORMAL.value
+        elif value in {"off", "normal", "ask", "ask_before_edit", "edit_before_ask"}:
+            value = ControlMode.ASK_BEFORE_EDIT.value
+        elif value in {"auto", "automatic"}:
+            value = ControlMode.AUTO.value
         if value not in {item.value for item in ControlMode}:
-            raise ValueError("mode must be normal or plan")
+            raise ValueError("mode must be ask_before_edit, auto or plan")
         state = self.store.load()
+        if value == ControlMode.PLAN.value and state.mode != ControlMode.PLAN.value:
+            state.previous_mode = state.mode
+        elif value != ControlMode.PLAN.value:
+            state.previous_mode = None
         state.mode = value
         state.updated_at = now_ts()
         self.store.save(state)
@@ -65,6 +73,7 @@ class ControlManager:
         questions: list[dict[str, Any]],
         context: str = "",
         parent_call_id: str | None = None,
+        meta: dict[str, Any] | None = None,
     ) -> Interaction:
         self.ensure_no_pending()
         parsed = [Question.from_dict(item) for item in questions]
@@ -72,6 +81,7 @@ class ControlManager:
             questions=parsed,
             context=context,
             parent_call_id=parent_call_id,
+            meta=meta or {},
         )
         self._set_pending(interaction)
         return interaction
@@ -139,6 +149,7 @@ class ControlManager:
         normalized = self._normalize_answers(interaction, answers)
         updated = interaction.touch(status=InteractionStatus.ANSWERED.value)
         updated.answers = normalized
+        self.permission_manager.record_answer(updated)
         self._complete(updated)
         message = self._answer_message(updated)
         return ControlResume(
@@ -169,7 +180,8 @@ class ControlManager:
         interaction = self._require_pending(interaction_id, InteractionKind.PLAN)
         updated = interaction.touch(status=InteractionStatus.APPROVED.value)
         state = self.store.load()
-        state.mode = ControlMode.NORMAL.value
+        state.mode = self._restore_mode(state)
+        state.previous_mode = None
         state.pending = None
         state.last_interaction = updated
         state.updated_at = now_ts()
@@ -184,7 +196,16 @@ class ControlManager:
     def cancel(self, interaction_id: str) -> dict[str, Any]:
         pending = self._require_pending(interaction_id)
         updated = pending.touch(status=InteractionStatus.CANCELLED.value)
-        self._complete(updated)
+        if pending.kind == InteractionKind.PLAN.value:
+            state = self.store.load()
+            state.mode = self._restore_mode(state)
+            state.previous_mode = None
+            state.pending = None
+            state.last_interaction = updated
+            state.updated_at = now_ts()
+            self.store.save(state)
+        else:
+            self._complete(updated)
         return {
             "event": "interaction_cancelled",
             "interaction": updated.to_dict(),
@@ -291,6 +312,9 @@ class ControlManager:
             )
         return (
             "# Control Tools\n\n"
+            f"- 当前权限模式：{self.mode}。\n"
+            "- `ask_before_edit` 模式下，危险、不确定或高影响操作会触发权限审批；低风险读操作和普通编辑可继续执行。\n"
+            "- `auto` 模式下，工具层不主动审批，但仍受路径安全、schema 校验和工具自身安全策略约束。\n"
             "- 当用户目标存在高影响歧义且无法通过读文件/搜索等方式确定时，调用 `ask_user` 提出结构化问题。\n"
             "- 高影响歧义包括范围/验收不清的大改动、架构/重构/UI 取舍、提交推送、删除覆盖、发布部署、成本/权限/安全边界。\n"
             "- 可通过只读探索确认的事实先探索；但在写入、高影响操作或最终答复前仍有关键取舍时，必须提问。\n"
@@ -302,6 +326,18 @@ class ControlManager:
 
     def is_tool_allowed(self, name: str, registry) -> bool:
         return self.policy.is_tool_allowed(name, registry)
+
+    def assess_permission(self, name: str, arguments: dict[str, Any], registry):
+        return self.permission_manager.assess(name, arguments, registry=registry)
+
+    def permission_approval_result(self, decision, *, parent_call_id: str | None = None) -> str:
+        return self.permission_manager.require_approval(decision, parent_call_id=parent_call_id)
+
+    @staticmethod
+    def _restore_mode(state: ControlState) -> str:
+        if state.previous_mode in {ControlMode.ASK_BEFORE_EDIT.value, ControlMode.AUTO.value}:
+            return state.previous_mode
+        return ControlMode.ASK_BEFORE_EDIT.value
 
     @staticmethod
     def interaction_event(interaction: Interaction) -> dict[str, Any]:

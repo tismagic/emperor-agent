@@ -58,6 +58,7 @@ const sortedEpisodes = computed(() => {
 })
 
 const historyStats = computed(() => props.memory?.history || null)
+const runtimeStats = computed(() => props.memory?.runtime || null)
 
 function formatBytes(value?: number) {
   const bytes = Math.max(0, Number(value || 0))
@@ -107,6 +108,24 @@ function formatNumber(value?: number) {
         <span>最近归档</span>
         <strong>{{ historyStats.last_archive_at ? historyStats.last_archive_at.slice(0, 10) : '暂无' }}</strong>
         <small>{{ historyStats.needs_rotation ? '热日志接近上限' : '容量正常' }}</small>
+      </div>
+    </div>
+
+    <div v-if="runtimeStats" class="memory-stats-grid">
+      <div class="memory-stat-card">
+        <span>Runtime 冷记录</span>
+        <strong>{{ formatBytes(runtimeStats.bytes) }}</strong>
+        <small>{{ formatNumber(runtimeStats.events) }} 个事件 · seq {{ formatNumber(runtimeStats.latestSeq) }}</small>
+      </div>
+      <div class="memory-stat-card">
+        <span>活跃 Turn</span>
+        <strong>{{ formatNumber(runtimeStats.activeTurns) }}</strong>
+        <small>{{ formatNumber(runtimeStats.activeTurnEvents) }} 个可重放事件</small>
+      </div>
+      <div class="memory-stat-card">
+        <span>最新事件</span>
+        <strong>{{ runtimeStats.latestTs ? new Date(runtimeStats.latestTs * 1000).toLocaleDateString('zh-CN') : '暂无' }}</strong>
+        <small>{{ runtimeStats.path || 'memory/runtime/events.jsonl' }}</small>
       </div>
     </div>
 

@@ -45,7 +45,7 @@ export interface AppContext {
   loadEpisode: (date: string) => Promise<{ date: string; content: string }>
   saveEpisode: (date: string, content: string) => Promise<void>
 
-  setControlMode: (mode: 'normal' | 'plan') => Promise<void>
+  setControlMode: (mode: 'ask_before_edit' | 'auto' | 'plan') => Promise<void>
   sendMessage: (payload: string | ChatSendPayload) => boolean
   sendInteractionAnswer: (interactionId: string, answers: Record<string, unknown>) => boolean
   sendPlanComment: (interactionId: string, comment: string) => boolean

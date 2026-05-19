@@ -30,6 +30,7 @@ export const slashCommands: SlashCommand[] = [
   { name: '/config', usage: '/config', description: '查看并编辑用户配置文件 (USER.local.md)', aliases: ['/configs'] },
   { name: '/memory', usage: '/memory', description: '输出记忆状态摘要' },
   { name: '/plan', usage: '/plan on|off|status', description: '查看或切换 Plan 模式' },
+  { name: '/mode', usage: '/mode ask|auto|plan|status', description: '查看或切换权限模式' },
   { name: '/compact', usage: '/compact', description: '触发未归档会话压缩，写入 MEMORY/情景记忆' },
   { name: '/clear', usage: '/clear', description: '清空当前屏幕，不删除运行期记忆' },
   { name: '/reload', usage: '/reload', description: '刷新 bootstrap、模型、skills、tools、memory' },

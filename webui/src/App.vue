@@ -172,6 +172,10 @@ async function executeSlashCommand(raw: string, name: string, command: SlashComm
       await handlePlanCommand(raw)
       return
     }
+    if (command.name === '/mode') {
+      await handleModeCommand(raw)
+      return
+    }
     if (command.name === '/compact') {
       pending.label = '正在压缩未归档会话...'
       pending.detail = ''
@@ -225,12 +229,13 @@ function renderStatus() {
     `- WebSocket：${inlineCode(status.value)}`,
     `- 忙碌状态：${busy.value ? '正在执行' : '空闲'}`,
     `- Provider：${inlineCode(current?.provider || boot.value?.provider || 'unknown')}`,
-    `- Model：${inlineCode(current?.model || boot.value?.model || 'unknown')}`,
+    `- Main Model：${inlineCode(current?.mainModelId || current?.model || boot.value?.model || 'unknown')}`,
+    `- Secondary Model：${current?.secondaryModelId ? inlineCode(current.secondaryModelId) : '未配置'}`,
     `- Token 总量：${Number(totals.total || 0).toLocaleString('zh-CN')}`,
     `- 模型调用：${Number(totals.calls || 0).toLocaleString('zh-CN')} 次`,
     `- Skills：${boot.value?.skills?.length || 0}`,
     `- Tools：${boot.value?.tools?.length || 0}`,
-    `- Control：${inlineCode(boot.value?.control?.mode || 'normal')}`,
+    `- Control：${inlineCode(boot.value?.control?.mode || 'ask_before_edit')}`,
     `- 未归档消息：${unarchived}`,
     `- 当前页：${inlineCode(router.currentRoute.value.name?.toString() || 'chat')}`,
   ].join('\n')
@@ -245,29 +250,63 @@ async function handlePlanCommand(raw: string) {
     return
   }
   if (normalized === 'off' || normalized === 'normal') {
-    await setControlMode('normal')
-    addLocalCommand(raw, 'Plan 模式已关闭。')
+    await setControlMode('ask_before_edit')
+    addLocalCommand(raw, 'Plan 模式已关闭，已回到编辑前询问模式。')
     return
   }
   const pending = boot.value?.control?.pending
   addLocalCommand(raw, [
     '## Plan 模式',
     '',
-    `- 当前模式：${inlineCode(boot.value?.control?.mode || 'normal')}`,
+    `- 当前模式：${inlineCode(boot.value?.control?.mode || 'ask_before_edit')}`,
+    `- 进入 Plan 前模式：${boot.value?.control?.previous_mode ? inlineCode(boot.value.control.previous_mode) : '无'}`,
     `- 等待交互：${pending ? inlineCode(`${pending.kind}:${pending.id}`) : '无'}`,
   ].join('\n'))
 }
 
-async function setControlMode(mode: 'normal' | 'plan') {
+async function handleModeCommand(raw: string) {
+  const [, arg = 'status'] = raw.trim().split(/\s+/, 2)
+  const normalized = arg.toLowerCase()
+  if (['ask', 'ask_before_edit', 'edit_before_ask'].includes(normalized)) {
+    await setControlMode('ask_before_edit')
+    addLocalCommand(raw, '权限模式已切换为：编辑前询问。')
+    return
+  }
+  if (normalized === 'auto') {
+    await setControlMode('auto')
+    addLocalCommand(raw, '权限模式已切换为：自动执行。')
+    return
+  }
+  if (normalized === 'plan') {
+    await setControlMode('plan')
+    addLocalCommand(raw, '权限模式已切换为：计划模式。')
+    return
+  }
+  addLocalCommand(raw, renderModeStatus())
+}
+
+function renderModeStatus() {
+  const control = boot.value?.control
+  return [
+    '## 权限模式',
+    '',
+    `- 当前模式：${inlineCode(control?.mode || 'ask_before_edit')}`,
+    `- 进入 Plan 前模式：${control?.previous_mode ? inlineCode(control.previous_mode) : '无'}`,
+    `- 等待交互：${control?.pending ? inlineCode(`${control.pending.kind}:${control.pending.id}`) : '无'}`,
+  ].join('\n')
+}
+
+async function setControlMode(mode: 'ask_before_edit' | 'auto' | 'plan') {
   const res = await fetch('/api/control/mode', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ mode }),
   })
   const data = await res.json()
-  if (!res.ok) throw new Error(data?.error || '切换 Plan 模式失败')
+  if (!res.ok) throw new Error(data?.error || '切换权限模式失败')
   if (boot.value) boot.value.control = data
-  showToast(mode === 'plan' ? 'Plan 模式已开启' : 'Plan 模式已关闭')
+  const label = mode === 'plan' ? '计划模式' : mode === 'auto' ? '自动执行' : '编辑前询问'
+  showToast(`已切换为${label}`)
 }
 
 function renderModelInfo() {
@@ -280,7 +319,9 @@ function renderModelInfo() {
     '',
     `- Provider：${inlineCode(provider)}`,
     `- Provider Label：${current?.providerLabel || boot.value?.providerLabel || 'unknown'}`,
-    `- Model：${inlineCode(current?.model || boot.value?.model || 'unknown')}`,
+    `- Main Model：${inlineCode(current?.mainModelId || current?.model || boot.value?.model || 'unknown')}`,
+    `- Secondary Model：${current?.secondaryModelId ? inlineCode(current.secondaryModelId) : '未配置'}`,
+    `- Secondary Enabled：${payload?.routing?.secondaryEnabled ? 'yes' : 'no'}`,
     `- API Base：${inlineCode(String(rawProvider.apiBase || current?.apiBase || '未配置'))}`,
     `- Max Tokens：${formatNumber(current?.maxTokens || 0)}`,
     `- Temperature：${current?.temperature ?? '未配置'}`,

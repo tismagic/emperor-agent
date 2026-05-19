@@ -12,7 +12,7 @@ from .control import AskUserTool, ControlManager, ControlMode, InteractionKind, 
 from .logger import configure as configure_logging
 from .memory import MemoryStore
 from .mcp import MCPClient
-from .model_config import build_provider_snapshot
+from .model_router import ModelRouter
 from .runner import AgentRunner
 from .skills import SkillsLoader
 from .subagents import SubagentRegistry
@@ -134,7 +134,9 @@ class AgentLoop:
         return local
 
     def refresh_model_config(self, *, initial: bool = False) -> None:
-        snapshot = build_provider_snapshot(self.root, model_override=self._model_override)
+        self.model_router = ModelRouter(self.root, model_override=self._model_override)
+        main_route = self.model_router.route("main_agent")
+        snapshot = main_route.snapshot
         self.provider_snapshot = snapshot
         self.provider = snapshot.provider
         self.provider_name = snapshot.provider_name
@@ -146,15 +148,26 @@ class AgentLoop:
         self.max_context = snapshot.context_window_tokens
         self.supports_vision = snapshot.supports_vision
         self.entry_name = snapshot.entry_name
+        self.model_role = snapshot.model_role
+        self.route_reason = main_route.reason
 
+        compactor_route = self.model_router.route("memory_compaction")
+        compactor_snapshot = compactor_route.snapshot
+        compactor_fallback = compactor_route.fallback
         self.compactor = Compactor(
-            self.provider,
-            self.model,
+            compactor_snapshot.provider,
+            compactor_snapshot.model,
             self.memory,
-            temperature=self.temperature,
-            reasoning_effort=self.reasoning_effort,
-            provider_name=self.provider_name,
+            temperature=compactor_snapshot.generation.temperature,
+            reasoning_effort=compactor_snapshot.generation.reasoning_effort,
+            provider_name=compactor_snapshot.provider_name,
             token_tracker=self.token_tracker,
+            model_role=compactor_snapshot.model_role,
+            fallback_provider=compactor_fallback.provider if compactor_fallback else None,
+            fallback_model=compactor_fallback.model if compactor_fallback else None,
+            fallback_provider_name=compactor_fallback.provider_name if compactor_fallback else None,
+            fallback_generation=compactor_fallback.generation if compactor_fallback else None,
+            fallback_model_role=compactor_fallback.model_role if compactor_fallback else "main",
         )
         system_prompt = self.context_builder.build_system_prompt()
         if self.verbose and initial:
@@ -170,6 +183,8 @@ class AgentLoop:
                 temperature=self.temperature,
                 reasoning_effort=self.reasoning_effort,
                 provider_name=self.provider_name,
+                model_role=self.model_role,
+                route_reason=self.route_reason,
                 usage_type="main_agent",
                 memory_store=self.memory,
                 token_tracker=self.token_tracker,
@@ -187,6 +202,13 @@ class AgentLoop:
         self.runner.temperature = self.temperature
         self.runner.reasoning_effort = self.reasoning_effort
         self.runner.provider_name = self.provider_name
+        self.runner.model_role = self.model_role
+        self.runner.route_reason = self.route_reason
+        self.runner.fallback_provider = None
+        self.runner.fallback_model = None
+        self.runner.fallback_provider_name = None
+        self.runner.fallback_generation = None
+        self.runner.fallback_model_role = "main"
         self.runner.usage_type = "main_agent"
         self.runner.compactor = self.compactor
         self.runner.control_manager = self.control_manager
@@ -247,6 +269,7 @@ class AgentLoop:
                 "  /help      显示命令列表\n"
                 "  /status    查看模型、Provider、Token、工具和技能数量\n"
                 "  /plan      查看 / 开关 Plan 模式：/plan on|off|status\n"
+                "  /mode      查看 / 切换权限模式：/mode ask|auto|plan|status\n"
                 "  /clear     清空当前 CLI 运行上下文, 不删除 memory/history.jsonl\n"
                 "  /exit      退出 CLI\n"
             )
@@ -259,7 +282,8 @@ class AgentLoop:
             logger.info(
                 "\n当前状态:\n"
                 f"  provider: {self.provider_name}\n"
-                f"  model:    {self.model}\n"
+                f"  model:    {self.model} (main)\n"
+                f"  secondary:{self.model_router.secondary.model if self.model_router.secondary.model_role == 'secondary' else '-'}\n"
                 f"  tokens:   {totals.get('total', 0)} total / {totals.get('calls', 0)} calls\n"
                 f"  skills:   {len(self.skills.skills)}\n"
                 f"  tools:    {len(all_defs)} (builtin: {builtin_count}, mcp: {mcp_count})\n"
@@ -275,8 +299,8 @@ class AgentLoop:
                 logger.info("\nPlan 模式已开启：只读探索 + 提问 + 计划预览；批准前不执行。")
                 return True
             if arg in {"off", "normal"}:
-                self.control_manager.set_mode(ControlMode.NORMAL.value)
-                logger.info("\nPlan 模式已关闭。")
+                self.control_manager.set_mode(ControlMode.ASK_BEFORE_EDIT.value)
+                logger.info("\nPlan 模式已关闭，已回到编辑前询问模式。")
                 return True
             payload = self.control_manager.payload()
             pending = payload.get("pending")
@@ -286,7 +310,30 @@ class AgentLoop:
             logger.info(
                 "\nControl 状态:\n"
                 f"  mode: {payload.get('mode')}\n"
+                f"  previous: {payload.get('previous_mode') or '-'}\n"
                 f"  pending: {pending_label}\n"
+            )
+            return True
+        if command == "/mode":
+            parts = text.split(maxsplit=1)
+            arg = parts[1].strip().lower() if len(parts) > 1 else "status"
+            if arg in {"ask", "ask_before_edit", "edit_before_ask"}:
+                self.control_manager.set_mode(ControlMode.ASK_BEFORE_EDIT.value)
+                logger.info("\n权限模式：编辑前询问。")
+                return True
+            if arg == "auto":
+                self.control_manager.set_mode(ControlMode.AUTO.value)
+                logger.info("\n权限模式：自动执行。")
+                return True
+            if arg == "plan":
+                self.control_manager.set_mode(ControlMode.PLAN.value)
+                logger.info("\n权限模式：计划模式。")
+                return True
+            payload = self.control_manager.payload()
+            logger.info(
+                "\n权限模式:\n"
+                f"  mode: {payload.get('mode')}\n"
+                f"  previous: {payload.get('previous_mode') or '-'}\n"
             )
             return True
         if command == "/clear":
@@ -370,16 +417,26 @@ class AgentLoop:
         return "\n".join(lines)
 
     def _install_subagent_tool(self) -> None:
-        def _make_subagent_runner(*, spec, sub_registry):
+        def _make_subagent_runner(*, spec, sub_registry, task: str | None = None):
+            route = self.model_router.route("subagent", agent_type=spec.name, task=task)
+            snapshot = route.snapshot
+            fallback = route.fallback
             return AgentRunner(
-                provider=self.provider,
-                model=self.model,
+                provider=snapshot.provider,
+                model=snapshot.model,
                 registry=sub_registry,
                 system_prompt=spec.system_prompt,
-                max_tokens=min(2000, self.max_tokens),
-                temperature=self.temperature,
-                reasoning_effort=self.reasoning_effort,
-                provider_name=self.provider_name,
+                max_tokens=min(2000, snapshot.generation.max_tokens),
+                temperature=snapshot.generation.temperature,
+                reasoning_effort=snapshot.generation.reasoning_effort,
+                provider_name=snapshot.provider_name,
+                model_role=snapshot.model_role,
+                route_reason=route.reason,
+                fallback_provider=fallback.provider if fallback else None,
+                fallback_model=fallback.model if fallback else None,
+                fallback_provider_name=fallback.provider_name if fallback else None,
+                fallback_generation=fallback.generation if fallback else None,
+                fallback_model_role=fallback.model_role if fallback else "main",
                 usage_type=f"subagent:{spec.name}",
                 memory_store=None,
                 token_tracker=self.token_tracker,
@@ -397,6 +454,9 @@ class AgentLoop:
 
     def _install_team_tools(self) -> None:
         def _make_team_runner(*, member, spec, sub_registry):
+            route = self.model_router.route("team", agent_type=spec.name)
+            snapshot = route.snapshot
+            fallback = route.fallback
             system_prompt = (
                 f"{spec.system_prompt}\n\n"
                 "## Agent Team 协作规则\n\n"
@@ -407,14 +467,21 @@ class AgentLoop:
                 "- 只能处理本队友职责内的任务, 不要创建或唤醒其他队友。\n"
             )
             return AgentRunner(
-                provider=self.provider,
-                model=self.model,
+                provider=snapshot.provider,
+                model=snapshot.model,
                 registry=sub_registry,
                 system_prompt=system_prompt,
-                max_tokens=min(4000, self.max_tokens),
-                temperature=self.temperature,
-                reasoning_effort=self.reasoning_effort,
-                provider_name=self.provider_name,
+                max_tokens=min(4000, snapshot.generation.max_tokens),
+                temperature=snapshot.generation.temperature,
+                reasoning_effort=snapshot.generation.reasoning_effort,
+                provider_name=snapshot.provider_name,
+                model_role=snapshot.model_role,
+                route_reason=route.reason,
+                fallback_provider=fallback.provider if fallback else None,
+                fallback_model=fallback.model if fallback else None,
+                fallback_provider_name=fallback.provider_name if fallback else None,
+                fallback_generation=fallback.generation if fallback else None,
+                fallback_model_role=fallback.model_role if fallback else "main",
                 usage_type=f"team:{member.name}",
                 memory_store=None,
                 token_tracker=self.token_tracker,

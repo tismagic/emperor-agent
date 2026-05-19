@@ -13,7 +13,8 @@ _SAFE_ID_RE = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,63}$")
 
 
 class ControlMode(StrEnum):
-    NORMAL = "normal"
+    ASK_BEFORE_EDIT = "ask_before_edit"
+    AUTO = "auto"
     PLAN = "plan"
 
 
@@ -109,6 +110,7 @@ class Interaction:
     assumptions: list[str] = field(default_factory=list)
     risk_level: str = "medium"
     comments: list[dict[str, Any]] = field(default_factory=list)
+    meta: dict[str, Any] = field(default_factory=dict)
 
     @classmethod
     def ask(
@@ -117,6 +119,7 @@ class Interaction:
         questions: list[Question],
         context: str = "",
         parent_call_id: str | None = None,
+        meta: dict[str, Any] | None = None,
     ) -> "Interaction":
         if not 1 <= len(questions) <= 3:
             raise ValueError("ask_user requires 1-3 questions")
@@ -126,6 +129,7 @@ class Interaction:
             questions=questions,
             context=context.strip()[:1000],
             parent_call_id=parent_call_id,
+            meta=meta or {},
         )
 
     @classmethod
@@ -138,6 +142,7 @@ class Interaction:
         assumptions: list[str] | None = None,
         risk_level: str = "medium",
         parent_call_id: str | None = None,
+        meta: dict[str, Any] | None = None,
     ) -> "Interaction":
         title = title.strip()
         summary = summary.strip()
@@ -153,6 +158,7 @@ class Interaction:
             assumptions=[str(item).strip()[:300] for item in assumptions or [] if str(item).strip()],
             risk_level=(risk_level or "medium").strip().lower()[:24],
             parent_call_id=parent_call_id,
+            meta=meta or {},
         )
 
     @classmethod
@@ -184,6 +190,7 @@ class Interaction:
             assumptions=[str(item) for item in raw.get("assumptions") or []],
             risk_level=str(raw.get("risk_level") or raw.get("riskLevel") or "medium"),
             comments=[item for item in comments if isinstance(item, dict)],
+            meta=raw.get("meta") if isinstance(raw.get("meta"), dict) else {},
         )
 
     def to_dict(self) -> dict[str, Any]:
@@ -203,6 +210,7 @@ class Interaction:
             "assumptions": list(self.assumptions),
             "risk_level": self.risk_level,
             "comments": list(self.comments),
+            "meta": dict(self.meta),
         }
 
     def touch(self, *, status: str | None = None) -> "Interaction":
@@ -216,16 +224,27 @@ class Interaction:
 @dataclass
 class ControlState:
     version: int = SCHEMA_VERSION
-    mode: str = ControlMode.NORMAL.value
+    mode: str = ControlMode.ASK_BEFORE_EDIT.value
+    previous_mode: str | None = None
     pending: Interaction | None = None
     last_interaction: Interaction | None = None
     updated_at: float = field(default_factory=now_ts)
 
     @classmethod
     def from_dict(cls, raw: dict[str, Any]) -> "ControlState":
-        mode = str(raw.get("mode") or ControlMode.NORMAL.value)
+        mode = str(raw.get("mode") or ControlMode.ASK_BEFORE_EDIT.value)
+        if mode == "normal":
+            mode = ControlMode.ASK_BEFORE_EDIT.value
         if mode not in {item.value for item in ControlMode}:
-            mode = ControlMode.NORMAL.value
+            mode = ControlMode.ASK_BEFORE_EDIT.value
+        previous_mode = str(raw.get("previous_mode") or raw.get("previousMode") or "") or None
+        if previous_mode == "normal":
+            previous_mode = ControlMode.ASK_BEFORE_EDIT.value
+        if previous_mode not in {
+            ControlMode.ASK_BEFORE_EDIT.value,
+            ControlMode.AUTO.value,
+        }:
+            previous_mode = None
 
         def parse_interaction(value: Any) -> Interaction | None:
             if not isinstance(value, dict):
@@ -238,6 +257,7 @@ class ControlState:
         return cls(
             version=int(raw.get("version") or SCHEMA_VERSION),
             mode=mode,
+            previous_mode=previous_mode,
             pending=parse_interaction(raw.get("pending")),
             last_interaction=parse_interaction(raw.get("last_interaction") or raw.get("lastInteraction")),
             updated_at=float(raw.get("updated_at") or raw.get("updatedAt") or now_ts()),
@@ -247,6 +267,7 @@ class ControlState:
         return {
             "version": self.version,
             "mode": self.mode,
+            "previous_mode": self.previous_mode,
             "pending": self.pending.to_dict() if self.pending else None,
             "last_interaction": self.last_interaction.to_dict() if self.last_interaction else None,
             "updated_at": self.updated_at,

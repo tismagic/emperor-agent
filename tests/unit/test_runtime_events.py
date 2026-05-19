@@ -34,3 +34,18 @@ def test_runtime_event_store_filters_turns_and_skips_bad_lines(tmp_path: Path) -
 
     assert [event["event"] for event in events] == ["user_message", "assistant_done"]
     assert all(event["turn_id"] == "turn_b" for event in events)
+
+
+def test_runtime_event_store_stats_include_active_turns(tmp_path: Path) -> None:
+    store = RuntimeEventStore(tmp_path)
+    store.append({"event": "user_message", "content": "a"}, turn_id="turn_a")
+    store.append({"event": "tool_call", "name": "read_file"}, turn_id="turn_a")
+    store.append({"event": "user_message", "content": "b"}, turn_id="turn_b")
+
+    stats = store.stats(active_turn_ids=["turn_a"])
+
+    assert stats["events"] == 3
+    assert stats["latestSeq"] == 3
+    assert stats["activeTurns"] == 1
+    assert stats["activeTurnEvents"] == 2
+    assert stats["path"] == "memory/runtime/events.jsonl"

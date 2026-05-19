@@ -80,7 +80,7 @@ class DispatchSubagentTool(Tool):
             if tool is not None:
                 sub_registry.register(tool)
 
-        runner = self._runner_factory(spec=spec, sub_registry=sub_registry)
+        runner = self._runner_factory(spec=spec, sub_registry=sub_registry, task=task)
 
         with self._counter_lock:
             self._counter += 1

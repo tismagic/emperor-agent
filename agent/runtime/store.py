@@ -60,6 +60,24 @@ class RuntimeEventStore:
             return out[-limit:]
         return out
 
+    def stats(self, *, active_turn_ids: list[str] | None = None) -> dict[str, Any]:
+        events = list(self._iter_events())
+        active = {str(item) for item in active_turn_ids or [] if item}
+        active_events = [
+            event for event in events
+            if active and str(event.get("turn_id") or "") in active
+        ]
+        latest_ts = max((float(event.get("ts") or 0) for event in events), default=0)
+        return {
+            "path": str(self.events_file.relative_to(self.root)),
+            "bytes": self.events_file.stat().st_size if self.events_file.exists() else 0,
+            "events": len(events),
+            "latestSeq": self._latest_seq,
+            "latestTs": latest_ts or None,
+            "activeTurnEvents": len(active_events),
+            "activeTurns": len(active),
+        }
+
     def _ensure(self) -> None:
         self.runtime_dir.mkdir(parents=True, exist_ok=True)
         if not self.events_file.exists():

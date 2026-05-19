@@ -9,6 +9,7 @@ from loguru import logger
 from .control import ClarificationAssessment, TurnPaused, parse_pause_result
 from .providers import LLMProvider, ToolCallRequest
 from .providers.base import is_truncated, run_sync
+from .runner_model import ModelCaller
 from .tools.registry import ToolRegistry
 
 
@@ -40,6 +41,13 @@ class AgentRunner:
         temperature: float = 0.1,
         reasoning_effort: str | None = None,
         provider_name: str | None = None,
+        model_role: str = "main",
+        route_reason: str = "",
+        fallback_provider: LLMProvider | None = None,
+        fallback_model: str | None = None,
+        fallback_provider_name: str | None = None,
+        fallback_generation: Any | None = None,
+        fallback_model_role: str = "main",
         usage_type: str = "main_agent",
         memory_store=None,
         token_tracker=None,
@@ -58,6 +66,20 @@ class AgentRunner:
         self.temperature = temperature
         self.reasoning_effort = reasoning_effort
         self.provider_name = provider_name
+        self.model_role = model_role
+        self.route_reason = route_reason
+        self.fallback_provider = fallback_provider
+        self.fallback_model = fallback_model
+        self.fallback_provider_name = fallback_provider_name
+        self.fallback_generation = fallback_generation
+        self.fallback_model_role = fallback_model_role
+        self._last_model_call = {
+            "model": model,
+            "provider": provider_name,
+            "model_role": model_role,
+            "route_reason": route_reason,
+            "used_fallback": False,
+        }
         self.usage_type = usage_type
         self.memory_store = memory_store
         self.token_tracker = token_tracker
@@ -115,12 +137,14 @@ class AgentRunner:
 
             response = await self._ask_model(history, emit, clarification=clarification)
             if response.usage:
+                call_meta = self._last_model_call
                 if self.token_tracker:
                     self.token_tracker.record(
-                        self.model,
+                        str(call_meta.get("model") or self.model),
                         response.usage,
-                        provider=self.provider_name,
+                        provider=str(call_meta.get("provider") or self.provider_name or "unknown"),
                         usage_type=self.usage_type,
+                        model_role=str(call_meta.get("model_role") or self.model_role),
                     )
                 if emit:
                     await emit({
@@ -129,6 +153,9 @@ class AgentRunner:
                         "max": self.max_context,
                         "threshold": int(self.max_context * self.compact_threshold),
                         "usage_type": self.usage_type,
+                        "model_role": call_meta.get("model_role"),
+                        "model": call_meta.get("model"),
+                        "provider": call_meta.get("provider"),
                     })
             if self.memory_store:
                 last_user = next((m for m in reversed(history) if m.get("role") == "user"), None)
@@ -144,8 +171,11 @@ class AgentRunner:
                     f"{self.model} call: input={input_tokens} output={output_tokens}",
                     extra={
                         "type": "model_call",
-                        "model": self.model,
-                        "provider": self.provider_name,
+                        "model": self._last_model_call.get("model") or self.model,
+                        "provider": self._last_model_call.get("provider") or self.provider_name,
+                        "model_role": self._last_model_call.get("model_role") or self.model_role,
+                        "route_reason": self._last_model_call.get("route_reason") or self.route_reason,
+                        "used_fallback": bool(self._last_model_call.get("used_fallback")),
                         "usage_type": self.usage_type,
                         "user_input": user_input,
                         "ai_output": ai_output,
@@ -305,27 +335,10 @@ class AgentRunner:
             *governed,
         ]
 
-        async def on_delta(delta: str) -> None:
-            if emit:
-                await emit({"event": "message_delta", "delta": delta})
-
-        if emit:
-            return await self.provider.chat_stream(
-                messages=messages,
-                tools=tool_definitions,
-                model=self.model,
-                max_tokens=self.max_tokens,
-                temperature=self.temperature,
-                reasoning_effort=self.reasoning_effort,
-                on_content_delta=on_delta,
-            )
-        return await self.provider.chat(
+        return await ModelCaller(self).ask(
             messages=messages,
             tools=tool_definitions,
-            model=self.model,
-            max_tokens=self.max_tokens,
-            temperature=self.temperature,
-            reasoning_effort=self.reasoning_effort,
+            emit=emit,
         )
 
     @staticmethod
@@ -522,6 +535,12 @@ class AgentRunner:
             )
         if clarification and clarification.required and self._ask_guard_blocks_tool(call.name):
             return _ASK_GUARD_BLOCK
+        if self.control_manager is not None:
+            decision = self.control_manager.assess_permission(call.name, call.arguments, self.registry)
+            if decision.requires_approval:
+                return self.control_manager.permission_approval_result(decision, parent_call_id=call.id)
+            if not decision.allowed:
+                return f"Error: permission denied for {call.name}: {decision.reason}"
         tool = self.registry.get(call.name)
         if emit and tool is not None and getattr(tool, "requires_runtime_context", False):
             loop = asyncio.get_running_loop()

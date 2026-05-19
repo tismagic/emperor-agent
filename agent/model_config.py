@@ -1,13 +1,14 @@
 """模型配置加载、解析、保存。
 
 新版 schema：
-  - `models[]`：多条目，每条带 `name / id / provider / apiKey / apiBase / 各种覆写`。
+  - `models[]`：多条目，每条带 `name / mainModelId / secondaryModelId / provider / apiKey / apiBase / 各种覆写`。
   - `agents.defaults.model` 引用某个 entry 的 `name`。
   - `providers.{name}.apiKey/apiBase`：兜底层（条目未填 key 时使用）。
   - `agents.defaults.provider="auto"`：仅在 `models[]` 为空、且想按 model 名匹配时启用。
 
 旧 schema 兼容：
-  当 `models` 字段缺失或为空时，运行时合成一个临时 entry。文件不主动改写。
+  `models[].id` 等价于 `mainModelId`；缺少 `secondaryModelId` 时启动不报错，
+  运行时会把简单任务降级到主模型。文件不主动改写。
 """
 
 from __future__ import annotations
@@ -21,7 +22,7 @@ from typing import Any
 from loguru import logger
 
 from .providers import GenerationSettings, ProviderSnapshot, create_provider
-from .providers.registry import PROVIDERS, ProviderSpec, find_by_name, provider_options
+from .providers.registry import PROVIDERS, ProviderSpec, find_by_name
 
 
 MODEL_CONFIG_FILE = "model_config.json"
@@ -83,8 +84,10 @@ class ModelEntry:
     """一条模型条目：自带凭证与覆写。"""
 
     name: str                                    # 唯一 key（agents.defaults.model 引用）
-    id: str                                      # 真实发给 API 的 model id
+    id: str                                      # 兼容旧字段，始终等价于 main_model_id
+    main_model_id: str                           # 复杂任务 / 主 Agent 使用的 model id
     provider: str                                # registry name
+    secondary_model_id: str = ""                 # 简单任务 / 内部任务使用的 model id
     api_key: str | None = None                   # entry 级；空 → 用 providers 兜底
     api_base: str | None = None                  # entry 级；空 → 用 spec 默认
     extra_headers: dict[str, str] | None = None
@@ -155,8 +158,10 @@ def load_model_config(root: Path, *, create: bool = True) -> ModelConfig:
     return parse_model_config(raw)
 
 
-def save_model_config(root: Path, data: dict[str, Any]) -> ModelConfig:
+def save_model_config(root: Path, data: dict[str, Any], *, validate_complete: bool = False) -> ModelConfig:
     config = parse_model_config(_normalized_raw(data))
+    if validate_complete:
+        validate_complete_model_entries(config.raw)
     path = root.resolve() / MODEL_CONFIG_FILE
     path.write_text(json.dumps(config.raw, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     ensure_example_config(root.resolve())
@@ -184,7 +189,12 @@ def mark_entry_vision(root: Path, entry_name: str, value: bool = True) -> ModelC
 # ─────────────────── snapshot 装配 ────────────────────
 
 
-def build_provider_snapshot(root: Path, *, model_override: str | None = None) -> ProviderSnapshot:
+def build_provider_snapshot(
+    root: Path,
+    *,
+    model_override: str | None = None,
+    role: str = "main",
+) -> ProviderSnapshot:
     """从配置文件装配出一个完整 ProviderSnapshot。
 
     解析顺序：
@@ -192,10 +202,12 @@ def build_provider_snapshot(root: Path, *, model_override: str | None = None) ->
       2. 找 spec：按 `entry.provider` 查 registry；找不到时降级 custom。
       3. 拼凭证：`entry.api_key` → `providers[entry.provider].api_key` → spec 默认（无）。
       4. 拼 base：`entry.api_base` → `providers[entry.provider].api_base` → `spec.default_api_base`。
+      5. 按 `role` 选择 `mainModelId` 或 `secondaryModelId`；次模型缺失时降级主模型。
     """
     config = load_model_config(root)
     entry = _resolve_active_entry(config, model_override)
     spec = find_by_name(entry.provider) or _fallback_spec(entry.provider)
+    model_id, selected_role, route_reason = _entry_model_for_role(entry, role)
 
     api_key, api_base, extra_headers, extra_body = _resolve_credentials(entry, config.providers, spec)
 
@@ -209,7 +221,7 @@ def build_provider_snapshot(root: Path, *, model_override: str | None = None) ->
         spec=spec,
         api_key=api_key,
         api_base=api_base or spec.default_api_base,
-        model=entry.id,
+        model=model_id,
         extra_headers=extra_headers,
         extra_body=extra_body,
     )
@@ -219,13 +231,16 @@ def build_provider_snapshot(root: Path, *, model_override: str | None = None) ->
         provider=provider,
         provider_name=spec.name,
         provider_label=spec.display_name,
-        model=entry.id,
+        model=model_id,
         api_base=api_base or spec.default_api_base,
         generation=generation,
         context_window_tokens=entry.context_window_tokens or config.defaults.context_window_tokens,
         config=config.raw,
-        supports_vision=entry.supports_vision,
+        supports_vision=entry.supports_vision if selected_role == "main" else False,
         entry_name=entry.name,
+        entry_label=entry.label or entry.name,
+        model_role=selected_role,
+        route_reason=route_reason,
     )
 
 
@@ -255,13 +270,19 @@ def _synth_entry_from_legacy(config: ModelConfig, *, model_id: str) -> ModelEntr
             "No model entry configured and defaults.model is empty. "
             "Creating placeholder; please configure via /model page."
         )
-        return ModelEntry(name="default", id="deepseek-chat", provider="deepseek")
+        return ModelEntry(
+            name="default",
+            id="deepseek-chat",
+            main_model_id="deepseek-chat",
+            provider="deepseek",
+        )
 
     provider_name = _resolve_provider_name(config.defaults.provider, model_id, config.providers)
     p = config.providers.get(provider_name)
     return ModelEntry(
         name=model_id,
         id=model_id,
+        main_model_id=model_id,
         provider=provider_name,
         api_key=p.api_key if p else None,
         api_base=p.api_base if p else None,
@@ -297,30 +318,43 @@ def _resolve_credentials(
     return api_key, api_base, extra_headers, extra_body
 
 
+def _entry_model_for_role(entry: ModelEntry, role: str) -> tuple[str, str, str]:
+    requested = str(role or "main").strip().lower()
+    if requested == "secondary":
+        if entry.secondary_model_id:
+            return entry.secondary_model_id, "secondary", "secondary_model"
+        return entry.main_model_id, "main", "secondary_missing_fallback_main"
+    return entry.main_model_id, "main", "main_model"
+
+
+def validate_complete_model_entries(raw: dict[str, Any]) -> None:
+    """Validate model entries for user-initiated saves.
+
+    Loading remains lenient so old configs can boot. Saving through WebUI is strict:
+    every persisted entry must declare both model ids.
+    """
+    models = raw.get("models") or []
+    if not isinstance(models, list) or not models:
+        raise ValueError("请至少添加一个模型条目")
+    names: set[str] = set()
+    for index, item in enumerate(models, start=1):
+        if not isinstance(item, dict):
+            raise ValueError(f"第 {index} 个模型条目格式无效")
+        name = str(item.get("name") or "").strip()
+        main_model_id = str(item.get("mainModelId") or item.get("id") or "").strip()
+        secondary_model_id = str(item.get("secondaryModelId") or "").strip()
+        if not name:
+            raise ValueError(f"第 {index} 个模型条目的名称不能为空")
+        if name in names:
+            raise ValueError(f"模型条目名称重复: {name}")
+        names.add(name)
+        if not main_model_id:
+            raise ValueError(f"模型条目 {name} 必须填写 Main Model ID")
+        if not secondary_model_id:
+            raise ValueError(f"模型条目 {name} 必须填写 Secondary Model ID")
+
+
 # ─────────────────── 解析 / 归一化 ────────────────────
-
-
-def model_config_payload(root: Path) -> dict[str, Any]:
-    snapshot = build_provider_snapshot(root)
-    config = load_model_config(root)
-    entry = _resolve_active_entry(config, None)
-    return {
-        "current": {
-            "provider": snapshot.provider_name,
-            "providerLabel": snapshot.provider_label,
-            "model": snapshot.model,
-            "apiBase": snapshot.api_base,
-            "maxTokens": snapshot.generation.max_tokens,
-            "temperature": snapshot.generation.temperature,
-            "reasoningEffort": snapshot.generation.reasoning_effort,
-            "contextWindowTokens": snapshot.context_window_tokens,
-            "entryName": entry.name,
-            "entryLabel": entry.label or entry.name,
-            "supportsVision": snapshot.supports_vision,
-        },
-        "config": snapshot.config,
-        "providerOptions": provider_options(),
-    }
 
 
 def parse_model_config(raw: dict[str, Any]) -> ModelConfig:
@@ -355,13 +389,19 @@ def parse_model_config(raw: dict[str, Any]) -> ModelConfig:
 
 def _parse_entry(item: dict[str, Any]) -> ModelEntry:
     """把一条 dict 解析成 ModelEntry，缺字段给安全默认。"""
-    name = str(item.get("name") or item.get("id") or "").strip()
+    main_model_id = str(item.get("mainModelId") or item.get("id") or "").strip()
+    secondary_model_id = str(item.get("secondaryModelId") or "").strip()
+    name = str(item.get("name") or main_model_id or "").strip()
     if not name:
         # 最差兜底：不 crash，但 entry 不可用
         name = "(unnamed)"
+    if not main_model_id:
+        main_model_id = name
     return ModelEntry(
         name=name,
-        id=str(item.get("id") or name),
+        id=main_model_id,
+        main_model_id=main_model_id,
+        secondary_model_id=secondary_model_id,
         provider=str(item.get("provider") or "custom"),
         api_key=_nullable_str(item.get("apiKey")),
         api_base=_nullable_str(item.get("apiBase")),
@@ -432,6 +472,18 @@ def _normalized_raw(raw: dict[str, Any]) -> dict[str, Any]:
         "defaults", copy.deepcopy(DEFAULT_MODEL_CONFIG["agents"]["defaults"])
     )
     normalized.setdefault("models", [])
+    for item in normalized.get("models") or []:
+        if not isinstance(item, dict):
+            continue
+        main_model_id = str(item.get("mainModelId") or item.get("id") or "").strip()
+        secondary_model_id = str(item.get("secondaryModelId") or "").strip()
+        if main_model_id:
+            item["mainModelId"] = main_model_id
+            item["id"] = main_model_id
+        else:
+            item.setdefault("mainModelId", "")
+            item.setdefault("id", "")
+        item["secondaryModelId"] = secondary_model_id
     return normalized
 
 

@@ -192,3 +192,57 @@ output as exact pixel grid size specified,
 16x16 pixel art icon of a downward chevron, 2 strokes meeting at apex,
 pixel-stepped diagonal lines.
 ```
+
+---
+
+### mode-ask-before-edit.png
+**日期**: 2026-05-19
+**工具模式**: built-in imagegen + chroma-key removal
+**颜色**: jade #3F8C6E / ink #2A2622
+
+```
+Use case: logo-brand
+Asset type: project UI mode icon for a Vue/Tailwind composer menu
+Primary request: 16x16 pixel art icon representing "Ask Before Edit" mode: a small imperial hand/stop approval gesture beside a tiny document edge, meaning approval before risky edits.
+Style/medium: crisp 16-bit pixel art, ancient imperial Chinese UI feeling, Stardew Valley x Eastward x Octopath style, clean UI icon.
+Composition/framing: centered symbol occupying about 70% of the canvas, readable when displayed at 18-24px, simple silhouette, no text.
+Color palette: strict limited palette only #1A1612 #2A2622 #5A5048 #6B6058 #F5EFE0 #EBE3D0 #FBF7E8 #7A1F1F #B53A3A #D9776E #2D6B4F #3F8C6E #6FB39A #9C6925 #C68A3A #E5B568; main accent jade #3F8C6E with ink outline #2A2622.
+Background: perfectly flat solid #ff00ff chroma-key background for removal; no #ff00ff inside the icon.
+Avoid: text, letters, watermark, signature, realistic rendering, soft shadows, gradients.
+```
+
+---
+
+### mode-auto.png
+**日期**: 2026-05-19
+**工具模式**: built-in imagegen + chroma-key removal
+**颜色**: seal #B53A3A / amber #C68A3A / ink #2A2622
+
+```
+Use case: logo-brand
+Asset type: project UI mode icon for a Vue/Tailwind composer menu
+Primary request: 16x16 pixel art icon representing "Auto" mode: a small imperial lightning bolt / fast command mark inside a round seal, meaning automatic execution with high authority.
+Style/medium: crisp 16-bit pixel art, ancient imperial Chinese UI feeling, Stardew Valley x Eastward x Octopath style, clean UI icon.
+Composition/framing: centered symbol occupying about 70% of the canvas, readable when displayed at 18-24px, simple silhouette, no text.
+Color palette: strict limited palette only #1A1612 #2A2622 #5A5048 #6B6058 #F5EFE0 #EBE3D0 #FBF7E8 #7A1F1F #B53A3A #D9776E #2D6B4F #3F8C6E #6FB39A #9C6925 #C68A3A #E5B568; main accent seal red #B53A3A and amber #C68A3A with ink outline #2A2622.
+Background: perfectly flat solid #ff00ff chroma-key background for removal; no #ff00ff inside the icon.
+Avoid: text, letters, watermark, signature, realistic rendering, soft shadows, gradients.
+```
+
+---
+
+### mode-plan.png
+**日期**: 2026-05-19
+**工具模式**: built-in imagegen + chroma-key removal
+**颜色**: amber #C68A3A / paper #F5EFE0 / ink #2A2622
+
+```
+Use case: logo-brand
+Asset type: project UI mode icon for a Vue/Tailwind composer menu
+Primary request: 16x16 pixel art icon representing "Plan" mode: a small unfurled scroll with a tiny route/check mark, meaning read-only planning before execution.
+Style/medium: crisp 16-bit pixel art, ancient imperial Chinese UI feeling, Stardew Valley x Eastward x Octopath style, clean UI icon.
+Composition/framing: centered symbol occupying about 70% of the canvas, readable when displayed at 18-24px, simple silhouette, no text.
+Color palette: strict limited palette only #1A1612 #2A2622 #5A5048 #6B6058 #F5EFE0 #EBE3D0 #FBF7E8 #7A1F1F #B53A3A #D9776E #2D6B4F #3F8C6E #6FB39A #9C6925 #C68A3A #E5B568; main accent amber #C68A3A and paper #F5EFE0 with ink outline #2A2622.
+Background: perfectly flat solid #ff00ff chroma-key background for removal; no #ff00ff inside the icon.
+Avoid: text, letters, watermark, signature, realistic rendering, soft shadows, gradients.
+```

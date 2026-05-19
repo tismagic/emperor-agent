@@ -24,14 +24,15 @@
 1. `README.md`
 2. `agent/loop.py`（装配与主循环）
 3. `agent/runner.py`（单轮执行、工具循环、容错）
-4. `agent/webui.py`（HTTP/WS API）
+4. `agent/web/` + `agent/webui.py`（HTTP/WS API 与兼容入口）
 5. `agent/memory.py` + `agent/compactor.py`（记忆与压缩）
 6. `agent/model_config.py` + `agent/providers/*`（模型配置与 provider 实现）
 7. `agent/tools/*` + `agent/subagents/*`（工具与子代理能力边界）
-8. `agent/control/*`（Ask / Plan pending 状态、模式、工具门禁）
-9. `agent/runtime/*`（WebUI 行为事件冷记录与刷新重放）
-10. `agent/team/*`（持久队友、MessageBus、TeamStore、team tools）
-11. `webui/src/composables/useRuntime.ts` + `useBootstrap.ts` + `components/panels/ModelPanel.vue` + `components/panels/TeamPanel.vue`
+8. `agent/control/*`（Ask / Plan pending 状态、暂停恢复）
+9. `agent/permissions/*`（三模式权限与审批策略）
+10. `agent/runtime/*`（WebUI 行为事件冷记录与刷新重放）
+11. `agent/team/*`（持久队友、MessageBus、TeamStore、team tools）
+12. `webui/src/runtime/*` + `webui/src/composables/useRuntime.ts` + `useBootstrap.ts` + `components/panels/ModelPanel.vue` + `components/panels/TeamPanel.vue`
 
 ## 3. 关键目录地图
 
@@ -41,12 +42,14 @@
 - `webui.py`：WebUI 服务入口
 - `agent/loop.py`：系统装配（memory / tools / subagents / runner）
 - `agent/runner.py`：LLM 调用循环、工具并发、空响应与截断恢复
-- `agent/webui.py`：`/api/*` 与 `/ws`，并托管 `webui/dist`
+- `agent/web/`：aiohttp app/state/routes 模块化后端，HTTP 路径保持兼容
+- `agent/webui.py`：兼容入口，导出 `create_app()` 与 `main()`
 - `agent/model_config.py`：新旧 schema 兼容、entry 激活、保存与脱敏
 - `agent/providers/`：OpenAI-compatible / Anthropic / Bedrock
 - `agent/tools/`：内建工具实现（命令、读写、搜索、todo、子代理）
-- `agent/control/`：Ask / Plan 会话控制、pending interaction、工具暴露策略
-- `agent/runtime/`：Chat 行为事件冷记录，支持刷新/重启后恢复工具、队友、Ask/Plan 细节
+- `agent/control/`：Ask / Plan 会话控制、pending interaction、暂停/恢复语义
+- `agent/permissions/`：Claude Code 风格 `ask_before_edit` / `auto` / `plan` 权限判断
+- `agent/runtime/`：Chat 行为事件冷记录与 payload 构造，支持刷新/重启后恢复工具、队友、Ask/Plan 细节
 - `agent/team/`：Agent Team 子系统（持久队友、inbox、thread、状态机、team tools）
 - `agent/attachments.py`：附件落盘、MIME 校验、PDF/文本抽取、图片 base64 编码
 - `agent/memory.py`：长期记忆、历史日志、checkpoint 恢复
@@ -55,7 +58,8 @@
 ### 前端
 
 - `webui/src/App.vue`：全局注入、斜杠命令、页面壳
-- `webui/src/composables/useRuntime.ts`：WS 生命周期、事件流、消息状态机
+- `webui/src/composables/useRuntime.ts`：WS 生命周期、发送消息、replay 调度
+- `webui/src/runtime/`：runtime event 类型、reducer、selectors 与 localStorage 热缓存
 - `webui/src/composables/useBootstrap.ts`：bootstrap 与 CRUD API 客户端
 - `webui/src/components/chat/Composer.vue`：输入框、附件上传、上下文用量环
 - `webui/src/components/chat/AskCard.vue` / `PlanCard.vue`：Ask / Plan 内联交互卡
@@ -137,12 +141,17 @@ Vite 会代理 `/api` 与 `/ws` 到 `127.0.0.1:8765`。
   - `templates/USER.local.md`
 - 压缩成功后 `HistoryLog` 会把已压缩原始行写入 `memory/history_archive/YYYY-MM.jsonl.gz`，再原子重写热 `memory/history.jsonl`
 
-### 5.5 Ask / Plan 暂停恢复
+### 5.5 权限模式与 Ask / Plan 暂停恢复
 
 - `agent/control/` 统一管理当前 `mode` 与 pending interaction，状态写入 `memory/control/state.json`
+- `agent/permissions/` 统一评估工具风险，当前三种模式为：
+  - `ask_before_edit`：默认模式；读操作直接执行，普通编辑可执行，危险/不确定/破坏性/高影响操作先进入 AskCard 审批。
+  - `auto`：最高自动权限；工具层不主动审批，但仍受路径安全、schema 校验和工具自身异常保护约束。
+  - `plan`：临时计划模式；只读探索 + `ask_user` + `propose_plan`，批准或取消后恢复进入 Plan 前的模式。
 - `ask_user` / `propose_plan` 会生成有效 tool result，占位为 waiting，并抛出内部 `TurnPaused`
 - Runner 在暂停前写 checkpoint，WebUI / CLI 收到用户回答、评论或批准后，把结构化反馈追加到 history 再恢复执行
 - Ask Guard 在高影响歧义下强制先问：大范围工程化、重构、UI 取舍、提交推送、删除覆盖、发布部署、安全/权限/成本边界不清时，写操作和最终答复前必须进入 `ask_user`
+- 权限审批采用一次性同参授权：允许后同一工具名 + 参数组合放行一次；拒绝后同参操作下一次返回明确拒绝，避免重复弹同一个审批。
 - Plan 模式是工具层 + 输出层硬门禁：只暴露只读工具 + `ask_user` + `propose_plan`；写文件、命令执行、子代理派遣、Team 写操作不可用；普通最终回复会被包装为 PlanCard 并暂停
 - 执行中或存在 pending Ask/Plan 时，不允许切换 control mode，HTTP API 返回 409
 
@@ -172,15 +181,15 @@ Vite 会代理 `/api` 与 `/ws` 到 `127.0.0.1:8765`。
 - `ready`
 - `context_usage`
 
-`useRuntime.ts` 负责：
+`webui/src/runtime/*` 与 `useRuntime.ts` 负责：
 
-- 本地消息状态机
+- runtime event replay / reducer / selectors
 - 从 `/api/bootstrap.runtime.events` 重放未压缩 Chat 行为流
 - 断线重连（带 `last_seq` 回放）
 - localStorage 快照兜底
 - 未完成 assistant 的中断收尾
 
-凡是新增后端事件，必须同步更新前端 `types.ts` 和 `useRuntime.ts` 分支逻辑。
+凡是新增后端事件，必须同步更新 `agent/runtime/events.py`、前端 `types.ts`、`webui/src/runtime/*` 和 `useRuntime.ts` 分支逻辑。
 
 ## 7. 模型配置机制（常见改动区）
 
@@ -188,14 +197,17 @@ Vite 会代理 `/api` 与 `/ws` 到 `127.0.0.1:8765`。
 
 当前 schema：
 
-- `models[]`：多条目（name/id/provider/apiKey/apiBase/...）
+- `models[]`：多条目（name/mainModelId/secondaryModelId/provider/apiKey/apiBase/...）
 - `agents.defaults.model`：当前激活 entry name
 - `providers.*`：兜底凭证层
+
+一个 entry 共享一套 `provider / apiKey / apiBase / extraHeaders / extraBody`，但必须同时配置两个模型 id：`mainModelId` 用于主 Agent、复杂决策、写入型子代理/队友；`secondaryModelId` 用于记忆压缩、轻量只读/核验子代理和简单 Team 队友。旧字段 `id` 只作为 `mainModelId` 兼容读取；WebUI 保存时必须补齐 `secondaryModelId`。
 
 注意：
 
 - 前端传回 `***xxxx` 占位 key 时，后端会还原旧值
 - `/api/model-test` 的视觉测试通过后，会把 `supportsVision=true` 写回 entry
+- 次模型失败或缺失时自动降级主模型；token 账本会记录 `model_role=main|secondary|unknown`
 
 ## 8. 附件与多模态链路
 
@@ -223,17 +235,21 @@ Vite 会代理 `/api` 与 `/ws` 到 `127.0.0.1:8765`。
 
 由 `agent/subagents/registry.py` 内置白名单控制能力，模板只负责口吻和职责，不承载权限。
 
+子代理模型由 `agent/model_router.py` 统一路由：`xiaohuangmen`、`sili_suitang`、`dongchang_tanshi`、`shangbao_dianbu` 默认走次模型，`neiguan_yingzao` 默认走主模型；不要在工具里手写主次模型判断。
+
 ### Agent Team
 
 - `.team/config.json` 记录队友 roster，`.team/inbox/*.jsonl` 是 append-only 消息总线，`.team/threads/*.json` 保存队友独立上下文。
 - v1 采用“按消息唤醒”：Lead 通过 `send_message(..., wake=true)` 或 `broadcast(..., wake=true)` 驱动队友执行一次，不启动后台常驻轮询。
 - Teammate 只能使用自身 `agent_type` 白名单工具 + `send_message` / `read_inbox`，不能再派遣 subagent 或创建队友。
+- Team runner 同样通过 `ModelRouter` 选主/次模型：reader/reviewer/researcher/runner 类队友走次模型，coder 类队友走主模型。
 - 启动时 stale `working` 会变为 `offline`，下次 wake 再恢复。
 
-### Ask / Plan
+### 权限模式 / Ask / Plan
 
 - Ask 用于目标不清时主动发问：最多 3 个问题，每题 2-4 个选项，并允许自由补充。高影响歧义由 `ClarificationPolicy` 统一判断，避免把主动提问散落到 prompt 文案里。
-- Plan 需要显式开启（WebUI toggle 或 `/plan on`）：只读探索、提问、提交计划；用户可评论修订，批准后自动切回 normal 并继续执行。Plan 模式必须产出 PlanCard，不能用普通文字最终答复绕过。
+- 权限模式由 `agent/permissions/` 管理：`ask_before_edit` 默认危险先问，`auto` 自动执行，`plan` 只读计划。
+- Plan 需要显式开启（WebUI Composer 模式选择器、`/mode plan` 或 `/plan on`）：只读探索、提问、提交计划；用户可评论修订，批准或取消后自动恢复进入 Plan 前的 `ask_before_edit` / `auto` 模式。Plan 模式必须产出 PlanCard，不能用普通文字最终答复绕过。
 - v1 同一时间只允许一个 pending ask 或 plan；扩展时优先保持 `agent/control/` 的模型、store、manager、policy 分层。
 
 ### Slash Skill Picker
@@ -261,9 +277,10 @@ Vite 会代理 `/api` 与 `/ws` 到 `127.0.0.1:8765`。
 
 - 新 provider：`agent/providers/registry.py` + `factory.py` + 对应 provider 文件
 - 新工具：`agent/tools/` 新建类 + `agent/loop.py` 注册
-- 新 Control 能力：优先放在 `agent/control/`，同步 `runner` 暂停/恢复语义、`webui.py` API/WS、`webui/src/types.ts` 与 chat 卡片组件
-- 新 Chat 行为事件：优先接入 `agent/runtime/` 持久化，事件需带 `turn_id`，并同步 `webui/src/types.ts` 与 `useRuntime.ts` replay 分支
-- 新 Team 能力：优先放在 `agent/team/`，同步 `agent/webui.py` API、`webui/src/types.ts` 与 `TeamPanel.vue`
+- 新 Control 能力：优先放在 `agent/control/`，同步 `runner` 暂停/恢复语义、`agent/web/routes/*` API/WS、`webui/src/types.ts` 与 chat 卡片组件
+- 新权限策略：优先放在 `agent/permissions/`，不要把审批规则散落到工具实现或 prompt 文案里
+- 新 Chat 行为事件：优先接入 `agent/runtime/` 持久化，事件需带 `turn_id`，并同步 `agent/runtime/events.py`、`webui/src/types.ts`、`webui/src/runtime/*` 与 `useRuntime.ts` replay 分支
+- 新 Team 能力：优先放在 `agent/team/`，同步 `agent/web/routes/team.py` API、`webui/src/types.ts` 与 `TeamPanel.vue`
 - 新子代理：`templates/subagents/*.md` + `subagents/registry.py` 白名单
 - 新技能：`skills/<name>/SKILL.md`
 
@@ -273,6 +290,7 @@ Vite 会代理 `/api` 与 `/ws` 到 `127.0.0.1:8765`。
   - `webui/src/types.ts`
   - `useBootstrap.ts` / `useRuntime.ts`
   - 相关 panel/view
+- runtime 状态机改动优先放在 `webui/src/runtime/`；`useRuntime.ts` 只承担 WebSocket 生命周期和调度 glue。
 - 新图标放仓库根 `assets/`，并在 `webui/src/assets.ts` 注册
 
 ## 11. 常见排查清单（出问题先看）

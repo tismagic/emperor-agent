@@ -84,6 +84,12 @@ class Compactor:
         provider_name: str | None = None,
         token_tracker=None,
         usage_type: str = "memory_compaction",
+        model_role: str = "main",
+        fallback_provider: LLMProvider | None = None,
+        fallback_model: str | None = None,
+        fallback_provider_name: str | None = None,
+        fallback_generation: Any | None = None,
+        fallback_model_role: str = "main",
     ):
         self.provider = provider
         self.model = model
@@ -94,6 +100,12 @@ class Compactor:
         self.provider_name = provider_name
         self.token_tracker = token_tracker
         self.usage_type = usage_type
+        self.model_role = model_role
+        self.fallback_provider = fallback_provider
+        self.fallback_model = fallback_model
+        self.fallback_provider_name = fallback_provider_name
+        self.fallback_generation = fallback_generation
+        self.fallback_model_role = fallback_model_role
 
     def compact(self, history: list[dict[str, Any]]) -> list[dict[str, Any]]:
         return run_sync(self.compact_async(history))
@@ -129,20 +141,47 @@ class Compactor:
             today_episode=self.memory.read_today_episode() or "(空)",
             now_hhmm=datetime.now(_UTC8).strftime("%H:%M"),
         )
-        resp = await self.provider.chat(
-            model=self.model,
-            max_tokens=self.max_tokens,
-            temperature=self.temperature,
-            reasoning_effort=self.reasoning_effort,
-            messages=[{"role": "user", "content": prompt}],
-            tools=None,
-        )
+        actual_model = self.model
+        actual_provider_name = self.provider_name
+        actual_model_role = self.model_role
+        try:
+            resp = await self.provider.chat(
+                model=self.model,
+                max_tokens=self.max_tokens,
+                temperature=self.temperature,
+                reasoning_effort=self.reasoning_effort,
+                messages=[{"role": "user", "content": prompt}],
+                tools=None,
+            )
+        except Exception as exc:
+            if not (self.fallback_provider and self.fallback_model):
+                raise
+            logger.warning(
+                "memory compaction fallback: {} / {} -> {} because {}",
+                self.provider_name,
+                self.model,
+                self.fallback_model,
+                exc,
+            )
+            generation = self.fallback_generation
+            actual_model = self.fallback_model
+            actual_provider_name = self.fallback_provider_name
+            actual_model_role = self.fallback_model_role
+            resp = await self.fallback_provider.chat(
+                model=self.fallback_model,
+                max_tokens=min(self.max_tokens, int(getattr(generation, "max_tokens", self.max_tokens) or self.max_tokens)),
+                temperature=getattr(generation, "temperature", self.temperature),
+                reasoning_effort=getattr(generation, "reasoning_effort", self.reasoning_effort),
+                messages=[{"role": "user", "content": prompt}],
+                tools=None,
+            )
         if self.token_tracker and resp.usage:
             self.token_tracker.record(
-                self.model,
+                actual_model,
                 resp.usage,
-                provider=self.provider_name,
+                provider=actual_provider_name,
                 usage_type=self.usage_type,
+                model_role=actual_model_role,
             )
         text = resp.content or ""
 

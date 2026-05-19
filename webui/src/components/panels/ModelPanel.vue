@@ -89,7 +89,9 @@ function hydrate() {
   if (entries.value.length === 0 && current.value?.entryName) {
     const synth: ModelEntry = {
       name: current.value.entryName,
-      id: current.value.model || current.value.entryName,
+      id: current.value.mainModelId || current.value.model || current.value.entryName,
+      mainModelId: current.value.mainModelId || current.value.model || current.value.entryName,
+      secondaryModelId: current.value.secondaryModelId || '',
       provider: current.value.provider || 'custom',
       apiKey: '',  // 后端脱敏过；让用户主动重填
       apiBase: current.value.apiBase || null,
@@ -108,9 +110,12 @@ function hydrate() {
 watch(() => props.payload, hydrate, { immediate: true, deep: true })
 
 function cloneEntry(e: ModelEntry): ModelEntry {
+  const mainModelId = e.mainModelId || e.id || ''
   return {
     name: e.name || '',
-    id: e.id || '',
+    id: mainModelId,
+    mainModelId,
+    secondaryModelId: e.secondaryModelId || '',
     provider: e.provider || 'custom',
     apiKey: e.apiKey ?? '',
     apiBase: e.apiBase ?? null,
@@ -145,6 +150,8 @@ function addEntry() {
   const newEntry: ModelEntry = {
     name: uniqueName(baseName),
     id: '',
+    mainModelId: '',
+    secondaryModelId: '',
     provider,
     apiKey: '',
     apiBase: null,
@@ -232,9 +239,12 @@ function normaliseExtra(value: unknown): Record<string, unknown> | null {
 }
 
 function entryToWire(e: ModelEntry): ModelEntry {
+  const mainModelId = (e.mainModelId || e.id || '').trim()
   return {
     name: e.name.trim(),
-    id: (e.id || '').trim(),
+    id: mainModelId,
+    mainModelId,
+    secondaryModelId: (e.secondaryModelId || '').trim(),
     provider: e.provider,
     apiKey: e.apiKey ?? '',
     apiBase: e.apiBase || null,
@@ -266,7 +276,8 @@ function save() {
       if (!n) throw new Error('条目名称不能为空')
       if (names.has(n)) throw new Error(`条目名 "${n}" 重复`)
       names.add(n)
-      if (!e.id?.trim()) throw new Error(`条目 "${n}" 的 model id 不能为空`)
+      if (!(e.mainModelId || e.id)?.trim()) throw new Error(`条目 "${n}" 的 Main Model ID 不能为空`)
+      if (!e.secondaryModelId?.trim()) throw new Error(`条目 "${n}" 的 Secondary Model ID 不能为空`)
       if (!e.provider) throw new Error(`条目 "${n}" 必须选择 provider`)
     }
     if (!names.has(defaultName.value)) {
@@ -328,7 +339,7 @@ watch(extraBodyText, (text) => {
 
 const dirtySignature = computed(() => JSON.stringify({
   entries: entries.value.map(e => ({
-    name: e.name, id: e.id, provider: e.provider,
+    name: e.name, id: e.id, mainModelId: e.mainModelId, secondaryModelId: e.secondaryModelId, provider: e.provider,
     apiKey: e.apiKey || '', apiBase: e.apiBase || null,
     extraHeaders: e.extraHeaders || null, extraBody: e.extraBody || null,
     maxTokens: e.maxTokens ?? null, temperature: e.temperature ?? null,
@@ -355,19 +366,21 @@ const hasChanges = computed(() => serverSignature.value !== '' && serverSignatur
 // 连通测试 + 视觉徽章
 // ────────────────────────────────────────────────────────────
 
-const testing = reactive({ text: false, vision: false })
+const testing = reactive({ mainText: false, secondaryText: false, vision: false })
 const lastResult = ref<ModelTestResult | null>(null)
 
-async function runTest(kind: 'text' | 'vision') {
+async function runTest(kind: 'text' | 'vision', role: 'main' | 'secondary' = 'main') {
   if (!editing.value?.name) return
   if (hasChanges.value) {
     emit('error', '请先保存配置再测试')
     return
   }
-  testing[kind] = true
+  const key: 'mainText' | 'secondaryText' | 'vision' =
+    kind === 'vision' ? 'vision' : (role === 'secondary' ? 'secondaryText' : 'mainText')
+  testing[key] = true
   lastResult.value = null
   try {
-    const result = await testModelEntry(editing.value.name, kind)
+    const result = await testModelEntry(editing.value.name, kind, role)
     lastResult.value = result
     if (!result.ok && result.error) {
       // 失败也展示在 chip 上，不再重复 toast
@@ -383,7 +396,7 @@ async function runTest(kind: 'text' | 'vision') {
       error: err instanceof Error ? err.message : String(err),
     }
   } finally {
-    testing[kind] = false
+    testing[key] = false
   }
 }
 
@@ -436,7 +449,10 @@ function truncate(s: string | undefined, n: number): string {
                 </span>
               </div>
               <div class="entry-sub">
-                <code>{{ e.provider }}</code> · <code>{{ e.id || '(no id)' }}</code>
+                <code>{{ e.provider }}</code> ·
+                <code>{{ e.mainModelId || e.id || '(no main)' }}</code>
+                /
+                <code :class="{ 'text-seal': !e.secondaryModelId }">{{ e.secondaryModelId || '需补次模型' }}</code>
               </div>
             </div>
             <span
@@ -499,11 +515,20 @@ function truncate(s: string | undefined, n: number): string {
           </label>
 
           <label class="form-row">
-            <span class="form-label">Model id</span>
+            <span class="form-label">Main Model ID</span>
             <input
-              v-model="editing.id"
+              :value="editing.mainModelId || editing.id || ''"
               class="form-input"
               placeholder="例：deepseek-chat / claude-opus-4-7 / gpt-5"
+              @input="editing.mainModelId = ($event.target as HTMLInputElement).value; editing.id = editing.mainModelId"
+            />
+          </label>
+          <label class="form-row">
+            <span class="form-label">Secondary Model ID</span>
+            <input
+              v-model="editing.secondaryModelId"
+              class="form-input"
+              placeholder="例：deepseek-chat / gpt-5-mini / qwen-plus"
             />
           </label>
 
@@ -604,13 +629,24 @@ function truncate(s: string | undefined, n: number): string {
               <button
                 type="button"
                 class="tool-button model-test-button"
-                :disabled="hasChanges || testing.text"
+                :disabled="hasChanges || testing.mainText"
                 :title="hasChanges ? '请先保存配置再测试' : '发一次 ping（约消耗几十 token）'"
-                @click="runTest('text')"
+                @click="runTest('text', 'main')"
               >
                 <img class="model-test-icon" :src="modelAssets.text" alt="" width="22" height="22" />
-                <span v-if="testing.text">…测试中</span>
-                <span v-else>测试文本</span>
+                <span v-if="testing.mainText">…测试中</span>
+                <span v-else>测试主模型</span>
+              </button>
+              <button
+                type="button"
+                class="tool-button model-test-button"
+                :disabled="hasChanges || testing.secondaryText || !editing.secondaryModelId"
+                :title="!editing.secondaryModelId ? '请先填写 Secondary Model ID' : hasChanges ? '请先保存配置再测试' : '发一次 ping 验证次模型'"
+                @click="runTest('text', 'secondary')"
+              >
+                <img class="model-test-icon" :src="modelAssets.text" alt="" width="22" height="22" />
+                <span v-if="testing.secondaryText">…测试中</span>
+                <span v-else>测试次模型</span>
               </button>
               <button
                 type="button"
@@ -619,7 +655,7 @@ function truncate(s: string | undefined, n: number): string {
                 :title="hasChanges
                   ? '请先保存配置再测试'
                   : '发一张红色测试图（约几十 token）；通过即标视觉能力'"
-                @click="runTest('vision')"
+                @click="runTest('vision', 'main')"
               >
                 <img class="model-test-icon" :src="modelAssets.vision" alt="" width="22" height="22" />
                 <span v-if="testing.vision">…测试中</span>
@@ -637,7 +673,7 @@ function truncate(s: string | undefined, n: number): string {
                   {{ lastResult.kind === 'vision' ? '视觉通' : '文本通' }}
                 </span>
                 <span class="meta">
-                  {{ lastResult.latencyMs }}ms · {{ lastResult.model }}
+                  {{ lastResult.latencyMs }}ms · {{ lastResult.modelRole || 'main' }} · {{ lastResult.model }}
                 </span>
                 <code class="sample">{{ lastResult.sample }}</code>
                 <span
@@ -663,7 +699,7 @@ function truncate(s: string | undefined, n: number): string {
 
     <div class="empty-note">
       <img class="note-mark" :src="brandAssets.logoMark" alt="" width="28" height="28" />
-      多个条目可以同 model id 不同 apiKey；激活哪个就由它发请求。所有 apiKey 仅保存在本地 model_config.json，前端展示时已脱敏。
+      一个条目共享同一套 provider / apiKey / apiBase，并必须配置 Main 与 Secondary 两个 Model ID。所有 apiKey 仅保存在本地 model_config.json，前端展示时已脱敏。
     </div>
 
     <!-- 底部 sticky 操作栏 -->
@@ -676,6 +712,7 @@ function truncate(s: string | undefined, n: number): string {
           </span>
           <span v-if="current.provider && current.model" class="mini-code">
             {{ current.provider }} / {{ current.model }}
+            <template v-if="current.secondaryModelId"> / secondary {{ current.secondaryModelId }}</template>
           </span>
         </template>
         <span v-if="hasChanges" class="dirty-badge">● 有未保存的更改</span>

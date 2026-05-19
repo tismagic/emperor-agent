@@ -1,10 +1,14 @@
 import { computed, reactive, ref, watch, type Ref } from 'vue'
 import type { AssistantMessage, AttachmentRef, BootstrapPayload, ChatMessage, ChatSendPayload, ControlInteraction, PendingState, RuntimeEventEnvelope, RuntimeHistoryItem, RuntimeStatus, SubagentState, TeamMessage, ToolSegment, ToolStatus, WsEvent } from '../types'
-
-const RUNTIME_STORAGE_KEY = 'emperor-agent:runtime-view'
-const LEGACY_IN_FLIGHT_STORAGE_KEY = 'emperor-agent:in-flight-runtime'
-const RUNTIME_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000
-const IN_FLIGHT_MAX_AGE_MS = 30 * 60 * 1000
+import {
+  clearRuntimeSnapshotRaw,
+  IN_FLIGHT_MAX_AGE_MS,
+  readRuntimeSnapshotRaw,
+  RUNTIME_MAX_AGE_MS,
+  writeRuntimeSnapshotRaw,
+} from '../runtime/persistence'
+import { replayRuntimeEvents } from '../runtime/reducer'
+import { findSubagent, findSubagentTool, findToolSegment } from '../runtime/selectors'
 
 function nextId(prefix: string) {
   const random = typeof crypto !== 'undefined' && 'randomUUID' in crypto ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(16).slice(2)}`
@@ -279,10 +283,7 @@ export function useRuntime(options: {
     lastSeq.value = 0
     rehydrating = true
     try {
-      const sorted = [...events].sort((a, b) => Number(a.seq || 0) - Number(b.seq || 0))
-      for (const event of sorted) {
-        handleSocketEvent(JSON.stringify(event))
-      }
+      replayRuntimeEvents(events, ({ event }) => handleSocketEvent(JSON.stringify(event)))
     } finally {
       rehydrating = false
     }
@@ -533,7 +534,7 @@ export function useRuntime(options: {
   function handleControlDraft(data: Extract<WsEvent, { event: 'ask_request' | 'plan_draft' }>) {
     if (!data.interaction) return
     if (options.boot.value) {
-      options.boot.value.control ||= { mode: 'normal', pending: null }
+      options.boot.value.control ||= { mode: 'ask_before_edit', pending: null }
       options.boot.value.control.pending = data.interaction
     }
     const assistant = assistantForEvent(data)
@@ -847,18 +848,6 @@ export function useRuntime(options: {
     markRunningAsAborted(assistant)
   }
 
-  function findToolSegment(assistant?: AssistantMessage, toolId?: string) {
-    return assistant?.segments.find((seg): seg is ToolSegment => seg.type === 'tool' && seg.toolId === toolId)
-  }
-
-  function findSubagent(assistant: AssistantMessage, parentId?: string, subId?: string): SubagentState | undefined {
-    return findToolSegment(assistant, parentId)?.subagents?.find((sub) => sub.id === subId)
-  }
-
-  function findSubagentTool(assistant: AssistantMessage, parentId?: string, subId?: string, toolId?: string) {
-    return findSubagent(assistant, parentId, subId)?.tools?.find((tool) => tool.id === toolId)
-  }
-
   function findTeamSubagent(assistant: AssistantMessage, teammate: string) {
     for (const segment of assistant.segments) {
       if (segment.type !== 'tool') continue
@@ -899,7 +888,7 @@ export function useRuntime(options: {
       transcript: transcriptFromMessages(messages.value),
     }
     try {
-      window.localStorage.setItem(RUNTIME_STORAGE_KEY, JSON.stringify(snapshot))
+      writeRuntimeSnapshotRaw(JSON.stringify(snapshot))
     } catch {
       // localStorage can be full or unavailable; backend history remains the text fallback.
     }
@@ -907,8 +896,7 @@ export function useRuntime(options: {
 
   function clearRuntimeSnapshot() {
     try {
-      window.localStorage.removeItem(RUNTIME_STORAGE_KEY)
-      window.localStorage.removeItem(LEGACY_IN_FLIGHT_STORAGE_KEY)
+      clearRuntimeSnapshotRaw()
     } catch {
       // Ignore storage failures; backend history remains the source of truth after completion.
     }
@@ -942,12 +930,11 @@ interface RuntimeSnapshot {
 
 function loadRuntimeSnapshot(history: RuntimeHistoryItem[]): RuntimeSnapshot | null {
   try {
-    const raw = window.localStorage.getItem(RUNTIME_STORAGE_KEY) || window.localStorage.getItem(LEGACY_IN_FLIGHT_STORAGE_KEY)
+    const raw = readRuntimeSnapshotRaw()
     if (!raw) return null
     const snapshot = JSON.parse(raw) as RuntimeSnapshot
     if (!snapshot.savedAt || Date.now() - snapshot.savedAt > RUNTIME_MAX_AGE_MS) {
-      window.localStorage.removeItem(RUNTIME_STORAGE_KEY)
-      window.localStorage.removeItem(LEGACY_IN_FLIGHT_STORAGE_KEY)
+      clearRuntimeSnapshotRaw()
       return null
     }
     if (!Array.isArray(snapshot.messages)) return null

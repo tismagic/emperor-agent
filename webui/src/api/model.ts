@@ -3,11 +3,12 @@ import type { ModelTestResult } from '../types'
 export async function testModelEntry(
   entryName: string,
   kind: 'text' | 'vision',
+  role: 'main' | 'secondary' = 'main',
 ): Promise<ModelTestResult> {
   const r = await fetch('/api/model-test', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ entryName, kind }),
+    body: JSON.stringify({ entryName, kind, role }),
   })
   // 后端在测试失败时仍返回 200 + ok:false；非 2xx 才走 throw
   if (!r.ok && r.status >= 500) {

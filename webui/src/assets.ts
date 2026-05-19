@@ -11,6 +11,9 @@ const actionSave = new URL('../../assets/actions/action-save.png', import.meta.u
 const actionAttach = new URL('../../assets/actions/action-attach.png', import.meta.url).href
 const actionSend = new URL('../../assets/actions/action-send.png', import.meta.url).href
 const caretDown = new URL('../../assets/actions/caret-down.png', import.meta.url).href
+const modeAskBeforeEdit = new URL('../../assets/actions/mode-ask-before-edit.png', import.meta.url).href
+const modeAuto = new URL('../../assets/actions/mode-auto.png', import.meta.url).href
+const modePlan = new URL('../../assets/actions/mode-plan.png', import.meta.url).href
 const statusBusy = new URL('../../assets/actions/status-busy.png', import.meta.url).href
 const statusError = new URL('../../assets/actions/status-error.png', import.meta.url).href
 const statusOnline = new URL('../../assets/actions/status-online.png', import.meta.url).href
@@ -82,6 +85,9 @@ export const actionAssets = {
   save: actionSave,
   send: actionSend,
   caretDown,
+  modeAskBeforeEdit,
+  modeAuto,
+  modePlan,
   statusBusy,
   statusError,
   statusOnline,

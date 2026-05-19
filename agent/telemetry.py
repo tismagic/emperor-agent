@@ -23,6 +23,7 @@ class TokenTracker:
         *,
         provider: str | None = None,
         usage_type: str = "main_agent",
+        model_role: str | None = None,
     ) -> None:
         """Append one row to tokens.jsonl from a provider usage object or dict."""
         if isinstance(usage, dict):
@@ -39,6 +40,7 @@ class TokenTracker:
             "ts": datetime.now().isoformat(timespec="seconds"),
             "provider": provider or "unknown",
             "model": model,
+            "model_role": model_role or "unknown",
             "usage_type": usage_type,
             "input": input_tokens,
             "output": output_tokens,
@@ -233,6 +235,7 @@ def _normalize_row(row: dict) -> dict[str, int | str]:
         "ts": str(row.get("ts") or ""),
         "provider": str(row.get("provider") or "unknown"),
         "model": str(row.get("model") or "unknown"),
+        "model_role": str(row.get("model_role") or "unknown"),
         "usage_type": str(row.get("usage_type") or "main_agent"),
         "input": input_tokens,
         "output": output_tokens,

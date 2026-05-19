@@ -55,7 +55,7 @@ def test_control_store_recovers_from_corrupt_state(tmp_path: Path) -> None:
 
     (tmp_path / "memory" / "control" / "state.json").write_text("{bad", encoding="utf-8")
 
-    assert ControlManager(tmp_path).payload()["mode"] == "normal"
+    assert ControlManager(tmp_path).payload()["mode"] == ControlMode.ASK_BEFORE_EDIT.value
 
 
 def test_ask_user_validation_and_answer_message(tmp_path: Path) -> None:
@@ -72,7 +72,7 @@ def test_ask_user_validation_and_answer_message(tmp_path: Path) -> None:
     assert manager.payload()["pending"] is None
 
 
-def test_propose_plan_comment_and_approve_switches_to_normal(tmp_path: Path) -> None:
+def test_propose_plan_comment_and_approve_restores_previous_mode(tmp_path: Path) -> None:
     manager = ControlManager(tmp_path)
     manager.set_mode("plan")
     interaction = manager.create_plan(
@@ -98,8 +98,27 @@ def test_propose_plan_comment_and_approve_switches_to_normal(tmp_path: Path) -> 
     approval = manager.approve(revised.id)
 
     assert "PLAN_APPROVED" in approval.message
-    assert manager.payload()["mode"] == "normal"
+    assert manager.payload()["mode"] == ControlMode.ASK_BEFORE_EDIT.value
     assert manager.payload()["pending"] is None
+
+
+def test_plan_approval_restores_auto_mode(tmp_path: Path) -> None:
+    manager = ControlManager(tmp_path)
+    manager.set_mode(ControlMode.AUTO.value)
+    manager.set_mode(ControlMode.PLAN.value)
+    assert manager.payload()["previous_mode"] == ControlMode.AUTO.value
+
+    interaction = manager.create_plan(
+        title="自动模式计划",
+        summary="批准后回到 auto",
+        plan_markdown="# Plan\n\n- Run it",
+        assumptions=[],
+        risk_level="low",
+    )
+    manager.approve(interaction.id)
+
+    assert manager.payload()["mode"] == ControlMode.AUTO.value
+    assert manager.payload()["previous_mode"] is None
 
 
 def test_cancel_returns_history_message_and_clears_pending(tmp_path: Path) -> None:

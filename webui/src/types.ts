@@ -67,6 +67,17 @@ export interface MemoryPayload {
   tokensByModel?: Record<string, TokenStatsRow>
   tokensByUsageType?: Record<string, TokenStatsRow>
   tokenTotals?: TokenTotals
+  runtime?: RuntimeStats
+}
+
+export interface RuntimeStats {
+  path?: string
+  bytes?: number
+  events?: number
+  latestSeq?: number
+  latestTs?: number | null
+  activeTurnEvents?: number
+  activeTurns?: number
 }
 
 export interface HistoryArchiveInfo {
@@ -118,6 +129,7 @@ export interface TokenUsageRecord {
   ts: string
   provider: string
   model: string
+  model_role?: string
   usage_type: string
   input: number
   output: number
@@ -144,7 +156,9 @@ export interface ProviderOption {
 
 export interface ModelEntry {
   name: string                     // 唯一 key（agents.defaults.model 引用）
-  id: string                       // 真实 model id（发给 API）
+  id?: string                      // 兼容旧字段，等价于 mainModelId
+  mainModelId?: string             // 主模型 id：复杂任务 / 主 Agent
+  secondaryModelId?: string        // 次模型 id：简单任务 / 内部任务
   provider: string                 // registry name
   apiKey?: string | null           // "***last4" 占位 / 空 / 真值
   apiBase?: string | null
@@ -182,6 +196,7 @@ export interface ModelTestResult {
   kind: 'text' | 'vision'
   latencyMs?: number
   model?: string
+  modelRole?: string
   provider?: string
   sample?: string
   finishReason?: string
@@ -228,10 +243,21 @@ export interface CurrentModelConfig {
   entryName?: string | null
   entryLabel?: string | null
   supportsVision?: boolean
+  mainModelId?: string | null
+  secondaryModelId?: string | null
+  modelRole?: string | null
 }
 
 export interface ModelConfigPayload {
   current?: CurrentModelConfig
+  secondary?: CurrentModelConfig | null
+  routing?: {
+    secondaryEnabled?: boolean
+    fallbackToMain?: boolean
+    mainEntry?: string | null
+    mainModel?: string | null
+    secondaryModel?: string | null
+  }
   config?: ModelConfigRaw
   providerOptions?: ProviderOption[]
 }
@@ -322,7 +348,7 @@ export interface ControlQuestion {
   options: ControlQuestionOption[]
 }
 
-export type ControlMode = 'normal' | 'plan' | string
+export type ControlMode = 'ask_before_edit' | 'auto' | 'plan' | string
 export type InteractionKind = 'ask' | 'plan' | string
 export type InteractionStatus = 'waiting' | 'answered' | 'commented' | 'approved' | 'cancelled' | string
 
@@ -342,11 +368,13 @@ export interface ControlInteraction {
   assumptions?: string[]
   risk_level?: string
   comments?: Array<{ content?: string; timestamp?: number }>
+  meta?: Record<string, unknown>
 }
 
 export interface ControlPayload {
   version?: number
   mode: ControlMode
+  previous_mode?: 'ask_before_edit' | 'auto' | null
   pending?: ControlInteraction | null
   last_interaction?: ControlInteraction | null
   updated_at?: number
@@ -474,7 +502,8 @@ export type WsEvent = ({ seq?: number; ts?: number; turn_id?: string; client_mes
   | { event: 'ready'; model?: string; provider?: string; latest_seq?: number; replay_count?: number; resume_from?: number; busy?: boolean; control?: ControlPayload }
   | { event: 'user_message'; content?: string; attachments?: AttachmentRef[] }
   | { event: 'message_delta'; delta?: string }
-  | { event: 'context_usage'; used?: number; max?: number; threshold?: number; usage_type?: string }
+  | { event: 'context_usage'; used?: number; max?: number; threshold?: number; usage_type?: string; model_role?: string; model?: string; provider?: string }
+  | { event: 'model_route_fallback'; from_model?: string; to_model?: string; reason?: string; usage_type?: string }
   | { event: 'tool_call'; id?: string; name: string; arguments?: Record<string, unknown> }
   | { event: 'tool_result'; id?: string; name?: string; summary?: string; todos?: TodoItem[] }
   | { event: 'tool_error'; id?: string; name?: string; message?: string }
