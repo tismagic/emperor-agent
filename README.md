@@ -104,7 +104,7 @@ python webui.py
 - **MCP 外部工具** — 通过 stdio 或 SSE 连接外部 MCP 服务器，自动发现工具并注册为 `mcp_{server}_{tool}`，与内置工具统一调度。
 - **流式 WebUI** — 网页聊天通过 WebSocket 接收 `message_delta`、`tool_call`、`tool_result`、`subagent_*` 等事件；事件持久化到 `memory/runtime/events.jsonl`，刷新或后端重启后按 seq 回放未压缩会话细节。
 - **三模式权限与 Ask / Plan 控制流** — 默认 `ask_before_edit` 会在危险或不确定动作前审批；`auto` 走最高自动权限；`plan` 只允许只读探索、提问和提交 PlanCard，批准或取消后恢复进入 Plan 前的模式。
-- **本地 Scheduler** — 持久保存 `at` / `every` / `cron` 任务，启动 WebUI 后后台 timer 自动恢复；Agent 可通过 `scheduler` 工具查看任务，创建/修改/删除/手动运行长期任务会走权限审批。
+- **本地 Scheduler** — 持久保存 `at` / `every` / `cron` 任务，启动 WebUI 后后台 timer 自动恢复；支持触发本地主动 Agent turn 与 Team wake；Agent 可通过 `scheduler` 工具查看任务，创建/修改/删除/手动运行长期任务会走权限审批。
 - **Token 统计** — 按日期、provider/model、使用种类（main_agent / subagent / memory_compaction）汇总，并按“输入缓存命中 / 输入缓存未命中 / 输出 / 总 Token”展示。
 - **工具调用** — 命令执行、网页抓取、文件读写、Glob/Grep 搜索、技能加载、todo 维护、子代理派遣。
 - **任务规划** — 内置 todolist，未完成时自动 nudge 模型继续执行。
@@ -410,6 +410,8 @@ Ask Guard 当前采用“高影响歧义强制”策略：大范围工程化/重
 权限审批是“一次性同参授权”：用户允许后，同一个工具名 + 参数组合下一次执行会放行一次；用户拒绝后，同参操作下一次会返回明确拒绝，避免审批循环。
 
 Scheduler 相关 HTTP API 已接入 Web 后端：`GET /api/scheduler`、`POST /api/scheduler/jobs`、`PATCH /api/scheduler/jobs/{id}`、`POST /api/scheduler/jobs/{id}/run|pause|resume`、`DELETE /api/scheduler/jobs/{id}`。运行事件会通过 `scheduler_job_update`、`scheduler_run_start`、`scheduler_run_done`、`scheduler_run_error` 进入 runtime 事件流。
+
+当前可执行 payload：`agent_turn` 会作为“司时台触发”的主动 turn 写入 history 与 runtime；`team_wake` 会向目标 teammate 写入 task 消息并唤醒；`system_event` 仅允许系统代码注册，普通 API / tool 创建会被拒绝。
 
 WebUI 相关接口：
 

@@ -21,7 +21,7 @@ from ..loop import AgentLoop
 from ..mcp.config import load_mcp_config, save_mcp_config
 from ..runtime import RuntimeEventStore
 from ..runtime import events as runtime_events
-from .services import ChatService, MemoryService, ModelService, SchedulerWebService, TeamService
+from .services import ChatService, MemoryService, ModelService, SchedulerJobExecutor, SchedulerWebService, TeamService
 
 _SKILL_RE = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,80}$")
 
@@ -39,6 +39,7 @@ class WebUIState:
         self.model_service = ModelService(self)
         self.team_service = TeamService(self)
         self.scheduler_web_service = SchedulerWebService(self)
+        self.scheduler_job_executor = SchedulerJobExecutor(self)
         self.history = self.loop.history
         self.attachments = AttachmentStore(self.root)
         self.lock = asyncio.Lock()
@@ -49,6 +50,7 @@ class WebUIState:
         self.event_log: list[dict[str, Any]] = self.runtime_events.recent(self.max_event_log)
         self.event_seq = self.runtime_events.latest_seq
         self.active_turn = False
+        self.loop.scheduler_service.on_job = self.scheduler_job_executor.run
         self.loop.scheduler_service.event_sink = self._broadcast_scheduler_event
 
     async def bootstrap(self, request: web.Request) -> web.Response:

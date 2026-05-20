@@ -53,6 +53,20 @@ def test_scheduler_body_parsing_supports_nested_schedule_and_payload() -> None:
     assert payload.target == "alice"
 
 
+def test_scheduler_api_rejects_system_event_payload() -> None:
+    body = {
+        "schedule": {"kind": "every", "everyMs": 60_000},
+        "payload": {"kind": "system_event", "message": "maintenance"},
+    }
+
+    try:
+        SchedulerWebService._payload_from_body(body)
+    except ValueError as exc:
+        assert "system_event" in str(exc)
+    else:
+        raise AssertionError("expected system_event payload to be rejected")
+
+
 def test_scheduler_web_service_broadcasts_job_update(tmp_path: Path) -> None:
     state = FakeState(tmp_path)
     service = SchedulerWebService(state)

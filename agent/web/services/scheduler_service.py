@@ -118,10 +118,13 @@ class SchedulerWebService:
     @staticmethod
     def _payload_from_body(body: dict[str, Any]) -> SchedulerPayload:
         raw = body.get("payload") if isinstance(body.get("payload"), dict) else body
-        return SchedulerPayload.from_dict({
+        payload = SchedulerPayload.from_dict({
             "kind": raw.get("kind") or raw.get("payloadKind") or "agent_turn",
             "message": raw.get("message") or "",
             "target": raw.get("target"),
             "deliver": raw.get("deliver", True),
             "meta": raw.get("meta") if isinstance(raw.get("meta"), dict) else {},
         })
+        if payload.kind == "system_event":
+            raise ValueError("system_event scheduler jobs can only be registered by system code")
+        return payload
