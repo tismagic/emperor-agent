@@ -95,10 +95,19 @@ class MemoryStore:
     def load_unarchived_history(self) -> list:
         """返回最后一个 compact_event 之后的未归档对话条目。"""
         out: list[dict[str, Any]] = []
-        for r in self.history_log.load_active_rows():
+        active_rows = self.history_log.load_active_rows()
+        hidden_turns = {
+            str(r.get("turn_id"))
+            for r in active_rows
+            if isinstance(r.get("turn_id"), str)
+            and (r.get("hidden") is True or r.get("schedulerHidden") is True)
+        }
+        for r in active_rows:
             if "role" not in r or "content" not in r:
                 continue
             if r.get("type") == "model_call":
+                continue
+            if str(r.get("turn_id") or "") in hidden_turns:
                 continue
             item: dict[str, Any] = {"role": r["role"], "content": r["content"]}
             if isinstance(r.get("turn_id"), str):

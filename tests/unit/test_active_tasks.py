@@ -70,3 +70,36 @@ def test_active_task_registry_updates_metadata() -> None:
         assert await task == "done"
 
     asyncio.run(run())
+
+
+def test_active_task_registry_supports_watchlist_kind() -> None:
+    async def run() -> None:
+        registry = ActiveTaskRegistry()
+        started = asyncio.Event()
+
+        async def work() -> str:
+            started.set()
+            await asyncio.sleep(30)
+            return "done"
+
+        task = asyncio.create_task(
+            registry.run(
+                task_id="watchlist:manual-check",
+                kind="watchlist",
+                label="Watchlist manual check",
+                awaitable=work(),
+            )
+        )
+        await started.wait()
+        cancelled = await registry.cancel(kind="watchlist")
+
+        assert len(cancelled) == 1
+        assert cancelled[0].kind == "watchlist"
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
+        else:
+            raise AssertionError("expected watchlist task to be cancelled")
+
+    asyncio.run(run())

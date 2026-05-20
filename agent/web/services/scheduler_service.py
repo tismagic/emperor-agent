@@ -6,6 +6,7 @@ from aiohttp import web
 
 from ...runtime import events as runtime_events
 from ...scheduler import SchedulerJob, SchedulerPayload, SchedulerSchedule
+from ..mutation_guard import assert_web_mutation_allowed
 
 
 class SchedulerWebService:
@@ -16,6 +17,7 @@ class SchedulerWebService:
         return self.state._json(self.scheduler())
 
     async def post_scheduler_job(self, request: web.Request) -> web.Response:
+        assert_web_mutation_allowed(self.state.control(), area="scheduler", action="create")
         body = await self.state._body(request)
         try:
             job = self.state.loop.scheduler_service.add_job(
@@ -30,6 +32,7 @@ class SchedulerWebService:
         return self.state._json({"job": job.to_dict(), "scheduler": self.scheduler()}, status=201)
 
     async def patch_scheduler_job(self, request: web.Request) -> web.Response:
+        assert_web_mutation_allowed(self.state.control(), area="scheduler", action="update")
         body = await self.state._body(request)
         schedule = self._schedule_from_body(body) if "schedule" in body else None
         payload = self._payload_from_body(body) if "payload" in body else None
@@ -55,6 +58,7 @@ class SchedulerWebService:
         return self.state._json({"job": result.to_dict(), "scheduler": self.scheduler()})
 
     async def post_scheduler_run(self, request: web.Request) -> web.Response:
+        assert_web_mutation_allowed(self.state.control(), area="scheduler", action="run")
         force = request.query.get("force", "true").lower() != "false"
         ok = await self.state.loop.scheduler_service.run_job(
             request.match_info.get("id", ""),
@@ -65,6 +69,7 @@ class SchedulerWebService:
         return self.state._json({"ok": True, "scheduler": self.scheduler()})
 
     async def post_scheduler_pause(self, request: web.Request) -> web.Response:
+        assert_web_mutation_allowed(self.state.control(), area="scheduler", action="pause")
         result = self.state.loop.scheduler_service.enable_job(
             request.match_info.get("id", ""),
             enabled=False,
@@ -75,6 +80,7 @@ class SchedulerWebService:
         return self.state._json({"job": result.to_dict(), "scheduler": self.scheduler()})
 
     async def post_scheduler_resume(self, request: web.Request) -> web.Response:
+        assert_web_mutation_allowed(self.state.control(), area="scheduler", action="resume")
         result = self.state.loop.scheduler_service.enable_job(
             request.match_info.get("id", ""),
             enabled=True,
@@ -85,6 +91,7 @@ class SchedulerWebService:
         return self.state._json({"job": result.to_dict(), "scheduler": self.scheduler()})
 
     async def delete_scheduler_job(self, request: web.Request) -> web.Response:
+        assert_web_mutation_allowed(self.state.control(), area="scheduler", action="delete")
         result = self.state.loop.scheduler_service.remove_job(request.match_info.get("id", ""))
         if result == "not_found":
             raise web.HTTPNotFound(reason="scheduler job not found")

@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from typing import Any, Literal
 
 
-ActiveTaskKind = Literal["turn", "scheduler", "team"]
+ActiveTaskKind = Literal["turn", "scheduler", "team", "watchlist"]
 
 
 @dataclass

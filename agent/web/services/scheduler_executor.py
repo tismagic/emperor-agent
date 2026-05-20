@@ -53,8 +53,14 @@ class SchedulerJobExecutor:
         await self.state.active_tasks.update(f"scheduler:{job.id}", turn_id=turn_id)
         model_content = self._agent_turn_content(job)
         display = f"司时台触发 · {job.name}\n\n{message}"
+        deliver = bool(job.payload.deliver)
+        working_history = self.state.history if deliver else [
+            *self.state.history,
+            {"role": "user", "content": model_content, "turn_id": turn_id},
+        ]
         async with self.state.lock:
-            self.state.history.append({"role": "user", "content": model_content, "turn_id": turn_id})
+            if deliver:
+                self.state.history.append({"role": "user", "content": model_content, "turn_id": turn_id})
             self.state.loop.memory.append_history(
                 "user",
                 model_content,
@@ -63,27 +69,33 @@ class SchedulerJobExecutor:
                     "turn_id": turn_id,
                     "jobId": job.id,
                     "displayContent": display,
+                    "hidden": not deliver,
+                    "schedulerHidden": not deliver,
                 },
             )
-            await self.state._broadcast_event(
-                runtime_events.user_message(
-                    content=display,
-                    attachments=[],
-                    client_message_id=f"scheduler:{job.id}:{turn_id}",
-                ),
-                turn_id=turn_id,
-            )
+            if deliver:
+                await self.state._broadcast_event(
+                    runtime_events.user_message(
+                        content=display,
+                        attachments=[],
+                        client_message_id=f"scheduler:{job.id}:{turn_id}",
+                    ),
+                    turn_id=turn_id,
+                )
             self.state.active_turn = True
 
             async def emit(event: dict) -> None:
-                await self.state._broadcast_event(event, turn_id=turn_id)
+                if deliver:
+                    await self.state._broadcast_event(event, turn_id=turn_id)
 
             try:
-                await self.state.loop.runner.step_stream(self.state.history, emit, turn_id=turn_id)
+                await self.state.loop.runner.step_stream(working_history, emit, turn_id=turn_id)
             except TurnPaused:
                 return "paused waiting for user"
             finally:
                 self.state.active_turn = False
+                if not deliver:
+                    self.state.compact_runtime_events()
         return "agent_turn completed"
 
     async def _run_team_wake(self, job: SchedulerJob) -> str:
@@ -95,7 +107,8 @@ class SchedulerJobExecutor:
             raise ValueError("team_wake scheduler job requires payload.message")
 
         async def emit(event: dict) -> None:
-            await self.state._broadcast_event(event)
+            if job.payload.deliver:
+                await self.state._broadcast_event(event)
 
         loop = asyncio.get_running_loop()
         return await asyncio.to_thread(
@@ -118,13 +131,11 @@ class SchedulerJobExecutor:
                 f"archives={stats.get('archive_files', 0)}"
             )
         if event_name == "runtime-maintenance":
-            stats = self.state.runtime_events.stats(
-                active_turn_ids=self.state.loop.memory.load_unarchived_turn_ids(),
-            )
+            stats = self.state.compact_runtime_events()
             return (
                 "runtime-maintenance checked: "
                 f"events={stats.get('events', 0)}, bytes={stats.get('bytes', 0)}, "
-                f"latestSeq={stats.get('latestSeq', 0)}"
+                f"archives={stats.get('archiveFiles', 0)}, latestSeq={stats.get('latestSeq', 0)}"
             )
         if event_name == "team-stale-recovery":
             before = [

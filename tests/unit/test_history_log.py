@@ -79,6 +79,21 @@ def test_memory_store_load_unarchived_reads_only_hot_log(tmp_path: Path) -> None
     assert memory.history_stats()["archive_files"] == 1
 
 
+def test_memory_store_hides_scheduler_background_turns(tmp_path: Path) -> None:
+    memory = MemoryStore(tmp_path / "memory", tmp_path / "USER.local.md")
+    memory.append_history("user", "visible", extra={"turn_id": "turn_visible"})
+    memory.append_history(
+        "user",
+        "hidden scheduler",
+        extra={"turn_id": "turn_hidden", "hidden": True, "schedulerHidden": True},
+    )
+    memory.append_history("assistant", "hidden reply", extra={"turn_id": "turn_hidden"})
+
+    loaded = memory.load_unarchived_history()
+
+    assert loaded == [{"role": "user", "content": "visible", "turn_id": "turn_visible"}]
+
+
 def test_compact_archive_failure_keeps_hot_history(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     memory_dir = tmp_path / "memory"
     log = HistoryLog(memory_dir, memory_dir / "history.jsonl")

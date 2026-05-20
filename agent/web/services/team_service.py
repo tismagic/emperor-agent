@@ -5,6 +5,8 @@ from typing import TYPE_CHECKING, Any
 
 from aiohttp import web
 
+from ..mutation_guard import assert_web_mutation_allowed
+
 if TYPE_CHECKING:
     from ..state import WebUIState
 
@@ -24,6 +26,7 @@ class TeamService:
             return self.state._json({"error": str(exc)}, status=404)
 
     async def post_team_member(self, request: web.Request) -> web.Response:
+        assert_web_mutation_allowed(self.state.control(), area="team", action="spawn teammate")
         body = await self.state._body(request)
         name = str(body.get("name") or "")
         role = str(body.get("role") or "")
@@ -42,6 +45,7 @@ class TeamService:
         return self.state._json({"result": result, "team": self.team()})
 
     async def post_team_message(self, request: web.Request) -> web.Response:
+        assert_web_mutation_allowed(self.state.control(), area="team", action="send message")
         body = await self.state._body(request)
         to = str(body.get("to") or "")
         content = str(body.get("content") or "")
@@ -58,6 +62,7 @@ class TeamService:
         return self.state._json({"result": result, "team": self.team()})
 
     async def post_team_wake(self, request: web.Request) -> web.Response:
+        assert_web_mutation_allowed(self.state.control(), area="team", action="wake teammate")
         name = request.match_info.get("name", "")
         result = await self._run_team_call(
             self.state.loop.team_manager.wake_teammate,
@@ -67,6 +72,7 @@ class TeamService:
         return self.state._json({"result": result, "team": self.team()})
 
     async def post_team_shutdown(self, request: web.Request) -> web.Response:
+        assert_web_mutation_allowed(self.state.control(), area="team", action="shutdown teammate")
         name = request.match_info.get("name", "")
         result = await self._run_team_call(
             self.state.loop.team_manager.shutdown_teammate,

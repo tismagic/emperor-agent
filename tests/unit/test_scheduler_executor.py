@@ -63,6 +63,7 @@ class FakeState:
         self.active_tasks = ActiveTaskRegistry()
         self._turn = 0
         self._pending: dict[str, Any] | None = None
+        self.compact_calls = 0
 
     def new_turn_id(self) -> str:
         self._turn += 1
@@ -76,6 +77,10 @@ class FakeState:
         if turn_id:
             payload["turn_id"] = turn_id
         self.events.append(payload)
+
+    def compact_runtime_events(self) -> dict[str, Any]:
+        self.compact_calls += 1
+        return {}
 
 
 def make_job(payload: SchedulerPayload) -> SchedulerJob:
@@ -116,6 +121,21 @@ def test_scheduler_executor_rejects_agent_turn_while_control_pending() -> None:
         raise AssertionError("expected pending control to block scheduler agent turn")
 
 
+def test_scheduler_executor_hides_agent_turn_when_deliver_false() -> None:
+    state = FakeState()
+    executor = SchedulerJobExecutor(state)
+    job = make_job(SchedulerPayload(kind="agent_turn", message="Write quietly", deliver=False))
+
+    result = asyncio.run(executor.run(job))
+
+    assert result == "agent_turn completed"
+    assert state.history == []
+    assert state.loop.runner.seen[0][0]["role"] == "user"
+    assert state.loop.memory.rows[0][2]["hidden"] is True
+    assert state.events == []
+    assert state.compact_calls == 1
+
+
 def test_scheduler_executor_wakes_team_member() -> None:
     state = FakeState()
     executor = SchedulerJobExecutor(state)
@@ -127,3 +147,15 @@ def test_scheduler_executor_wakes_team_member() -> None:
     assert state.loop.team_manager.calls[0]["to"] == "alice"
     assert state.loop.team_manager.calls[0]["type"] == "task"
     assert any(event["event"] == "team_message" for event in state.events)
+
+
+def test_scheduler_executor_hides_team_wake_events_when_deliver_false() -> None:
+    state = FakeState()
+    executor = SchedulerJobExecutor(state)
+    job = make_job(SchedulerPayload(kind="team_wake", message="Check inbox", target="alice", deliver=False))
+
+    result = asyncio.run(executor.run(job))
+
+    assert result == "team woke"
+    assert state.loop.team_manager.calls[0]["to"] == "alice"
+    assert state.events == []
