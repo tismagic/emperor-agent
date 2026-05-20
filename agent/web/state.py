@@ -19,6 +19,7 @@ from ..attachments import (
 from ..logger import configure as configure_logging
 from ..loop import AgentLoop
 from ..mcp.config import load_mcp_config, save_mcp_config
+from ..runtime.active import ActiveTaskInfo, ActiveTaskRegistry
 from ..runtime import RuntimeEventStore
 from ..runtime import events as runtime_events
 from ..watchlist import WatchlistService
@@ -56,6 +57,7 @@ class WebUIState:
         self.event_log: list[dict[str, Any]] = self.runtime_events.recent(self.max_event_log)
         self.event_seq = self.runtime_events.latest_seq
         self.active_turn = False
+        self.active_tasks = ActiveTaskRegistry()
         self.loop.scheduler_service.on_job = self.scheduler_job_executor.run
         self.loop.scheduler_service.event_sink = self._broadcast_scheduler_event
 
@@ -145,6 +147,31 @@ class WebUIState:
             resume_from=last_seq,
             busy=self.active_turn,
             control=self.control(),
+        )
+
+    async def post_runtime_stop(self, request: web.Request) -> web.Response:
+        body = await self._body(request) if request.can_read_body else {}
+        task_id = str(body.get("task_id") or "") or None
+        kind = str(body.get("kind") or "") or None
+        if kind not in {None, "", "turn", "scheduler", "team"}:
+            raise web.HTTPBadRequest(reason="Invalid task kind")
+        cancelled = await self.active_tasks.cancel(
+            task_id=task_id,
+            kind=kind if kind else None,  # type: ignore[arg-type]
+        )
+        for info in cancelled:
+            await self._broadcast_cancelled_task(info, reason="user requested stop")
+        if any(info.kind == "turn" for info in cancelled):
+            self.active_turn = False
+        return self._json({
+            "cancelled": [info.to_dict() for info in cancelled],
+            "active": [info.to_dict() for info in await self.active_tasks.list()],
+        })
+
+    async def _broadcast_cancelled_task(self, info: ActiveTaskInfo, *, reason: str) -> None:
+        await self._broadcast_event(
+            runtime_events.runtime_task_cancelled(info.to_dict(), reason=reason),
+            turn_id=info.turn_id,
         )
 
     async def get_tools(self, request: web.Request) -> web.Response:

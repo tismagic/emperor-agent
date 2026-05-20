@@ -184,6 +184,34 @@ export function useRuntime(options: {
     )
   }
 
+  async function stopActive() {
+    updatePending('正在停止当前任务...', '', 'running')
+    try {
+      const res = await fetch('/api/runtime/stop', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({}),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(data?.error || '停止任务失败')
+      const count = Array.isArray(data.cancelled) ? data.cancelled.length : 0
+      if (!count) {
+        updatePending('没有正在运行的任务', '', 'done')
+        options.showToast('当前没有可停止的任务')
+        return false
+      }
+      const assistant = currentAssistant.value
+      if (assistant) finishInterruptedAssistant(assistant, '（已请求停止当前任务。）')
+      currentAssistantId.value = null
+      busy.value = false
+      updatePending('已请求停止', `已取消 ${count} 个任务`, 'done')
+      return true
+    } catch (err) {
+      updatePending('停止任务失败', err instanceof Error ? err.message : String(err), 'error')
+      return false
+    }
+  }
+
   function sendControlPayload(payload: Record<string, unknown>, userLabel: string, expectAssistant: boolean) {
     if (busy.value) return false
     if (!socket.value || socket.value.readyState !== WebSocket.OPEN) {
@@ -442,6 +470,15 @@ export function useRuntime(options: {
     if (data.event === 'error') {
       updatePending()
       handleChatError(data.message || '未知错误')
+      return
+    }
+
+    if (data.event === 'runtime_task_cancelled') {
+      const assistant = assistantForEvent({ turn_id: data.turn_id || data.task?.turnId }, false) || currentAssistant.value
+      if (assistant) finishInterruptedAssistant(assistant, '（任务已停止。）')
+      currentAssistantId.value = null
+      busy.value = false
+      updatePending('任务已停止', data.task?.label || data.reason || '', 'done')
       return
     }
 
@@ -817,6 +854,10 @@ export function useRuntime(options: {
       updatePending('Scheduler 任务失败', data.error || data.job?.state?.lastError || '', 'error')
       return
     }
+    if (data.event === 'scheduler_run_cancelled') {
+      updatePending('Scheduler 任务已停止', data.job?.name || data.job?.id || data.reason || '', 'done')
+      return
+    }
     if (data.event === 'scheduler_job_update') {
       updatePending('Scheduler 任务已更新', data.action || '', 'done')
     }
@@ -964,6 +1005,7 @@ export function useRuntime(options: {
     sendPlanComment,
     approvePlan,
     cancelInteraction,
+    stopActive,
     clearChat,
     addLocalCommand,
     restoreFromHistory,

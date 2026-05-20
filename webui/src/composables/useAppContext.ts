@@ -54,6 +54,7 @@ export interface AppContext {
   sendPlanComment: (interactionId: string, comment: string) => boolean
   approvePlan: (interactionId: string) => boolean
   cancelInteraction: (interactionId: string) => boolean
+  stopActive: () => Promise<boolean>
   clearChat: () => void
   submitFromComposer: (payload: string | ChatSendPayload) => void
 

@@ -63,6 +63,7 @@ const {
   sendPlanComment,
   approvePlan,
   cancelInteraction,
+  stopActive,
   clearChat,
   addLocalCommand,
   restoreFromHistory,
@@ -176,6 +177,11 @@ async function executeSlashCommand(raw: string, name: string, command: SlashComm
     }
     if (command.name === '/mode') {
       await handleModeCommand(raw)
+      return
+    }
+    if (command.name === '/stop') {
+      const stopped = await stopActive()
+      addLocalCommand(raw, stopped ? '已请求停止当前运行任务。' : '当前没有正在运行的任务。')
       return
     }
     if (command.name === '/compact') {
@@ -473,6 +479,7 @@ provideAppContext({
   sendPlanComment,
   approvePlan,
   cancelInteraction,
+  stopActive,
   clearChat,
   submitFromComposer,
   showToast,

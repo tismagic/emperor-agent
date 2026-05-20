@@ -23,15 +23,24 @@ class SchedulerJobExecutor:
     async def run(self, job: SchedulerJob) -> str | None:
         token = set_scheduler_run(True)
         try:
-            if job.payload.kind == "agent_turn":
-                return await self._run_agent_turn(job)
-            if job.payload.kind == "team_wake":
-                return await self._run_team_wake(job)
-            if job.payload.kind == "system_event":
-                return await self._run_system_event(job)
-            raise ValueError(f"unsupported scheduler payload kind: {job.payload.kind}")
+            return await self.state.active_tasks.run(
+                task_id=f"scheduler:{job.id}",
+                kind="scheduler",
+                label=f"Scheduler job: {job.name}",
+                awaitable=self._dispatch(job),
+                job_id=job.id,
+            )
         finally:
             reset_scheduler_run(token)
+
+    async def _dispatch(self, job: SchedulerJob) -> str | None:
+        if job.payload.kind == "agent_turn":
+            return await self._run_agent_turn(job)
+        if job.payload.kind == "team_wake":
+            return await self._run_team_wake(job)
+        if job.payload.kind == "system_event":
+            return await self._run_system_event(job)
+        raise ValueError(f"unsupported scheduler payload kind: {job.payload.kind}")
 
     async def _run_agent_turn(self, job: SchedulerJob) -> str:
         message = job.payload.message.strip()
@@ -41,6 +50,7 @@ class SchedulerJobExecutor:
             raise RuntimeError("cannot run scheduler agent_turn while Ask / Plan is pending")
 
         turn_id = self.state.new_turn_id()
+        await self.state.active_tasks.update(f"scheduler:{job.id}", turn_id=turn_id)
         model_content = self._agent_turn_content(job)
         display = f"司时台触发 · {job.name}\n\n{message}"
         async with self.state.lock:

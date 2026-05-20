@@ -312,6 +312,10 @@ class SchedulerService:
         try:
             if self.on_job:
                 await self.on_job(job)
+        except asyncio.CancelledError:
+            status = SchedulerStatus.CANCELLED.value
+            error = "cancelled"
+            logger.info("Scheduler: job '{}' cancelled", job.name)
         except Exception as exc:
             status = SchedulerStatus.ERROR.value
             error = str(exc)
@@ -339,6 +343,10 @@ class SchedulerService:
         if status == SchedulerStatus.ERROR.value:
             await self._emit(
                 runtime_events.scheduler_run_error(job.to_dict(), error=error or "unknown error")
+            )
+        elif status == SchedulerStatus.CANCELLED.value:
+            await self._emit(
+                runtime_events.scheduler_run_cancelled(job.to_dict(), reason=error or "cancelled")
             )
         else:
             await self._emit(runtime_events.scheduler_run_done(job.to_dict()))

@@ -17,6 +17,7 @@ class SchedulerStatus(StrEnum):
     OK = "ok"
     ERROR = "error"
     SKIPPED = "skipped"
+    CANCELLED = "cancelled"
 
 
 def now_ms() -> int:

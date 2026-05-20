@@ -16,6 +16,7 @@ const props = defineProps<{
 }>()
 const emit = defineEmits<{
   send: [payload: { content: string; attachments: AttachmentRef[] }]
+  stop: []
   error: [message: string]
   'set-mode': [mode: 'ask_before_edit' | 'auto' | 'plan']
 }>()
@@ -251,7 +252,7 @@ function fmt(n: number) {
   return String(n)
 }
 
-const sendDisabled = computed(() => props.busy || (!value.value.trim() && drafts.value.length === 0))
+const sendDisabled = computed(() => !props.busy && !value.value.trim() && drafts.value.length === 0)
 </script>
 
 <template>
@@ -437,9 +438,15 @@ const sendDisabled = computed(() => props.busy || (!value.value.trim() && drafts
             </div>
           </div>
 
-          <button class="send-button" :disabled="sendDisabled" type="submit">
+          <button
+            class="send-button"
+            :disabled="sendDisabled"
+            :title="props.busy ? '停止当前任务' : '发送'"
+            :type="props.busy ? 'button' : 'submit'"
+            @click="props.busy ? emit('stop') : undefined"
+          >
             <img class="action-icon send-icon" :src="props.busy ? actionAssets.statusBusy : actionAssets.send" alt="" width="24" height="24" />
-            <span class="sr-only">{{ props.busy ? '等待' : '发送' }}</span>
+            <span class="sr-only">{{ props.busy ? '停止' : '发送' }}</span>
           </button>
         </div>
       </div>

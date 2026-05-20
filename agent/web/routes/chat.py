@@ -8,4 +8,5 @@ from ..state import WebUIState
 def register(app: web.Application, state: WebUIState) -> None:
     app.router.add_get("/ws", state.chat_service.ws_handler)
     app.router.add_get("/api/bootstrap", state.bootstrap)
+    app.router.add_post("/api/runtime/stop", state.post_runtime_stop)
     app.router.add_get("/{tail:.*}", state.static)

@@ -118,6 +118,32 @@ def test_manual_run_records_errors(tmp_path: Path) -> None:
     assert loaded.state.last_error == "boom"
 
 
+def test_manual_run_records_cancellation(tmp_path: Path) -> None:
+    events: list[dict] = []
+
+    async def cancel(_job):
+        raise asyncio.CancelledError()
+
+    async def sink(event: dict) -> None:
+        events.append(event)
+
+    service = make_service(tmp_path, on_job=cancel)
+    service.event_sink = sink
+    job = service.add_job(
+        name="cancel",
+        schedule=SchedulerSchedule(kind="every", every_ms=60_000),
+        payload=SchedulerPayload(message="hello"),
+    )
+
+    assert asyncio.run(service.run_job(job.id, force=True))
+    loaded = service.get_job(job.id)
+
+    assert loaded is not None
+    assert loaded.state.last_status == SchedulerStatus.CANCELLED.value
+    assert loaded.state.last_error == "cancelled"
+    assert [event["event"] for event in events] == ["scheduler_run_start", "scheduler_run_cancelled"]
+
+
 def test_timer_runs_due_job_once_and_reschedules(tmp_path: Path) -> None:
     clock = FakeClock()
     calls: list[str] = []

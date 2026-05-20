@@ -31,6 +31,7 @@ const ctx = useAppContext()
         :supports-vision="ctx.boot.value?.modelConfig?.current?.supportsVision ?? false"
         @set-mode="ctx.setControlMode"
         @send="ctx.submitFromComposer($event)"
+        @stop="ctx.stopActive"
         @error="ctx.showToast"
       />
     </div>

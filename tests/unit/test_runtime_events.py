@@ -62,6 +62,10 @@ def test_scheduler_runtime_event_payloads() -> None:
     }
     assert runtime_events.scheduler_run_start(job)["event"] == "scheduler_run_start"
     assert runtime_events.scheduler_run_done(job)["event"] == "scheduler_run_done"
+    assert runtime_events.scheduler_run_cancelled(job)["event"] == "scheduler_run_cancelled"
     error = runtime_events.scheduler_run_error(job, error="boom")
     assert error["event"] == "scheduler_run_error"
     assert error["error"] == "boom"
+    cancelled = runtime_events.runtime_task_cancelled({"id": "turn:1"}, reason="stop")
+    assert cancelled["event"] == "runtime_task_cancelled"
+    assert cancelled["reason"] == "stop"

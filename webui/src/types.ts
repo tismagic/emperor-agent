@@ -624,4 +624,6 @@ export type WsEvent = ({ seq?: number; ts?: number; turn_id?: string; client_mes
   | { event: 'scheduler_run_start'; job?: SchedulerJob }
   | { event: 'scheduler_run_done'; job?: SchedulerJob }
   | { event: 'scheduler_run_error'; job?: SchedulerJob; error?: string }
+  | { event: 'scheduler_run_cancelled'; job?: SchedulerJob; reason?: string }
+  | { event: 'runtime_task_cancelled'; task?: { id?: string; kind?: string; label?: string; turnId?: string; jobId?: string }; reason?: string }
 ))

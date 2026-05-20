@@ -165,6 +165,7 @@ Vite 会代理 `/api` 与 `/ws` 到 `127.0.0.1:8765`。
 - `agent/runtime/RuntimeEventStore` 把 WebUI runtime 事件 append 到 `memory/runtime/events.jsonl`
 - 每个用户 turn 生成 `turn_id`，写入 `history.jsonl`、checkpoint 上下文和所有 runtime 事件
 - `/api/bootstrap.runtime.events` 只返回未压缩 turn 的事件；`useRuntime.ts` 用它重建工具调用、队友轨迹、AskCard、PlanCard 与错误状态
+- Chat turn 与 Scheduler run 会登记到 `agent/runtime/active.py` 的进程内 active task registry；`POST /api/runtime/stop`、WebUI 停止按钮和 `/stop` 共用它取消当前可见任务，并发出 `runtime_task_cancelled`
 - localStorage 只是热缓存兜底；后端冷记录是刷新/重启恢复的事实来源
 - 压缩前的细节仍保留在 `memory/runtime/events.jsonl`，但 Chat 当前页面只展示未压缩 turn
 
@@ -177,7 +178,8 @@ Vite 会代理 `/api` 与 `/ws` 到 `127.0.0.1:8765`。
 - `tool_call` / `tool_result` / `tool_error`
 - `subagent_*`（start/delta/tool_call/tool_result/done/error）
 - `team_*`（member_update/message/run_start/run_delta/run_tool_call/run_tool_result/run_done/run_error）
-- `scheduler_*`（job_update/run_start/run_done/run_error）
+- `scheduler_*`（job_update/run_start/run_done/run_error/run_cancelled）
+- `runtime_task_cancelled`
 - `control_mode_update`
 - `ask_request` / `ask_answered`
 - `plan_draft` / `plan_comment_added` / `plan_approved`
@@ -261,6 +263,7 @@ Vite 会代理 `/api` 与 `/ws` 到 `127.0.0.1:8765`。
 - Scheduler job 执行时会设置 scheduler context，禁止递归创建新的 scheduler job；`agent_turn` 会写入 history/runtime，`team_wake` 会走 TeamManager inbox+wake，`system_event` 只能由系统代码注册。
 - WebUI 启动会登记受保护系统任务：`memory-maintenance`、`runtime-maintenance`、`team-stale-recovery`、`token-ledger-maintenance`、`watchlist-check`。它们可见、可手动运行、可暂停/恢复，但不能删除；Memory 页展示维护任务状态摘要，并提供 `memory/watchlist.md` 编辑与手动检查入口。
 - Watchlist heartbeat 先用次模型做 deliverability filter：空清单或不及时的事项只记录 `skip`；只有 `run` 决策才包装为本地主动 `agent_turn`，避免长期心跳污染 Chat。
+- `/stop` 与 Chat 停止按钮只取消 active task registry 中登记的运行任务；不要在 UI 里直接改 busy 状态绕过后端取消事件。
 - v1 同一时间只允许一个 pending ask 或 plan；扩展时优先保持 `agent/control/` 的模型、store、manager、policy 分层。
 
 ### Slash Skill Picker

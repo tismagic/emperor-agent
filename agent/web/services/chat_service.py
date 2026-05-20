@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 from typing import TYPE_CHECKING, Any
 
@@ -133,9 +134,21 @@ class ChatService:
                     await self.state._broadcast_event(event, turn_id=turn_id)
 
                 try:
-                    await self.state.loop.runner.step_stream(self.state.history, emit, turn_id=turn_id)
+                    await self.state.active_tasks.run(
+                        task_id=f"turn:{turn_id}",
+                        kind="turn",
+                        label="Chat turn",
+                        awaitable=self.state.loop.runner.step_stream(
+                            self.state.history,
+                            emit,
+                            turn_id=turn_id,
+                        ),
+                        turn_id=turn_id,
+                    )
                 except TurnPaused:
                     pass
+                except asyncio.CancelledError:
+                    logger.info("Chat turn {} cancelled", turn_id)
                 finally:
                     self.state.active_turn = False
         except TurnPaused:
@@ -288,9 +301,21 @@ class ChatService:
                 await self.state._broadcast_event(event, turn_id=turn_id)
 
             try:
-                await self.state.loop.runner.step_stream(self.state.history, emit, turn_id=turn_id)
+                await self.state.active_tasks.run(
+                    task_id=f"turn:{turn_id}",
+                    kind="turn",
+                    label="Control resume turn",
+                    awaitable=self.state.loop.runner.step_stream(
+                        self.state.history,
+                        emit,
+                        turn_id=turn_id,
+                    ),
+                    turn_id=turn_id,
+                )
             except TurnPaused:
                 pass
+            except asyncio.CancelledError:
+                logger.info("Control resume turn {} cancelled", turn_id)
             finally:
                 self.state.active_turn = False
 

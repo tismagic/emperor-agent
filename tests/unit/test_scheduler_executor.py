@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Any
 
 from agent.scheduler import SchedulerJob, SchedulerPayload, SchedulerSchedule
+from agent.runtime.active import ActiveTaskRegistry
 from agent.web.services.scheduler_executor import SchedulerJobExecutor
 
 
@@ -59,6 +60,7 @@ class FakeState:
         self.history: list[dict[str, Any]] = []
         self.events: list[dict[str, Any]] = []
         self.active_turn = False
+        self.active_tasks = ActiveTaskRegistry()
         self._turn = 0
         self._pending: dict[str, Any] | None = None
 

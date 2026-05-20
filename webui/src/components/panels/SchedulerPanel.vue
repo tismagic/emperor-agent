@@ -205,6 +205,7 @@ function runStatusLabel(status?: string) {
   if (status === 'ok') return 'OK'
   if (status === 'error') return 'Error'
   if (status === 'skipped') return 'Skipped'
+  if (status === 'cancelled') return 'Cancelled'
   return status || '-'
 }
 

@@ -319,6 +319,10 @@
     @apply border-seal/35 bg-seal/10;
   }
 
+  .scheduler-run.cancelled {
+    @apply border-amber/35 bg-amber/10;
+  }
+
   .scheduler-run p {
     @apply mt-2 font-mono text-xs text-ink;
   }

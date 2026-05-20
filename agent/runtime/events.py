@@ -83,3 +83,11 @@ def scheduler_run_done(job: dict[str, Any]) -> dict[str, Any]:
 
 def scheduler_run_error(job: dict[str, Any], *, error: str) -> dict[str, Any]:
     return runtime_event("scheduler_run_error", job=job, error=error)
+
+
+def scheduler_run_cancelled(job: dict[str, Any], *, reason: str = "cancelled") -> dict[str, Any]:
+    return runtime_event("scheduler_run_cancelled", job=job, reason=reason)
+
+
+def runtime_task_cancelled(task: dict[str, Any], *, reason: str = "cancelled") -> dict[str, Any]:
+    return runtime_event("runtime_task_cancelled", task=task, reason=reason)
