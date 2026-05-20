@@ -127,6 +127,11 @@ export interface RuntimeStats {
   latestTs?: number | null
   activeTurnEvents?: number
   activeTurns?: number
+  archiveFiles?: number
+  archiveBytes?: number
+  archives?: Array<{ path: string; bytes: number; updatedAt?: number }>
+  lastArchiveAt?: number | string | null
+  needsRotation?: boolean
 }
 
 export interface HistoryArchiveInfo {

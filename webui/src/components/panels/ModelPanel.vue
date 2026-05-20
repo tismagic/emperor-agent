@@ -10,7 +10,9 @@ import type {
   ProviderOption,
   ProviderRegion,
 } from '../../types'
-import { actionAssets, brandAssets, modelAssets } from '../../assets'
+import { actionAssets, brandAssets } from '../../assets'
+import ModelEntryList from './model/ModelEntryList.vue'
+import ModelTestPanel from './model/ModelTestPanel.vue'
 
 const props = defineProps<{ payload: ModelConfigPayload | null }>()
 const emit = defineEmits<{
@@ -400,10 +402,6 @@ async function runTest(kind: 'text' | 'vision', role: 'main' | 'secondary' = 'ma
   }
 }
 
-function truncate(s: string | undefined, n: number): string {
-  if (!s) return ''
-  return s.length > n ? s.slice(0, n) + '…' : s
-}
 </script>
 
 <template>
@@ -419,56 +417,14 @@ function truncate(s: string | undefined, n: number): string {
     </div>
 
     <div v-else class="entry-layout">
-      <!-- 左：条目列表 -->
-      <aside class="entry-list-pane">
-        <header class="entry-list-head">
-          <div class="entry-list-title">
-            <span>模型条目</span>
-            <small>{{ entries.length }} 条 · 圆点 = 当前激活</small>
-          </div>
-          <button class="tool-button compact" @click="addEntry">+ 添加</button>
-        </header>
-        <div class="entry-list">
-          <div
-            v-for="(e, idx) in entries"
-            :key="idx"
-            class="entry-item"
-            :class="{ active: idx === editingIndex, default: e.name === defaultName }"
-            @click="pickEditing(idx)"
-          >
-            <div class="entry-meta">
-              <div class="entry-title">
-                <span>{{ e.label || e.name }}</span>
-                <span
-                  v-if="e.supportsVision"
-                  class="entry-vision-eye"
-                  title="此条目已通过视觉测试，可接收图片附件"
-                  aria-label="视觉已激活"
-                >
-                  <img :src="modelAssets.vision" alt="" width="18" height="18" />
-                </span>
-              </div>
-              <div class="entry-sub">
-                <code>{{ e.provider }}</code> ·
-                <code>{{ e.mainModelId || e.id || '(no main)' }}</code>
-                /
-                <code :class="{ 'text-seal': !e.secondaryModelId }">{{ e.secondaryModelId || '需补次模型' }}</code>
-              </div>
-            </div>
-            <span
-              v-if="e.name === defaultName"
-              class="entry-active-badge"
-              title="此条目当前为激活状态"
-            >✓ 激活中</span>
-            <button
-              v-else
-              class="entry-activate-btn"
-              title="切换为激活条目（保存后生效）"
-              @click.stop="setActive(idx)"
-            >设为激活</button>
-          </div>
-        </div>
-      </aside>
+      <ModelEntryList
+        :entries="entries"
+        :default-name="defaultName"
+        :editing-index="editingIndex"
+        @add="addEntry"
+        @pick="pickEditing"
+        @set-active="setActive"
+      />
 
       <!-- 右：编辑器 -->
       <section v-if="editing" class="entry-editor">
@@ -617,82 +573,13 @@ function truncate(s: string | undefined, n: number): string {
             </div>
           </details>
 
-          <!-- 连通测试：文本 / 视觉 ─ 视觉通过后自动给本条目打能力标记 -->
-          <div class="test-row">
-            <div class="test-label">
-              <span>连通测试</span>
-              <small class="hint">
-                用一次最小请求验证 entry 是否能跑；视觉测试通过会自动给本条目打视觉标记
-              </small>
-            </div>
-            <div class="test-actions">
-              <button
-                type="button"
-                class="tool-button model-test-button"
-                :disabled="hasChanges || testing.mainText"
-                :title="hasChanges ? '请先保存配置再测试' : '发一次 ping（约消耗几十 token）'"
-                @click="runTest('text', 'main')"
-              >
-                <img class="model-test-icon" :src="modelAssets.text" alt="" width="22" height="22" />
-                <span v-if="testing.mainText">…测试中</span>
-                <span v-else>测试主模型</span>
-              </button>
-              <button
-                type="button"
-                class="tool-button model-test-button"
-                :disabled="hasChanges || testing.secondaryText || !editing.secondaryModelId"
-                :title="!editing.secondaryModelId ? '请先填写 Secondary Model ID' : hasChanges ? '请先保存配置再测试' : '发一次 ping 验证次模型'"
-                @click="runTest('text', 'secondary')"
-              >
-                <img class="model-test-icon" :src="modelAssets.text" alt="" width="22" height="22" />
-                <span v-if="testing.secondaryText">…测试中</span>
-                <span v-else>测试次模型</span>
-              </button>
-              <button
-                type="button"
-                class="tool-button model-test-button"
-                :disabled="hasChanges || testing.vision"
-                :title="hasChanges
-                  ? '请先保存配置再测试'
-                  : '发一张红色测试图（约几十 token）；通过即标视觉能力'"
-                @click="runTest('vision', 'main')"
-              >
-                <img class="model-test-icon" :src="modelAssets.vision" alt="" width="22" height="22" />
-                <span v-if="testing.vision">…测试中</span>
-                <span v-else>测试视觉</span>
-              </button>
-            </div>
-            <div
-              v-if="lastResult"
-              class="test-result"
-              :class="{ ok: lastResult.ok, fail: !lastResult.ok }"
-            >
-              <template v-if="lastResult.ok">
-                <span class="badge with-icon">
-                  <img :src="modelAssets.testOk" alt="" width="18" height="18" />
-                  {{ lastResult.kind === 'vision' ? '视觉通' : '文本通' }}
-                </span>
-                <span class="meta">
-                  {{ lastResult.latencyMs }}ms · {{ lastResult.modelRole || 'main' }} · {{ lastResult.model }}
-                </span>
-                <code class="sample">{{ lastResult.sample }}</code>
-                <span
-                  v-if="lastResult.kind === 'vision' && lastResult.visionMarked"
-                  class="meta jade"
-                >已自动写入视觉标记</span>
-              </template>
-              <template v-else>
-                <span class="badge with-icon">
-                  <img :src="modelAssets.testFail" alt="" width="18" height="18" />
-                  失败
-                </span>
-                <span class="meta" :title="lastResult.error">
-                  {{ truncate(lastResult.error, 100) }}
-                </span>
-                <code v-if="lastResult.sample" class="sample">{{ lastResult.sample }}</code>
-              </template>
-            </div>
-          </div>
+          <ModelTestPanel
+            :editing="editing"
+            :has-changes="hasChanges"
+            :testing="testing"
+            :last-result="lastResult"
+            @run-test="runTest"
+          />
         </div>
       </section>
     </div>

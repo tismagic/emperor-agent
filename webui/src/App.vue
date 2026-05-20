@@ -263,13 +263,13 @@ async function handlePlanCommand(raw: string) {
   const [, arg = 'status'] = raw.trim().split(/\s+/, 2)
   const normalized = arg.toLowerCase()
   if (normalized === 'on' || normalized === 'plan') {
-    await setControlMode('plan')
-    addLocalCommand(raw, 'Plan 模式已开启：只读探索、提问、计划预览；批准前不会执行写操作。')
+    const result = await setControlMode('plan')
+    addLocalCommand(raw, result.ok ? 'Plan 模式已开启：只读探索、提问、计划预览；批准前不会执行写操作。' : `Plan 模式开启失败：${result.error}`)
     return
   }
   if (normalized === 'off' || normalized === 'normal') {
-    await setControlMode('ask_before_edit')
-    addLocalCommand(raw, 'Plan 模式已关闭，已回到编辑前询问模式。')
+    const result = await setControlMode('ask_before_edit')
+    addLocalCommand(raw, result.ok ? 'Plan 模式已关闭，已回到编辑前询问模式。' : `Plan 模式关闭失败：${result.error}`)
     return
   }
   const pending = boot.value?.control?.pending
@@ -286,18 +286,18 @@ async function handleModeCommand(raw: string) {
   const [, arg = 'status'] = raw.trim().split(/\s+/, 2)
   const normalized = arg.toLowerCase()
   if (['ask', 'ask_before_edit', 'edit_before_ask'].includes(normalized)) {
-    await setControlMode('ask_before_edit')
-    addLocalCommand(raw, '权限模式已切换为：编辑前询问。')
+    const result = await setControlMode('ask_before_edit')
+    addLocalCommand(raw, result.ok ? '权限模式已切换为：编辑前询问。' : `权限模式切换失败：${result.error}`)
     return
   }
   if (normalized === 'auto') {
-    await setControlMode('auto')
-    addLocalCommand(raw, '权限模式已切换为：自动执行。')
+    const result = await setControlMode('auto')
+    addLocalCommand(raw, result.ok ? '权限模式已切换为：自动执行。' : `权限模式切换失败：${result.error}`)
     return
   }
   if (normalized === 'plan') {
-    await setControlMode('plan')
-    addLocalCommand(raw, '权限模式已切换为：计划模式。')
+    const result = await setControlMode('plan')
+    addLocalCommand(raw, result.ok ? '权限模式已切换为：计划模式。' : `权限模式切换失败：${result.error}`)
     return
   }
   addLocalCommand(raw, renderModeStatus())
@@ -314,17 +314,24 @@ function renderModeStatus() {
   ].join('\n')
 }
 
-async function setControlMode(mode: 'ask_before_edit' | 'auto' | 'plan') {
-  const res = await fetch('/api/control/mode', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ mode }),
-  })
-  const data = await res.json()
-  if (!res.ok) throw new Error(data?.error || '切换权限模式失败')
-  if (boot.value) boot.value.control = data
-  const label = mode === 'plan' ? '计划模式' : mode === 'auto' ? '自动执行' : '编辑前询问'
-  showToast(`已切换为${label}`)
+async function setControlMode(mode: 'ask_before_edit' | 'auto' | 'plan'): Promise<{ ok: boolean; error?: string }> {
+  try {
+    const res = await fetch('/api/control/mode', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ mode }),
+    })
+    const data = await res.json().catch(() => ({}))
+    if (!res.ok) throw new Error(data?.error || res.statusText || '切换权限模式失败')
+    if (boot.value) boot.value.control = data
+    const label = mode === 'plan' ? '计划模式' : mode === 'auto' ? '自动执行' : '编辑前询问'
+    showToast(`已切换为${label}`)
+    return { ok: true }
+  } catch (err) {
+    const error = err instanceof Error ? err.message : String(err)
+    showToast(error)
+    return { ok: false, error }
+  }
 }
 
 function renderModelInfo() {

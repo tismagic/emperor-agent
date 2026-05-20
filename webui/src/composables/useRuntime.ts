@@ -9,6 +9,8 @@ import {
 } from '../runtime/persistence'
 import { replayRuntimeEvents } from '../runtime/reducer'
 import { findSubagent, findSubagentTool, findToolSegment } from '../runtime/selectors'
+import { applySchedulerEventToBootstrap } from '../runtime/handlers/scheduler'
+import { applyTeamEventToBootstrap } from '../runtime/handlers/team'
 
 function nextId(prefix: string) {
   const random = typeof crypto !== 'undefined' && 'randomUUID' in crypto ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(16).slice(2)}`
@@ -806,38 +808,7 @@ export function useRuntime(options: {
   function updateTeamBootstrap(data: WsEvent) {
     const boot = options.boot.value
     if (!boot) return
-    boot.team ||= { members: [], leadInbox: [], leadUnread: 0, config: { members: [] } }
-
-    if (data.event === 'team_member_update' && data.member) {
-      const index = boot.team.members.findIndex((member) => member.name === data.member!.name)
-      if (index >= 0) {
-        boot.team.members[index] = { ...boot.team.members[index], ...data.member }
-      } else {
-        boot.team.members.push(data.member)
-      }
-      if (boot.team.config) boot.team.config.members = boot.team.members
-      return
-    }
-
-    if (data.event === 'team_message' && data.message) {
-      if (data.message.to === 'lead') {
-        boot.team.leadInbox ||= []
-        if (!boot.team.leadInbox.some((msg) => msg.id === data.message!.id)) {
-          boot.team.leadInbox.push(data.message)
-          boot.team.leadInbox = boot.team.leadInbox.slice(-50)
-        }
-        boot.team.leadUnread = (boot.team.leadUnread || 0) + 1
-      }
-      const target = boot.team.members.find((member) => member.name === data.message!.to)
-      if (target) {
-        target.recent_messages ||= []
-        if (!target.recent_messages.some((msg) => msg.id === data.message!.id)) {
-          target.recent_messages.push(data.message)
-          target.recent_messages = target.recent_messages.slice(-5)
-        }
-        target.unread = (target.unread || 0) + 1
-      }
-    }
+    applyTeamEventToBootstrap(boot, data, { countUnread: !rehydrating })
   }
 
   function handleSchedulerEvent(data: WsEvent) {
@@ -865,28 +836,8 @@ export function useRuntime(options: {
 
   function updateSchedulerBootstrap(data: WsEvent) {
     const boot = options.boot.value
-    if (!boot || !('job' in data) || !data.job) return
-    boot.scheduler ||= {
-      status: { running: false, jobs: 0, enabled: 0, nextRunAtMs: null, lastError: null },
-      jobs: [],
-    }
-    const jobs = boot.scheduler.jobs || []
-    const index = jobs.findIndex((job) => job.id === data.job!.id)
-    if (data.event === 'scheduler_job_update' && data.action === 'deleted') {
-      if (index >= 0) jobs.splice(index, 1)
-    } else if (index >= 0) {
-      jobs[index] = data.job
-    } else {
-      jobs.push(data.job)
-    }
-    boot.scheduler.jobs = jobs.slice().sort((a, b) => Number(a.state?.nextRunAtMs || Infinity) - Number(b.state?.nextRunAtMs || Infinity))
-    boot.scheduler.status.jobs = boot.scheduler.jobs.length
-    boot.scheduler.status.enabled = boot.scheduler.jobs.filter((job) => job.enabled).length
-    boot.scheduler.status.nextRunAtMs = boot.scheduler.jobs
-      .filter((job) => job.enabled && job.state?.nextRunAtMs)
-      .map((job) => Number(job.state.nextRunAtMs))
-      .sort((a, b) => a - b)[0] || null
-    boot.scheduler.status.lastError = boot.scheduler.jobs.find((job) => job.state?.lastStatus === 'error')?.state.lastError || null
+    if (!boot) return
+    applySchedulerEventToBootstrap(boot, data)
   }
 
   function handleChatError(message: string) {

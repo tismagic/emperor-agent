@@ -51,7 +51,7 @@ export interface AppContext {
   saveWatchlist: (content: string) => Promise<void>
   checkWatchlist: () => Promise<WatchlistDecision>
 
-  setControlMode: (mode: 'ask_before_edit' | 'auto' | 'plan') => Promise<void>
+  setControlMode: (mode: 'ask_before_edit' | 'auto' | 'plan') => Promise<{ ok: boolean; error?: string }>
   sendMessage: (payload: string | ChatSendPayload) => boolean
   sendInteractionAnswer: (interactionId: string, answers: Record<string, unknown>) => boolean
   sendPlanComment: (interactionId: string, comment: string) => boolean

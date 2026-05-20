@@ -154,7 +154,7 @@ function formatNumber(value?: number) {
 
     <div v-if="runtimeStats" class="memory-stats-grid">
       <div class="memory-stat-card">
-        <span>Runtime 冷记录</span>
+        <span>Runtime 热记录</span>
         <strong>{{ formatBytes(runtimeStats.bytes) }}</strong>
         <small>{{ formatNumber(runtimeStats.events) }} 个事件 · seq {{ formatNumber(runtimeStats.latestSeq) }}</small>
       </div>
@@ -164,9 +164,9 @@ function formatNumber(value?: number) {
         <small>{{ formatNumber(runtimeStats.activeTurnEvents) }} 个可重放事件</small>
       </div>
       <div class="memory-stat-card">
-        <span>最新事件</span>
-        <strong>{{ runtimeStats.latestTs ? new Date(runtimeStats.latestTs * 1000).toLocaleDateString('zh-CN') : '暂无' }}</strong>
-        <small>{{ runtimeStats.path || 'memory/runtime/events.jsonl' }}</small>
+        <span>Runtime 冷归档</span>
+        <strong>{{ formatBytes(runtimeStats.archiveBytes) }}</strong>
+        <small>{{ formatNumber(runtimeStats.archiveFiles) }} 个 gzip 文件</small>
       </div>
     </div>
 
