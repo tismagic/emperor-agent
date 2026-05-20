@@ -272,6 +272,7 @@ export interface BootstrapPayload {
   memory: MemoryPayload
   modelConfig: ModelConfigPayload
   team?: TeamPayload
+  scheduler?: SchedulerPayload
   control?: ControlPayload
   runtime?: RuntimeReplayPayload
   context_used?: number
@@ -498,6 +499,68 @@ export interface TeamMemberPayload {
   thread: Array<{ role?: string; content?: string }>
 }
 
+export type SchedulerScheduleKind = 'at' | 'every' | 'cron' | string
+export type SchedulerPayloadKind = 'agent_turn' | 'team_wake' | 'system_event' | string
+export type SchedulerRunStatus = 'ok' | 'error' | 'skipped' | string
+
+export interface SchedulerSchedule {
+  kind: SchedulerScheduleKind
+  atMs?: number | null
+  everyMs?: number | null
+  expr?: string | null
+  tz?: string | null
+}
+
+export interface SchedulerJobPayload {
+  kind: SchedulerPayloadKind
+  message: string
+  target?: string | null
+  deliver?: boolean
+  meta?: Record<string, unknown>
+}
+
+export interface SchedulerRunRecord {
+  runAtMs: number
+  status: SchedulerRunStatus
+  durationMs?: number
+  error?: string | null
+}
+
+export interface SchedulerJobState {
+  nextRunAtMs?: number | null
+  lastRunAtMs?: number | null
+  lastStatus?: SchedulerRunStatus | null
+  lastError?: string | null
+  runHistory?: SchedulerRunRecord[]
+}
+
+export interface SchedulerJob {
+  id: string
+  name: string
+  enabled: boolean
+  schedule: SchedulerSchedule
+  payload: SchedulerJobPayload
+  state: SchedulerJobState
+  createdAtMs?: number
+  updatedAtMs?: number
+  deleteAfterRun?: boolean
+  protected?: boolean
+  purpose?: string | null
+}
+
+export interface SchedulerStatusPayload {
+  running: boolean
+  jobs: number
+  enabled: number
+  nextRunAtMs?: number | null
+  lastError?: string | null
+}
+
+export interface SchedulerPayload {
+  status: SchedulerStatusPayload
+  jobs: SchedulerJob[]
+}
+
 export type WsEvent = ({ seq?: number; ts?: number; turn_id?: string; client_message_id?: string } & (
   | { event: 'ready'; model?: string; provider?: string; latest_seq?: number; replay_count?: number; resume_from?: number; busy?: boolean; control?: ControlPayload }
   | { event: 'user_message'; content?: string; attachments?: AttachmentRef[] }
@@ -533,4 +596,8 @@ export type WsEvent = ({ seq?: number; ts?: number; turn_id?: string; client_mes
   | { event: 'team_run_tool_error'; parent_id?: string; teammate?: string; id?: string; name?: string; message?: string }
   | { event: 'team_run_done'; parent_id?: string; teammate?: string; summary?: string }
   | { event: 'team_run_error'; parent_id?: string; teammate?: string; message?: string }
+  | { event: 'scheduler_job_update'; job?: SchedulerJob; action?: string }
+  | { event: 'scheduler_run_start'; job?: SchedulerJob }
+  | { event: 'scheduler_run_done'; job?: SchedulerJob }
+  | { event: 'scheduler_run_error'; job?: SchedulerJob; error?: string }
 ))

@@ -50,6 +50,8 @@ const navTools = new URL('../../assets/nav/nav-tools.png', import.meta.url).href
 const navToolsActive = new URL('../../assets/nav/nav-tools-active.png', import.meta.url).href
 const navTeam = new URL('../../assets/nav/nav-team.png', import.meta.url).href
 const navTeamActive = new URL('../../assets/nav/nav-team-active.png', import.meta.url).href
+const navScheduler = new URL('../../assets/nav/nav-scheduler.png', import.meta.url).href
+const navSchedulerActive = new URL('../../assets/nav/nav-scheduler-active.png', import.meta.url).href
 const navConfigs = new URL('../../assets/nav/nav-configs.png', import.meta.url).href
 const navConfigsActive = new URL('../../assets/nav/nav-configs-active.png', import.meta.url).href
 const navMcp = new URL('../../assets/nav/nav-mcp.png', import.meta.url).href
@@ -134,6 +136,8 @@ export const navAssets = {
   toolsActive: navToolsActive,
   team: navTeam,
   teamActive: navTeamActive,
+  scheduler: navScheduler,
+  schedulerActive: navSchedulerActive,
   configs: navConfigs,
   configsActive: navConfigsActive,
   mcp: navMcp,

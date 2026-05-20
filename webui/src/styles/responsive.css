@@ -8,7 +8,13 @@
     grid-template-rows: minmax(0, 1fr) auto;
   }
 
-  .team-detail {
+  .scheduler-layout {
+    grid-template-columns: minmax(220px, 280px) minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr) auto;
+  }
+
+  .team-detail,
+  .scheduler-detail {
     grid-column: 1 / -1;
     max-height: 22rem;
   }
@@ -77,22 +83,27 @@
     @apply max-h-48;
   }
 
-  .team-layout {
+  .team-layout,
+  .scheduler-layout {
     grid-template-columns: 1fr;
     grid-template-rows: auto minmax(22rem, 1fr) auto;
   }
 
-  .team-roster {
+  .team-roster,
+  .scheduler-roster {
     max-height: 32rem;
   }
 
-  .team-detail {
+  .team-detail,
+  .scheduler-detail {
     grid-column: auto;
     max-height: none;
   }
 
   .team-action-row,
-  .team-form-row {
+  .team-form-row,
+  .scheduler-action-grid,
+  .scheduler-meta-grid {
     @apply grid-cols-1;
   }
 

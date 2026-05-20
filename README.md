@@ -16,6 +16,7 @@
   <img src="assets/nav/nav-skills-active.png"  width="42" alt="Skills" />
   <img src="assets/nav/nav-tools-active.png"   width="42" alt="Tools" />
   <img src="assets/nav/nav-team-active.png"    width="42" alt="Team" />
+  <img src="assets/nav/nav-scheduler-active.png" width="42" alt="Scheduler" />
   <img src="assets/nav/nav-configs-active.png" width="42" alt="Configs" />
   <img src="assets/nav/nav-mcp-active.png"     width="42" alt="MCP" />
   <img src="assets/nav/nav-memory-active.png"  width="42" alt="Memory" />
@@ -233,14 +234,14 @@ webui/                          前端工作台（Vue 3 + Vite + Tailwind + vue-
     │   ├── chat/                       MessageList / AssistantFlow / ToolEvent / SubagentTrail / TodoPanel / Composer / PendingBar / MarkdownBlock / ExpandableText
     │   └── panels/                     ModelPanel / TokensPanel / SkillsPanel / ToolsPanel / ConfigPanel / MemoryPanel
     ├── runtime/                        events / reducer / selectors / persistence
-    └── views/                          ChatView / ModelView / TokensView / SkillsView / ToolsView / ConfigsView / MemoryView
+    └── views/                          ChatView / ModelView / TokensView / SkillsView / ToolsView / TeamView / SchedulerView / ConfigsView / MemoryView
 ```
 
 ---
 
 ## 🗺️ WebUI 架构
 
-二列布局：左侧 **NavRail**（品牌、状态、4 项指标、9 项导航、清屏按钮）+ 右侧 **RouterView**。每个功能一个独立路由，主区独占全宽。
+二列布局：左侧 **NavRail**（品牌、状态、4 项指标、10 项导航、清屏按钮）+ 右侧 **RouterView**。每个功能一个独立路由，主区独占全宽。
 
 | | 路由 | 视图 | 用途 |
 |---|---|---|---|
@@ -250,6 +251,7 @@ webui/                          前端工作台（Vue 3 + Vite + Tailwind + vue-
 | <img src="assets/nav/nav-skills.png"  width="28" alt="" /> | `/skills` `/skills/:name`  | SkillsView  | 列表 + SKILL.md 编辑器 |
 | <img src="assets/nav/nav-tools.png"   width="28" alt="" /> | `/tools`                   | ToolsView   | 注册的工具与 MCP 工具一览 |
 | <img src="assets/nav/nav-team.png"    width="28" alt="" /> | `/team`                    | TeamView    | Agent Team 队友、Inbox、执行轨迹 |
+| <img src="assets/nav/nav-scheduler.png" width="28" alt="" /> | `/scheduler`             | SchedulerView | 本地长期任务、运行历史与手动调度 |
 | <img src="assets/nav/nav-configs.png" width="28" alt="" /> | `/configs` `/configs/:path(.*)` | ConfigsView | TOOL.md / USER.md 编辑器 |
 | <img src="assets/nav/nav-mcp.png"     width="28" alt="" /> | `/mcp`                     | McpView     | MCP 服务器配置（JSON 编辑器 + 已加载工具列表） |
 | <img src="assets/nav/nav-memory.png"  width="28" alt="" /> | `/memory`                  | MemoryView  | 长期记忆、今日情景、历史归档列表 |

@@ -212,6 +212,153 @@
     @apply rounded-[1rem] border border-seal/30 bg-seal/10 px-3 py-2 text-xs leading-6 text-seal;
   }
 
+  .scheduler-panel {
+    @apply overflow-hidden;
+  }
+
+  .scheduler-layout {
+    @apply grid h-full min-h-0 gap-4;
+    grid-template-columns: minmax(260px, 330px) minmax(0, 1fr) minmax(270px, 360px);
+  }
+
+  .scheduler-roster,
+  .scheduler-timeline,
+  .scheduler-detail {
+    @apply flex min-h-0 flex-col overflow-hidden rounded-[1.45rem] border border-line/70 bg-paper/70 shadow-insetPaper;
+  }
+
+  .scheduler-summary {
+    @apply grid shrink-0 grid-cols-2 gap-2 border-b border-line/60 bg-paper2/30 p-3;
+  }
+
+  .scheduler-summary div {
+    @apply rounded-[1rem] border border-line/55 bg-paper/70 px-3 py-2;
+  }
+
+  .scheduler-summary span {
+    @apply block font-mono text-[10px] uppercase tracking-[0.14em] text-muted;
+  }
+
+  .scheduler-summary strong {
+    @apply mt-1 block truncate font-display text-sm font-black text-ink;
+  }
+
+  .scheduler-job-list {
+    @apply flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto p-3;
+  }
+
+  .scheduler-job-row {
+    @apply flex min-h-[5.2rem] w-full items-center gap-3 rounded-[1.2rem] border border-line/55 bg-paper2/45 px-3 py-2 text-left transition hover:border-jade/30 hover:bg-paper/80;
+  }
+
+  .scheduler-job-row.active {
+    @apply border-jade/40 bg-jade/10 shadow-insetPaper;
+  }
+
+  .scheduler-job-row.paused {
+    @apply opacity-70;
+  }
+
+  .scheduler-job-row.error {
+    @apply border-seal/35 bg-seal/10;
+  }
+
+  .scheduler-job-row strong {
+    @apply block truncate font-display text-base font-black text-ink;
+  }
+
+  .scheduler-job-row small {
+    @apply mt-0.5 block truncate font-mono text-[10px] text-muted;
+  }
+
+  .scheduler-job-row em {
+    @apply shrink-0 rounded-full border border-line/60 bg-paper px-2 py-1 text-[10px] not-italic text-muted;
+  }
+
+  .scheduler-job-icon {
+    @apply size-11 shrink-0 rounded-xl border border-line/60 bg-paper/80;
+    image-rendering: pixelated;
+  }
+
+  .scheduler-create {
+    @apply flex shrink-0 flex-col gap-2 border-t border-line/60 bg-paper2/35 p-3;
+  }
+
+  .scheduler-create input,
+  .scheduler-create select,
+  .scheduler-create textarea,
+  .scheduler-detail-body input,
+  .scheduler-detail-body textarea {
+    @apply rounded-[1rem] px-3 py-2 text-xs;
+  }
+
+  .scheduler-check {
+    @apply inline-flex items-center gap-2 rounded-[0.85rem] border border-line/50 bg-paper/55 px-3 py-2 text-xs text-muted;
+  }
+
+  .scheduler-check input {
+    @apply size-4;
+  }
+
+  .scheduler-run-scroll {
+    @apply min-h-0 flex-1 space-y-3 overflow-y-auto p-4;
+    background:
+      linear-gradient(90deg, transparent, rgb(var(--line) / 0.08) 49%, rgb(var(--line) / 0.08) 51%, transparent),
+      radial-gradient(circle at 50% 0%, rgb(var(--jade) / 0.08), transparent 28rem);
+  }
+
+  .scheduler-run {
+    @apply rounded-[1.15rem] border border-line/60 bg-paper/80 px-4 py-3 text-sm shadow-sm;
+  }
+
+  .scheduler-run.ok {
+    @apply border-jade/25 bg-jade/10;
+  }
+
+  .scheduler-run.error {
+    @apply border-seal/35 bg-seal/10;
+  }
+
+  .scheduler-run p {
+    @apply mt-2 font-mono text-xs text-ink;
+  }
+
+  .scheduler-run small {
+    @apply mt-2 block whitespace-pre-wrap break-words text-xs leading-6 text-seal;
+  }
+
+  .scheduler-empty {
+    @apply grid min-h-[10rem] place-items-center rounded-[1.2rem] border border-dashed border-line/70 bg-paper2/35 text-sm text-muted;
+  }
+
+  .scheduler-detail-body {
+    @apply flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto p-4;
+  }
+
+  .scheduler-detail-body.muted {
+    @apply justify-center text-center text-muted;
+  }
+
+  .scheduler-meta-grid {
+    @apply grid grid-cols-2 gap-2;
+  }
+
+  .scheduler-meta-grid span {
+    @apply min-w-0 rounded-[1rem] border border-line/55 bg-paper2/35 px-3 py-2 text-xs text-ink;
+  }
+
+  .scheduler-meta-grid b {
+    @apply mb-1 block font-mono text-[10px] uppercase tracking-[0.14em] text-muted;
+  }
+
+  .scheduler-action-grid {
+    @apply grid grid-cols-2 gap-2;
+  }
+
+  .scheduler-action-grid .tool-button {
+    @apply min-h-11 rounded-[1rem] px-2 text-xs;
+  }
+
   .model-form {
     @apply grid min-h-0 flex-1 grid-cols-2 gap-3 overflow-y-auto pr-1;
   }

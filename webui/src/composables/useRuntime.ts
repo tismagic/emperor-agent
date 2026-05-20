@@ -450,6 +450,11 @@ export function useRuntime(options: {
       return
     }
 
+    if (data.event.startsWith('scheduler_')) {
+      handleSchedulerEvent(data)
+      return
+    }
+
     handleSubagentEvent(data)
   }
 
@@ -796,6 +801,51 @@ export function useRuntime(options: {
         target.unread = (target.unread || 0) + 1
       }
     }
+  }
+
+  function handleSchedulerEvent(data: WsEvent) {
+    updateSchedulerBootstrap(data)
+    if (data.event === 'scheduler_run_start') {
+      updatePending('Scheduler 正在执行任务', data.job?.name || data.job?.id || '')
+      return
+    }
+    if (data.event === 'scheduler_run_done') {
+      updatePending('Scheduler 任务已完成', data.job?.name || data.job?.id || '', 'done')
+      return
+    }
+    if (data.event === 'scheduler_run_error') {
+      updatePending('Scheduler 任务失败', data.error || data.job?.state?.lastError || '', 'error')
+      return
+    }
+    if (data.event === 'scheduler_job_update') {
+      updatePending('Scheduler 任务已更新', data.action || '', 'done')
+    }
+  }
+
+  function updateSchedulerBootstrap(data: WsEvent) {
+    const boot = options.boot.value
+    if (!boot || !('job' in data) || !data.job) return
+    boot.scheduler ||= {
+      status: { running: false, jobs: 0, enabled: 0, nextRunAtMs: null, lastError: null },
+      jobs: [],
+    }
+    const jobs = boot.scheduler.jobs || []
+    const index = jobs.findIndex((job) => job.id === data.job!.id)
+    if (data.event === 'scheduler_job_update' && data.action === 'deleted') {
+      if (index >= 0) jobs.splice(index, 1)
+    } else if (index >= 0) {
+      jobs[index] = data.job
+    } else {
+      jobs.push(data.job)
+    }
+    boot.scheduler.jobs = jobs.slice().sort((a, b) => Number(a.state?.nextRunAtMs || Infinity) - Number(b.state?.nextRunAtMs || Infinity))
+    boot.scheduler.status.jobs = boot.scheduler.jobs.length
+    boot.scheduler.status.enabled = boot.scheduler.jobs.filter((job) => job.enabled).length
+    boot.scheduler.status.nextRunAtMs = boot.scheduler.jobs
+      .filter((job) => job.enabled && job.state?.nextRunAtMs)
+      .map((job) => Number(job.state.nextRunAtMs))
+      .sort((a, b) => a - b)[0] || null
+    boot.scheduler.status.lastError = boot.scheduler.jobs.find((job) => job.state?.lastStatus === 'error')?.state.lastError || null
   }
 
   function handleChatError(message: string) {

@@ -323,3 +323,22 @@ output as exact pixel grid size specified,
 two pages visible with horizontal ink lines, small bookmark ribbon hanging from top,
 outline #7A1F1F, fill #B53A3A / #D9776E.
 ```
+
+---
+
+### nav-scheduler.png / nav-scheduler-active.png（默认色 / 激活色）
+
+- Date: 2026-05-20
+- Tool mode: built-in image_gen + local chroma-key removal
+- Output files: `nav-scheduler.png`, `nav-scheduler-active.png`
+
+```
+Use case: logo-brand
+Asset type: Emperor Agent WebUI navigation icon, 1024x1024 PNG source
+Primary request: create a single pixel-art Scheduler icon for a local agent automation page.
+Subject: an ancient Chinese court timekeeping tower with a small bronze clock face and a tiny calendar scroll, no letters or numbers.
+Style/medium: crisp 32-bit pixel art enlarged cleanly, matching a paper palace UI asset set; compact square app icon silhouette; black-brown pixel outline; warm parchment, jade, cinnabar, and muted bronze accents.
+Composition/framing: centered object, generous padding, readable at 32px, symmetrical, no background decoration.
+Background: perfectly flat solid #00ff00 chroma-key background for background removal.
+Constraints: no text, no watermark, no shadow, no gradients in the background, do not use #00ff00 in the subject, keep edges crisp and separated from background.
+```
