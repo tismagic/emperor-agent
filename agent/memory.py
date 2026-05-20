@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from .memory_history import HistoryLog
+from .memory_versions import MemoryVersionStore
 
 
 _UTC8 = timezone(timedelta(hours=8))
@@ -22,6 +23,11 @@ class MemoryStore:
         self.memory_template = memory_template
         self._ensure()
         self.history_log = HistoryLog(self.memory_dir, self.history_file)
+        self.versions = MemoryVersionStore(
+            self.memory_dir.parent,
+            self.memory_dir,
+            self.user_file,
+        )
 
     def _ensure(self) -> None:
         self.memory_dir.mkdir(parents=True, exist_ok=True)
@@ -61,6 +67,8 @@ class MemoryStore:
     def append_episode(self, content: str) -> None:
         p = self.today_episode_path()
         existing = p.read_text(encoding="utf-8") if p.exists() else f"# {p.stem} 情景记忆\n"
+        if p.exists():
+            self.versions.snapshot_path(p, target="episode", reason="append_episode")
         new_text = existing.rstrip() + "\n\n" + content.strip() + "\n"
         p.write_text(new_text, encoding="utf-8")
 
@@ -69,6 +77,8 @@ class MemoryStore:
         return self.memory_file.read_text(encoding="utf-8") if self.memory_file.exists() else ""
 
     def write_memory(self, content: str) -> None:
+        if self.memory_file.exists():
+            self.versions.snapshot_path(self.memory_file, target="memory", reason="write_memory")
         self.memory_file.write_text(content.strip() + "\n", encoding="utf-8")
 
     # ── 归档标记 ────────────────────────────────────────────
@@ -117,6 +127,8 @@ class MemoryStore:
         return self.user_file.read_text(encoding="utf-8") if self.user_file.exists() else ""
 
     def write_user(self, content: str) -> None:
+        if self.user_file.exists():
+            self.versions.snapshot_path(self.user_file, target="user", reason="write_user")
         self.user_file.write_text(content.strip() + "\n", encoding="utf-8")
 
     # ── 中断恢复 Checkpoint ─────────────────────────────────

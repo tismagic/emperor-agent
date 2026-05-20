@@ -29,6 +29,8 @@ export const slashCommands: SlashCommand[] = [
   { name: '/skills', usage: '/skills', description: '输出可用 Skill 摘要' },
   { name: '/config', usage: '/config', description: '查看并编辑用户配置文件 (USER.local.md)', aliases: ['/configs'] },
   { name: '/memory', usage: '/memory', description: '输出记忆状态摘要' },
+  { name: '/memory-log', usage: '/memory-log', description: '列出最近的记忆版本快照' },
+  { name: '/memory-restore', usage: '/memory-restore <id>', description: '恢复指定记忆版本快照' },
   { name: '/plan', usage: '/plan on|off|status', description: '查看或切换 Plan 模式' },
   { name: '/mode', usage: '/mode ask|auto|plan|status', description: '查看或切换权限模式' },
   { name: '/stop', usage: '/stop', description: '停止当前运行中的 turn / Scheduler 任务' },

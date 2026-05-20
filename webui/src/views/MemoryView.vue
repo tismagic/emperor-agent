@@ -20,6 +20,10 @@ function onSaveWatchlist(content: string) {
 function onCheckWatchlist() {
   void ctx.runSafely(() => ctx.checkWatchlist().then(() => ctx.refreshMemory(false)))
 }
+
+function onRestoreVersion(id: string) {
+  void ctx.runSafely(() => ctx.restoreMemoryVersion(id).then(() => ctx.refreshMemory(false)))
+}
 </script>
 
 <template>
@@ -38,10 +42,12 @@ function onCheckWatchlist() {
       <MemoryPanel
         :memory="ctx.boot.value?.memory || null"
         :load-episode="ctx.loadEpisode"
+        :load-version="ctx.loadMemoryVersion"
         @save-long-term="onSaveLongTerm"
         @save-episode="onSaveEpisode"
         @save-watchlist="onSaveWatchlist"
         @check-watchlist="onCheckWatchlist"
+        @restore-version="onRestoreVersion"
         @refresh="ctx.runSafely(() => ctx.refreshMemory(true))"
       />
     </div>

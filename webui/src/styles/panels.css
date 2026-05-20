@@ -1654,6 +1654,10 @@
     @apply min-h-0 flex-1 overflow-y-auto rounded-none border-0 bg-paper px-4 py-3 text-sm leading-6 shadow-none;
   }
 
+  .memory-diff-preview {
+    @apply min-h-0 flex-1 overflow-auto whitespace-pre-wrap break-words rounded-none border-0 bg-paper px-4 py-3 font-mono text-[11px] leading-6 text-ink shadow-none;
+  }
+
   .preview-toggle {
     @apply cursor-pointer transition-colors hover:bg-seal/10;
   }

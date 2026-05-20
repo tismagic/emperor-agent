@@ -46,6 +46,8 @@ const {
   saveMemory,
   loadEpisode,
   saveEpisode,
+  loadMemoryVersion,
+  restoreMemoryVersion,
   saveWatchlist,
   checkWatchlist,
 } = bootstrap
@@ -169,6 +171,14 @@ async function executeSlashCommand(raw: string, name: string, command: SlashComm
     }
     if (command.name === '/memory') {
       addLocalCommand(raw, renderMemoryInfo())
+      return
+    }
+    if (command.name === '/memory-log') {
+      addLocalCommand(raw, renderMemoryVersions())
+      return
+    }
+    if (command.name === '/memory-restore') {
+      await handleMemoryRestoreCommand(raw)
       return
     }
     if (command.name === '/plan') {
@@ -418,6 +428,37 @@ function renderMemoryInfo() {
   ].join('\n')
 }
 
+function renderMemoryVersions() {
+  const versions = boot.value?.memory?.versions?.versions || []
+  if (!versions.length) {
+    return '还没有记忆版本快照。保存长期记忆、情景记忆或压缩记忆后会自动生成。'
+  }
+  return [
+    `## 记忆版本 (${boot.value?.memory?.versions?.count || versions.length})`,
+    '',
+    ...versions.slice(0, 12).map((version) => [
+      `- ${inlineCode(version.id)} · ${version.target} · ${version.relPath}`,
+      `  ${new Date(version.createdAt * 1000).toLocaleString('zh-CN', { hour12: false })} · ${version.reason} · ${formatNumber(version.bytes)} bytes`,
+    ].join('\n')),
+    '',
+    `恢复：${inlineCode('/memory-restore <id>')}`,
+  ].join('\n')
+}
+
+async function handleMemoryRestoreCommand(raw: string) {
+  const [, id = ''] = raw.trim().split(/\s+/, 2)
+  if (!id) {
+    addLocalCommand(raw, `请提供版本 id，例如：${inlineCode('/memory-restore memv_...')}`)
+    return
+  }
+  try {
+    const result = await restoreMemoryVersion(id)
+    addLocalCommand(raw, `已恢复：${inlineCode(result.restored.path)}`)
+  } catch (err) {
+    addLocalCommand(raw, `恢复失败：${err instanceof Error ? err.message : String(err)}`)
+  }
+}
+
 function renderCompactResult(result: CompactResult) {
   return [
     '## 会话压缩',
@@ -471,6 +512,8 @@ provideAppContext({
   saveMemory,
   loadEpisode,
   saveEpisode,
+  loadMemoryVersion,
+  restoreMemoryVersion,
   saveWatchlist,
   checkWatchlist,
   setControlMode,

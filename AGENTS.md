@@ -27,15 +27,16 @@
 3. `agent/runner.py`（单轮执行、工具循环、容错）
 4. `agent/web/` + `agent/webui.py`（HTTP/WS API 与兼容入口）
 5. `agent/memory.py` + `agent/compactor.py`（记忆与压缩）
-6. `agent/model_config.py` + `agent/providers/*`（模型配置与 provider 实现）
-7. `agent/tools/*` + `agent/subagents/*`（工具与子代理能力边界）
-8. `agent/control/*`（Ask / Plan pending 状态、暂停恢复）
-9. `agent/permissions/*`（三模式权限与审批策略）
-10. `agent/runtime/*`（WebUI 行为事件冷记录与刷新重放）
-11. `agent/scheduler/*`（持久 jobs、timer service、scheduler tool）
-12. `agent/watchlist/*`（Watchlist heartbeat、次模型 skip/run 决策）
-13. `agent/team/*`（持久队友、MessageBus、TeamStore、team tools）
-14. `webui/src/runtime/*` + `webui/src/composables/useRuntime.ts` + `useBootstrap.ts` + `components/panels/ModelPanel.vue` + `components/panels/TeamPanel.vue`
+6. `agent/memory_versions.py`（记忆快照、diff、restore）
+7. `agent/model_config.py` + `agent/providers/*`（模型配置与 provider 实现）
+8. `agent/tools/*` + `agent/subagents/*`（工具与子代理能力边界）
+9. `agent/control/*`（Ask / Plan pending 状态、暂停恢复）
+10. `agent/permissions/*`（三模式权限与审批策略）
+11. `agent/runtime/*`（WebUI 行为事件冷记录与刷新重放）
+12. `agent/scheduler/*`（持久 jobs、timer service、scheduler tool）
+13. `agent/watchlist/*`（Watchlist heartbeat、次模型 skip/run 决策）
+14. `agent/team/*`（持久队友、MessageBus、TeamStore、team tools）
+15. `webui/src/runtime/*` + `webui/src/composables/useRuntime.ts` + `useBootstrap.ts` + `components/panels/ModelPanel.vue` + `components/panels/TeamPanel.vue`
 
 ## 3. 关键目录地图
 
@@ -58,6 +59,7 @@
 - `agent/team/`：Agent Team 子系统（持久队友、inbox、thread、状态机、team tools）
 - `agent/attachments.py`：附件落盘、MIME 校验、PDF/文本抽取、图片 base64 编码
 - `agent/memory.py`：长期记忆、历史日志、checkpoint 恢复
+- `agent/memory_versions.py`：记忆快照、diff 预览与恢复；本地数据在 `memory/versions/`
 - `agent/compactor.py`：历史压缩，更新 `MEMORY.local.md` / `USER.local.md`
 
 ### 前端

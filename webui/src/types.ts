@@ -70,6 +70,7 @@ export interface MemoryPayload {
   runtime?: RuntimeStats
   schedulerMaintenance?: SchedulerMaintenanceStats
   watchlist?: WatchlistPayload
+  versions?: MemoryVersionsPayload
 }
 
 export interface SchedulerMaintenanceStats {
@@ -92,6 +93,30 @@ export interface WatchlistDecision {
 export interface WatchlistPayload {
   content?: string
   lastDecision?: WatchlistDecision | null
+}
+
+export interface MemoryVersion {
+  id: string
+  target: 'memory' | 'user' | 'episode' | string
+  relPath: string
+  label: string
+  reason: string
+  createdAt: number
+  contentHash: string
+  bytes: number
+}
+
+export interface MemoryVersionsPayload {
+  versions: MemoryVersion[]
+  count?: number
+  path?: string
+}
+
+export interface MemoryVersionDetail {
+  version: MemoryVersion
+  content: string
+  currentContent: string
+  diff: string
 }
 
 export interface RuntimeStats {

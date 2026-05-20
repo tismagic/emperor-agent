@@ -1,6 +1,6 @@
 import { ref } from 'vue'
 import { api, cloneJson } from '../api/http'
-import type { BootstrapPayload, CompactResult, MemoryPayload, ModelConfigPayload, ModelConfigRaw, McpConfigPayload, SkillInfo, WatchlistDecision, WatchlistPayload } from '../types'
+import type { BootstrapPayload, CompactResult, MemoryPayload, MemoryVersionDetail, ModelConfigPayload, ModelConfigRaw, McpConfigPayload, SkillInfo, WatchlistDecision, WatchlistPayload } from '../types'
 
 export function useBootstrap(showToast: (message: string) => void) {
   const boot = ref<BootstrapPayload | null>(null)
@@ -171,7 +171,22 @@ export function useBootstrap(showToast: (message: string) => void) {
       method: 'POST',
       body: JSON.stringify({ date, content }),
     })
+    await refreshMemory(false)
     showToast(`情景记忆 ${date} 已保存`)
+  }
+
+  async function loadMemoryVersion(id: string) {
+    return api<MemoryVersionDetail>('/api/memory/versions/' + encodeURIComponent(id))
+  }
+
+  async function restoreMemoryVersion(id: string) {
+    const payload = await api<{ restored: { path: string; content: string }; memory: MemoryPayload }>(
+      '/api/memory/versions/' + encodeURIComponent(id) + '/restore',
+      { method: 'POST', body: JSON.stringify({}) },
+    )
+    if (boot.value) boot.value.memory = payload.memory
+    showToast(`已恢复 ${payload.restored.path}`)
+    return payload
   }
 
   async function saveWatchlist(content: string) {
@@ -220,6 +235,8 @@ export function useBootstrap(showToast: (message: string) => void) {
     saveMemory,
     loadEpisode,
     saveEpisode,
+    loadMemoryVersion,
+    restoreMemoryVersion,
     saveWatchlist,
     checkWatchlist,
     cloneJson,

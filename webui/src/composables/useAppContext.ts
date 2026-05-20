@@ -4,6 +4,7 @@ import type {
   ChatMessage,
   ChatSendPayload,
   CompactResult,
+  MemoryVersionDetail,
   ModelConfigRaw,
   PendingState,
   RuntimeStatus,
@@ -45,6 +46,8 @@ export interface AppContext {
   saveMemory: (content: string) => Promise<void>
   loadEpisode: (date: string) => Promise<{ date: string; content: string }>
   saveEpisode: (date: string, content: string) => Promise<void>
+  loadMemoryVersion: (id: string) => Promise<MemoryVersionDetail>
+  restoreMemoryVersion: (id: string) => Promise<{ restored: { path: string; content: string }; memory: BootstrapPayload['memory'] }>
   saveWatchlist: (content: string) => Promise<void>
   checkWatchlist: () => Promise<WatchlistDecision>
 

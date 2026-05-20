@@ -1,12 +1,13 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
-import type { MemoryPayload } from '../../types'
+import type { MemoryPayload, MemoryVersionDetail } from '../../types'
 import { actionAssets, emptyAssets } from '../../assets'
 import MarkdownBlock from '../chat/MarkdownBlock.vue'
 
 const props = defineProps<{
   memory: MemoryPayload | null
   loadEpisode: (date: string) => Promise<{ date: string; content: string }>
+  loadVersion: (id: string) => Promise<MemoryVersionDetail>
 }>()
 const emit = defineEmits<{
   refresh: []
@@ -14,9 +15,10 @@ const emit = defineEmits<{
   saveEpisode: [date: string, content: string]
   saveWatchlist: [content: string]
   checkWatchlist: []
+  restoreVersion: [id: string]
 }>()
 
-type MemoryTab = 'long_term' | 'episodes' | 'watchlist'
+type MemoryTab = 'long_term' | 'episodes' | 'watchlist' | 'versions'
 const tab = ref<MemoryTab>('long_term')
 
 const longTermDraft = ref('')
@@ -35,6 +37,8 @@ const selectedEpisode = ref<{ date: string; content: string } | null>(null)
 const episodeDraft = ref('')
 const episodePreview = ref(false)
 const episodeLoading = ref(false)
+const versionDetail = ref<MemoryVersionDetail | null>(null)
+const versionLoading = ref(false)
 
 async function selectEpisode(path: string) {
   const date = path.split('/').pop()?.replace('.md', '') || ''
@@ -63,6 +67,15 @@ function saveWatchlist() {
   emit('saveWatchlist', watchlistDraft.value)
 }
 
+async function selectVersion(id: string) {
+  versionLoading.value = true
+  try {
+    versionDetail.value = await props.loadVersion(id)
+  } finally {
+    versionLoading.value = false
+  }
+}
+
 const sortedEpisodes = computed(() => {
   const eps = props.memory?.episodes || []
   return [...eps].sort((a, b) => b.localeCompare(a))
@@ -72,6 +85,7 @@ const historyStats = computed(() => props.memory?.history || null)
 const runtimeStats = computed(() => props.memory?.runtime || null)
 const schedulerMaintenance = computed(() => props.memory?.schedulerMaintenance || null)
 const watchlistDecision = computed(() => props.memory?.watchlist?.lastDecision || null)
+const versions = computed(() => props.memory?.versions?.versions || [])
 
 function formatBytes(value?: number) {
   const bytes = Math.max(0, Number(value || 0))
@@ -109,6 +123,13 @@ function formatNumber(value?: number) {
           @click="tab = 'watchlist'"
         >
           Watchlist
+        </button>
+        <button
+          class="memory-tab"
+          :data-active="tab === 'versions' ? 'true' : 'false'"
+          @click="tab = 'versions'"
+        >
+          版本记录
         </button>
       </div>
     </div>
@@ -211,6 +232,44 @@ function formatNumber(value?: number) {
           <img class="action-icon" :src="actionAssets.save" alt="" width="18" height="18" />
           <span>保存</span>
         </button>
+      </div>
+    </div>
+
+    <div v-else-if="tab === 'versions'" class="split-body memory-body">
+      <div class="resource-list episode-list">
+        <div
+          v-for="version in versions"
+          :key="version.id"
+          class="list-item episode-card"
+          :class="{ active: versionDetail?.version.id === version.id }"
+          @click="selectVersion(version.id)"
+        >
+          <div class="min-w-0">
+            <div class="item-title">{{ version.label || version.relPath }}</div>
+            <div class="item-desc">{{ version.target }} · {{ version.reason }}</div>
+            <div class="item-desc">{{ new Date(version.createdAt * 1000).toLocaleString('zh-CN', { hour12: false }) }}</div>
+          </div>
+          <span class="badge">{{ formatBytes(version.bytes) }}</span>
+        </div>
+        <div v-if="!versions.length" class="empty-note">还没有版本快照。</div>
+      </div>
+
+      <div v-if="versionLoading" class="empty-state illustrated-empty">
+        <span>加载中...</span>
+      </div>
+      <div v-else-if="!versionDetail" class="empty-state illustrated-empty">
+        <img :src="emptyAssets.memory" alt="" />
+        <span>选择一个版本以查看 diff。</span>
+      </div>
+      <div v-else class="editor flex-1">
+        <div class="editor-title">
+          <span>{{ versionDetail.version.relPath }}</span>
+          <button class="badge preview-toggle" @click="emit('restoreVersion', versionDetail.version.id)">恢复</button>
+        </div>
+        <pre class="memory-diff-preview">{{ versionDetail.diff || '当前内容与该版本一致。' }}</pre>
+        <div class="editor-actions">
+          <span class="status-pill">{{ versionDetail.version.id }}</span>
+        </div>
       </div>
     </div>
 

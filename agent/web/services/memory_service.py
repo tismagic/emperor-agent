@@ -25,13 +25,11 @@ class MemoryService:
     async def post_memory(self, request: web.Request) -> web.Response:
         body = await self.state._body(request)
         content = str(body.get("content") or "")
-        path = self.state.root / "memory" / "MEMORY.local.md"
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(content.rstrip() + "\n", encoding="utf-8")
+        self.state.loop.memory.write_memory(content)
         self.state.loop.refresh_runtime_context()
         return self.state._json({
             "path": "memory/MEMORY.local.md",
-            "content": path.read_text(encoding="utf-8"),
+            "content": self.state.loop.memory.read_memory(),
         })
 
     async def get_memory_episode(self, request: web.Request) -> web.Response:
@@ -51,8 +49,48 @@ class MemoryService:
             raise web.HTTPBadRequest(reason="Invalid date")
         path = self.state.root / "memory" / f"{date}.md"
         path.parent.mkdir(parents=True, exist_ok=True)
+        if path.exists():
+            self.state.loop.memory.versions.snapshot_path(path, target="episode", reason="webui_save_episode")
         path.write_text(content.rstrip() + "\n", encoding="utf-8")
         return self.state._json({"date": date, "content": path.read_text(encoding="utf-8")})
+
+    async def get_memory_versions(self, request: web.Request) -> web.Response:
+        limit = self.state.safe_int(request.query.get("limit"), 80)
+        target = request.query.get("target")
+        if target not in {None, "", "memory", "user", "episode"}:
+            raise web.HTTPBadRequest(reason="Invalid version target")
+        versions = self.state.loop.memory.versions.list(
+            limit=limit,
+            target=target if target else None,  # type: ignore[arg-type]
+        )
+        return self.state._json({
+            "versions": [item.to_dict() for item in versions],
+            "count": len(self.state.loop.memory.versions.list(limit=10000)),
+        })
+
+    async def get_memory_version(self, request: web.Request) -> web.Response:
+        version_id = request.match_info.get("id", "")
+        try:
+            return self.state._json(self.state.loop.memory.versions.detail(version_id))
+        except FileNotFoundError as exc:
+            raise web.HTTPNotFound(reason=str(exc)) from None
+        except ValueError as exc:
+            raise web.HTTPBadRequest(reason=str(exc)) from None
+
+    async def post_memory_version_restore(self, request: web.Request) -> web.Response:
+        version_id = request.match_info.get("id", "")
+        try:
+            restored = self.state.loop.memory.versions.restore(version_id)
+        except FileNotFoundError as exc:
+            raise web.HTTPNotFound(reason=str(exc)) from None
+        except ValueError as exc:
+            raise web.HTTPBadRequest(reason=str(exc)) from None
+        self.state.loop.refresh_runtime_context()
+        payload = self.memory()
+        return self.state._json({
+            "restored": restored,
+            "memory": payload,
+        })
 
     async def get_watchlist(self, request: web.Request) -> web.Response:
         return self.state._json(self.state.watchlist_service.payload())
@@ -94,6 +132,7 @@ class MemoryService:
             "runtime": self.state.runtime_events.stats(active_turn_ids=turn_ids),
             "schedulerMaintenance": self._scheduler_maintenance(),
             "watchlist": self.state.watchlist_service.payload(),
+            "versions": self.state.loop.memory.versions.payload(limit=30),
         }
 
     def tokens(self) -> dict[str, Any]:
