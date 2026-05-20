@@ -14,6 +14,7 @@ from .memory import MemoryStore
 from .mcp import MCPClient
 from .model_router import ModelRouter
 from .runner import AgentRunner
+from .scheduler import SchedulerService, SchedulerStore
 from .skills import SkillsLoader
 from .subagents import SubagentRegistry
 from .team import (
@@ -63,6 +64,8 @@ class AgentLoop:
             memory_template=self.root / "templates" / "init" / "MEMORY.md",
         )
         self.token_tracker = TokenTracker(self.root / "memory" / "tokens.jsonl")
+        self.scheduler_store = SchedulerStore(self.root)
+        self.scheduler_service = SchedulerService(self.scheduler_store)
 
         self.skills = SkillsLoader(self.root / "skills")
         self.context_builder = ContextBuilder(

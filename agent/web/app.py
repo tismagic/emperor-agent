@@ -47,4 +47,16 @@ def create_app(root: Path) -> web.Application:
         chat.register,
     ):
         register(app, state)
+    app.on_startup.append(_startup)
+    app.on_cleanup.append(_cleanup)
     return app
+
+
+async def _startup(app: web.Application) -> None:
+    state: WebUIState = app["state"]
+    await state.loop.scheduler_service.start()
+
+
+async def _cleanup(app: web.Application) -> None:
+    state: WebUIState = app["state"]
+    state.loop.scheduler_service.stop()
