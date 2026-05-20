@@ -6,7 +6,7 @@ from pathlib import Path
 from aiohttp import web
 from loguru import logger
 
-from .routes import assets, chat, control, memory, model, skills, team
+from .routes import assets, chat, control, memory, model, scheduler, skills, team
 from .state import WebUIState
 
 
@@ -43,6 +43,7 @@ def create_app(root: Path) -> web.Application:
         memory.register,
         control.register,
         team.register,
+        scheduler.register,
         model.register,
         chat.register,
     ):

@@ -67,3 +67,19 @@ def model_route_fallback(
         reason=reason,
         usage_type=usage_type,
     )
+
+
+def scheduler_job_update(job: dict[str, Any], *, action: str) -> dict[str, Any]:
+    return runtime_event("scheduler_job_update", job=job, action=action)
+
+
+def scheduler_run_start(job: dict[str, Any]) -> dict[str, Any]:
+    return runtime_event("scheduler_run_start", job=job)
+
+
+def scheduler_run_done(job: dict[str, Any]) -> dict[str, Any]:
+    return runtime_event("scheduler_run_done", job=job)
+
+
+def scheduler_run_error(job: dict[str, Any], *, error: str) -> dict[str, Any]:
+    return runtime_event("scheduler_run_error", job=job, error=error)

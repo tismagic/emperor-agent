@@ -196,3 +196,23 @@ def test_start_refuses_corrupt_store(tmp_path: Path) -> None:
 
     with pytest.raises(SchedulerStoreCorrupt):
         asyncio.run(service.start())
+
+
+def test_run_job_emits_start_and_done_events(tmp_path: Path) -> None:
+    events: list[dict] = []
+
+    async def sink(event: dict) -> None:
+        events.append(event)
+
+    service = make_service(tmp_path)
+    service.event_sink = sink
+    job = service.add_job(
+        name="events",
+        schedule=SchedulerSchedule(kind="every", every_ms=60_000),
+        payload=SchedulerPayload(message="hello"),
+    )
+
+    assert asyncio.run(service.run_job(job.id, force=True))
+
+    assert [event["event"] for event in events] == ["scheduler_run_start", "scheduler_run_done"]
+    assert all(event["job"]["id"] == job.id for event in events)

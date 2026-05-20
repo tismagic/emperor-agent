@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 
 from agent.runtime import RuntimeEventStore
+from agent.runtime import events as runtime_events
 
 
 def test_runtime_event_store_appends_and_recovers_seq(tmp_path: Path) -> None:
@@ -49,3 +50,18 @@ def test_runtime_event_store_stats_include_active_turns(tmp_path: Path) -> None:
     assert stats["activeTurns"] == 1
     assert stats["activeTurnEvents"] == 2
     assert stats["path"] == "memory/runtime/events.jsonl"
+
+
+def test_scheduler_runtime_event_payloads() -> None:
+    job = {"id": "job-1", "name": "demo"}
+
+    assert runtime_events.scheduler_job_update(job, action="created") == {
+        "event": "scheduler_job_update",
+        "job": job,
+        "action": "created",
+    }
+    assert runtime_events.scheduler_run_start(job)["event"] == "scheduler_run_start"
+    assert runtime_events.scheduler_run_done(job)["event"] == "scheduler_run_done"
+    error = runtime_events.scheduler_run_error(job, error="boom")
+    assert error["event"] == "scheduler_run_error"
+    assert error["error"] == "boom"

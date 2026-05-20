@@ -21,7 +21,7 @@ from ..loop import AgentLoop
 from ..mcp.config import load_mcp_config, save_mcp_config
 from ..runtime import RuntimeEventStore
 from ..runtime import events as runtime_events
-from .services import ChatService, MemoryService, ModelService, TeamService
+from .services import ChatService, MemoryService, ModelService, SchedulerWebService, TeamService
 
 _SKILL_RE = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,80}$")
 
@@ -38,6 +38,7 @@ class WebUIState:
         self.memory_service = MemoryService(self)
         self.model_service = ModelService(self)
         self.team_service = TeamService(self)
+        self.scheduler_web_service = SchedulerWebService(self)
         self.history = self.loop.history
         self.attachments = AttachmentStore(self.root)
         self.lock = asyncio.Lock()
@@ -48,6 +49,7 @@ class WebUIState:
         self.event_log: list[dict[str, Any]] = self.runtime_events.recent(self.max_event_log)
         self.event_seq = self.runtime_events.latest_seq
         self.active_turn = False
+        self.loop.scheduler_service.event_sink = self._broadcast_scheduler_event
 
     async def bootstrap(self, request: web.Request) -> web.Response:
         return self._json({
@@ -60,6 +62,7 @@ class WebUIState:
             "memory": self.memory_service.memory(),
             "modelConfig": self.model_config(),
             "team": self.team_service.team(),
+            "scheduler": self.scheduler_web_service.scheduler(),
             "control": self.control(),
             "context_used": self.loop.token_tracker.last_input_tokens(),
             "unarchivedHistory": self.memory_service.unarchived_history(),
@@ -121,6 +124,9 @@ class WebUIState:
         if len(self.event_log) > self.max_event_log:
             self.event_log = self.event_log[-self.max_event_log:]
         return payload
+
+    async def _broadcast_scheduler_event(self, event: dict[str, Any]) -> None:
+        await self._broadcast_event(event)
 
     def ready_event(self, *, last_seq: int = 0, replay_count: int = 0) -> dict[str, Any]:
         return runtime_events.ready_event(

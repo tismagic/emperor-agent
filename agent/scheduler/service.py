@@ -7,6 +7,7 @@ from typing import Any, Literal
 
 from loguru import logger
 
+from ..runtime import events as runtime_events
 from .models import (
     SchedulerJob,
     SchedulerPayload,
@@ -73,16 +74,22 @@ class SchedulerService:
         store: SchedulerStore,
         *,
         on_job: Callable[[SchedulerJob], Awaitable[str | None]] | None = None,
+        event_sink: Callable[[dict[str, Any]], Awaitable[None]] | None = None,
         time_func: Callable[[], int] = now_ms,
         max_sleep_ms: int = 300_000,
     ):
         self.store = store
         self.on_job = on_job
+        self.event_sink = event_sink
         self.time_func = time_func
         self.max_sleep_ms = max(1, int(max_sleep_ms))
         self._running = False
         self._timer_task: asyncio.Task | None = None
         self._timer_active = False
+
+    async def _emit(self, event: dict[str, Any]) -> None:
+        if self.event_sink:
+            await self.event_sink(event)
 
     async def start(self) -> None:
         if self._running:
@@ -280,6 +287,7 @@ class SchedulerService:
         start = self.time_func()
         error: str | None = None
         status = SchedulerStatus.OK.value
+        await self._emit(runtime_events.scheduler_run_start(job.to_dict()))
         try:
             if self.on_job:
                 await self.on_job(job)
@@ -303,9 +311,13 @@ class SchedulerService:
             else:
                 job.enabled = False
                 job.state.next_run_at_ms = None
-            return
-
-        if job.enabled:
+        elif job.enabled:
             job.state.next_run_at_ms = compute_next_run_ms(job.schedule, self.time_func())
         else:
             job.state.next_run_at_ms = None
+        if status == SchedulerStatus.ERROR.value:
+            await self._emit(
+                runtime_events.scheduler_run_error(job.to_dict(), error=error or "unknown error")
+            )
+        else:
+            await self._emit(runtime_events.scheduler_run_done(job.to_dict()))
