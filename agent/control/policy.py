@@ -15,6 +15,11 @@ class ControlPolicy:
             return True
         if name == "propose_plan":
             return self.manager.mode == ControlMode.PLAN.value
+        if name == "scheduler" and self.manager.mode == ControlMode.PLAN.value:
+            # The scheduler tool is mixed read/write; expose it in Plan mode so
+            # the model can inspect jobs with action=list. Argument-level
+            # permission checks still deny create/update/run/remove.
+            return True
         if self.manager.mode != ControlMode.PLAN.value:
             return True
         tool = registry.get(name)

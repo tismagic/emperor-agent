@@ -9,6 +9,7 @@ from agent.control import AskUserTool, ControlManager, ControlMode, ProposePlanT
 from agent.memory import MemoryStore
 from agent.providers.base import LLMProvider, LLMResponse, ToolCallRequest
 from agent.runner import AgentRunner
+from agent.scheduler import SchedulerService, SchedulerStore, SchedulerTool
 from agent.tools import ReadFileTool, ToolRegistry, WriteFileTool
 
 
@@ -43,6 +44,7 @@ def make_registry(manager: ControlManager, root: Path) -> ToolRegistry:
     registry = ToolRegistry()
     registry.register(ReadFileTool(root))
     registry.register(WriteFileTool(root))
+    registry.register(SchedulerTool(SchedulerService(SchedulerStore(root))))
     registry.register(AskUserTool(manager))
     registry.register(ProposePlanTool(manager))
     return registry
@@ -142,6 +144,7 @@ def test_plan_policy_filters_write_tools(tmp_path: Path) -> None:
     assert "read_file" in names
     assert "ask_user" in names
     assert "propose_plan" in names
+    assert "scheduler" in names
     assert "write_file" not in names
     assert not manager.is_tool_allowed("write_file", registry)
 

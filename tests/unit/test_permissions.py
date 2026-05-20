@@ -4,6 +4,7 @@ from pathlib import Path
 
 from agent.control import ControlManager
 from agent.permissions import PermissionMode, PermissionPolicy
+from agent.scheduler import SchedulerService, SchedulerStore, SchedulerTool
 from agent.tools import ReadFileTool, ToolRegistry, WriteFileTool
 
 
@@ -11,6 +12,7 @@ def make_registry(root: Path) -> ToolRegistry:
     registry = ToolRegistry()
     registry.register(ReadFileTool(root))
     registry.register(WriteFileTool(root))
+    registry.register(SchedulerTool(SchedulerService(SchedulerStore(root))))
     return registry
 
 
@@ -21,10 +23,19 @@ def test_plan_mode_allows_read_tools_and_control_tools(tmp_path: Path) -> None:
     assert policy.assess("read_file", {"path": "README.md"}, PermissionMode.PLAN.value, registry=registry).allowed
     assert policy.assess("ask_user", {}, PermissionMode.PLAN.value, registry=registry).allowed
     assert policy.assess("propose_plan", {}, PermissionMode.PLAN.value, registry=registry).allowed
+    assert policy.assess("scheduler", {"action": "list"}, PermissionMode.PLAN.value, registry=registry).allowed
 
     denied = policy.assess("write_file", {"path": "README.md"}, PermissionMode.PLAN.value, registry=registry)
+    scheduler_denied = policy.assess(
+        "scheduler",
+        {"action": "add", "message": "Run later", "every_seconds": 60},
+        PermissionMode.PLAN.value,
+        registry=registry,
+    )
     assert not denied.allowed
     assert not denied.requires_approval
+    assert not scheduler_denied.allowed
+    assert "scheduler" in scheduler_denied.reason
 
 
 def test_ask_before_edit_requires_approval_for_high_risk_command() -> None:
@@ -47,6 +58,25 @@ def test_ask_before_edit_allows_low_risk_tools(tmp_path: Path) -> None:
 
     assert read.allowed
     assert write.allowed
+
+
+def test_ask_before_edit_requires_approval_for_scheduler_changes() -> None:
+    policy = PermissionPolicy()
+
+    list_decision = policy.assess(
+        "scheduler",
+        {"action": "list"},
+        PermissionMode.ASK_BEFORE_EDIT.value,
+    )
+    add_decision = policy.assess(
+        "scheduler",
+        {"action": "add", "message": "Check tomorrow", "every_seconds": 3600},
+        PermissionMode.ASK_BEFORE_EDIT.value,
+    )
+
+    assert list_decision.allowed
+    assert add_decision.requires_approval
+    assert "persist" in add_decision.reason
 
 
 def test_ask_before_edit_requires_approval_for_sensitive_path() -> None:

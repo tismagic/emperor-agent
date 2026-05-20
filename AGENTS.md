@@ -12,6 +12,7 @@
 - 多 Provider LLM 调用层
 - 工具调用与子代理派遣
 - Agent Team 持久队友协作
+- 本地 Scheduler 长期自动运行中枢
 - Ask / Plan 会话控制与可暂停执行
 - 三层记忆 + 自动压缩
 - WebSocket 流式 WebUI（Vue3 + Vite + Tailwind）
@@ -31,8 +32,9 @@
 8. `agent/control/*`（Ask / Plan pending 状态、暂停恢复）
 9. `agent/permissions/*`（三模式权限与审批策略）
 10. `agent/runtime/*`（WebUI 行为事件冷记录与刷新重放）
-11. `agent/team/*`（持久队友、MessageBus、TeamStore、team tools）
-12. `webui/src/runtime/*` + `webui/src/composables/useRuntime.ts` + `useBootstrap.ts` + `components/panels/ModelPanel.vue` + `components/panels/TeamPanel.vue`
+11. `agent/scheduler/*`（持久 jobs、timer service、scheduler tool）
+12. `agent/team/*`（持久队友、MessageBus、TeamStore、team tools）
+13. `webui/src/runtime/*` + `webui/src/composables/useRuntime.ts` + `useBootstrap.ts` + `components/panels/ModelPanel.vue` + `components/panels/TeamPanel.vue`
 
 ## 3. 关键目录地图
 
@@ -50,6 +52,7 @@
 - `agent/control/`：Ask / Plan 会话控制、pending interaction、暂停/恢复语义
 - `agent/permissions/`：Claude Code 风格 `ask_before_edit` / `auto` / `plan` 权限判断
 - `agent/runtime/`：Chat 行为事件冷记录与 payload 构造，支持刷新/重启后恢复工具、队友、Ask/Plan 细节
+- `agent/scheduler/`：本地长期自动运行中枢，持久保存 `at` / `every` / `cron` jobs，WebUI 启动后恢复 timer，Agent 通过 `scheduler` 工具管理任务
 - `agent/team/`：Agent Team 子系统（持久队友、inbox、thread、状态机、team tools）
 - `agent/attachments.py`：附件落盘、MIME 校验、PDF/文本抽取、图片 base64 编码
 - `agent/memory.py`：长期记忆、历史日志、checkpoint 恢复
@@ -172,6 +175,7 @@ Vite 会代理 `/api` 与 `/ws` 到 `127.0.0.1:8765`。
 - `tool_call` / `tool_result` / `tool_error`
 - `subagent_*`（start/delta/tool_call/tool_result/done/error）
 - `team_*`（member_update/message/run_start/run_delta/run_tool_call/run_tool_result/run_done/run_error）
+- `scheduler_*`（job_update/run_start/run_done/run_error）
 - `control_mode_update`
 - `ask_request` / `ask_answered`
 - `plan_draft` / `plan_comment_added` / `plan_approved`
@@ -224,6 +228,7 @@ Vite 会代理 `/api` 与 `/ws` 到 `127.0.0.1:8765`。
 
 - `run_command`, `web_fetch`, `read_file`, `write_file`, `edit_file`, `glob`, `grep`, `load_skill`, `update_todos`, `dispatch_subagent`
 - Control：`ask_user`, `propose_plan`
+- Scheduler：`scheduler(action=list|add|update|remove|pause|resume|run)`
 - Agent Team：`spawn_teammate`, `list_teammates`, `send_message`, `read_inbox`, `broadcast`, `shutdown_teammate`
 
 ### 并发规则
@@ -250,6 +255,7 @@ Vite 会代理 `/api` 与 `/ws` 到 `127.0.0.1:8765`。
 - Ask 用于目标不清时主动发问：最多 3 个问题，每题 2-4 个选项，并允许自由补充。高影响歧义由 `ClarificationPolicy` 统一判断，避免把主动提问散落到 prompt 文案里。
 - 权限模式由 `agent/permissions/` 管理：`ask_before_edit` 默认危险先问，`auto` 自动执行，`plan` 只读计划。
 - Plan 需要显式开启（WebUI Composer 模式选择器、`/mode plan` 或 `/plan on`）：只读探索、提问、提交计划；用户可评论修订，批准或取消后自动恢复进入 Plan 前的 `ask_before_edit` / `auto` 模式。Plan 模式必须产出 PlanCard，不能用普通文字最终答复绕过。
+- Scheduler 在 Plan 模式下只允许 `scheduler(action=list)`，创建/修改/删除/运行长期任务必须等待计划批准；`ask_before_edit` 下 scheduler 写操作会进入 AskCard 审批；`auto` 下仍保留 schema、timezone、protected job 等安全校验。
 - v1 同一时间只允许一个 pending ask 或 plan；扩展时优先保持 `agent/control/` 的模型、store、manager、policy 分层。
 
 ### Slash Skill Picker

@@ -84,6 +84,8 @@ python webui.py
 | `memory/tokens.jsonl` | `TokenTracker` 首次写入 | append |
 | `memory/control/state.json` | `ControlStore` 首次启动 | 当前 ask / plan 等待状态 |
 | `memory/runtime/events.jsonl` | `RuntimeEventStore` 首次启动 | Chat 行为事件冷记录 |
+| `memory/scheduler/jobs.json` | `SchedulerStore` 首次启动 | 本地持久定时任务热配置 |
+| `memory/scheduler/action.jsonl` | `SchedulerStore` 写操作 | 跨入口 action log，用于合并任务变更 |
 | `templates/USER.local.md` | `AgentLoop._ensure_local_user_file()` | 复制 `templates/init/USER.md` |
 | `model_config.json` | **需要手动** `cp model_config.example.json model_config.json` 并填 apiKey |  |
 | `webui/dist/` | **需要手动** `cd webui && npm install && npm run build` | Vite 构建 |
@@ -101,6 +103,7 @@ python webui.py
 - **MCP 外部工具** — 通过 stdio 或 SSE 连接外部 MCP 服务器，自动发现工具并注册为 `mcp_{server}_{tool}`，与内置工具统一调度。
 - **流式 WebUI** — 网页聊天通过 WebSocket 接收 `message_delta`、`tool_call`、`tool_result`、`subagent_*` 等事件；事件持久化到 `memory/runtime/events.jsonl`，刷新或后端重启后按 seq 回放未压缩会话细节。
 - **三模式权限与 Ask / Plan 控制流** — 默认 `ask_before_edit` 会在危险或不确定动作前审批；`auto` 走最高自动权限；`plan` 只允许只读探索、提问和提交 PlanCard，批准或取消后恢复进入 Plan 前的模式。
+- **本地 Scheduler** — 持久保存 `at` / `every` / `cron` 任务，启动 WebUI 后后台 timer 自动恢复；Agent 可通过 `scheduler` 工具查看任务，创建/修改/删除/手动运行长期任务会走权限审批。
 - **Token 统计** — 按日期、provider/model、使用种类（main_agent / subagent / memory_compaction）汇总，并按“输入缓存命中 / 输入缓存未命中 / 输出 / 总 Token”展示。
 - **工具调用** — 命令执行、网页抓取、文件读写、Glob/Grep 搜索、技能加载、todo 维护、子代理派遣。
 - **任务规划** — 内置 todolist，未完成时自动 nudge 模型继续执行。
@@ -135,6 +138,7 @@ agent/
 ├── control/                    Ask / Plan 会话控制：pending interaction、暂停/恢复、Ask Guard
 ├── permissions/                Claude Code 风格三模式权限策略：ask_before_edit / auto / plan
 ├── runtime/                    WebUI 行为事件冷记录、event payload、seq replay
+├── scheduler/                  本地长期自动运行中枢：job store / timer service / scheduler tool
 ├── web/                        aiohttp Web 后端：app/state/routes/services 分层
 │   ├── app.py                  aiohttp app 与中间件
 │   ├── state.py                共享依赖、广播、bootstrap glue
@@ -177,6 +181,9 @@ memory/                         运行期产物（gitignore，首启自动创建
 ├── tokens.jsonl                token 用量明细
 ├── control/state.json          Ask / Plan 当前模式与等待交互状态
 ├── runtime/events.jsonl        Chat 行为流：工具、子代理、队友、Ask/Plan、assistant_done
+├── scheduler/
+│   ├── jobs.json               持久 Scheduler jobs：at / every / cron
+│   └── action.jsonl            append-only action log，用于跨入口写入合并
 ├── _checkpoint.json            未完成 turn 的 history 快照（中断恢复用）
 ├── attachments/                上传附件落盘：YYYY-MM/{hash8}-{name}.{ext} + sidecar .txt
 └── YYYY-MM-DD.md               每日情景记忆
@@ -359,6 +366,7 @@ Chat 页面只展示未压缩 turn 的完整行为细节；压缩前的工具调
 | <img src="assets/tools/tool-todo.png"     width="20" alt="" /> | `update_todos`            | 维护当前任务列表              | ✗ |
 | <img src="assets/tools/tool-todo.png"     width="20" alt="" /> | `ask_user`                | 暂停当前 turn，向用户提结构化问题 | ✗ |
 | <img src="assets/tools/tool-todo.png"     width="20" alt="" /> | `propose_plan`            | Plan 模式下提交计划草案并等待评论/批准 | ✗ |
+| <img src="assets/tools/tool-todo.png"     width="20" alt="" /> | `scheduler`               | 查看/管理本地长期定时任务         | ✗（`list` 走权限层放行） |
 | <img src="assets/tools/tool-subagent.png" width="20" alt="" /> | `dispatch_subagent`       | 派遣子代理独立办差            | ✓（多个子代理可并发） |
 | <img src="assets/tools/tool-subagent.png" width="20" alt="" /> | `spawn_teammate`          | 召入持久队友并可立即派任务    | ✗ |
 | <img src="assets/tools/tool-subagent.png" width="20" alt="" /> | `list_teammates`          | 查看 Agent Team 队友状态      | ✓ |
@@ -393,11 +401,13 @@ Chat 页面只展示未压缩 turn 的完整行为细节；压缩前的工具调
 | Plan | `/plan on` 或 WebUI Chat Composer 模式选择器 | 进入硬门禁模式：模型只看到只读工具 + `ask_user` + `propose_plan`；普通最终文字会被 Runner 包装成 PlanCard 并暂停 |
 | Approve | PlanCard / CLI `approve` | 批准后自动恢复进入 Plan 前的模式（`ask_before_edit` 或 `auto`），并把批准事件作为用户反馈注入 history，随后继续执行 |
 
-Plan 模式不是提示词约束，而是工具层 + 输出层硬门禁：`write_file`、`edit_file`、`run_command`、`dispatch_subagent`、Team 写操作等不会暴露给模型；如果模型尝试调用未授权工具，Runner 会返回明确的拒绝结果；如果模型直接普通回复，Runner 会生成 `plan_draft` 并暂停，确保用户必须先看到 PlanCard。执行中或已有 pending Ask/Plan 时，`POST /api/control/mode` 会返回 409，避免中途切换模式导致工具策略漂移。
+Plan 模式不是提示词约束，而是工具层 + 输出层硬门禁：`write_file`、`edit_file`、`run_command`、`dispatch_subagent`、Team 写操作等不会暴露给模型；`scheduler` 在 Plan 模式下只允许 `action=list` 用于了解现有长期任务，创建/修改/删除/运行任务必须等计划批准后再执行。如果模型尝试调用未授权工具，Runner 会返回明确的拒绝结果；如果模型直接普通回复，Runner 会生成 `plan_draft` 并暂停，确保用户必须先看到 PlanCard。执行中或已有 pending Ask/Plan 时，`POST /api/control/mode` 会返回 409，避免中途切换模式导致工具策略漂移。
 
 Ask Guard 当前采用“高影响歧义强制”策略：大范围工程化/重构/UI 取舍、提交推送、删除覆盖、发布部署、安全/权限/成本边界不清时，会要求先 `ask_user`；低风险、目标明确的小任务不打扰；`PLEASE IMPLEMENT THIS PLAN` 或决策完整的计划会跳过主动提问。
 
 权限审批是“一次性同参授权”：用户允许后，同一个工具名 + 参数组合下一次执行会放行一次；用户拒绝后，同参操作下一次会返回明确拒绝，避免审批循环。
+
+Scheduler 相关 HTTP API 已接入 Web 后端：`GET /api/scheduler`、`POST /api/scheduler/jobs`、`PATCH /api/scheduler/jobs/{id}`、`POST /api/scheduler/jobs/{id}/run|pause|resume`、`DELETE /api/scheduler/jobs/{id}`。运行事件会通过 `scheduler_job_update`、`scheduler_run_start`、`scheduler_run_done`、`scheduler_run_error` 进入 runtime 事件流。
 
 WebUI 相关接口：
 

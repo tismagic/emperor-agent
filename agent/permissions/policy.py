@@ -75,6 +75,14 @@ class PermissionPolicy:
     ) -> PermissionDecision:
         if tool_name == "ask_user" or tool_name == "propose_plan":
             return PermissionDecision.allow(tool_name=tool_name, arguments=arguments)
+        if tool_name == "scheduler":
+            if _scheduler_action(arguments) == "list":
+                return PermissionDecision.allow(tool_name=tool_name, arguments=arguments)
+            return PermissionDecision.deny(
+                tool_name=tool_name,
+                arguments=arguments,
+                reason="Plan mode only allows scheduler(action='list'); durable job changes require an approved plan.",
+            )
         tool = registry.get(tool_name) if registry is not None else None
         if tool is not None and bool(getattr(tool, "read_only", False)):
             return PermissionDecision.allow(tool_name=tool_name, arguments=arguments)
@@ -109,6 +117,17 @@ class PermissionPolicy:
                 arguments=arguments,
                 reason="waking a teammate can run tools in a persistent teammate context.",
             )
+        if tool_name == "scheduler":
+            action = _scheduler_action(arguments)
+            if action == "list":
+                return PermissionDecision.allow(tool_name=tool_name, arguments=arguments)
+            if action in {"add", "update", "remove", "pause", "resume", "run"}:
+                return PermissionDecision.approval(
+                    tool_name=tool_name,
+                    arguments=arguments,
+                    reason="scheduler jobs persist and may run later outside the current user turn.",
+                    risk=RiskLevel.HIGH.value if action in {"add", "update", "remove", "run"} else RiskLevel.MEDIUM.value,
+                )
         if tool_name in {"write_file", "edit_file"}:
             path = str(arguments.get("path") or "")
             if _is_sensitive_path(path):
@@ -140,3 +159,7 @@ def _is_sensitive_path(path: str) -> bool:
         return True
     name = PurePosixPath(normalized).name
     return name in _SENSITIVE_FILENAMES or name.endswith(".local.md")
+
+
+def _scheduler_action(arguments: dict[str, Any]) -> str:
+    return str(arguments.get("action") or "").strip().lower()

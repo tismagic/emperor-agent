@@ -14,7 +14,7 @@ from .memory import MemoryStore
 from .mcp import MCPClient
 from .model_router import ModelRouter
 from .runner import AgentRunner
-from .scheduler import SchedulerService, SchedulerStore
+from .scheduler import SchedulerService, SchedulerStore, SchedulerTool
 from .skills import SkillsLoader
 from .subagents import SubagentRegistry
 from .team import (
@@ -84,6 +84,7 @@ class AgentLoop:
         self.registry.register(EditFileTool(workspace))
         self.registry.register(GlobTool(workspace))
         self.registry.register(GrepTool(workspace))
+        self.registry.register(SchedulerTool(self.scheduler_service))
 
         self.control_manager = ControlManager(self.root)
         self.registry.register(AskUserTool(self.control_manager))
