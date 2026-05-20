@@ -164,12 +164,12 @@ Vite 会代理 `/api` 与 `/ws` 到 `127.0.0.1:8765`。
 
 ### 5.6 Chat 行为流持久化
 
-- `agent/runtime/RuntimeEventStore` 把 WebUI runtime 事件 append 到 `memory/runtime/events.jsonl`
+- `agent/runtime/RuntimeEventStore` 把活跃 WebUI runtime 事件 append 到 `memory/runtime/events.jsonl`，旧事件轮转到 `memory/runtime/archive/YYYY-MM.jsonl.gz`，索引写入 `memory/runtime/index.json`
 - 每个用户 turn 生成 `turn_id`，写入 `history.jsonl`、checkpoint 上下文和所有 runtime 事件
 - `/api/bootstrap.runtime.events` 只返回未压缩 turn 的事件；`useRuntime.ts` 用它重建工具调用、队友轨迹、AskCard、PlanCard 与错误状态
-- Chat turn 与 Scheduler run 会登记到 `agent/runtime/active.py` 的进程内 active task registry；`POST /api/runtime/stop`、WebUI 停止按钮和 `/stop` 共用它取消当前可见任务，并发出 `runtime_task_cancelled`
+- Chat turn、Scheduler run 与 Watchlist 手动检查会登记到 `agent/runtime/active.py` 的进程内 active task registry；`POST /api/runtime/stop`、WebUI 停止按钮和 `/stop` 共用它取消当前可见任务，并发出 `runtime_task_cancelled`
 - localStorage 只是热缓存兜底；后端冷记录是刷新/重启恢复的事实来源
-- 压缩前的细节仍保留在 `memory/runtime/events.jsonl`，但 Chat 当前页面只展示未压缩 turn
+- 压缩前的细节会进入 `memory/runtime/archive/*.jsonl.gz`，但 Chat 当前页面只展示未压缩 turn
 
 ## 6. WebSocket 事件协议（前后端联动改动必看）
 
@@ -261,8 +261,9 @@ Vite 会代理 `/api` 与 `/ws` 到 `127.0.0.1:8765`。
 - Ask 用于目标不清时主动发问：最多 3 个问题，每题 2-4 个选项，并允许自由补充。高影响歧义由 `ClarificationPolicy` 统一判断，避免把主动提问散落到 prompt 文案里。
 - 权限模式由 `agent/permissions/` 管理：`ask_before_edit` 默认危险先问，`auto` 自动执行，`plan` 只读计划。
 - Plan 需要显式开启（WebUI Composer 模式选择器、`/mode plan` 或 `/plan on`）：只读探索、提问、提交计划；用户可评论修订，批准或取消后自动恢复进入 Plan 前的 `ask_before_edit` / `auto` 模式。Plan 模式必须产出 PlanCard，不能用普通文字最终答复绕过。
+- WebUI 手动点击被视为用户直接操作，不再二次弹 Agent AskCard；但统一 Web mutation guard 会在 pending Ask/Plan 时拒绝执行型 Scheduler / Team 操作，并在 Plan 模式下拒绝 Scheduler mutation 与 Team 写操作，防止绕过计划门禁。
 - Scheduler 在 Plan 模式下只允许 `scheduler(action=list)`，创建/修改/删除/运行长期任务必须等待计划批准；`ask_before_edit` 下 scheduler 写操作会进入 AskCard 审批；`auto` 下仍保留 schema、timezone、protected job 等安全校验。
-- Scheduler job 执行时会设置 scheduler context，禁止递归创建新的 scheduler job；`agent_turn` 会写入 history/runtime，`team_wake` 会走 TeamManager inbox+wake，`system_event` 只能由系统代码注册。
+- Scheduler job 执行时会设置 scheduler context，禁止递归创建新的 scheduler job；`agent_turn` 默认写入 history/runtime，`deliver=false` 时作为后台运行不插入当前 Chat timeline；`team_wake` 会走 TeamManager inbox+wake，`deliver=false` 时不把 Team 事件挂到当前 Chat；`system_event` 只能由系统代码注册。
 - WebUI 启动会登记受保护系统任务：`memory-maintenance`、`runtime-maintenance`、`team-stale-recovery`、`token-ledger-maintenance`、`watchlist-check`。它们可见、可手动运行、可暂停/恢复，但不能删除；Memory 页展示维护任务状态摘要，并提供 `memory/watchlist.md` 编辑与手动检查入口。
 - Watchlist heartbeat 先用次模型做 deliverability filter：空清单或不及时的事项只记录 `skip`；只有 `run` 决策才包装为本地主动 `agent_turn`，避免长期心跳污染 Chat。
 - `/stop` 与 Chat 停止按钮只取消 active task registry 中登记的运行任务；不要在 UI 里直接改 busy 状态绕过后端取消事件。
@@ -323,6 +324,7 @@ Vite 会代理 `/api` 与 `/ws` 到 `127.0.0.1:8765`。
 - 小改动优先最小 patch，不做无关重构。
 - 涉及行为变化时，必须同时更新 README 或本文件对应章节。
 - 做完改动至少做一次“路径验证”：能启动、能发消息、关键 API 不 500。
+- Python 质量门禁优先使用 `pip install -r requirements-dev.txt` 后执行 `git diff --check`、`python -m ruff check agent tests`、`python -m pytest`；涉及前端还要执行 `cd webui && npm run build`。
 - 若发现代码与 README 不一致，以“当前代码行为”为准并回写文档。
 
 ## 13. 项目素材生成规范（imagegen）
