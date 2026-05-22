@@ -12,7 +12,6 @@ from .providers.base import is_truncated, run_sync
 from .runner_model import ModelCaller
 from .tools.registry import ToolRegistry
 
-
 StreamEmitter = Callable[[dict[str, Any]], Awaitable[None]]
 
 
@@ -485,7 +484,7 @@ class AgentRunner:
                         await self._emit_tool_call(item, emit)
                     tasks = [self._run_tool(item, emit, clarification=clarification) for item in group]
                     gathered = await asyncio.gather(*tasks, return_exceptions=True)
-                    for item, raw in zip(group, gathered):
+                    for item, raw in zip(group, gathered, strict=True):
                         if isinstance(raw, Exception):
                             err_msg = str(raw)
                             results_by_id[item.id] = f"Error: {err_msg}"
@@ -493,6 +492,8 @@ class AgentRunner:
                         else:
                             results_by_id[item.id] = raw
                             await self._emit_tool_result(item, raw, emit)
+                    for item in group:
+                        self._maybe_pause_for_control(results_by_id[item.id], tool_calls, results_by_id)
                 else:
                     item = group[0]
                     await self._emit_tool_call(item, emit)

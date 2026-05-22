@@ -55,6 +55,7 @@
   }
 
   .split-body,
+  .config-layout,
   .memory-body {
     @apply grid-cols-1;
   }

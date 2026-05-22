@@ -1,8 +1,8 @@
 from __future__ import annotations
+
 from pathlib import Path
 
 from .spec import SubagentSpec
-
 
 # 工具白名单写在代码里, 不放模板中 —— 安全设置不应被无意修改。
 # 模板里只写身份/口吻/职责文案。

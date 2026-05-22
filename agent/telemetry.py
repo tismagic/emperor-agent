@@ -6,7 +6,6 @@ from collections import defaultdict
 from datetime import datetime
 from pathlib import Path
 
-
 _TOKEN_KEYS = ("input", "output", "cache_read", "cache_create")
 
 
@@ -162,7 +161,7 @@ class TokenTracker:
             return {"active_days": 0, "current_streak": 0, "longest_streak": 0}
 
         longest = current = 1
-        for prev, curr in zip(dates, dates[1:]):
+        for prev, curr in zip(dates, dates[1:], strict=False):
             try:
                 gap = (datetime.fromisoformat(curr) - datetime.fromisoformat(prev)).days
             except ValueError:
@@ -178,7 +177,7 @@ class TokenTracker:
             current_streak = 0
         else:
             current_streak = 1
-            for prev, curr in zip(reversed(dates[:-1]), reversed(dates[1:])):
+            for prev, curr in zip(reversed(dates[:-1]), reversed(dates[1:]), strict=False):
                 try:
                     gap = (datetime.fromisoformat(curr) - datetime.fromisoformat(prev)).days
                 except ValueError:
@@ -206,7 +205,7 @@ class TokenTracker:
         timestamps.sort()
         sessions = 1
         gap = gap_minutes * 60
-        for prev, curr in zip(timestamps, timestamps[1:]):
+        for prev, curr in zip(timestamps, timestamps[1:], strict=False):
             if (curr - prev).total_seconds() > gap:
                 sessions += 1
         return sessions

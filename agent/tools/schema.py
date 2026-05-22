@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 from typing import Any
 
 
@@ -30,14 +31,19 @@ class StringSchema(Schema):
 
     def to_json_schema(self) -> dict:
         s: dict = {"type": "string", "description": self.description}
-        if self.enum is not None:       s["enum"] = self.enum
-        if self.min_length is not None: s["minLength"] = self.min_length
-        if self.max_length is not None: s["maxLength"] = self.max_length
-        if self.nullable:               s["type"] = ["string", "null"]
+        if self.enum is not None:
+            s["enum"] = self.enum
+        if self.min_length is not None:
+            s["minLength"] = self.min_length
+        if self.max_length is not None:
+            s["maxLength"] = self.max_length
+        if self.nullable:
+            s["type"] = ["string", "null"]
         return s
 
     def validate_value(self, value: Any, path: str = "") -> None:
-        if _check_nullable(value, self.nullable, path): return
+        if _check_nullable(value, self.nullable, path):
+            return
         if not isinstance(value, str):
             raise ValueError(f"{path or 'value'}: expected string, got {type(value).__name__}")
         if self.enum is not None and value not in self.enum:
@@ -58,13 +64,17 @@ class IntegerSchema(Schema):
 
     def to_json_schema(self) -> dict:
         s: dict = {"type": "integer", "description": self.description}
-        if self.minimum is not None: s["minimum"] = self.minimum
-        if self.maximum is not None: s["maximum"] = self.maximum
-        if self.nullable:            s["type"] = ["integer", "null"]
+        if self.minimum is not None:
+            s["minimum"] = self.minimum
+        if self.maximum is not None:
+            s["maximum"] = self.maximum
+        if self.nullable:
+            s["type"] = ["integer", "null"]
         return s
 
     def validate_value(self, value: Any, path: str = "") -> None:
-        if _check_nullable(value, self.nullable, path): return
+        if _check_nullable(value, self.nullable, path):
+            return
         if isinstance(value, bool) or not isinstance(value, int):
             raise ValueError(f"{path or 'value'}: expected integer, got {type(value).__name__}")
         if self.minimum is not None and value < self.minimum:
@@ -83,13 +93,17 @@ class NumberSchema(Schema):
 
     def to_json_schema(self) -> dict:
         s: dict = {"type": "number", "description": self.description}
-        if self.minimum is not None: s["minimum"] = self.minimum
-        if self.maximum is not None: s["maximum"] = self.maximum
-        if self.nullable:            s["type"] = ["number", "null"]
+        if self.minimum is not None:
+            s["minimum"] = self.minimum
+        if self.maximum is not None:
+            s["maximum"] = self.maximum
+        if self.nullable:
+            s["type"] = ["number", "null"]
         return s
 
     def validate_value(self, value: Any, path: str = "") -> None:
-        if _check_nullable(value, self.nullable, path): return
+        if _check_nullable(value, self.nullable, path):
+            return
         if isinstance(value, bool) or not isinstance(value, (int, float)):
             raise ValueError(f"{path or 'value'}: expected number, got {type(value).__name__}")
         if self.minimum is not None and value < self.minimum:
@@ -105,11 +119,13 @@ class BooleanSchema(Schema):
 
     def to_json_schema(self) -> dict:
         s: dict = {"type": "boolean", "description": self.description}
-        if self.nullable: s["type"] = ["boolean", "null"]
+        if self.nullable:
+            s["type"] = ["boolean", "null"]
         return s
 
     def validate_value(self, value: Any, path: str = "") -> None:
-        if _check_nullable(value, self.nullable, path): return
+        if _check_nullable(value, self.nullable, path):
+            return
         if not isinstance(value, bool):
             raise ValueError(f"{path or 'value'}: expected boolean, got {type(value).__name__}")
 
@@ -125,8 +141,10 @@ class ArraySchema(Schema):
     def to_json_schema(self) -> dict:
         s: dict = {"type": "array", "description": self.description,
                    "items": self.items.to_json_schema()}
-        if self.min_items is not None: s["minItems"] = self.min_items
-        if self.max_items is not None: s["maxItems"] = self.max_items
+        if self.min_items is not None:
+            s["minItems"] = self.min_items
+        if self.max_items is not None:
+            s["maxItems"] = self.max_items
         return s
 
     def validate_value(self, value: Any, path: str = "") -> None:

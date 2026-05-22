@@ -11,11 +11,13 @@ from pathlib import Path
 from typing import Any
 
 from aiohttp import web
+from loguru import logger
 
 from ..attachments import (
     AttachmentStore,
     ref_to_json,
 )
+from ..desktop_pet import DesktopPetManager
 from ..external import ExternalBridgeService
 from ..logger import configure as configure_logging
 from ..loop import AgentLoop
@@ -24,8 +26,10 @@ from ..runtime import RuntimeEventStore
 from ..runtime import events as runtime_events
 from ..runtime.active import ActiveTaskInfo, ActiveTaskRegistry
 from ..watchlist import WatchlistService
+from .mutation_guard import assert_web_mutation_allowed
 from .services import (
     ChatService,
+    DiagnosticsService,
     MainlineTurnService,
     MemoryService,
     ModelService,
@@ -38,8 +42,16 @@ _SKILL_RE = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,80}$")
 
 
 class WebUIState:
-    def __init__(self, root: Path):
+    def __init__(
+        self,
+        root: Path,
+        *,
+        webui_host: str | None = None,
+        webui_port: int | None = None,
+    ):
         self.root = root.resolve()
+        self.webui_host = webui_host
+        self.webui_port = webui_port
         configure_logging(self.root)
         self.static_dir = self.root / "webui" / "dist"
         self._ensure_tool_config()
@@ -50,13 +62,16 @@ class WebUIState:
             submit_turn=self.mainline_turn_service.submit,
             can_accept_turn=self._external_can_accept_turn,
             event_sink=self._broadcast_event,
+            root=self.root,
         )
         self.chat_service = ChatService(self)
+        self.diagnostics_service = DiagnosticsService(self)
         self.memory_service = MemoryService(self)
         self.model_service = ModelService(self)
         self.team_service = TeamService(self)
         self.scheduler_web_service = SchedulerWebService(self)
         self.scheduler_job_executor = SchedulerJobExecutor(self)
+        self.desktop_pet = DesktopPetManager(self.root)
         self.history = self.loop.history
         self.attachments = AttachmentStore(self.root)
         self.lock = asyncio.Lock()
@@ -89,9 +104,11 @@ class WebUIState:
             "team": self.team_service.team(),
             "scheduler": self.scheduler_web_service.scheduler(),
             "control": self.control(),
+            "desktopPet": self.desktop_pet.payload(),
             "context_used": self.loop.token_tracker.last_input_tokens(),
             "unarchivedHistory": self.memory_service.unarchived_history(),
             "runtime": self.memory_service.runtime(),
+            "diagnostics": self.diagnostics_service.payload(),
         })
 
     async def upload_attachment(self, request: web.Request) -> web.Response:
@@ -191,6 +208,32 @@ class WebUIState:
             "cancelled": [info.to_dict() for info in cancelled],
             "active": [info.to_dict() for info in await self.active_tasks.list()],
         })
+
+    def start_desktop_pet_for_webui(self) -> None:
+        payload = self.desktop_pet.start_for_webui(
+            host=self.webui_host or self._webui_host(),
+            port=self.webui_port or self._webui_port(),
+        )
+        if payload.get("enabled") and payload.get("lastError"):
+            logger.warning("desktop pet not started: {}", payload.get("lastError"))
+
+    async def get_desktop_pet(self, request: web.Request) -> web.Response:
+        return self._json(self.desktop_pet.payload())
+
+    async def post_desktop_pet(self, request: web.Request) -> web.Response:
+        assert_web_mutation_allowed(self.control(), area="desktop pet", action="toggle")
+        body = await self._body(request)
+        if "enabled" not in body:
+            raise web.HTTPBadRequest(reason="desktop-pet: 'enabled' is required")
+        if not isinstance(body.get("enabled"), bool):
+            raise web.HTTPBadRequest(reason="desktop-pet: 'enabled' must be a boolean")
+        return self._json(
+            self.desktop_pet.set_enabled(
+                body["enabled"],
+                host=self.webui_host or self._webui_host(),
+                port=self.webui_port or self._webui_port(),
+            )
+        )
 
     async def _broadcast_cancelled_task(self, info: ActiveTaskInfo, *, reason: str) -> None:
         await self._broadcast_event(
@@ -538,6 +581,16 @@ npm run build</code>
             local.parent.mkdir(parents=True, exist_ok=True)
             local.write_text(template.read_text(encoding="utf-8"), encoding="utf-8")
         return local
+
+    def _webui_host(self) -> str:
+        from ..local_config import load_local_config
+
+        return load_local_config(self.root).webui.host
+
+    def _webui_port(self) -> int:
+        from ..local_config import load_local_config
+
+        return load_local_config(self.root).webui.port
 
     def _rel(self, path: str | Path) -> str:
         return Path(path).resolve().relative_to(self.root).as_posix()

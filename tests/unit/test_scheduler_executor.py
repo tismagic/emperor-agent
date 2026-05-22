@@ -1,11 +1,10 @@
 from __future__ import annotations
 
 import asyncio
-from pathlib import Path
 from typing import Any
 
-from agent.scheduler import SchedulerJob, SchedulerPayload, SchedulerSchedule
 from agent.runtime.active import ActiveTaskRegistry
+from agent.scheduler import SchedulerJob, SchedulerPayload, SchedulerSchedule
 from agent.web.services.scheduler_executor import SchedulerJobExecutor
 
 

@@ -7,7 +7,6 @@ from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import Any, Literal
 
-
 SCHEMA_VERSION = 1
 _JOB_ID_RE = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,63}$")
 _MAX_RUN_HISTORY = 20
@@ -61,7 +60,7 @@ class SchedulerSchedule:
     tz: str | None = None
 
     @classmethod
-    def from_dict(cls, raw: dict[str, Any]) -> "SchedulerSchedule":
+    def from_dict(cls, raw: dict[str, Any]) -> SchedulerSchedule:
         kind = str(raw.get("kind") or "every")
         if kind not in {"at", "every", "cron"}:
             raise ValueError(f"unsupported schedule kind: {kind}")
@@ -92,7 +91,7 @@ class SchedulerPayload:
     meta: dict[str, Any] = field(default_factory=dict)
 
     @classmethod
-    def from_dict(cls, raw: dict[str, Any]) -> "SchedulerPayload":
+    def from_dict(cls, raw: dict[str, Any]) -> SchedulerPayload:
         kind = str(raw.get("kind") or "agent_turn")
         if kind not in {"agent_turn", "team_wake", "system_event"}:
             kind = "agent_turn"
@@ -123,7 +122,7 @@ class SchedulerRunRecord:
     error: str | None = None
 
     @classmethod
-    def from_dict(cls, raw: dict[str, Any]) -> "SchedulerRunRecord":
+    def from_dict(cls, raw: dict[str, Any]) -> SchedulerRunRecord:
         status = str(raw.get("status") or SchedulerStatus.SKIPPED.value)
         if status not in {item.value for item in SchedulerStatus}:
             status = SchedulerStatus.SKIPPED.value
@@ -152,7 +151,7 @@ class SchedulerJobState:
     run_history: list[SchedulerRunRecord] = field(default_factory=list)
 
     @classmethod
-    def from_dict(cls, raw: dict[str, Any]) -> "SchedulerJobState":
+    def from_dict(cls, raw: dict[str, Any]) -> SchedulerJobState:
         history = []
         for item in raw.get("run_history") or raw.get("runHistory") or []:
             if isinstance(item, dict):
@@ -225,7 +224,7 @@ class SchedulerJob:
         protected: bool = False,
         purpose: str | None = None,
         now: int | None = None,
-    ) -> "SchedulerJob":
+    ) -> SchedulerJob:
         stamp = int(now or now_ms())
         return cls(
             id=validate_job_id(job_id or new_job_id()),
@@ -242,7 +241,7 @@ class SchedulerJob:
         )
 
     @classmethod
-    def from_dict(cls, raw: dict[str, Any]) -> "SchedulerJob":
+    def from_dict(cls, raw: dict[str, Any]) -> SchedulerJob:
         return cls(
             id=validate_job_id(str(raw.get("id") or "")),
             name=str(raw.get("name") or ""),
@@ -272,7 +271,7 @@ class SchedulerJob:
             "purpose": self.purpose,
         }
 
-    def touch(self, *, now: int | None = None) -> "SchedulerJob":
+    def touch(self, *, now: int | None = None) -> SchedulerJob:
         data = self.to_dict()
         data["updatedAtMs"] = int(now or now_ms())
         return SchedulerJob.from_dict(data)

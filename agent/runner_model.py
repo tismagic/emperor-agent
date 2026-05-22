@@ -8,7 +8,6 @@ from loguru import logger
 from .providers import LLMProvider
 from .runtime import events as runtime_events
 
-
 StreamEmitter = Callable[[dict[str, Any]], Awaitable[None]]
 
 

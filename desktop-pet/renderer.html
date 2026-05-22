@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Emperor Agent Desktop Pet</title>
+    <link rel="stylesheet" href="./renderer.css" />
+  </head>
+  <body>
+    <main id="pet-shell" aria-live="polite">
+      <div id="speech-bubble" hidden><span id="speech-text"></span></div>
+      <div id="subagent-badge" hidden>×0</div>
+      <img id="pet" alt="Emperor Agent desktop pet" />
+    </main>
+    <script src="./event-mapper.js"></script>
+    <script src="./idle-scenes.js"></script>
+    <script src="./renderer.js"></script>
+  </body>
+</html>

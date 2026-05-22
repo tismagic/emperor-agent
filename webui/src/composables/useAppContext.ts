@@ -5,6 +5,7 @@ import type {
   ChatSendPayload,
   CompactResult,
   MemoryVersionDetail,
+  DesktopPetPayload,
   ModelConfigRaw,
   PendingState,
   RuntimeStatus,
@@ -50,6 +51,7 @@ export interface AppContext {
   restoreMemoryVersion: (id: string) => Promise<{ restored: { path: string; content: string }; memory: BootstrapPayload['memory'] }>
   saveWatchlist: (content: string) => Promise<void>
   checkWatchlist: () => Promise<WatchlistDecision>
+  setDesktopPetEnabled: (enabled: boolean) => Promise<DesktopPetPayload>
 
   setControlMode: (mode: 'ask_before_edit' | 'auto' | 'plan') => Promise<{ ok: boolean; error?: string }>
   sendMessage: (payload: string | ChatSendPayload) => boolean

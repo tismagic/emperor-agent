@@ -10,8 +10,8 @@ from .config import ServerConfig
 
 try:
     from mcp import ClientSession, StdioServerParameters
-    from mcp.client.stdio import stdio_client
     from mcp.client.sse import sse_client
+    from mcp.client.stdio import stdio_client
     MCP_AVAILABLE = True
 except ImportError:
     MCP_AVAILABLE = False

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+from pathlib import Path
 from typing import Any
 
 from agent.external import (
@@ -40,7 +41,11 @@ class FakeAdapter(ExternalAdapter):
         return ExternalDeliveryResult(ok=True, external_message_id="platform_msg_1")
 
 
-def make_bridge(*, can_accept: bool = True) -> tuple[ExternalBridgeService, FakeSubmitter, list[dict[str, Any]]]:
+def make_bridge(
+    *,
+    can_accept: bool = True,
+    root: Path | None = None,
+) -> tuple[ExternalBridgeService, FakeSubmitter, list[dict[str, Any]]]:
     submitter = FakeSubmitter()
     events: list[dict[str, Any]] = []
 
@@ -51,6 +56,7 @@ def make_bridge(*, can_accept: bool = True) -> tuple[ExternalBridgeService, Fake
         submit_turn=submitter,
         can_accept_turn=lambda: can_accept,
         event_sink=event_sink,
+        root=root,
     )
     return bridge, submitter, events
 
@@ -99,6 +105,28 @@ def test_external_inbound_queues_when_mainline_busy_or_pending() -> None:
     assert submitter.calls == []
     assert [event["event"] for event in events] == ["external_inbound", "external_queued"]
     assert bridge.payload()["inbox"]["pending"] == 1
+
+
+def test_external_bridge_restores_pending_seen_and_outbox(tmp_path: Path) -> None:
+    bridge, _, _ = make_bridge(can_accept=False, root=tmp_path)
+    msg = ExternalInbound(platform="fake", sender_id="u", external_message_id="m", content="queued")
+    outbound = ExternalOutbound(platform="missing", target_id="u", content="hi")
+
+    asyncio.run(bridge.ingest(msg))
+    asyncio.run(bridge.send_outbound(outbound))
+
+    restored, submitter, _ = make_bridge(can_accept=True, root=tmp_path)
+    duplicate = asyncio.run(restored.ingest(msg))
+    drained = asyncio.run(restored.drain_pending())
+    payload = restored.payload()
+
+    assert duplicate["status"] == "duplicate"
+    assert drained[0]["status"] == "dispatched"
+    assert submitter.calls[0]["client_message_id"] == "external:fake:m"
+    assert payload["inbox"]["pending"] == 0
+    assert payload["inbox"]["seen"] == 1
+    assert payload["outbox"]["recent"][0]["status"] == "error"
+    assert payload["store"]["exists"] is True
 
 
 def test_external_outbox_sends_with_registered_adapter() -> None:

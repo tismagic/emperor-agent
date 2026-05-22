@@ -15,7 +15,6 @@ from ..telemetry import TokenTracker
 from .models import WatchlistDecision
 from .store import WatchlistStore
 
-
 DecisionFn = Callable[[str, list[str]], WatchlistDecision | Awaitable[WatchlistDecision]]
 
 

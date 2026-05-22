@@ -11,7 +11,6 @@ from .schema import (
     tool_parameters_schema,
 )
 
-
 _VALID_STATUS = ("pending", "in_progress", "completed")
 _STATUS_ICON = {"pending": "[ ]", "in_progress": "[~]", "completed": "[x]"}
 

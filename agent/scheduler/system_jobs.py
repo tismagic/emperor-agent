@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from .models import SchedulerJob, SchedulerPayload, SchedulerSchedule
 
-
 SYSTEM_JOB_IDS = {
     "memory-maintenance",
     "runtime-maintenance",

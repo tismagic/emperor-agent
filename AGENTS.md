@@ -46,7 +46,7 @@
 ### 后端
 
 - `agent.py`：CLI 兼容入口，转发到 `agent.cli`
-- `agent/cli.py`：Python CLI 命令入口，提供 `init` / `chat` / `web` / `status` / `doctor`
+- `agent/cli.py`：Python CLI 命令入口，提供 `init` / `chat` / `web` / `status` / `doctor`；`doctor --dev` 会复用统一质量门禁
 - `agent/onboarding.py`：Rich + Questionary 初始化向导、doctor 检查和模型配置构造
 - `agent/local_config.py`：`emperor.local.json` 本地 CLI/WebUI 偏好读写
 - `webui.py`：WebUI 服务入口
@@ -63,7 +63,7 @@
 - `agent/scheduler/`：本地长期自动运行中枢，持久保存 `at` / `every` / `cron` jobs，WebUI 启动后恢复 timer，Agent 通过 `scheduler` 工具管理任务；执行侧由 `agent/web/services/scheduler_executor.py` 把 job payload 投递到本地主动 turn 或 Team wake
 - `agent/watchlist/`：Watchlist heartbeat，读取 `memory/watchlist.md`，用次模型先判断 `skip/run`，只有 `run` 才投递完整主动 turn
 - `agent/team/`：Agent Team 子系统（持久队友、inbox、thread、状态机、team tools）
-- `agent/external/`：外部平台适配基础层；提供 `ExternalAdapter`、统一消息模型、入站去重、inbox/outbox 状态。当前不内置真实平台实现，外部消息必须进入唯一主线，不能引入多会话。
+- `agent/external/`：外部平台适配基础层；提供 `ExternalAdapter`、统一消息模型、入站去重、inbox/outbox 状态和 durable store。当前不内置真实平台实现，外部消息必须进入唯一主线，不能引入多会话。
 - `agent/attachments.py`：附件落盘、MIME 校验、PDF/文本抽取、图片 base64 编码
 - `agent/memory.py`：长期记忆、历史日志、checkpoint 恢复
 - `agent/memory_versions.py`：记忆快照、diff 预览与恢复；本地数据在 `memory/versions/`
@@ -120,6 +120,15 @@ npm run dev
 ```
 
 Vite 会代理 `/api` 与 `/ws` 到 `127.0.0.1:8765`。
+
+### 质量门禁
+
+```bash
+make check
+emperor-agent doctor --dev
+```
+
+`make check` 会调用 `scripts/check.sh`，固定执行 `git diff --check`、Python 编译、`ruff`、`pytest` 和 WebUI build。不要用全局 ignore 掩盖 production 问题；tests 可以放宽 `S101`。
 
 ## 5. 运行时核心机制（必须理解）
 
@@ -179,6 +188,12 @@ Vite 会代理 `/api` 与 `/ws` 到 `127.0.0.1:8765`。
 - External Bridge 入站事件会记录 `external_inbound` / `external_queued`，出站基础状态会记录 `external_outbound_*`；真正进入模型时仍走主线 `user_message` + `turn_id`。
 - localStorage 只是热缓存兜底；后端冷记录是刷新/重启恢复的事实来源
 - 压缩前的细节会进入 `memory/runtime/archive/*.jsonl.gz`，但 Chat 当前页面只展示未压缩 turn
+
+### 5.7 Diagnostics 与安全错误
+
+- `GET /api/diagnostics` 是本地诊断统一入口，覆盖 model config、local config、scheduler store、runtime event store、external bridge、desktop pet 和依赖提示。
+- `/api/*` 未处理异常只返回安全错误和 `errorId`，详细 traceback 只写日志，不能把内部 exception text 直接返回给浏览器。
+- `emperor.local.json` 损坏时会保存为 `emperor.local.json.corrupt-*`，然后返回默认配置；corrupt 备份必须在 doctor/bootstrap diagnostics 中可见。
 
 ## 6. WebSocket 事件协议（前后端联动改动必看）
 
@@ -269,7 +284,8 @@ Vite 会代理 `/api` 与 `/ws` 到 `127.0.0.1:8765`。
 ### External Bridge
 
 - External Bridge 是外部平台接入基础，不是多会话系统。所有外部入口都必须通过 `MainlineTurnService` 汇入唯一 `AgentLoop.history`。
-- 当前只允许通用 adapter 抽象、统一消息模型、入站去重、忙碌/Ask/Plan 时排队、只读状态 API 与 runtime 事件；不要在基础层直接实现飞书/Slack/Telegram 等具体平台。
+- 当前只允许通用 adapter 抽象、统一消息模型、入站去重、忙碌/Ask/Plan 时排队、durable store、只读状态 API 与 runtime 事件；不要在基础层直接实现飞书/Slack/Telegram 等具体平台。
+- Durable store 固定写入 `memory/external/state.json`，保存 `seen`、`pending`、`outbox` 和最近错误。损坏状态必须备份为 `state.json.corrupt-*` 并进入 diagnostics，不能静默丢弃。
 - 外部入站内容进入模型前必须带来源上下文和“不可信输入”标记；长期记忆写入仍由主 Agent 与既有记忆机制决定，不能让平台消息绕过主线。
 - 出站能力目前只保留 outbox 状态和 adapter `send()` 接口，不暴露模型可调用的 `send_external_message` 工具；真实外发平台后续必须接入权限/审批策略。
 
@@ -278,8 +294,9 @@ Vite 会代理 `/api` 与 `/ws` 到 `127.0.0.1:8765`。
 - Ask 用于目标不清时主动发问：最多 3 个问题，每题 2-4 个选项，并允许自由补充。高影响歧义由 `ClarificationPolicy` 统一判断，避免把主动提问散落到 prompt 文案里。
 - 权限模式由 `agent/permissions/` 管理：`ask_before_edit` 默认危险先问，`auto` 自动执行，`plan` 只读计划。
 - Plan 需要显式开启（WebUI Composer 模式选择器、`/mode plan` 或 `/plan on`）：只读探索、提问、提交计划；用户可评论修订，批准或取消后自动恢复进入 Plan 前的 `ask_before_edit` / `auto` 模式。Plan 模式必须产出 PlanCard，不能用普通文字最终答复绕过。
-- WebUI 手动点击被视为用户直接操作，不再二次弹 Agent AskCard；但统一 Web mutation guard 会在 pending Ask/Plan 时拒绝执行型 Scheduler / Team 操作，并在 Plan 模式下拒绝 Scheduler mutation 与 Team 写操作，防止绕过计划门禁。
+- WebUI 手动点击被视为用户直接操作，不再二次弹 Agent AskCard；但统一 Web mutation guard 会在 pending Ask/Plan 时拒绝执行型 Scheduler / Team / Desktop Pet 操作，并在 Plan 模式下拒绝 Scheduler mutation、Team 写操作和桌宠开关，防止绕过计划门禁。
 - Scheduler 在 Plan 模式下只允许 `scheduler(action=list)`，创建/修改/删除/运行长期任务必须等待计划批准；`ask_before_edit` 下 scheduler 写操作会进入 AskCard 审批；`auto` 下仍保留 schema、timezone、protected job 等安全校验。
+- Scheduler action log 合并时必须隔离坏行或未知 action 到 `memory/scheduler/action.corrupt-*.jsonl`，合法 action 继续合并，diagnostics 暴露腐化信息；禁止吞异常后继续伪装为正常。
 - Scheduler job 执行时会设置 scheduler context，禁止递归创建新的 scheduler job；`agent_turn` 默认写入 history/runtime，`deliver=false` 时作为后台运行不插入当前 Chat timeline；`team_wake` 会走 TeamManager inbox+wake，`deliver=false` 时不把 Team 事件挂到当前 Chat；`system_event` 只能由系统代码注册。
 - WebUI 启动会登记受保护系统任务：`memory-maintenance`、`runtime-maintenance`、`team-stale-recovery`、`token-ledger-maintenance`、`watchlist-check`。它们可见、可手动运行、可暂停/恢复，但不能删除；Memory 页展示维护任务状态摘要，并提供 `memory/watchlist.md` 编辑与手动检查入口。
 - Watchlist heartbeat 先用次模型做 deliverability filter：空清单或不及时的事项只记录 `skip`；只有 `run` 决策才包装为本地主动 `agent_turn`，避免长期心跳污染 Chat。
@@ -300,6 +317,7 @@ Vite 会代理 `/api` 与 `/ws` 到 `127.0.0.1:8765`。
 严格不要提交：
 
 - `memory/`
+- `memory/external/`（包含在 `memory/`，External durable store）
 - `.team/`
 - `model_config.json`
 - `emperor.local.json`
@@ -343,7 +361,7 @@ Vite 会代理 `/api` 与 `/ws` 到 `127.0.0.1:8765`。
 - 小改动优先最小 patch，不做无关重构。
 - 涉及行为变化时，必须同时更新 README 或本文件对应章节。
 - 做完改动至少做一次“路径验证”：能启动、能发消息、关键 API 不 500。
-- Python 质量门禁优先使用 `pip install -r requirements-dev.txt` 后执行 `git diff --check`、`python -m ruff check agent tests`、`python -m pytest`；涉及前端还要执行 `cd webui && npm run build`。
+- Python 质量门禁优先使用 `.venv/bin/python -m pip install -r requirements-dev.txt` 后执行 `make check`；局部调试可拆开跑 `git diff --check`、`.venv/bin/python -m ruff check agent tests`、`.venv/bin/python -m pytest -q`、`npm --prefix webui run build`，但提交前以 `make check` 为准。
 - 若发现代码与 README 不一致，以“当前代码行为”为准并回写文档。
 
 ## 13. 项目素材生成规范（imagegen）

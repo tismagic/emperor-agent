@@ -10,17 +10,15 @@ from __future__ import annotations
 
 import base64
 import hashlib
-import json
 import re
 from collections import OrderedDict
-from dataclasses import asdict, dataclass
+from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from io import BytesIO
 from pathlib import Path
 from typing import Any
 
 from loguru import logger
-
 
 _UTC8 = timezone(timedelta(hours=8))
 
@@ -76,7 +74,7 @@ class AttachmentStore:
         self.root = root.resolve()
         self.base = self.root / "memory" / "attachments"
         self.base.mkdir(parents=True, exist_ok=True)
-        self._cache: "OrderedDict[str, AttachmentRef]" = OrderedDict()
+        self._cache: OrderedDict[str, AttachmentRef] = OrderedDict()
         self._cache_max = 64
 
     # ─── 写入 ─────────────────────────────────────────────

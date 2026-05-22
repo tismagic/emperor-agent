@@ -11,6 +11,7 @@ from typing import Any, Literal
 from uuid import uuid4
 
 from filelock import FileLock
+from loguru import logger
 
 from .models import SCHEMA_VERSION, SchedulerJob, validate_job_id
 
@@ -25,7 +26,7 @@ class SchedulerStoreData:
     jobs: list[SchedulerJob] = field(default_factory=list)
 
     @classmethod
-    def from_dict(cls, raw: dict[str, Any]) -> "SchedulerStoreData":
+    def from_dict(cls, raw: dict[str, Any]) -> SchedulerStoreData:
         jobs = []
         for item in raw.get("jobs") or []:
             if isinstance(item, dict):
@@ -53,6 +54,7 @@ class SchedulerStore:
         self.jobs_file = self.scheduler_dir / "jobs.json"
         self.action_file = self.scheduler_dir / "action.jsonl"
         self.lock_file = self.scheduler_dir / "scheduler.lock"
+        self._last_action_errors: list[dict[str, Any]] = []
         self._json_lock = RLock()
         self._file_lock = FileLock(str(self.lock_file))
         self._last_good: SchedulerStoreData | None = None
@@ -89,6 +91,26 @@ class SchedulerStore:
         if not include_disabled:
             jobs = [job for job in jobs if job.enabled]
         return sorted(jobs, key=lambda job: job.state.next_run_at_ms or float("inf"))
+
+    def diagnostics(self) -> dict[str, Any]:
+        corrupt_files = sorted(
+            self.scheduler_dir.glob("action.corrupt-*.jsonl"),
+            key=lambda path: path.stat().st_mtime,
+            reverse=True,
+        )
+        return {
+            "jobsFile": self.jobs_file.as_posix(),
+            "actionFile": self.action_file.as_posix(),
+            "lastActionErrors": list(self._last_action_errors[-20:]),
+            "corruptActionFiles": [
+                {
+                    "path": path.as_posix(),
+                    "bytes": path.stat().st_size,
+                    "updatedAt": path.stat().st_mtime,
+                }
+                for path in corrupt_files[:10]
+            ],
+        }
 
     def get_job(self, job_id: str) -> SchedulerJob | None:
         safe = validate_job_id(job_id)
@@ -168,13 +190,17 @@ class SchedulerStore:
             return data
         jobs = {job.id: job for job in data.jobs}
         changed = False
+        corrupt_records: list[dict[str, Any]] = []
         with self.action_file.open("r", encoding="utf-8") as f:
-            for line in f:
-                line = line.strip()
+            for line_no, line in enumerate(f, start=1):
+                raw_line = line.rstrip("\n")
+                line = raw_line.strip()
                 if not line:
                     continue
                 try:
                     action = json.loads(line)
+                    if not isinstance(action, dict):
+                        raise ValueError("action log row must be an object")
                     kind = action.get("action")
                     if kind in {"add", "update"}:
                         job = SchedulerJob.from_dict(action.get("job") or {})
@@ -185,14 +211,33 @@ class SchedulerStore:
                         if job_id in jobs:
                             jobs.pop(job_id, None)
                             changed = True
-                except Exception:
-                    continue
-        if not changed:
+                    else:
+                        raise ValueError(f"unknown scheduler action: {kind!r}")
+                except Exception as exc:
+                    logger.warning("Invalid scheduler action log line {}: {}", line_no, exc)
+                    corrupt_records.append({
+                        "line": line_no,
+                        "error": str(exc),
+                        "raw": raw_line,
+                    })
+        if corrupt_records:
+            self._write_corrupt_actions(corrupt_records)
+            self._last_action_errors = corrupt_records
+        if not changed and not corrupt_records:
             return data
-        merged = SchedulerStoreData(version=data.version, jobs=list(jobs.values()))
-        self._atomic_write_json(self.jobs_file, merged.to_dict(), fsync=False)
+        merged = data
+        if changed:
+            merged = SchedulerStoreData(version=data.version, jobs=list(jobs.values()))
+            self._atomic_write_json(self.jobs_file, merged.to_dict(), fsync=False)
         self.action_file.write_text("", encoding="utf-8")
         return merged
+
+    def _write_corrupt_actions(self, records: list[dict[str, Any]]) -> Path:
+        path = self.scheduler_dir / f"action.corrupt-{int(time.time())}-{uuid4().hex[:8]}.jsonl"
+        with path.open("w", encoding="utf-8") as f:
+            for record in records:
+                f.write(json.dumps(record, ensure_ascii=False) + "\n")
+        return path
 
     @staticmethod
     def _atomic_write_json(path: Path, payload: dict[str, Any], *, fsync: bool = False) -> None:

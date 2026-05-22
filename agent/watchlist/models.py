@@ -16,11 +16,11 @@ class WatchlistDecision:
     model_role: str | None = None
 
     @classmethod
-    def skip(cls, reason: str) -> "WatchlistDecision":
+    def skip(cls, reason: str) -> WatchlistDecision:
         return cls(action="skip", reason=reason, checked_at=time.time())
 
     @classmethod
-    def from_dict(cls, raw: dict[str, Any]) -> "WatchlistDecision":
+    def from_dict(cls, raw: dict[str, Any]) -> WatchlistDecision:
         action = str(raw.get("action") or "skip").lower()
         if action not in {"skip", "run"}:
             action = "skip"

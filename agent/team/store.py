@@ -6,7 +6,13 @@ from threading import RLock
 from typing import Any
 from uuid import uuid4
 
-from .models import SCHEMA_VERSION, TeamMember, TeamStatus, validate_actor_name, validate_member_name
+from .models import (
+    SCHEMA_VERSION,
+    TeamMember,
+    TeamStatus,
+    validate_actor_name,
+    validate_member_name,
+)
 
 
 class TeamStore:

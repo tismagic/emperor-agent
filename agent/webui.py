@@ -43,7 +43,12 @@ def run_webui(
     logger.info(f"Emperor Agent Web UI: {url}")
     if prefs.open_browser:
         webbrowser.open(url)
-    web.run_app(create_app(root), host=prefs.host, port=prefs.port, print=None)
+    web.run_app(
+        create_app(root, webui_host=prefs.host, webui_port=prefs.port),
+        host=prefs.host,
+        port=prefs.port,
+        print=None,
+    )
 
 
 if __name__ == "__main__":

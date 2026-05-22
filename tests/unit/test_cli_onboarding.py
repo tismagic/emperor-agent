@@ -5,9 +5,11 @@ import copy
 from agent.control.manager import ControlManager
 from agent.control.models import ControlMode
 from agent.local_config import (
+    DesktopPetPreferences,
     LocalConfig,
     WebUIPreferences,
     load_local_config,
+    local_config_diagnostics,
     merge_webui_overrides,
     save_local_config,
 )
@@ -76,7 +78,10 @@ def test_wizard_model_config_overwrites_key_and_masks_secret(tmp_path) -> None:
 def test_local_config_roundtrip_and_overrides(tmp_path) -> None:
     save_local_config(
         tmp_path,
-        LocalConfig(webui=WebUIPreferences(host="127.0.0.2", port=9999, open_browser=True)),
+        LocalConfig(
+            webui=WebUIPreferences(host="127.0.0.2", port=9999, open_browser=True),
+            desktop_pet=DesktopPetPreferences(enabled=True, auto_start_with_webui=False),
+        ),
     )
 
     loaded = load_local_config(tmp_path)
@@ -85,9 +90,27 @@ def test_local_config_roundtrip_and_overrides(tmp_path) -> None:
     assert loaded.webui.host == "127.0.0.2"
     assert loaded.webui.port == 9999
     assert loaded.webui.open_browser is True
+    assert loaded.desktop_pet.enabled is True
+    assert loaded.desktop_pet.auto_start_with_webui is False
     assert prefs.host == "127.0.0.1"
     assert prefs.port == 8765
     assert prefs.open_browser is False
+
+
+def test_corrupt_local_config_is_preserved(tmp_path) -> None:
+    path = tmp_path / "emperor.local.json"
+    path.write_text("{bad json", encoding="utf-8")
+
+    loaded = load_local_config(tmp_path)
+
+    assert loaded.webui.port == 8765
+    assert not path.exists()
+    backups = list(tmp_path.glob("emperor.local.json.corrupt-*"))
+    assert len(backups) == 1
+    assert backups[0].read_text(encoding="utf-8") == "{bad json"
+    diagnostics = local_config_diagnostics(tmp_path)
+    assert diagnostics["status"] == "missing"
+    assert len(diagnostics["corruptBackups"]) == 1
 
 
 def test_apply_control_mode_skips_pending_interaction(tmp_path) -> None:

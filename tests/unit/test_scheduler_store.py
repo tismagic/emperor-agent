@@ -8,7 +8,6 @@ import pytest
 from agent.scheduler import (
     SchedulerJob,
     SchedulerPayload,
-    SchedulerRunRecord,
     SchedulerSchedule,
     SchedulerStatus,
     SchedulerStore,
@@ -133,7 +132,7 @@ def test_atomic_write_failure_preserves_previous_file(tmp_path: Path, monkeypatc
     assert store.jobs_file.read_bytes() == original
 
 
-def test_store_load_skips_invalid_action_lines(tmp_path: Path) -> None:
+def test_store_load_isolates_invalid_action_lines(tmp_path: Path) -> None:
     store = SchedulerStore(tmp_path)
     store.action_file.write_text(
         "not json\n"
@@ -143,3 +142,8 @@ def test_store_load_skips_invalid_action_lines(tmp_path: Path) -> None:
     )
 
     assert [job.id for job in store.load().jobs] == ["job-1"]
+    assert store.action_file.read_text(encoding="utf-8") == ""
+    corrupt_files = list(store.scheduler_dir.glob("action.corrupt-*.jsonl"))
+    assert len(corrupt_files) == 1
+    diagnostics = store.diagnostics()
+    assert len(diagnostics["lastActionErrors"]) == 2

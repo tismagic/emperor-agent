@@ -104,7 +104,14 @@ class SchedulerWebService:
         return {
             "status": self.state.loop.scheduler_service.status(),
             "jobs": [job.to_dict() for job in self.state.loop.scheduler_service.list_jobs()],
+            "diagnostics": self._diagnostics(),
         }
+
+    def _diagnostics(self) -> dict[str, Any]:
+        store = getattr(self.state.loop, "scheduler_store", None)
+        if store is None:
+            return {}
+        return store.diagnostics()
 
     async def _broadcast_job(self, job: SchedulerJob, *, action: str) -> None:
         await self.state._broadcast_event(

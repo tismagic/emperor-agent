@@ -27,11 +27,11 @@ class PermissionDecision:
     arguments: dict[str, Any] | None = None
 
     @classmethod
-    def allow(cls, *, tool_name: str, arguments: dict[str, Any] | None = None) -> "PermissionDecision":
+    def allow(cls, *, tool_name: str, arguments: dict[str, Any] | None = None) -> PermissionDecision:
         return cls(allowed=True, tool_name=tool_name, arguments=arguments or {})
 
     @classmethod
-    def deny(cls, *, tool_name: str, reason: str, arguments: dict[str, Any] | None = None) -> "PermissionDecision":
+    def deny(cls, *, tool_name: str, reason: str, arguments: dict[str, Any] | None = None) -> PermissionDecision:
         return cls(
             allowed=False,
             risk=RiskLevel.HIGH.value,
@@ -48,7 +48,7 @@ class PermissionDecision:
         reason: str,
         arguments: dict[str, Any] | None = None,
         risk: str = RiskLevel.HIGH.value,
-    ) -> "PermissionDecision":
+    ) -> PermissionDecision:
         return cls(
             allowed=False,
             requires_approval=True,

@@ -581,6 +581,55 @@
     @apply gap-3;
   }
 
+  .config-layout {
+    @apply grid min-h-0 flex-1 gap-3 overflow-hidden;
+    grid-template-columns: minmax(0, 1fr) minmax(250px, 340px);
+  }
+
+  .desktop-pet-card {
+    @apply flex min-h-0 flex-col gap-3 overflow-y-auto rounded-[1.4rem] border border-line/70 bg-paper/70 p-4 shadow-insetPaper;
+  }
+
+  .desktop-pet-head {
+    @apply flex shrink-0 items-start justify-between gap-3;
+  }
+
+  .desktop-pet-head h2 {
+    @apply font-display text-xl font-black leading-tight text-ink;
+  }
+
+  .desktop-pet-head p {
+    @apply mt-1 font-mono text-[10px] uppercase tracking-[0.12em] text-muted;
+  }
+
+  .desktop-pet-preview {
+    @apply grid aspect-square max-h-60 shrink-0 place-items-center rounded-[1.2rem] border border-line/60 bg-paper2/35 p-5;
+  }
+
+  .desktop-pet-preview img {
+    @apply h-full max-h-48 w-full object-contain drop-shadow-md;
+  }
+
+  .desktop-pet-meta {
+    @apply grid grid-cols-2 gap-2;
+  }
+
+  .desktop-pet-meta span {
+    @apply min-w-0 rounded-[1rem] border border-line/55 bg-paper2/35 px-3 py-2 text-xs text-ink;
+  }
+
+  .desktop-pet-meta b {
+    @apply mb-1 block font-mono text-[10px] uppercase tracking-[0.12em] text-muted;
+  }
+
+  .desktop-pet-error {
+    @apply rounded-[1rem] border border-seal/30 bg-seal/10 px-3 py-2 text-xs leading-6 text-seal;
+  }
+
+  .desktop-pet-install {
+    @apply block rounded-[1rem] border border-line/60 bg-ink px-3 py-2 font-mono text-xs leading-5 text-paper;
+  }
+
   .resource-list {
     @apply min-h-0 space-y-2 overflow-y-auto pr-1;
   }

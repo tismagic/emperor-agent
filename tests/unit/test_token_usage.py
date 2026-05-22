@@ -136,12 +136,12 @@ def test_token_tracker_recent_calls_normalize_legacy_cache_rows(tmp_path: Path) 
 
 
 class FakeCompletions:
-    def __init__(self, chunks: list["FakeChunk"], *, fail_stream_options: bool = False):
+    def __init__(self, chunks: list[FakeChunk], *, fail_stream_options: bool = False):
         self.chunks = chunks
         self.fail_stream_options = fail_stream_options
         self.calls: list[dict[str, Any]] = []
 
-    async def create(self, **kwargs: Any) -> "FakeStream":
+    async def create(self, **kwargs: Any) -> FakeStream:
         self.calls.append(dict(kwargs))
         if self.fail_stream_options and kwargs.get("stream_options"):
             self.fail_stream_options = False
@@ -150,13 +150,13 @@ class FakeCompletions:
 
 
 class FakeStream:
-    def __init__(self, chunks: list["FakeChunk"]):
+    def __init__(self, chunks: list[FakeChunk]):
         self.chunks = list(chunks)
 
-    def __aiter__(self) -> "FakeStream":
+    def __aiter__(self) -> FakeStream:
         return self
 
-    async def __anext__(self) -> "FakeChunk":
+    async def __anext__(self) -> FakeChunk:
         if not self.chunks:
             raise StopAsyncIteration
         return self.chunks.pop(0)

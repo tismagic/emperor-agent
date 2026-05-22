@@ -11,7 +11,14 @@ from typing import Any
 import pytest
 
 from agent.subagents import SubagentSpec
-from agent.team import MessageBus, TeamManager, TeamMember, TeamStatus, TeamStore, role_to_agent_type
+from agent.team import (
+    MessageBus,
+    TeamManager,
+    TeamMember,
+    TeamStatus,
+    TeamStore,
+    role_to_agent_type,
+)
 from agent.team.models import TeamMessage, validate_member_name
 from agent.tools import ToolRegistry
 

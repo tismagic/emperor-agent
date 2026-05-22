@@ -316,6 +316,31 @@ export interface ModelConfigPayload {
   providerOptions?: ProviderOption[]
 }
 
+export interface DesktopPetPayload {
+  enabled: boolean
+  autoStartWithWebui: boolean
+  running: boolean
+  pid?: number | null
+  lastError?: string | null
+  installCommand: string
+}
+
+export interface DiagnosticsFileInfo {
+  path: string
+  bytes?: number
+  updatedAt?: number
+}
+
+export interface DiagnosticsPayload {
+  modelConfig?: Record<string, unknown>
+  localConfig?: Record<string, unknown>
+  scheduler?: Record<string, unknown>
+  runtime?: RuntimeStats
+  external?: Record<string, unknown>
+  desktopPet?: DesktopPetPayload & Record<string, unknown>
+  dependencies?: Record<string, unknown>
+}
+
 export interface BootstrapPayload {
   app: string
   model?: string
@@ -328,7 +353,9 @@ export interface BootstrapPayload {
   team?: TeamPayload
   scheduler?: SchedulerPayload
   control?: ControlPayload
+  desktopPet?: DesktopPetPayload
   runtime?: RuntimeReplayPayload
+  diagnostics?: DiagnosticsPayload
   context_used?: number
   unarchivedHistory?: RuntimeHistoryItem[]
 }
@@ -622,6 +649,7 @@ export interface SchedulerStatusPayload {
 export interface SchedulerPayload {
   status: SchedulerStatusPayload
   jobs: SchedulerJob[]
+  diagnostics?: Record<string, unknown>
 }
 
 export type WsEvent = ({ seq?: number; ts?: number; turn_id?: string; client_message_id?: string } & (

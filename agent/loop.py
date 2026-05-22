@@ -24,6 +24,7 @@ from .mcp import MCPClient
 from .memory import MemoryStore
 from .model_router import ModelRouter
 from .runner import AgentRunner
+from .runner_factory import build_routed_runner
 from .scheduler import SchedulerService, SchedulerStore, SchedulerTool
 from .skills import SkillsLoader
 from .subagents import SubagentRegistry
@@ -479,28 +480,13 @@ class AgentLoop:
     def _install_subagent_tool(self) -> None:
         def _make_subagent_runner(*, spec, sub_registry, task: str | None = None):
             route = self.model_router.route("subagent", agent_type=spec.name, task=task)
-            snapshot = route.snapshot
-            fallback = route.fallback
-            return AgentRunner(
-                provider=snapshot.provider,
-                model=snapshot.model,
+            return build_routed_runner(
+                route=route,
                 registry=sub_registry,
                 system_prompt=spec.system_prompt,
-                max_tokens=min(2000, snapshot.generation.max_tokens),
-                temperature=snapshot.generation.temperature,
-                reasoning_effort=snapshot.generation.reasoning_effort,
-                provider_name=snapshot.provider_name,
-                model_role=snapshot.model_role,
-                route_reason=route.reason,
-                fallback_provider=fallback.provider if fallback else None,
-                fallback_model=fallback.model if fallback else None,
-                fallback_provider_name=fallback.provider_name if fallback else None,
-                fallback_generation=fallback.generation if fallback else None,
-                fallback_model_role=fallback.model_role if fallback else "main",
+                max_tokens_cap=2000,
                 usage_type=f"subagent:{spec.name}",
-                memory_store=None,
                 token_tracker=self.token_tracker,
-                compactor=None,
                 max_turns=spec.max_turns,
             )
 
@@ -515,8 +501,6 @@ class AgentLoop:
     def _install_team_tools(self) -> None:
         def _make_team_runner(*, member, spec, sub_registry):
             route = self.model_router.route("team", agent_type=spec.name)
-            snapshot = route.snapshot
-            fallback = route.fallback
             system_prompt = (
                 f"{spec.system_prompt}\n\n"
                 "## Agent Team 协作规则\n\n"
@@ -526,26 +510,13 @@ class AgentLoop:
                 "- 完成后必须用 send_message(to=\"lead\", content=\"...\") 回禀关键结果。\n"
                 "- 只能处理本队友职责内的任务, 不要创建或唤醒其他队友。\n"
             )
-            return AgentRunner(
-                provider=snapshot.provider,
-                model=snapshot.model,
+            return build_routed_runner(
+                route=route,
                 registry=sub_registry,
                 system_prompt=system_prompt,
-                max_tokens=min(4000, snapshot.generation.max_tokens),
-                temperature=snapshot.generation.temperature,
-                reasoning_effort=snapshot.generation.reasoning_effort,
-                provider_name=snapshot.provider_name,
-                model_role=snapshot.model_role,
-                route_reason=route.reason,
-                fallback_provider=fallback.provider if fallback else None,
-                fallback_model=fallback.model if fallback else None,
-                fallback_provider_name=fallback.provider_name if fallback else None,
-                fallback_generation=fallback.generation if fallback else None,
-                fallback_model_role=fallback.model_role if fallback else "main",
+                max_tokens_cap=4000,
                 usage_type=f"team:{member.name}",
-                memory_store=None,
                 token_tracker=self.token_tracker,
-                compactor=None,
                 max_turns=spec.max_turns,
             )
 

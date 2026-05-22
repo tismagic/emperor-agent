@@ -12,7 +12,6 @@ from .memory import MemoryStore
 from .providers import LLMProvider
 from .providers.base import run_sync
 
-
 _UTC8 = timezone(timedelta(hours=8))
 
 _PROMPT_FILE = Path(__file__).parent.parent / "templates" / "agent" / "compact_prompt.md"

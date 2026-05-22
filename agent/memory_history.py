@@ -5,12 +5,11 @@ import gzip
 import json
 import shutil
 from collections import Counter
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from threading import RLock
 from typing import Any
 from uuid import uuid4
-
 
 _UTC8 = timezone(timedelta(hours=8))
 _INDEX_VERSION = 1

@@ -4,7 +4,6 @@ import re
 from dataclasses import dataclass, field
 from typing import Any
 
-
 _IMPLEMENT_PLAN_RE = re.compile(r"please\s+implement\s+this\s+plan|#\s*(summary|key changes|test plan)", re.I)
 _CONTROL_RESUME_RE = re.compile(r"^\[CONTROL:(ASK_ANSWERED|PLAN_APPROVED|PLAN_COMMENT|INTERACTION_CANCELLED)\]")
 _EXPLICIT_AUTONOMY_RE = re.compile(r"(不用问|不要问|直接做|按你判断|自行决定|你决定|无需确认)")

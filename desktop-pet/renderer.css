@@ -1,0 +1,104 @@
+html,
+body {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
+  background: transparent;
+  user-select: none;
+}
+
+body {
+  display: grid;
+  place-items: center;
+  -webkit-app-region: drag;
+  font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+#pet-shell {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  filter: drop-shadow(0 10px 14px rgba(37, 22, 11, 0.24));
+}
+
+#pet {
+  position: absolute;
+  left: 50%;
+  bottom: 10px;
+  width: min(92vw, 236px);
+  height: min(70vh, 236px);
+  transform: translateX(-50%);
+  object-fit: contain;
+  image-rendering: auto;
+  pointer-events: none;
+}
+
+#speech-bubble {
+  position: absolute;
+  left: 50%;
+  bottom: 120px;
+  width: min(278px, calc(100% - 18px));
+  min-height: 40px;
+  max-height: 98px;
+  transform: translateX(-50%);
+  box-sizing: border-box;
+  padding: 9px 12px;
+  border: 1px solid rgba(54, 36, 24, 0.2);
+  border-radius: 16px;
+  background: rgba(255, 247, 225, 0.92);
+  color: #3c2a1b;
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 1.45;
+  text-align: center;
+  overflow-wrap: anywhere;
+  box-shadow: 0 8px 18px rgba(75, 36, 20, 0.18);
+}
+
+#speech-text {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 4;
+}
+
+#speech-bubble::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  bottom: -7px;
+  width: 12px;
+  height: 12px;
+  transform: translateX(-50%) rotate(45deg);
+  border-bottom: 1px solid rgba(54, 36, 24, 0.18);
+  border-right: 1px solid rgba(54, 36, 24, 0.18);
+  background: rgba(255, 247, 225, 0.92);
+}
+
+#speech-bubble[hidden] {
+  display: none;
+}
+
+#subagent-badge {
+  position: absolute;
+  bottom: 82px;
+  right: 38px;
+  min-width: 26px;
+  height: 26px;
+  padding: 0 7px;
+  display: grid;
+  place-items: center;
+  border: 2px solid rgba(45, 30, 20, 0.26);
+  border-radius: 999px;
+  background: #9b2d22;
+  color: #fff6df;
+  font-size: 13px;
+  font-weight: 900;
+  box-shadow: 0 6px 14px rgba(75, 36, 20, 0.28);
+}
+
+#subagent-badge[hidden] {
+  display: none;
+}

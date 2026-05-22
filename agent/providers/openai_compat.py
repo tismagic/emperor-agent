@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 from typing import Any
 
 from loguru import logger
@@ -13,9 +12,8 @@ class OpenAICompatProvider(LLMProvider):
     def __init__(self, *, spec: ProviderSpec | None = None, **kwargs):
         super().__init__(**kwargs)
         self.spec = spec
-        from openai import AsyncOpenAI
-
         import httpx
+        from openai import AsyncOpenAI
 
         headers = self.extra_headers or None
         http_client = httpx.AsyncClient(
@@ -292,7 +290,7 @@ class OpenAICompatProvider(LLMProvider):
     def _message_reasoning_content(message: Any) -> str | None:
         value = getattr(message, "reasoning_content", None) or getattr(message, "reasoning", None)
         if value is None and hasattr(message, "model_extra"):
-            extra = getattr(message, "model_extra") or {}
+            extra = message.model_extra or {}
             value = extra.get("reasoning_content") or extra.get("reasoning")
         if isinstance(value, str):
             return value

@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import copy
 import json
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -23,7 +23,6 @@ from loguru import logger
 
 from .providers import GenerationSettings, ProviderSnapshot, create_provider
 from .providers.registry import PROVIDERS, ProviderSpec, find_by_name
-
 
 MODEL_CONFIG_FILE = "model_config.json"
 MODEL_CONFIG_EXAMPLE_FILE = "model_config.example.json"

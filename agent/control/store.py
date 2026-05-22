@@ -5,7 +5,7 @@ from pathlib import Path
 from threading import RLock
 from uuid import uuid4
 
-from .models import ControlState, SCHEMA_VERSION
+from .models import SCHEMA_VERSION, ControlState
 
 
 class ControlStore:

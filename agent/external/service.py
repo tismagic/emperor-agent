@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections import OrderedDict, deque
 from collections.abc import Awaitable, Callable
+from pathlib import Path
 from typing import Any
 
 from loguru import logger
@@ -9,6 +10,7 @@ from loguru import logger
 from ..runtime import events as runtime_events
 from .adapter import ExternalAdapter
 from .models import ExternalInbound, ExternalOutbound
+from .store import ExternalBridgeStore
 
 SubmitTurn = Callable[..., Awaitable[str]]
 CanAcceptTurn = Callable[[], bool]
@@ -29,17 +31,28 @@ class ExternalBridgeService:
         can_accept_turn: CanAcceptTurn,
         event_sink: EventSink,
         max_recent: int = 100,
+        root: Path | None = None,
     ) -> None:
         self._submit_turn = submit_turn
         self._can_accept_turn = can_accept_turn
         self._event_sink = event_sink
         self._max_recent = max_recent
+        self._store = ExternalBridgeStore(root, max_recent=max_recent) if root is not None else None
+        restored = self._store.load() if self._store is not None else None
         self._adapters: dict[str, ExternalAdapter] = {}
-        self._seen: set[tuple[str, str]] = set()
-        self._inbox: deque[dict[str, Any]] = deque(maxlen=max_recent)
-        self._pending: deque[ExternalInbound] = deque(maxlen=max_recent)
-        self._outbox: OrderedDict[str, dict[str, Any]] = OrderedDict()
-        self._recent_errors: deque[dict[str, Any]] = deque(maxlen=max_recent)
+        self._seen: set[tuple[str, str]] = restored.seen if restored is not None else set()
+        self._inbox: deque[dict[str, Any]] = (
+            restored.inbox if restored is not None else deque(maxlen=max_recent)
+        )
+        self._pending: deque[ExternalInbound] = (
+            restored.pending if restored is not None else deque(maxlen=max_recent)
+        )
+        self._outbox: OrderedDict[str, dict[str, Any]] = (
+            restored.outbox if restored is not None else OrderedDict()
+        )
+        self._recent_errors: deque[dict[str, Any]] = (
+            restored.recent_errors if restored is not None else deque(maxlen=max_recent)
+        )
         self._running = False
 
     def register_adapter(self, adapter: ExternalAdapter) -> None:
@@ -64,17 +77,20 @@ class ExternalBridgeService:
             return {"status": "duplicate", "message": message.to_dict()}
         if key:
             self._seen.add(key)
+            self._persist()
 
         record = {
             "status": "received",
             "message": message.to_dict(),
         }
         self._inbox.append(record)
+        self._persist()
         await self._event_sink(runtime_events.external_inbound(message.to_dict()))
 
         if not self._can_accept_turn():
             record["status"] = "queued"
             self._pending.append(message)
+            self._persist()
             await self._event_sink(
                 runtime_events.external_queued(
                     message.to_dict(),
@@ -90,11 +106,13 @@ class ExternalBridgeService:
             record["status"] = "error"
             record["error"] = error
             self._recent_errors.append({"message": message.to_dict(), "error": error})
+            self._persist()
             logger.warning("External inbound failed: {}: {}", message.platform, error)
             return {"status": "error", "error": error, "message": message.to_dict()}
 
         record["status"] = "dispatched"
         record["turn_id"] = turn_id
+        self._persist()
         return {"status": "dispatched", "turn_id": turn_id, "message": message.to_dict()}
 
     async def drain_pending(self, *, limit: int = 1) -> list[dict[str, Any]]:
@@ -106,9 +124,11 @@ class ExternalBridgeService:
             except Exception as exc:
                 error = str(exc)
                 self._recent_errors.append({"message": message.to_dict(), "error": error})
+                self._persist()
                 results.append({"status": "error", "error": error, "message": message.to_dict()})
                 continue
             results.append({"status": "dispatched", "turn_id": turn_id, "message": message.to_dict()})
+            self._persist()
         return results
 
     async def send_outbound(self, message: ExternalOutbound) -> dict[str, Any]:
@@ -125,6 +145,7 @@ class ExternalBridgeService:
             record["status"] = "error"
             record["error"] = error
             self._recent_errors.append({"message": message.to_dict(), "error": error})
+            self._persist()
             await self._event_sink(runtime_events.external_outbound_error(message.to_dict(), error=error))
             return dict(record)
 
@@ -135,6 +156,7 @@ class ExternalBridgeService:
             record["status"] = "error"
             record["error"] = error
             self._recent_errors.append({"message": message.to_dict(), "error": error})
+            self._persist()
             await self._event_sink(runtime_events.external_outbound_error(message.to_dict(), error=error))
             return dict(record)
 
@@ -149,6 +171,7 @@ class ExternalBridgeService:
             await self._event_sink(
                 runtime_events.external_outbound_error(message.to_dict(), error=record["error"])
             )
+        self._persist()
         return dict(record)
 
     def payload(self) -> dict[str, Any]:
@@ -164,6 +187,11 @@ class ExternalBridgeService:
                 "recent": list(self._outbox.values())[-20:],
             },
             "recentErrors": list(self._recent_errors)[-20:],
+            "store": self._store.diagnostics() if self._store is not None else {
+                "path": None,
+                "exists": False,
+                "durable": False,
+            },
         }
 
     async def _submit_inbound(self, message: ExternalInbound) -> str:
@@ -223,3 +251,15 @@ class ExternalBridgeService:
             self._outbox[message_id] = record
         while len(self._outbox) > self._max_recent:
             self._outbox.popitem(last=False)
+        self._persist()
+
+    def _persist(self) -> None:
+        if self._store is None:
+            return
+        self._store.save(
+            seen=self._seen,
+            inbox=self._inbox,
+            pending=self._pending,
+            outbox=self._outbox,
+            recent_errors=self._recent_errors,
+        )

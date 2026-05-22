@@ -6,7 +6,6 @@ from typing import Any
 from ..tools.base import Tool
 from ..tools.schema import ArraySchema, ObjectSchema, StringSchema
 
-
 CONTROL_PAUSE_PREFIX = "__CONTROL_PAUSE__:"
 
 

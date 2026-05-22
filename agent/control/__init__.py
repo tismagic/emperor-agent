@@ -1,5 +1,12 @@
-from .exceptions import TurnPaused
+from ..permissions import (
+    PermissionDecision,
+    PermissionManager,
+    PermissionMode,
+    PermissionPolicy,
+    RiskLevel,
+)
 from .clarification import ClarificationAssessment, ClarificationPolicy
+from .exceptions import TurnPaused
 from .manager import ControlManager, ControlResume
 from .models import (
     ControlMode,
@@ -13,7 +20,6 @@ from .models import (
 from .policy import CONTROL_TOOL_NAMES, ControlPolicy
 from .store import ControlStore
 from .tools import AskUserTool, ProposePlanTool, parse_pause_result
-from ..permissions import PermissionDecision, PermissionManager, PermissionMode, PermissionPolicy, RiskLevel
 
 __all__ = [
     "AskUserTool",

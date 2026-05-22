@@ -50,6 +50,7 @@ const {
   restoreMemoryVersion,
   saveWatchlist,
   checkWatchlist,
+  setDesktopPetEnabled,
 } = bootstrap
 
 const runtime = useRuntime({ boot, refreshMemory, showToast })
@@ -523,6 +524,7 @@ provideAppContext({
   restoreMemoryVersion,
   saveWatchlist,
   checkWatchlist,
+  setDesktopPetEnabled,
   setControlMode,
   sendMessage,
   sendInteractionAnswer,

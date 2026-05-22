@@ -9,7 +9,6 @@ from uuid import uuid4
 
 from .models import WatchlistDecision
 
-
 DEFAULT_WATCHLIST = """# Watchlist
 
 记录希望 Emperor Agent 主动定期检查的事项。每行写一个明确目标，暂不需要的项可用 HTML 注释包住。

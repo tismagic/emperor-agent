@@ -1,13 +1,26 @@
 from __future__ import annotations
 
 import json
+import uuid
 from pathlib import Path
 
 from aiohttp import web
 from loguru import logger
 
-from .routes import assets, chat, control, external, memory, model, scheduler, skills, team
-from .state import WebUIState
+from .container import WebContainer
+from .routes import (
+    assets,
+    chat,
+    control,
+    desktop_pet,
+    diagnostics,
+    external,
+    memory,
+    model,
+    scheduler,
+    skills,
+    team,
+)
 
 
 @web.middleware
@@ -22,26 +35,36 @@ async def error_middleware(request: web.Request, handler):
                 dumps=lambda value: json.dumps(value, ensure_ascii=False),
             )
         raise
-    except Exception as exc:
-        logger.exception(f"Unhandled exception in {request.path}")
+    except Exception:
+        error_id = uuid.uuid4().hex[:12]
+        logger.exception("Unhandled exception in {} [{}]", request.path, error_id)
         if request.path.startswith("/api/"):
             return web.json_response(
-                {"error": str(exc)},
+                {"error": "Internal server error", "errorId": error_id},
                 status=500,
                 dumps=lambda value: json.dumps(value, ensure_ascii=False),
             )
         raise
 
 
-def create_app(root: Path) -> web.Application:
-    state = WebUIState(root)
+def create_app(
+    root: Path,
+    *,
+    webui_host: str | None = None,
+    webui_port: int | None = None,
+) -> web.Application:
+    container = WebContainer.create(root, webui_host=webui_host, webui_port=webui_port)
+    state = container.state
     app = web.Application(middlewares=[error_middleware])
+    app["container"] = container
     app["state"] = state
     for register in (
         skills.register,
         assets.register,
         memory.register,
         control.register,
+        diagnostics.register,
+        desktop_pet.register,
         team.register,
         scheduler.register,
         external.register,
@@ -55,12 +78,10 @@ def create_app(root: Path) -> web.Application:
 
 
 async def _startup(app: web.Application) -> None:
-    state: WebUIState = app["state"]
-    await state.external_bridge.start()
-    await state.loop.scheduler_service.start()
+    container: WebContainer = app["container"]
+    await container.startup(app)
 
 
 async def _cleanup(app: web.Application) -> None:
-    state: WebUIState = app["state"]
-    state.loop.scheduler_service.stop()
-    await state.external_bridge.stop()
+    container: WebContainer = app["container"]
+    await container.cleanup(app)

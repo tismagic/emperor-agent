@@ -4,7 +4,6 @@ from typing import Any
 
 from ..tools.base import Tool
 
-
 _BOOLEAN = {"type": "boolean", "description": "是否立即唤醒目标队友执行"}
 
 

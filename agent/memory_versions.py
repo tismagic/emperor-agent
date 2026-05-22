@@ -13,7 +13,6 @@ from pathlib import Path
 from threading import RLock
 from typing import Any, Literal
 
-
 MemoryVersionTarget = Literal["memory", "user", "episode"]
 _DATE_EPISODE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}\.md$")
 
@@ -30,7 +29,7 @@ class MemoryVersion:
     bytes: int
 
     @classmethod
-    def from_dict(cls, raw: dict[str, Any]) -> "MemoryVersion":
+    def from_dict(cls, raw: dict[str, Any]) -> MemoryVersion:
         target = str(raw.get("target") or "memory")
         if target not in {"memory", "user", "episode"}:
             target = "memory"

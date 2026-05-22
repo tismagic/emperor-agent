@@ -7,7 +7,6 @@ from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import Any
 
-
 SCHEMA_VERSION = 1
 LEAD_ACTOR = "lead"
 _NAME_RE = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,63}$")
@@ -59,7 +58,7 @@ class TeamMember:
     last_error: str | None = None
 
     @classmethod
-    def from_dict(cls, raw: dict[str, Any]) -> "TeamMember":
+    def from_dict(cls, raw: dict[str, Any]) -> TeamMember:
         name = validate_member_name(str(raw.get("name") or ""))
         status = str(raw.get("status") or TeamStatus.IDLE.value)
         if status not in {item.value for item in TeamStatus}:
@@ -89,7 +88,7 @@ class TeamMember:
             "last_error": self.last_error,
         }
 
-    def touch(self, *, status: str | None = None, last_error: str | None = None) -> "TeamMember":
+    def touch(self, *, status: str | None = None, last_error: str | None = None) -> TeamMember:
         return TeamMember(
             name=self.name,
             role=self.role,
@@ -124,7 +123,7 @@ class TeamMessage:
         task_id: str | None = None,
         in_reply_to: str | None = None,
         meta: dict[str, Any] | None = None,
-    ) -> "TeamMessage":
+    ) -> TeamMessage:
         return cls(
             id=new_id("msg"),
             type=type,
@@ -137,7 +136,7 @@ class TeamMessage:
         )
 
     @classmethod
-    def from_dict(cls, raw: dict[str, Any]) -> "TeamMessage":
+    def from_dict(cls, raw: dict[str, Any]) -> TeamMessage:
         meta = raw.get("meta") if isinstance(raw.get("meta"), dict) else {}
         return cls(
             id=str(raw.get("id") or new_id("msg")),

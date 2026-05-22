@@ -2,13 +2,14 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
+from loguru import logger
+
 from .memory_history import HistoryLog
 from .memory_versions import MemoryVersionStore
-
 
 _UTC8 = timezone(timedelta(hours=8))
 
@@ -151,8 +152,8 @@ class MemoryStore:
             tmp = self.checkpoint_file.with_suffix(".json.tmp")
             tmp.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
             tmp.replace(self.checkpoint_file)
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.warning("checkpoint write failed: {}", exc)
 
     def read_checkpoint(self) -> list[dict[str, Any]] | None:
         """启动时读回上次未完成 turn 的 history；不存在或损坏返回 None。"""
@@ -168,8 +169,8 @@ class MemoryStore:
     def clear_checkpoint(self) -> None:
         try:
             self.checkpoint_file.unlink(missing_ok=True)
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.warning("checkpoint clear failed: {}", exc)
 
 
 def _json_safe(obj: Any) -> Any:

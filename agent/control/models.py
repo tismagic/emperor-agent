@@ -7,7 +7,6 @@ from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import Any
 
-
 SCHEMA_VERSION = 1
 _SAFE_ID_RE = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,63}$")
 
@@ -52,7 +51,7 @@ class QuestionOption:
     description: str = ""
 
     @classmethod
-    def from_dict(cls, raw: dict[str, Any]) -> "QuestionOption":
+    def from_dict(cls, raw: dict[str, Any]) -> QuestionOption:
         label = str(raw.get("label") or "").strip()
         if not label:
             raise ValueError("option label is required")
@@ -70,7 +69,7 @@ class Question:
     options: list[QuestionOption]
 
     @classmethod
-    def from_dict(cls, raw: dict[str, Any]) -> "Question":
+    def from_dict(cls, raw: dict[str, Any]) -> Question:
         qid = safe_id(str(raw.get("id") or ""), label="question id")
         header = str(raw.get("header") or "").strip()
         text = str(raw.get("question") or "").strip()
@@ -120,7 +119,7 @@ class Interaction:
         context: str = "",
         parent_call_id: str | None = None,
         meta: dict[str, Any] | None = None,
-    ) -> "Interaction":
+    ) -> Interaction:
         if not 1 <= len(questions) <= 3:
             raise ValueError("ask_user requires 1-3 questions")
         return cls(
@@ -143,7 +142,7 @@ class Interaction:
         risk_level: str = "medium",
         parent_call_id: str | None = None,
         meta: dict[str, Any] | None = None,
-    ) -> "Interaction":
+    ) -> Interaction:
         title = title.strip()
         summary = summary.strip()
         plan_markdown = plan_markdown.strip()
@@ -162,7 +161,7 @@ class Interaction:
         )
 
     @classmethod
-    def from_dict(cls, raw: dict[str, Any]) -> "Interaction":
+    def from_dict(cls, raw: dict[str, Any]) -> Interaction:
         kind = str(raw.get("kind") or "")
         if kind not in {item.value for item in InteractionKind}:
             raise ValueError(f"unknown interaction kind: {kind}")
@@ -213,7 +212,7 @@ class Interaction:
             "meta": dict(self.meta),
         }
 
-    def touch(self, *, status: str | None = None) -> "Interaction":
+    def touch(self, *, status: str | None = None) -> Interaction:
         data = self.to_dict()
         if status:
             data["status"] = status
@@ -231,7 +230,7 @@ class ControlState:
     updated_at: float = field(default_factory=now_ts)
 
     @classmethod
-    def from_dict(cls, raw: dict[str, Any]) -> "ControlState":
+    def from_dict(cls, raw: dict[str, Any]) -> ControlState:
         mode = str(raw.get("mode") or ControlMode.ASK_BEFORE_EDIT.value)
         if mode == "normal":
             mode = ControlMode.ASK_BEFORE_EDIT.value

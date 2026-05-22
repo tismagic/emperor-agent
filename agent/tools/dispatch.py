@@ -1,12 +1,13 @@
 from __future__ import annotations
+
 from threading import Lock
 
 from loguru import logger
 
+from ..providers.base import run_sync
 from .base import Tool
 from .registry import ToolRegistry
 from .schema import StringSchema, tool_parameters_schema
-from ..providers.base import run_sync
 
 
 class DispatchSubagentTool(Tool):

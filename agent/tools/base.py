@@ -1,7 +1,7 @@
 from __future__ import annotations
+
 from abc import ABC, abstractmethod
 from typing import Any
-
 
 _TYPE_MAP = {
     "string": str,
@@ -51,8 +51,10 @@ def _cast_one(value: Any, schema: dict) -> Any:
             return value
         if isinstance(value, str):
             v = value.strip().lower()
-            if v in _BOOL_TRUE:  return True
-            if v in _BOOL_FALSE: return False
+            if v in _BOOL_TRUE:
+                return True
+            if v in _BOOL_FALSE:
+                return False
         return value
 
     if t == "array" and isinstance(value, list):

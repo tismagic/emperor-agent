@@ -6,7 +6,6 @@ from typing import Any
 
 from .models import PermissionDecision, PermissionMode, RiskLevel
 
-
 _HIGH_RISK_COMMAND = re.compile(
     r"("
     r"\bgit\s+push\b|"

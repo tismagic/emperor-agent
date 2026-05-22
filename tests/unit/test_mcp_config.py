@@ -8,7 +8,6 @@ import pytest
 from agent.mcp.config import (
     DEFAULT_MCP_CONFIG,
     MCPConfig,
-    ServerConfig,
     load_mcp_config,
     save_mcp_config,
 )
@@ -106,7 +105,7 @@ class TestSaveMcpConfig:
                 "filesystem": {
                     "transport": "stdio",
                     "command": "npx",
-                    "args": ["-y", "@modelcontextprotocol/server-filesystem", "/tmp"],
+                    "args": ["-y", "@modelcontextprotocol/server-filesystem", str(tmp_path)],
                     "enabled": True,
                 }
             },

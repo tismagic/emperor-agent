@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from .models import ControlMode
 
-
 CONTROL_TOOL_NAMES = {"ask_user", "propose_plan"}
 
 

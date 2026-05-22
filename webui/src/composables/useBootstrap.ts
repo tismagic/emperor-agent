@@ -1,6 +1,6 @@
 import { ref } from 'vue'
 import { api, cloneJson } from '../api/http'
-import type { BootstrapPayload, CompactResult, MemoryPayload, MemoryVersionDetail, ModelConfigPayload, ModelConfigRaw, McpConfigPayload, SkillInfo, WatchlistDecision, WatchlistPayload } from '../types'
+import type { BootstrapPayload, CompactResult, DesktopPetPayload, MemoryPayload, MemoryVersionDetail, ModelConfigPayload, ModelConfigRaw, McpConfigPayload, SkillInfo, WatchlistDecision, WatchlistPayload } from '../types'
 
 export function useBootstrap(showToast: (message: string) => void) {
   const boot = ref<BootstrapPayload | null>(null)
@@ -209,6 +209,22 @@ export function useBootstrap(showToast: (message: string) => void) {
     return payload.decision
   }
 
+  async function setDesktopPetEnabled(enabled: boolean) {
+    const payload = await api<DesktopPetPayload>('/api/desktop-pet', {
+      method: 'POST',
+      body: JSON.stringify({ enabled }),
+    })
+    if (boot.value) boot.value.desktopPet = payload
+    if (payload.running) {
+      showToast('桌宠已启动')
+    } else if (payload.enabled && payload.lastError) {
+      showToast('桌宠未启动：请先安装 Electron 依赖')
+    } else {
+      showToast('桌宠已关闭')
+    }
+    return payload
+  }
+
   return {
     boot,
     loading,
@@ -239,6 +255,7 @@ export function useBootstrap(showToast: (message: string) => void) {
     restoreMemoryVersion,
     saveWatchlist,
     checkWatchlist,
+    setDesktopPetEnabled,
     cloneJson,
   }
 }

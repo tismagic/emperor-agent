@@ -5,7 +5,6 @@ from dataclasses import dataclass, replace
 from .model_config import build_provider_snapshot
 from .providers import ProviderSnapshot
 
-
 MAIN_ROLE = "main"
 SECONDARY_ROLE = "secondary"
 

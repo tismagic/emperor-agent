@@ -4,6 +4,8 @@ import json
 from dataclasses import dataclass
 from typing import Any
 
+from ..permissions import PermissionManager
+from .clarification import ClarificationAssessment, ClarificationPolicy
 from .models import (
     ControlMode,
     ControlState,
@@ -13,10 +15,8 @@ from .models import (
     Question,
     now_ts,
 )
-from .clarification import ClarificationAssessment, ClarificationPolicy
 from .policy import ControlPolicy
 from .store import ControlStore
-from ..permissions import PermissionManager
 
 
 @dataclass

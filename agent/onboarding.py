@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import copy
 import importlib.util
-import json
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -13,7 +12,13 @@ from rich.table import Table
 
 from .control.models import ControlMode, InteractionStatus, now_ts
 from .control.store import ControlStore
-from .local_config import LocalConfig, WebUIPreferences, load_local_config, save_local_config
+from .local_config import (
+    LocalConfig,
+    WebUIPreferences,
+    load_local_config,
+    local_config_diagnostics,
+    save_local_config,
+)
 from .model_config import (
     DEFAULT_MODEL_CONFIG,
     ModelConfig,
@@ -246,19 +251,26 @@ def collect_doctor_report(root: Path) -> list[DoctorCheck]:
         "" if dist.exists() else "cd webui && npm install && npm run build",
     ))
 
-    local_path = root / "emperor.local.json"
-    if local_path.exists():
-        try:
-            json.loads(local_path.read_text(encoding="utf-8") or "{}")
-        except (json.JSONDecodeError, OSError) as exc:
-            checks.append(DoctorCheck("emperor.local.json", False, str(exc), "删除后重新运行 init"))
-        else:
+    load_local_config(root)
+    local_diag = local_config_diagnostics(root)
+    if local_diag["exists"]:
+        if local_diag["status"] == "ok":
             checks.append(DoctorCheck("emperor.local.json", True, "本地偏好配置可读取"))
+        else:
+            checks.append(DoctorCheck(
+                "emperor.local.json",
+                False,
+                str(local_diag.get("error") or "配置损坏"),
+                "文件会备份为 .corrupt-*；重新运行 init",
+            ))
     else:
+        detail = "未创建，将使用默认 WebUI 参数"
+        if local_diag["corruptBackups"]:
+            detail += f"；发现 {len(local_diag['corruptBackups'])} 个损坏备份"
         checks.append(DoctorCheck(
             "emperor.local.json",
             True,
-            "未创建，将使用默认 WebUI 参数",
+            detail,
             "运行 emperor-agent init 可创建",
         ))
 

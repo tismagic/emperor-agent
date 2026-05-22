@@ -4,7 +4,6 @@ import json
 from typing import Any
 
 from ..control.tools import make_pause_result
-
 from .models import PermissionDecision
 from .policy import PermissionPolicy
 

@@ -6,7 +6,6 @@ from collections.abc import Awaitable
 from dataclasses import dataclass
 from typing import Any, Literal
 
-
 ActiveTaskKind = Literal["turn", "scheduler", "team", "watchlist"]
 
 

@@ -13,9 +13,16 @@ from ..subagents import SubagentSpec
 from ..tools.registry import ToolRegistry
 from . import events
 from .bus import MessageBus
-from .models import LEAD_ACTOR, TeamMember, TeamMessage, TeamStatus, new_id, now_ts, validate_member_name
+from .models import (
+    LEAD_ACTOR,
+    TeamMember,
+    TeamMessage,
+    TeamStatus,
+    new_id,
+    now_ts,
+    validate_member_name,
+)
 from .store import TeamStore
-
 
 StreamEmitter = Callable[[dict[str, Any]], Awaitable[None]]
 

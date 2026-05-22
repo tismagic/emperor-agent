@@ -9,7 +9,6 @@ from typing import Any
 
 from loguru import logger
 
-
 ContentDelta = Callable[[str], Awaitable[None]]
 
 
