@@ -42,6 +42,7 @@ class DispatchSubagentTool(Tool):
             "派遣一个小太监去单独办差。小太监有自己独立的上下文, 办完只回传"
             "一段文字总结, 不污染主上下文。适用于: 抓取并阅读多个网页、"
             "批量执行命令并整理输出、需要试错的探索性搜索、跨多文件查找等。"
+            "仅在非 Plan 模式、无待处理 Ask/Plan 且权限允许时使用。"
             "若多件差事互不依赖, 可在同一回复中发出多个 dispatch_subagent, "
             "运行时会并发派遣并按原 tool_use 顺序回填结果。\n\n"
             "可用 agent_type:\n"
@@ -50,7 +51,7 @@ class DispatchSubagentTool(Tool):
 
     @property
     def parameters(self) -> dict:
-        return tool_parameters_schema(
+        schema = tool_parameters_schema(
             agent_type=StringSchema(
                 "子代理类型, 必须是 description 中列出的可用类型之一",
                 enum=self._subagent_registry.names(include_aliases=True),
@@ -63,8 +64,27 @@ class DispatchSubagentTool(Tool):
                 nullable=True,
             ),
         )
+        schema["properties"].update({
+            "expected_output": StringSchema(
+                "可选: 希望子代理最终回禀的具体产物或格式",
+                nullable=True,
+            ).to_json_schema(),
+            "evidence_required": StringSchema(
+                "可选: 需要子代理提供的证据类型, 如文件路径/行号/URL/命令摘要",
+                nullable=True,
+            ).to_json_schema(),
+            "scope_limit": StringSchema(
+                "可选: 明确禁止越界的范围, 如只读/不改文件/只看某目录",
+                nullable=True,
+            ).to_json_schema(),
+        })
+        schema["required"] = ["agent_type", "task"]
+        return schema
 
     def execute(self, *, agent_type: str, task: str, purpose: str | None = None,
+                expected_output: str | None = None,
+                evidence_required: str | None = None,
+                scope_limit: str | None = None,
                 emit=None, loop=None, parent_call_id=None) -> str:
         import asyncio as asyncio_mod
 
@@ -81,7 +101,13 @@ class DispatchSubagentTool(Tool):
             if tool is not None:
                 sub_registry.register(tool)
 
-        runner = self._runner_factory(spec=spec, sub_registry=sub_registry, task=task)
+        subagent_task = _compose_subagent_task(
+            task,
+            expected_output=expected_output,
+            evidence_required=evidence_required,
+            scope_limit=scope_limit,
+        )
+        runner = self._runner_factory(spec=spec, sub_registry=sub_registry, task=subagent_task)
 
         with self._counter_lock:
             self._counter += 1
@@ -91,7 +117,7 @@ class DispatchSubagentTool(Tool):
         logger.info(f"[派遣小太监 #{counter} · {spec.name}]: {label}")
         logger.info("  ┌── subagent context start ──")
 
-        history: list = [{"role": "user", "content": task}]
+        history: list = [{"role": "user", "content": subagent_task}]
 
         if emit is not None and loop is not None and parent_call_id is not None:
             subagent_id = f"sub_{counter}"
@@ -149,3 +175,21 @@ class DispatchSubagentTool(Tool):
         logger.info(f"[小太监回禀]: {final}")
         logger.info(f"[主上下文压缩]: 子代理仅向主 history 追加 {len(final)} 字")
         return final
+
+
+def _compose_subagent_task(
+    task: str,
+    *,
+    expected_output: str | None = None,
+    evidence_required: str | None = None,
+    scope_limit: str | None = None,
+) -> str:
+    contract = []
+    if expected_output:
+        contract.append(f"- 期望产物: {expected_output}")
+    if evidence_required:
+        contract.append(f"- 证据要求: {evidence_required}")
+    if scope_limit:
+        contract.append(f"- 范围限制: {scope_limit}")
+    contract.append("- 最终回禀必须包含: 结论、证据、风险、建议下一步。")
+    return f"{task.rstrip()}\n\n## 差事契约\n" + "\n".join(contract)

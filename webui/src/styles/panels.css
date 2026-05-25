@@ -1,9 +1,9 @@
   .panel-content {
-    @apply flex h-full min-h-0 flex-col gap-4 p-4;
+    @apply flex h-full min-h-0 flex-col gap-4 p-5;
   }
 
   .panel-toolbar {
-    @apply flex shrink-0 items-center gap-3;
+    @apply flex shrink-0 items-center gap-3 rounded-[1.25rem] border border-line/55 bg-paper2/35 px-3 py-2;
   }
 
   .panel-toolbar input,
@@ -27,7 +27,7 @@
   .team-roster,
   .team-timeline,
   .team-detail {
-    @apply flex min-h-0 flex-col overflow-hidden rounded-[1.45rem] border border-line/70 bg-paper/70 shadow-insetPaper;
+    @apply flex min-h-0 flex-col overflow-hidden rounded-[1.45rem] border border-line/70 bg-paper/80 shadow-insetPaper;
   }
 
   .team-section-head {
@@ -218,17 +218,17 @@
 
   .scheduler-layout {
     @apply grid h-full min-h-0 gap-4;
-    grid-template-columns: minmax(260px, 330px) minmax(0, 1fr) minmax(270px, 360px);
+    grid-template-columns: minmax(260px, 320px) minmax(0, 1fr) minmax(270px, 350px);
   }
 
   .scheduler-roster,
   .scheduler-timeline,
   .scheduler-detail {
-    @apply flex min-h-0 flex-col overflow-hidden rounded-[1.45rem] border border-line/70 bg-paper/70 shadow-insetPaper;
+    @apply flex min-h-0 flex-col overflow-hidden rounded-[1.45rem] border border-line/70 bg-paper/80 shadow-insetPaper;
   }
 
   .scheduler-summary {
-    @apply grid shrink-0 grid-cols-2 gap-2 border-b border-line/60 bg-paper2/30 p-3;
+    @apply grid shrink-0 grid-cols-2 gap-2 border-b border-line/60 bg-paper2/35 p-3;
   }
 
   .scheduler-summary div {
@@ -442,11 +442,11 @@
 
   .entry-layout {
     @apply grid min-h-0 flex-1 gap-4 overflow-hidden;
-    grid-template-columns: minmax(240px, 340px) minmax(0, 1fr);
+    grid-template-columns: minmax(255px, 330px) minmax(0, 1fr);
   }
 
   .entry-list-pane {
-    @apply flex min-h-0 flex-col gap-3 overflow-hidden;
+    @apply flex min-h-0 flex-col gap-3 overflow-hidden rounded-[1.4rem] border border-line/70 bg-paper/80 p-3 shadow-insetPaper;
   }
 
   .entry-list-head {
@@ -475,7 +475,7 @@
 
   /* ── 底部 sticky 操作栏 ── */
   .model-action-bar {
-    @apply sticky bottom-0 mt-3 flex flex-wrap items-center justify-between gap-3 rounded-[1.4rem] border border-line/70 bg-paper2/85 px-4 py-3 shadow-imperial backdrop-blur;
+    @apply sticky bottom-0 mt-2 flex flex-wrap items-center justify-between gap-3 rounded-[1.3rem] border border-line/70 bg-paper/90 px-4 py-3 shadow-imperial backdrop-blur;
     z-index: 10;
   }
 
@@ -500,11 +500,11 @@
   }
 
   .entry-item {
-    @apply flex cursor-pointer items-start gap-3 rounded-[1.25rem] border border-line/70 bg-paper/60 p-3 transition hover:border-seal/30 hover:bg-paper;
+    @apply flex cursor-pointer items-start gap-3 rounded-[1.15rem] border border-line/60 bg-paper2/45 p-3 transition hover:border-seal/30 hover:bg-paper/85;
   }
 
   .entry-item.active {
-    @apply border-ink/40 bg-paper2/80 shadow-insetPaper;
+    @apply border-ink/35 bg-paper/85 shadow-insetPaper;
   }
 
   .entry-item.default {
@@ -554,7 +554,7 @@
   }
 
   .entry-editor {
-    @apply flex min-h-0 flex-col gap-3 overflow-y-auto rounded-[1.4rem] border border-line/70 bg-paper2/40 p-4 shadow-insetPaper;
+    @apply flex min-h-0 flex-col gap-3 overflow-y-auto rounded-[1.4rem] border border-line/70 bg-paper/80 p-4 shadow-insetPaper;
   }
 
   .entry-editor-head {
@@ -582,12 +582,12 @@
   }
 
   .config-layout {
-    @apply grid min-h-0 flex-1 gap-3 overflow-hidden;
-    grid-template-columns: minmax(0, 1fr) minmax(250px, 340px);
+    @apply grid min-h-0 flex-1 gap-4 overflow-hidden;
+    grid-template-columns: minmax(0, 1fr) minmax(260px, 330px);
   }
 
   .desktop-pet-card {
-    @apply flex min-h-0 flex-col gap-3 overflow-y-auto rounded-[1.4rem] border border-line/70 bg-paper/70 p-4 shadow-insetPaper;
+    @apply flex min-h-0 flex-col gap-3 overflow-y-auto rounded-[1.4rem] border border-line/70 bg-paper/80 p-4 shadow-insetPaper;
   }
 
   .desktop-pet-head {
@@ -693,11 +693,11 @@
   }
 
   .editor {
-    @apply flex min-h-0 flex-col overflow-hidden rounded-[1.4rem] border border-line/70 bg-paper/70 shadow-insetPaper;
+    @apply flex min-h-0 flex-col overflow-hidden rounded-[1.4rem] border border-line/70 bg-paper/80 shadow-insetPaper;
   }
 
   .editor-title {
-    @apply shrink-0 border-b border-line/70 bg-paper2/60 px-4 py-3 font-mono text-xs font-bold text-muted;
+    @apply shrink-0 border-b border-line/70 bg-paper2/55 px-4 py-3 font-mono text-xs font-bold text-muted;
   }
 
   .editor textarea {
@@ -1596,7 +1596,7 @@
   }
 
   .tool-card {
-    @apply flex flex-col gap-3 rounded-[1.25rem] border border-line/60 bg-paper/70 p-4 shadow-sm transition-all duration-200;
+    @apply flex flex-col gap-3 rounded-[1.25rem] border border-line/60 bg-paper/75 p-4 shadow-sm transition-all duration-200;
   }
 
   .tool-card:hover {
@@ -1656,7 +1656,7 @@
   }
 
   .skill-card {
-    @apply relative flex flex-col gap-2 rounded-[1.25rem] border border-line/60 bg-paper/70 p-4 shadow-sm transition-all duration-200 cursor-pointer;
+    @apply relative flex flex-col gap-2 rounded-[1.25rem] border border-line/60 bg-paper/75 p-4 shadow-sm transition-all duration-200 cursor-pointer;
   }
 
   .skill-card:hover {
@@ -1716,7 +1716,7 @@
   }
 
   .memory-tabs {
-    @apply inline-flex items-center gap-1 rounded-full border border-line/60 bg-paper/70 p-1;
+    @apply inline-flex items-center gap-1 rounded-full border border-line/60 bg-paper/80 p-1;
   }
 
   .memory-tab {
@@ -1736,7 +1736,7 @@
   }
 
   .memory-stat-card {
-    @apply min-w-0 rounded-lg border border-line/70 bg-paper/75 px-3 py-2 shadow-sm;
+    @apply min-w-0 rounded-[1rem] border border-line/65 bg-paper/80 px-3 py-2.5 shadow-sm;
   }
 
   .memory-stat-card.warning {

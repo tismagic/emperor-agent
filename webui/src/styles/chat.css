@@ -3,18 +3,19 @@
   }
 
   .messages-pane {
-    @apply min-h-0 flex-1 overflow-x-hidden overflow-y-auto px-5 py-6;
+    @apply min-h-0 flex-1 overflow-x-hidden overflow-y-auto py-5;
+    padding-inline: clamp(1rem, 3.2vw, 3.75rem);
     background:
-      radial-gradient(circle at 52% 0%, rgb(var(--paper) / 0.76), transparent 36rem),
-      linear-gradient(90deg, transparent, rgb(var(--line) / 0.08) 49%, rgb(var(--line) / 0.08) 51%, transparent);
+      radial-gradient(circle at 50% 0%, rgb(var(--paper) / 0.72), transparent 34rem),
+      linear-gradient(90deg, transparent, rgb(var(--line) / 0.055) 49.7%, rgb(var(--line) / 0.055) 50.3%, transparent);
   }
 
   .message-stack {
-    @apply mx-auto flex w-full max-w-[980px] min-w-0 flex-col gap-8 pb-5;
+    @apply mx-auto flex w-full max-w-[1000px] min-w-0 flex-col gap-6 pb-6;
   }
 
   .welcome-card {
-    @apply mx-auto mt-[9vh] max-w-3xl overflow-hidden rounded-[2rem] border border-line/70 bg-paper/80 p-8 shadow-imperial;
+    @apply mx-auto mt-[7vh] max-w-4xl overflow-hidden rounded-[1.8rem] border border-line/70 bg-paper/85 p-7 shadow-imperial;
   }
 
   .welcome-layout {
@@ -34,12 +35,17 @@
   }
 
   .message-row {
-    @apply relative flex w-full min-w-0 items-start gap-4;
+    @apply relative flex w-full min-w-0 items-start gap-3.5;
     container-type: inline-size;
+  }
+
+  .message-row.assistant {
+    padding-left: clamp(0rem, 2vw, 2.5rem);
   }
 
   .message-row.user {
     @apply justify-end;
+    padding-right: clamp(0rem, 2vw, 2.5rem);
   }
 
   .message-row.scheduler-trigger {
@@ -52,17 +58,16 @@
 
   .message-cluster {
     @apply flex min-w-0 flex-col gap-2;
-    max-width: min(820px, calc(100% - 5.5rem));
+    max-width: min(760px, calc(100% - 4.75rem));
   }
 
   .message-cluster.user {
     @apply items-end;
+    max-width: min(620px, calc(100% - 4.75rem));
   }
 
   .avatar {
-    @apply relative grid size-[4.35rem] shrink-0 place-items-center overflow-hidden rounded-[1.35rem] border font-display text-lg font-black shadow-lg;
-    position: sticky;
-    top: 1rem;
+    @apply relative grid size-16 shrink-0 place-items-center overflow-hidden rounded-[1.25rem] border font-display text-lg font-black shadow-lg;
   }
 
   .avatar.user {
@@ -157,7 +162,7 @@
   }
 
   .bubble {
-    @apply relative min-w-0 max-w-full border px-6 py-5 text-[15px] leading-8;
+    @apply relative min-w-0 max-w-full border px-5 py-4 text-[15px] leading-8;
     overflow-wrap: anywhere;
     text-wrap: pretty;
     box-shadow:
@@ -167,7 +172,7 @@
 
   .bubble.user {
     @apply rounded-[1.45rem] rounded-tr-[0.55rem] border-ink/20 text-paper;
-    max-width: min(560px, 100%);
+    max-width: min(620px, 100%);
     background:
       radial-gradient(circle at 16% 12%, rgb(var(--seal) / 0.24), transparent 13rem),
       linear-gradient(145deg, rgb(var(--ink)), rgb(36 25 20));
@@ -183,9 +188,9 @@
   .bubble.assistant {
     @apply rounded-[1.55rem] rounded-tl-[0.65rem] border-line/75 text-ink;
     background:
-      linear-gradient(90deg, rgb(var(--seal) / 0.1), transparent 0.42rem),
-      radial-gradient(circle at 100% 0%, rgb(var(--amber) / 0.1), transparent 16rem),
-      linear-gradient(180deg, rgb(var(--paper) / 0.96), rgb(var(--paper-2) / 0.66));
+      linear-gradient(90deg, rgb(var(--seal) / 0.08), transparent 0.36rem),
+      radial-gradient(circle at 100% 0%, rgb(var(--amber) / 0.075), transparent 15rem),
+      linear-gradient(180deg, rgb(var(--paper) / 0.98), rgb(var(--paper-2) / 0.72));
     box-shadow:
       0 1rem 2.4rem rgb(var(--ink) / 0.08),
       inset 0 1px 0 rgb(255 255 255 / 0.58),
@@ -222,7 +227,7 @@
 
   .flow-body {
     @apply flex min-w-0 flex-col items-start gap-3;
-    max-width: min(820px, calc(100% - 5.5rem));
+    max-width: min(760px, calc(100% - 4.75rem));
   }
 
   .assistant-toolbar {
@@ -234,7 +239,7 @@
   }
 
   .copy-message-button {
-    @apply inline-flex min-h-8 items-center gap-1.5 rounded-full border border-line/60 bg-paper/80 px-3 py-1 text-[11px] font-semibold text-muted opacity-0 shadow-sm transition hover:border-seal/35 hover:bg-seal/10 hover:text-seal;
+    @apply inline-flex min-h-8 items-center gap-1.5 rounded-full border border-line/60 bg-paper/85 px-3 py-1 text-[11px] font-semibold text-muted opacity-70 shadow-sm transition hover:border-seal/35 hover:bg-seal/10 hover:text-seal hover:opacity-100;
     backdrop-filter: blur(10px);
   }
 

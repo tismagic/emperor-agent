@@ -1,12 +1,12 @@
   .activity-card {
-    @apply relative w-full max-w-full overflow-hidden rounded-[1.35rem] border border-line/70 bg-paper2/60 text-sm shadow-insetPaper;
+    @apply relative w-full max-w-full overflow-hidden rounded-[1.25rem] border border-line/65 bg-paper2/55 text-sm shadow-insetPaper;
     box-shadow:
       inset 0 1px 0 rgb(255 255 255 / 0.42),
-      0 0.9rem 1.8rem rgb(var(--ink) / 0.06);
+      0 0.7rem 1.4rem rgb(var(--ink) / 0.055);
   }
 
   .activity-card[open] {
-    @apply bg-paper/75;
+    @apply bg-paper/80;
   }
 
   .activity-card.running {
@@ -23,7 +23,7 @@
   }
 
   .activity-summary {
-    @apply grid cursor-pointer items-center gap-3 px-3.5 py-3;
+    @apply grid cursor-pointer items-center gap-3 px-3.5 py-2.5;
     grid-template-columns: auto minmax(0, 1fr) auto;
     list-style: none;
   }
@@ -33,11 +33,11 @@
   }
 
   .activity-rail {
-    @apply relative grid size-12 shrink-0 place-items-center rounded-[1rem] border border-line/55 bg-paper/80;
+    @apply relative grid size-11 shrink-0 place-items-center rounded-[0.95rem] border border-line/55 bg-paper/80;
   }
 
   .activity-icon {
-    @apply size-10;
+    @apply size-9;
     image-rendering: pixelated;
     transform: scale(1.12);
   }
@@ -72,7 +72,7 @@
   }
 
   .activity-main small {
-    @apply truncate text-xs leading-5 text-muted;
+    @apply line-clamp-1 text-xs leading-5 text-muted;
   }
 
   .activity-meta {
@@ -98,7 +98,7 @@
   }
 
   .activity-body {
-    @apply border-t border-line/55 px-4 pb-4 pt-3;
+    @apply border-t border-line/55 px-3.5 pb-3.5 pt-3;
     background:
       linear-gradient(90deg, rgb(var(--seal) / 0.06), transparent 0.28rem),
       linear-gradient(180deg, rgb(var(--paper) / 0.58), rgb(var(--paper-2) / 0.22));
@@ -510,7 +510,7 @@
   }
 
   .todo-panel {
-    @apply max-w-[760px] rounded-[1.35rem] border border-amber/30 bg-amber/10 p-4;
+    @apply max-w-[720px] rounded-[1.25rem] border border-amber/30 bg-amber/10 p-3.5;
     box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.35);
   }
 
@@ -577,12 +577,13 @@
   .composer-wrap {
     @apply border-t border-line/70 px-4 py-3;
     background:
-      linear-gradient(180deg, rgb(var(--paper) / 0.24), rgb(var(--paper-2) / 0.92)),
-      radial-gradient(circle at 50% 0%, rgb(var(--amber) / 0.1), transparent 28rem);
+      linear-gradient(180deg, rgb(var(--paper) / 0.18), rgb(var(--paper-2) / 0.94)),
+      radial-gradient(circle at 50% 0%, rgb(var(--amber) / 0.085), transparent 26rem);
+    box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.45);
   }
 
   .composer-shell {
-    @apply relative mx-auto max-w-[940px];
+    @apply relative mx-auto max-w-[900px];
   }
 
   .slash-menu {
@@ -630,9 +631,9 @@
   }
 
   .composer {
-    @apply relative flex flex-col overflow-visible rounded-[1.55rem] border border-line/70 bg-paper/90 p-2 shadow-imperial;
+    @apply relative flex flex-col overflow-visible rounded-[1.45rem] border border-line/70 bg-paper/90 p-2.5 shadow-imperial;
     box-shadow:
-      0 1.1rem 2.4rem rgb(var(--ink) / 0.1),
+      0 1rem 2.2rem rgb(var(--ink) / 0.095),
       inset 0 1px 0 rgb(255 255 255 / 0.62),
       inset 0 -1px 0 rgb(var(--line) / 0.28);
   }
@@ -673,7 +674,7 @@
   }
 
   .composer textarea {
-    @apply relative z-10 max-h-44 min-h-[5.2rem] w-full rounded-[1.15rem] border border-transparent bg-paper2/45 px-4 py-3 text-[15px] leading-7 shadow-none ring-0 transition focus:border-line/60 focus:bg-paper/70 focus:ring-0;
+    @apply relative z-10 max-h-44 min-h-[4.65rem] w-full rounded-[1.1rem] border border-transparent bg-paper2/40 px-4 py-3 text-[15px] leading-7 shadow-none ring-0 transition focus:border-line/60 focus:bg-paper/75 focus:ring-0;
     text-wrap: pretty;
   }
 
@@ -685,7 +686,7 @@
   }
 
   .composer-action-row {
-    @apply mt-1 flex min-w-0 items-center justify-between gap-2 border-t border-line/45 px-1 pt-2;
+    @apply mt-1.5 flex min-w-0 items-center justify-between gap-2 rounded-[1.1rem] border border-line/45 bg-paper2/40 px-2 py-2;
   }
 
   .composer-left-actions,
@@ -705,9 +706,9 @@
   .send-button,
   .slash-hint-button {
     @apply grid shrink-0 place-items-center overflow-hidden border font-display font-black transition hover:-translate-y-0.5 disabled:translate-y-0 disabled:text-muted;
-    width: 2.75rem;
-    height: 2.75rem;
-    border-radius: 0.95rem;
+    width: 2.8rem;
+    height: 2.8rem;
+    border-radius: 0.98rem;
   }
 
   .send-button {
@@ -790,7 +791,7 @@
   }
 
   .mode-button {
-    @apply inline-flex h-[2.75rem] max-w-[15rem] items-center gap-2 rounded-[0.95rem] border border-line/65 bg-paper2/55 px-3 text-left transition hover:-translate-y-0.5 hover:border-seal/35 hover:bg-seal/10 disabled:translate-y-0 disabled:opacity-60;
+    @apply inline-flex h-[2.8rem] max-w-[13.75rem] items-center gap-2 rounded-[0.98rem] border border-line/65 bg-paper/60 px-3 text-left transition hover:-translate-y-0.5 hover:border-seal/35 hover:bg-seal/10 disabled:translate-y-0 disabled:opacity-60;
   }
 
   .mode-button[data-active='true'] {

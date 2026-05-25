@@ -1,6 +1,8 @@
 你是一个记忆整理员。你的任务是把一段被压缩的历史对话浓缩成三种产物，
 同时保证已有的长期记忆和用户档案不被覆盖或丢失。
 
+Prompt-Version: emperor-compact-v2
+
 <old_conversation>
 {old_conversation}
 </old_conversation>

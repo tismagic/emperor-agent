@@ -1,6 +1,8 @@
 # 技能
 
-以下技能扩展了您的能力。要使用技能，请使用 read_file 工具读取其 SKILL.md 文件。
-不可用的技能需要先安装依赖 —— 您可以尝试使用 apt/brew 安装它们。
+Prompt-Version: emperor-skills-section-v2
+
+以下技能扩展了您的能力。要使用技能，请调用 `load_skill` 工具按名称加载其内容。
+若技能依赖缺失，只能在权限模式允许、任务确实需要且用户意图明确时安装或建议安装依赖。
 
 {{ skills_summary }}

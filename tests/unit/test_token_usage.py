@@ -135,6 +135,30 @@ def test_token_tracker_recent_calls_normalize_legacy_cache_rows(tmp_path: Path) 
     assert [row["model"] for row in tracker.recent_cache_calls()] == ["claude"]
 
 
+def test_token_tracker_records_route_observability_fields(tmp_path: Path) -> None:
+    tracker = TokenTracker(tmp_path / "tokens.jsonl")
+
+    tracker.record(
+        "cheap",
+        {"input": 5, "output": 2},
+        provider="fake",
+        usage_type="subagent:sili_suitang",
+        model_role="secondary",
+        route_reason="subagent:sili_suitang:lightweight",
+        used_fallback=True,
+        fallback_reason="secondary down",
+        estimated_input_tokens=42,
+        route_estimated_tokens=9,
+    )
+
+    row = tracker.recent_calls(1)[0]
+    assert row["route_reason"] == "subagent:sili_suitang:lightweight"
+    assert row["used_fallback"] is True
+    assert row["fallback_reason"] == "secondary down"
+    assert row["estimated_input_tokens"] == 42
+    assert row["route_estimated_tokens"] == 9
+
+
 class FakeCompletions:
     def __init__(self, chunks: list[FakeChunk], *, fail_stream_options: bool = False):
         self.chunks = chunks

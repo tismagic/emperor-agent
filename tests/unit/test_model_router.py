@@ -78,6 +78,7 @@ def test_model_router_routes_simple_work_to_secondary(tmp_path: Path) -> None:
     assert router.route("team", agent_type="shangbao_dianbu").snapshot.model == "cheap-model"
     assert router.route("subagent", agent_type="neiguan_yingzao").snapshot.model == "smart-model"
     assert router.route("memory_compaction").fallback is not None
+    assert router.route("subagent", agent_type="sili_suitang", task="abc").estimated_tokens == 1
 
 
 def test_model_router_does_not_mutate_shared_snapshot_reason(tmp_path: Path) -> None:

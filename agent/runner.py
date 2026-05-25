@@ -42,6 +42,7 @@ class AgentRunner:
         provider_name: str | None = None,
         model_role: str = "main",
         route_reason: str = "",
+        route_estimated_tokens: int | None = None,
         fallback_provider: LLMProvider | None = None,
         fallback_model: str | None = None,
         fallback_provider_name: str | None = None,
@@ -67,6 +68,7 @@ class AgentRunner:
         self.provider_name = provider_name
         self.model_role = model_role
         self.route_reason = route_reason
+        self.route_estimated_tokens = route_estimated_tokens
         self.fallback_provider = fallback_provider
         self.fallback_model = fallback_model
         self.fallback_provider_name = fallback_provider_name
@@ -77,8 +79,11 @@ class AgentRunner:
             "provider": provider_name,
             "model_role": model_role,
             "route_reason": route_reason,
+            "route_estimated_tokens": route_estimated_tokens,
+            "estimated_input_tokens": None,
             "used_fallback": False,
         }
+        self._last_estimated_input_tokens: int | None = None
         self.usage_type = usage_type
         self.memory_store = memory_store
         self.token_tracker = token_tracker
@@ -144,6 +149,11 @@ class AgentRunner:
                         provider=str(call_meta.get("provider") or self.provider_name or "unknown"),
                         usage_type=self.usage_type,
                         model_role=str(call_meta.get("model_role") or self.model_role),
+                        route_reason=str(call_meta.get("route_reason") or self.route_reason or ""),
+                        used_fallback=bool(call_meta.get("used_fallback")),
+                        fallback_reason=str(call_meta.get("fallback_reason") or ""),
+                        estimated_input_tokens=_optional_int(call_meta.get("estimated_input_tokens")),
+                        route_estimated_tokens=_optional_int(call_meta.get("route_estimated_tokens")),
                     )
                 if emit:
                     await emit({
@@ -155,6 +165,8 @@ class AgentRunner:
                         "model_role": call_meta.get("model_role"),
                         "model": call_meta.get("model"),
                         "provider": call_meta.get("provider"),
+                        "route_reason": call_meta.get("route_reason"),
+                        "estimated_input_tokens": call_meta.get("estimated_input_tokens"),
                     })
             if self.memory_store:
                 last_user = next((m for m in reversed(history) if m.get("role") == "user"), None)
@@ -175,6 +187,9 @@ class AgentRunner:
                         "model_role": self._last_model_call.get("model_role") or self.model_role,
                         "route_reason": self._last_model_call.get("route_reason") or self.route_reason,
                         "used_fallback": bool(self._last_model_call.get("used_fallback")),
+                        "fallback_reason": self._last_model_call.get("fallback_reason") or "",
+                        "estimated_input_tokens": self._last_model_call.get("estimated_input_tokens"),
+                        "route_estimated_tokens": self._last_model_call.get("route_estimated_tokens"),
                         "usage_type": self.usage_type,
                         "user_input": user_input,
                         "ai_output": ai_output,
@@ -333,6 +348,7 @@ class AgentRunner:
             {"role": "system", "content": system_prompt},
             *governed,
         ]
+        self._last_estimated_input_tokens = _estimate_messages_tokens(messages)
 
         return await ModelCaller(self).ask(
             messages=messages,
@@ -729,6 +745,22 @@ def _context_used_from_usage(usage: dict[str, int]) -> int:
     cache_read = int(usage.get("cache_read", usage.get("cache_read_input_tokens", 0)) or 0)
     cache_create = int(usage.get("cache_create", usage.get("cache_creation_input_tokens", 0)) or 0)
     return input_tokens + cache_read + cache_create
+
+
+def _estimate_messages_tokens(messages: list[dict[str, Any]]) -> int:
+    total_chars = 0
+    for msg in messages:
+        total_chars += AgentRunner._content_text_size(msg.get("content"))
+        for tool_call in msg.get("tool_calls") or []:
+            total_chars += len(str(tool_call))
+    return max(1, total_chars // 3)
+
+
+def _optional_int(value: Any) -> int | None:
+    try:
+        return int(value) if value is not None else None
+    except (TypeError, ValueError):
+        return None
 
 
 def _control_interaction_event(interaction: dict[str, Any]) -> dict[str, Any]:

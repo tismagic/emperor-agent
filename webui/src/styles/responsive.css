@@ -51,7 +51,11 @@
   }
 
   .composer-wrap {
-    @apply sticky bottom-0 z-10;
+    @apply sticky bottom-0 z-10 px-2.5 py-2.5;
+  }
+
+  .panel-content {
+    @apply p-3;
   }
 
   .split-body,
@@ -109,12 +113,26 @@
   }
 
   .bubble {
-    @apply max-w-[calc(100vw-6rem)] px-4;
+    @apply max-w-[calc(100vw-5.25rem)] px-4;
   }
 
   .flow-body,
   .message-cluster {
-    max-width: calc(100vw - 5.5rem);
+    max-width: calc(100vw - 4.75rem);
+  }
+
+  .message-row {
+    @apply gap-2.5;
+  }
+
+  .message-row.assistant,
+  .message-row.user {
+    padding-left: 0;
+    padding-right: 0;
+  }
+
+  .avatar {
+    @apply size-12 rounded-[1rem];
   }
 
   .activity-summary,

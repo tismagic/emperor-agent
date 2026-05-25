@@ -35,7 +35,10 @@ class ModelCaller:
                 "provider": runner.provider_name,
                 "model_role": runner.model_role,
                 "route_reason": runner.route_reason,
+                "route_estimated_tokens": runner.route_estimated_tokens,
+                "estimated_input_tokens": getattr(runner, "_last_estimated_input_tokens", None),
                 "used_fallback": False,
+                "fallback_reason": "",
             }
             return await self._call_provider(
                 provider=runner.provider,
@@ -71,7 +74,10 @@ class ModelCaller:
                 "provider": runner.fallback_provider_name,
                 "model_role": runner.fallback_model_role,
                 "route_reason": f"{runner.route_reason}:fallback",
+                "route_estimated_tokens": runner.route_estimated_tokens,
+                "estimated_input_tokens": getattr(runner, "_last_estimated_input_tokens", None),
                 "used_fallback": True,
+                "fallback_reason": str(exc),
             }
             return await self._call_provider(
                 provider=runner.fallback_provider,

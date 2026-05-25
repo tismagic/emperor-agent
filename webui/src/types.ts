@@ -184,6 +184,11 @@ export interface TokenUsageRecord {
   provider: string
   model: string
   model_role?: string
+  route_reason?: string
+  used_fallback?: boolean
+  fallback_reason?: string
+  estimated_input_tokens?: number
+  route_estimated_tokens?: number
   usage_type: string
   input: number
   output: number
@@ -656,7 +661,7 @@ export type WsEvent = ({ seq?: number; ts?: number; turn_id?: string; client_mes
   | { event: 'ready'; model?: string; provider?: string; latest_seq?: number; replay_count?: number; resume_from?: number; busy?: boolean; control?: ControlPayload }
   | { event: 'user_message'; content?: string; attachments?: AttachmentRef[]; source?: string; scheduler?: SchedulerMessageMeta }
   | { event: 'message_delta'; delta?: string }
-  | { event: 'context_usage'; used?: number; max?: number; threshold?: number; usage_type?: string; model_role?: string; model?: string; provider?: string }
+  | { event: 'context_usage'; used?: number; max?: number; threshold?: number; usage_type?: string; model_role?: string; model?: string; provider?: string; route_reason?: string; estimated_input_tokens?: number }
   | { event: 'model_route_fallback'; from_model?: string; to_model?: string; reason?: string; usage_type?: string }
   | { event: 'external_inbound'; message?: Record<string, unknown> }
   | { event: 'external_queued'; message?: Record<string, unknown>; reason?: string }

@@ -23,6 +23,11 @@ class TokenTracker:
         provider: str | None = None,
         usage_type: str = "main_agent",
         model_role: str | None = None,
+        route_reason: str | None = None,
+        used_fallback: bool = False,
+        fallback_reason: str | None = None,
+        estimated_input_tokens: int | None = None,
+        route_estimated_tokens: int | None = None,
     ) -> None:
         """Append one row to tokens.jsonl from a provider usage object or dict."""
         if isinstance(usage, dict):
@@ -46,6 +51,16 @@ class TokenTracker:
             "cache_read": cache_read,
             "cache_create": cache_create,
         }
+        if route_reason:
+            row["route_reason"] = route_reason
+        if used_fallback:
+            row["used_fallback"] = True
+        if fallback_reason:
+            row["fallback_reason"] = fallback_reason
+        if estimated_input_tokens is not None:
+            row["estimated_input_tokens"] = estimated_input_tokens
+        if route_estimated_tokens is not None:
+            row["route_estimated_tokens"] = route_estimated_tokens
         self._last_input_tokens = row["input"] + row["cache_read"] + row["cache_create"]
         with self.log_file.open("a", encoding="utf-8") as f:
             f.write(json.dumps(row, ensure_ascii=False) + "\n")
@@ -230,7 +245,7 @@ def _normalize_row(row: dict) -> dict[str, int | str]:
     output_tokens = _row_int(row, "output", "completion_tokens")
     cache_read = _row_int(row, "cache_read", "cache_read_input_tokens")
     cache_create = _row_int(row, "cache_create", "cache_creation_input_tokens")
-    return {
+    normalized = {
         "ts": str(row.get("ts") or ""),
         "provider": str(row.get("provider") or "unknown"),
         "model": str(row.get("model") or "unknown"),
@@ -242,6 +257,15 @@ def _normalize_row(row: dict) -> dict[str, int | str]:
         "cache_create": cache_create,
         "total": input_tokens + output_tokens + cache_read + cache_create,
     }
+    for key in ("route_reason", "fallback_reason"):
+        if row.get(key):
+            normalized[key] = str(row.get(key))
+    for key in ("estimated_input_tokens", "route_estimated_tokens"):
+        if row.get(key) is not None:
+            normalized[key] = _row_int(row, key)
+    if row.get("used_fallback"):
+        normalized["used_fallback"] = True
+    return normalized
 
 
 def _row_int(row: dict, *keys: str) -> int:

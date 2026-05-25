@@ -110,6 +110,7 @@ class AgentLoop:
             self.root / "templates" / "subagents",
             skills_loader=self.skills,
         )
+        self.context_builder.set_subagent_registry(self.subagent_registry)
         self._install_subagent_tool()
         self._install_team_tools()
 
@@ -180,11 +181,13 @@ class AgentLoop:
             provider_name=compactor_snapshot.provider_name,
             token_tracker=self.token_tracker,
             model_role=compactor_snapshot.model_role,
+            route_reason=compactor_route.reason,
             fallback_provider=compactor_fallback.provider if compactor_fallback else None,
             fallback_model=compactor_fallback.model if compactor_fallback else None,
             fallback_provider_name=compactor_fallback.provider_name if compactor_fallback else None,
             fallback_generation=compactor_fallback.generation if compactor_fallback else None,
             fallback_model_role=compactor_fallback.model_role if compactor_fallback else "main",
+            fallback_route_reason=compactor_fallback.route_reason if compactor_fallback else "",
         )
         system_prompt = self.context_builder.build_system_prompt()
         if self.verbose and initial:
@@ -202,6 +205,7 @@ class AgentLoop:
                 provider_name=self.provider_name,
                 model_role=self.model_role,
                 route_reason=self.route_reason,
+                route_estimated_tokens=main_route.estimated_tokens,
                 usage_type="main_agent",
                 memory_store=self.memory,
                 token_tracker=self.token_tracker,
@@ -221,6 +225,7 @@ class AgentLoop:
         self.runner.provider_name = self.provider_name
         self.runner.model_role = self.model_role
         self.runner.route_reason = self.route_reason
+        self.runner.route_estimated_tokens = main_route.estimated_tokens
         self.runner.fallback_provider = None
         self.runner.fallback_model = None
         self.runner.fallback_provider_name = None

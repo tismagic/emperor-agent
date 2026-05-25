@@ -63,8 +63,11 @@ class SkillsLoader:
                 continue
             desc = skill["meta"].get("description", "No description")
             tags = skill["meta"].get("tags", "")
+            path = skill.get("path", "")
             line = f"- **{name}**: {desc}"
             if tags:
                 line += f" [{tags}]"
+            if path:
+                line += f" (load_skill name=`{name}`, source=`{path}`)"
             lines.append(line)
         return "\n".join(lines) if lines else ""

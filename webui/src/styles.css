@@ -39,8 +39,8 @@ body::before {
   z-index: -2;
   background-image:
     url('./assets/textures/texture-paper.png'),
-    radial-gradient(circle at 12% 8%, rgb(var(--amber) / 0.18), transparent 32%),
-    radial-gradient(circle at 85% 4%, rgb(var(--jade) / 0.12), transparent 27%),
+    radial-gradient(circle at 12% 8%, rgb(var(--amber) / 0.13), transparent 34%),
+    radial-gradient(circle at 85% 4%, rgb(var(--jade) / 0.08), transparent 28%),
     linear-gradient(135deg, rgb(var(--paper)), rgb(var(--paper-2)));
   background-size: 260px 260px, auto, auto, auto;
   background-blend-mode: multiply, normal, normal, normal;
@@ -52,15 +52,15 @@ body::after {
   inset: 0;
   pointer-events: none;
   z-index: -1;
-  opacity: 0.28;
+  opacity: 0.16;
   background-image:
     url('./assets/textures/texture-seal.png'),
     linear-gradient(90deg, rgb(var(--ink) / 0.04) 1px, transparent 1px),
     linear-gradient(rgb(var(--ink) / 0.03) 1px, transparent 1px);
   background-position: right 5vw top 6vh, 0 0, 0 0;
   background-repeat: no-repeat, repeat, repeat;
-  background-size: min(34vw, 420px) auto, 28px 28px, 28px 28px;
-  mask-image: radial-gradient(circle at center, black, transparent 78%);
+  background-size: min(28vw, 360px) auto, 32px 32px, 32px 32px;
+  mask-image: radial-gradient(circle at center, black, transparent 72%);
 }
 
 @layer base {

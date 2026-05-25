@@ -83,7 +83,7 @@
 
 ### 配置与模板
 
-- `templates/SOUL.md`：人格与语气（当前要求前缀“奉天承运皇帝诏曰”）
+- `templates/SOUL.md`：人格与语气；固定前缀只用于用户可见的普通自然语言回复，不得污染 JSON/XML、工具参数、代码、压缩输出或 Ask/Plan 协议内容
 - `templates/TOOL.md`：工具使用偏好
 - `templates/init/USER.md`、`templates/init/MEMORY.md`：首次启动模板
 - `templates/subagents/*.md`：子代理身份模板
@@ -237,6 +237,7 @@ emperor-agent doctor --dev
 - `providers.*`：兜底凭证层
 
 一个 entry 共享一套 `provider / apiKey / apiBase / extraHeaders / extraBody`，但必须同时配置两个模型 id：`mainModelId` 用于主 Agent、复杂决策、写入型子代理/队友；`secondaryModelId` 用于记忆压缩、轻量只读/核验子代理和简单 Team 队友。旧字段 `id` 只作为 `mainModelId` 兼容读取；WebUI 保存时必须补齐 `secondaryModelId`。
+模型调用会在 token 账本和 model_call 历史里记录 `route_reason`、估算输入 token、fallback 状态和 fallback 原因，用于排查主/次模型路由。
 
 注意：
 
@@ -269,9 +270,11 @@ emperor-agent doctor --dev
 
 ### 子代理
 
-由 `agent/subagents/registry.py` 内置白名单控制能力，模板只负责口吻和职责，不承载权限。
+由 `agent/subagents/registry.py` 内置白名单控制能力，模板只负责口吻和职责，不承载权限；子代理列表以 registry 为事实来源，兼容别名不再维护独立模板。
 
 子代理模型由 `agent/model_router.py` 统一路由：`xiaohuangmen`、`sili_suitang`、`dongchang_tanshi`、`shangbao_dianbu` 默认走次模型，`neiguan_yingzao` 默认走主模型；不要在工具里手写主次模型判断。
+
+`dispatch_subagent` 旧参数保持兼容；新派遣应优先补充 `expected_output`、`evidence_required`、`scope_limit`。子代理最终回禀统一包含：结论、证据、风险、建议下一步。
 
 ### Agent Team
 
@@ -307,6 +310,7 @@ emperor-agent doctor --dev
 
 - WebUI Composer 的 `/` 菜单展示静态斜杠命令和当前项目 `skills/` 下的全部 Skill。
 - 用户输入 `/<skill-name> 任务` 或 `/<skill-name>-skill 任务` 时，前端发送 `requested_skills`，后端校验后把 Skill 内容强制注入本轮上下文。
+- Agent 自主按需使用 Skill 时必须调用 `load_skill`，不要绕过该工具直接读取 `SKILL.md` 作为主路径。
 - 点击 Skill 候选会补全 `/<skill-name> ` 前缀；Composer 和 Chat 气泡中非系统命令的 `/skill` 前缀会用特殊颜色字体高亮，普通用户文字仍保持原样。
 - 聊天气泡和 `displayContent` 保留用户原始输入；真实模型输入和 `history.jsonl` 保存已注入 Skill 的内容，保证 checkpoint 与重启恢复一致。
 
@@ -352,7 +356,7 @@ emperor-agent doctor --dev
 1. 页面白屏：确认 `webui/dist/index.html` 是否存在，必要时 `npm run build`
 2. 消息不流式：检查 `/ws` 连接状态与浏览器控制台 event
 3. 工具历史报错：优先看 `runner._pair_tool_calls` 保护是否被绕过
-4. 压缩异常：检查 `templates/agent/compact_prompt.md` 输出 XML 标签是否齐全
+4. 压缩异常：检查 `templates/agent/compact_prompt.md` 输出 XML 标签是否齐全，以及 `memory/compact_diagnostics.jsonl`
 5. 附件不可用：看 MIME 是否在 `ALLOWED_*_MIMES`，以及大小限制
 6. 模型 key 丢失：确认前端是否传回 `***` 占位，后端还原逻辑是否被改坏
 

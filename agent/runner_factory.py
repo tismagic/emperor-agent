@@ -42,6 +42,7 @@ def build_routed_runner(
         provider_name=snapshot.provider_name,
         model_role=snapshot.model_role,
         route_reason=route.reason,
+        route_estimated_tokens=route.estimated_tokens,
         fallback_provider=fallback.provider if fallback else None,
         fallback_model=fallback.model if fallback else None,
         fallback_provider_name=fallback.provider_name if fallback else None,
