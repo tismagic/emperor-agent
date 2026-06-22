@@ -108,7 +108,9 @@ function createWindow(): void {
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: false,
-      additionalArguments: [`--backend-url=${config.backendBaseUrl}`],
+      additionalArguments: process.env.ELECTRON_RENDERER_URL
+        ? []
+        : [`--backend-url=${config.backendBaseUrl}`],
     },
   })
 
