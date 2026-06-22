@@ -5,6 +5,21 @@ export default {
   theme: {
     extend: {
       colors: {
+        /* semantic Codex tokens */
+        bg: 'rgb(var(--bg) / <alpha-value>)',
+        'bg-elevated': 'rgb(var(--bg-elevated) / <alpha-value>)',
+        'bg-inset': 'rgb(var(--bg-inset) / <alpha-value>)',
+        fg: 'rgb(var(--fg) / <alpha-value>)',
+        'fg-muted': 'rgb(var(--fg-muted) / <alpha-value>)',
+        'fg-subtle': 'rgb(var(--fg-subtle) / <alpha-value>)',
+        border: 'rgb(var(--border) / <alpha-value>)',
+        'border-strong': 'rgb(var(--border-strong) / <alpha-value>)',
+        accent: 'rgb(var(--accent) / <alpha-value>)',
+        'accent-fg': 'rgb(var(--accent-fg) / <alpha-value>)',
+        danger: 'rgb(var(--danger) / <alpha-value>)',
+        warn: 'rgb(var(--warn) / <alpha-value>)',
+        ok: 'rgb(var(--ok) / <alpha-value>)',
+        /* legacy aliases (remapped to neutral palette in styles.css) */
         paper: 'rgb(var(--paper) / <alpha-value>)',
         paper2: 'rgb(var(--paper-2) / <alpha-value>)',
         ink: 'rgb(var(--ink) / <alpha-value>)',
@@ -15,16 +30,16 @@ export default {
         amber: 'rgb(var(--amber) / <alpha-value>)',
       },
       fontFamily: {
-        display: ['Songti SC', 'STSong', 'Noto Serif CJK SC', 'Georgia', 'serif'],
-        body: ['LXGW WenKai', 'Kaiti SC', 'STKaiti', 'Georgia', 'serif'],
-        mono: ['SFMono-Regular', 'Menlo', 'Monaco', 'Consolas', 'monospace'],
+        display: ['-apple-system', 'system-ui', 'Segoe UI', 'Roboto', 'Helvetica Neue', 'Arial', 'sans-serif'],
+        body: ['-apple-system', 'system-ui', 'Segoe UI', 'Roboto', 'Helvetica Neue', 'Arial', 'sans-serif'],
+        mono: ['ui-monospace', 'SFMono-Regular', 'Menlo', 'Monaco', 'Consolas', 'monospace'],
       },
       boxShadow: {
-        imperial: '0 24px 70px rgb(77 39 22 / 0.16)',
-        insetPaper: 'inset 0 0 0 1px rgb(var(--line) / 0.7)',
+        imperial: '0 8px 28px rgb(0 0 0 / 0.28)',
+        insetPaper: 'inset 0 0 0 1px rgb(var(--border) / 0.7)',
       },
       backgroundImage: {
-        'paper-grain': 'radial-gradient(circle at 18% 12%, rgb(183 124 52 / 0.14), transparent 28%), radial-gradient(circle at 76% 4%, rgb(126 92 46 / 0.12), transparent 24%), linear-gradient(135deg, rgb(var(--paper)) 0%, rgb(var(--paper-2)) 100%)',
+        'paper-grain': 'linear-gradient(180deg, rgb(var(--bg)) 0%, rgb(var(--bg-inset)) 100%)',
       },
       animation: {
         'rise-in': 'rise-in 520ms ease both',

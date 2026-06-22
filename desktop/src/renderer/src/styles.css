@@ -2,15 +2,53 @@
 @tailwind components;
 @tailwind utilities;
 
-:root {
-  --paper: 247 239 222;
-  --paper-2: 239 225 198;
-  --ink: 48 36 29;
-  --muted: 118 91 70;
-  --line: 205 178 132;
-  --seal: 151 44 31;
-  --jade: 50 112 92;
-  --amber: 184 122 45;
+/* ── Codex-style design tokens ──────────────────────────────────────────────
+   Semantic tokens drive the new neutral UI. The legacy paper/ink/seal aliases
+   are remapped onto the neutral palette so existing component CSS keeps working
+   while it is migrated to semantic tokens. Dark is the default theme. */
+:root,
+:root[data-theme='dark'] {
+  --bg: 13 13 15;
+  --bg-elevated: 24 24 27;
+  --bg-inset: 18 18 21;
+  --fg: 237 237 240;
+  --fg-muted: 161 161 170;
+  --fg-subtle: 113 113 122;
+  --border: 39 39 45;
+  --border-strong: 63 63 70;
+  --accent: 110 168 254;
+  --accent-fg: 9 11 18;
+  --danger: 248 113 113;
+  --warn: 234 179 8;
+  --ok: 52 211 153;
+  --radius: 10px;
+  --radius-sm: 6px;
+
+  /* legacy aliases → neutral palette */
+  --paper: var(--bg);
+  --paper-2: var(--bg-inset);
+  --ink: var(--fg);
+  --muted: var(--fg-muted);
+  --line: var(--border);
+  --seal: var(--accent);
+  --jade: var(--ok);
+  --amber: var(--warn);
+}
+
+:root[data-theme='light'] {
+  --bg: 255 255 255;
+  --bg-elevated: 250 250 250;
+  --bg-inset: 244 244 245;
+  --fg: 24 24 27;
+  --fg-muted: 82 82 91;
+  --fg-subtle: 113 113 122;
+  --border: 228 228 231;
+  --border-strong: 212 212 216;
+  --accent: 37 99 235;
+  --accent-fg: 255 255 255;
+  --danger: 220 38 38;
+  --warn: 202 138 4;
+  --ok: 22 163 74;
 }
 
 * {
@@ -26,41 +64,11 @@ body,
 body {
   margin: 0;
   overflow-x: hidden;
-  background: rgb(var(--paper));
-  color: rgb(var(--ink));
+  background: rgb(var(--bg));
+  color: rgb(var(--fg));
   font-family: theme('fontFamily.body');
-}
-
-body::before {
-  content: '';
-  position: fixed;
-  inset: 0;
-  pointer-events: none;
-  z-index: -2;
-  background-image:
-    url('../../../../assets/textures/texture-paper.png'),
-    radial-gradient(circle at 12% 8%, rgb(var(--amber) / 0.13), transparent 34%),
-    radial-gradient(circle at 85% 4%, rgb(var(--jade) / 0.08), transparent 28%),
-    linear-gradient(135deg, rgb(var(--paper)), rgb(var(--paper-2)));
-  background-size: 260px 260px, auto, auto, auto;
-  background-blend-mode: multiply, normal, normal, normal;
-}
-
-body::after {
-  content: '';
-  position: fixed;
-  inset: 0;
-  pointer-events: none;
-  z-index: -1;
-  opacity: 0.16;
-  background-image:
-    url('../../../../assets/textures/texture-seal.png'),
-    linear-gradient(90deg, rgb(var(--ink) / 0.04) 1px, transparent 1px),
-    linear-gradient(rgb(var(--ink) / 0.03) 1px, transparent 1px);
-  background-position: right 5vw top 6vh, 0 0, 0 0;
-  background-repeat: no-repeat, repeat, repeat;
-  background-size: min(28vw, 360px) auto, 32px 32px, 32px 32px;
-  mask-image: radial-gradient(circle at center, black, transparent 72%);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
 }
 
 @layer base {
@@ -83,14 +91,23 @@ body::after {
   input,
   select,
   textarea {
-    @apply w-full rounded-2xl border border-line/70 bg-paper/80 px-4 py-3 text-sm text-ink outline-none transition;
-    box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.5);
+    @apply w-full border px-3 py-2 text-sm outline-none transition;
+    border-radius: var(--radius);
+    border-color: rgb(var(--border));
+    background: rgb(var(--bg-inset));
+    color: rgb(var(--fg));
   }
 
   input:focus,
   select:focus,
   textarea:focus {
-    @apply border-seal/60 ring-4 ring-seal/10;
+    border-color: rgb(var(--accent) / 0.7);
+    box-shadow: 0 0 0 3px rgb(var(--accent) / 0.18);
+  }
+
+  input::placeholder,
+  textarea::placeholder {
+    color: rgb(var(--fg-subtle));
   }
 
   textarea {
