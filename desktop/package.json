@@ -2,14 +2,34 @@
   "name": "emperor-agent-desktop",
   "version": "0.1.0",
   "private": true,
-  "description": "Emperor Agent desktop shell (Electron) that hosts the full WebUI.",
-  "main": "main.js",
-  "type": "commonjs",
+  "description": "Emperor Agent desktop application (Electron + Vue) that hosts the full frontend and manages the local backend.",
+  "main": "out/main/index.js",
   "scripts": {
-    "start": "electron .",
-    "test": "node --test test/*.test.js"
+    "dev": "electron-vite dev",
+    "build": "electron-vite build",
+    "start": "electron-vite preview",
+    "test": "vitest run",
+    "typecheck": "vue-tsc --noEmit -p tsconfig.web.json && tsc --noEmit -p tsconfig.node.json",
+    "dist": "electron-vite build && electron-builder"
   },
   "dependencies": {
-    "electron": "^42.2.0"
+    "markdown-it": "^14.1.1",
+    "vue": "^3.5.13",
+    "vue-router": "^4.6.4"
+  },
+  "devDependencies": {
+    "@types/markdown-it": "^14.1.2",
+    "@types/node": "^22.10.2",
+    "@vitejs/plugin-vue": "^5.2.1",
+    "autoprefixer": "^10.4.20",
+    "electron": "^42.2.0",
+    "electron-builder": "^25.1.8",
+    "electron-vite": "^3.1.0",
+    "postcss": "^8.4.49",
+    "tailwindcss": "^3.4.17",
+    "typescript": "^5.7.2",
+    "vite": "^6.0.7",
+    "vitest": "^2.1.8",
+    "vue-tsc": "^2.2.0"
   }
 }
