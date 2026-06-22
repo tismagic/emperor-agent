@@ -243,12 +243,12 @@ def collect_doctor_report(root: Path) -> list[DoctorCheck]:
                 f"{len(config.models)} configured",
             ))
 
-    dist = root / "webui" / "dist" / "index.html"
+    dist = root / "desktop" / "out" / "renderer" / "index.html"
     checks.append(DoctorCheck(
-        "webui/dist",
+        "desktop/out/renderer",
         dist.exists(),
-        "静态前端已构建" if dist.exists() else "缺少 webui/dist/index.html",
-        "" if dist.exists() else "cd webui && npm install && npm run build",
+        "桌面应用前端已构建" if dist.exists() else "缺少 desktop/out/renderer/index.html",
+        "" if dist.exists() else "cd desktop && npm install && npm run build",
     ))
 
     load_local_config(root)

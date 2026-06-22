@@ -135,5 +135,5 @@ def test_collect_doctor_report_detects_missing_model_config(tmp_path) -> None:
     by_name = {check.name: check for check in checks}
 
     assert by_name["model_config.json"].ok is False
-    assert by_name["webui/dist"].ok is False
+    assert by_name["desktop/out/renderer"].ok is False
     assert "emperor-agent init" in by_name["model_config.json"].fix

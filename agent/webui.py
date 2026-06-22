@@ -40,7 +40,7 @@ def run_webui(
         open_browser=open_browser,
     )
     url = f"http://{prefs.host}:{prefs.port}"
-    logger.info(f"Emperor Agent Web UI: {url}")
+    logger.info(f"Emperor Agent API server: {url}")
     if prefs.open_browser:
         webbrowser.open(url)
     web.run_app(
