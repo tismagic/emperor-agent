@@ -41,7 +41,26 @@ class ConversationStore:
         self.history_log.append(row)
 
     def load_unarchived_history(self) -> list[dict]:
-        return self.history_log.load_active_rows()
+        out: list[dict] = []
+        active = self.history_log.load_active_rows()
+        hidden = {
+            str(r.get("turn_id"))
+            for r in active
+            if isinstance(r.get("turn_id"), str)
+            and (r.get("hidden") is True or r.get("schedulerHidden") is True)
+        }
+        for row in active:
+            if "role" not in row or "content" not in row:
+                continue
+            if row.get("type") == "model_call":
+                continue
+            if str(row.get("turn_id") or "") in hidden:
+                continue
+            item: dict = {"role": row["role"], "content": row["content"]}
+            if isinstance(row.get("turn_id"), str):
+                item["turn_id"] = row["turn_id"]
+            out.append(item)
+        return out
 
     def load_unarchived_turn_ids(self) -> list[str]:
         ids: list[str] = []
