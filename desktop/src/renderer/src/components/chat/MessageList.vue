@@ -78,7 +78,7 @@ function schedulerTriggerPrefix(content: string) {
       <div class="welcome-layout">
         <div>
           <h1>下旨即可开工。</h1>
-          <p>这里是一条主线，不再区分会话。右侧工作台负责模型厂家、Token 账本、Skill、Tool 和配置文件。</p>
+          <p>多会话工作台——左侧可新建、切换、删除会话。每个会话拥有独立的对话历史。</p>
         </div>
         <component :is="emptyIcons.welcome" class="welcome-hero" :size="96" :stroke-width="1" />
       </div>

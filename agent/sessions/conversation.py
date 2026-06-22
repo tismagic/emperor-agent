@@ -25,8 +25,8 @@ class ConversationStore:
     def append_history(
         self, role: str, content: object, *, extra: dict | None = None
     ) -> None:
-        from datetime import datetime, timezone, timedelta
         import json as _json
+        from datetime import datetime, timedelta, timezone
 
         _UTC8 = timezone(timedelta(hours=8))
         row: dict = {
@@ -69,7 +69,7 @@ class ConversationStore:
     # ── checkpoint ──────────────────────────────────────────────────
     def write_checkpoint(self, history: list[dict]) -> None:
         import json as _json
-        from datetime import datetime, timezone, timedelta
+        from datetime import datetime, timedelta, timezone
 
         _UTC8 = timezone(timedelta(hours=8))
         payload = {

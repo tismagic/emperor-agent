@@ -25,7 +25,7 @@ def _write_old_history(tmp_path: Path) -> None:
 
 def test_first_run_migration_creates_default_session(tmp_path: Path) -> None:
     _write_old_history(tmp_path)
-    loop = AgentLoop(root=tmp_path, verbose=False, startup_compaction=False)
+    AgentLoop(root=tmp_path, verbose=False, startup_compaction=False)
 
     store = SessionStore(tmp_path)
     sessions = store.list()

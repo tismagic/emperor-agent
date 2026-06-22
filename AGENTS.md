@@ -20,7 +20,7 @@
 - 附件上传（图像/文档）与多模态输入链路
 - Electron 桌面壳（`desktop/`，自动拉起后端 + 同源加载完整 WebUI，前端零改动；网页端保留不动）
 - 可选 Electron 桌宠 companion（默认关闭）
-- External Bridge 基础设施（外部平台只汇入唯一主线，不做多会话）
+- External Bridge 基础设施（外部平台汇总到默认会话，支持多会话独立并存）
 
 ## 2. 先看哪里（最小阅读路径）
 
@@ -70,7 +70,7 @@
 - `agent/scheduler/`：本地长期自动运行中枢，持久保存 `at` / `every` / `cron` jobs，WebUI 启动后恢复 timer，Agent 通过 `scheduler` 工具管理任务；执行侧由 `agent/web/services/scheduler_executor.py` 把 job payload 投递到本地主动 turn 或 Team wake
 - `agent/watchlist/`：Watchlist heartbeat，读取 `memory/watchlist.md`，用次模型先判断 `skip/run`，只有 `run` 才投递完整主动 turn
 - `agent/team/`：Agent Team 子系统（持久队友、inbox、thread、状态机、team tools）
-- `agent/external/`：外部平台适配基础层；提供 `ExternalAdapter`、统一消息模型、入站去重、inbox/outbox 状态和 durable store。当前不内置真实平台实现，外部消息必须进入唯一主线，不能引入多会话。
+- `agent/external/`：外部平台适配基础层；提供 `ExternalAdapter`、统一消息模型、入站去重、inbox/outbox 状态和 durable store。当前不内置真实平台实现，外部消息汇总到默认会话。
 - `agent/mcp/`：MCP Client（`config.py` / `connection.py` / `client.py` / `adapter.py`）。读取 `mcp_config.json`，连接 stdio/SSE 外部服务器，自动发现工具并注册为 `mcp_{server}_{tool}`，与内置工具统一调度；子进程仅继承白名单环境变量。
 - `agent/desktop_pet/`：可选 Electron 桌宠进程管理、pid/state、偏好读写；默认关闭，缺依赖时只提示安装命令，不影响主服务。
 - `agent/attachments.py`：附件落盘、MIME 校验、PDF/文本抽取、图片 base64 编码

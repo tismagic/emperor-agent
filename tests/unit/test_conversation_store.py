@@ -1,8 +1,7 @@
 from __future__ import annotations
 
-import json
+from datetime import timedelta, timezone
 from pathlib import Path
-from datetime import datetime, timezone, timedelta
 
 from agent.sessions import ConversationStore
 
