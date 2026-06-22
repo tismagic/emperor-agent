@@ -11,12 +11,15 @@
 
 - 多 Provider LLM 调用层
 - 工具调用与子代理派遣
+- MCP 外部工具接入（stdio / SSE，统一注册为 `mcp_{server}_{tool}`）
 - Agent Team 持久队友协作
 - 本地 Scheduler 长期自动运行中枢
 - Ask / Plan 会话控制与可暂停执行
 - 三层记忆 + 自动压缩
 - WebSocket 流式 WebUI（Vue3 + Vite + Tailwind）
 - 附件上传（图像/文档）与多模态输入链路
+- Electron 桌面壳（`desktop/`，自动拉起后端 + 同源加载完整 WebUI，前端零改动；网页端保留不动）
+- 可选 Electron 桌宠 companion（默认关闭）
 - External Bridge 基础设施（外部平台只汇入唯一主线，不做多会话）
 
 ## 2. 先看哪里（最小阅读路径）
@@ -39,20 +42,24 @@
 14. `agent/watchlist/*`（Watchlist heartbeat、次模型 skip/run 决策）
 15. `agent/team/*`（持久队友、MessageBus、TeamStore、team tools）
 16. `agent/external/*`（外部平台 adapter 抽象、bridge service、inbox/outbox 状态）
-17. `webui/src/runtime/*` + `webui/src/composables/useRuntime.ts` + `useBootstrap.ts` + `components/panels/ModelPanel.vue` + `components/panels/TeamPanel.vue`
+17. `agent/mcp/*`（MCP Client：config、connection、adapter、tool 注册）
+18. `agent/desktop_pet/*`（可选 Electron 桌宠进程管理）
+19. `webui/src/runtime/*` + `webui/src/composables/useRuntime.ts` + `useBootstrap.ts` + `components/panels/ModelPanel.vue` + `components/panels/TeamPanel.vue`
 
 ## 3. 关键目录地图
 
 ### 后端
 
 - `agent.py`：CLI 兼容入口，转发到 `agent.cli`
-- `agent/cli.py`：Python CLI 命令入口，提供 `init` / `chat` / `web` / `status` / `doctor`；`doctor --dev` 会复用统一质量门禁
+- `agent/cli.py`：Python CLI 命令入口，提供 `init` / `chat` / `web` / `status` / `doctor` / `pet`；`doctor --dev` 会复用统一质量门禁
 - `agent/onboarding.py`：Rich + Questionary 初始化向导、doctor 检查和模型配置构造
 - `agent/local_config.py`：`emperor.local.json` 本地 CLI/WebUI 偏好读写
 - `webui.py`：WebUI 服务入口
 - `agent/loop.py`：系统装配（memory / tools / subagents / runner）
 - `agent/runner.py`：LLM 调用循环、工具并发、空响应与截断恢复
-- `agent/web/`：aiohttp app/state/routes 模块化后端，HTTP 路径保持兼容
+- `agent/runner_factory.py` + `agent/runner_model.py`：子代理/Team runner 构造与模型调用（流式 delta、次模型失败升主一次）
+- `agent/model_router.py`：main_agent / memory / subagent / team 的主次模型路由与 fallback
+- `agent/web/`：aiohttp 模块化后端（`app.py` / `container.py` 组合根 / `state.py` / `mutation_guard.py` / `routes/` / `services/`），HTTP 路径保持兼容
 - `agent/webui.py`：兼容入口，导出 `create_app()` 与 `main()`
 - `agent/model_config.py`：新旧 schema 兼容、entry 激活、保存与脱敏
 - `agent/providers/`：OpenAI-compatible / Anthropic / Bedrock
@@ -64,6 +71,8 @@
 - `agent/watchlist/`：Watchlist heartbeat，读取 `memory/watchlist.md`，用次模型先判断 `skip/run`，只有 `run` 才投递完整主动 turn
 - `agent/team/`：Agent Team 子系统（持久队友、inbox、thread、状态机、team tools）
 - `agent/external/`：外部平台适配基础层；提供 `ExternalAdapter`、统一消息模型、入站去重、inbox/outbox 状态和 durable store。当前不内置真实平台实现，外部消息必须进入唯一主线，不能引入多会话。
+- `agent/mcp/`：MCP Client（`config.py` / `connection.py` / `client.py` / `adapter.py`）。读取 `mcp_config.json`，连接 stdio/SSE 外部服务器，自动发现工具并注册为 `mcp_{server}_{tool}`，与内置工具统一调度；子进程仅继承白名单环境变量。
+- `agent/desktop_pet/`：可选 Electron 桌宠进程管理、pid/state、偏好读写；默认关闭，缺依赖时只提示安装命令，不影响主服务。
 - `agent/attachments.py`：附件落盘、MIME 校验、PDF/文本抽取、图片 base64 编码
 - `agent/memory.py`：长期记忆、历史日志、checkpoint 恢复
 - `agent/memory_versions.py`：记忆快照、diff 预览与恢复；本地数据在 `memory/versions/`
@@ -80,6 +89,13 @@
 - `webui/src/components/panels/ModelPanel.vue`：模型条目管理、文本/视觉连通测试
 - `webui/src/components/panels/TeamPanel.vue`：Agent Team 队友工作台
 - `webui/src/views/*`：一级路由页面
+
+### 桌面壳（Electron）
+
+- `desktop/`：独立 Electron 子项目（CommonJS + `node --test`，与 `desktop-pet/` 并列、独立 `package.json` 与 `node_modules`）。把整套 WebUI 以桌面 App 交付；**网页端保留不动**。
+- 纯逻辑与 Electron 运行时分离，全部依赖注入单测：`config.js`（root/host/port → backendBaseUrl，读 `emperor.local.json`）、`backend-command.js`（spawn 命令，venv/`EMPEROR_BACKEND_CMD`/PATH 解析）、`health.js`（`probeBackend` / `waitForBackend` 轮询 `/api/bootstrap`）、`lifecycle.js`（attach vs spawn 与退出回收决策）、`window-bounds.js`（尺寸归一化，落盘 `memory/desktop/window.json`）。
+- `main.js` 只做装配（探测→附着或 spawn→等就绪→`loadURL(backendBaseUrl)`→退出回收），不含可隐藏分支；靠手动 E2E 覆盖。`preload.js` 仅 `contextBridge` 暴露 `version`/`platform`，前端不依赖它。
+- 启动逻辑：先探测后端，已运行则附着（退出不回收），未运行才 spawn `emperor-agent web`（退出 SIGTERM→2s 后 SIGKILL 回收）。需 Node ≥ 18。
 
 ### 配置与模板
 
@@ -263,6 +279,12 @@ emperor-agent doctor --dev
 - Scheduler：`scheduler(action=list|add|update|remove|pause|resume|run)`
 - Agent Team：`spawn_teammate`, `list_teammates`, `send_message`, `read_inbox`, `broadcast`, `shutdown_teammate`
 
+### MCP 外部工具
+
+- `agent/mcp/` 读取 `mcp_config.json`（与 `model_config.json` 同级），按 `transport=stdio|sse` 连接外部服务器，发现的工具注册为 `mcp_{server}_{tool}`，与内置工具统一调度。
+- 可用 `tool_overrides` 按工具名覆盖 `read_only` / `exclusive`；子进程仅继承白名单环境变量（PATH/HOME/USER…），不泄露 API key。
+- 单服务器连接失败不影响其他服务器和内置工具；WebUI `/mcp` 页提供 JSON 编辑器与已加载工具列表，保存后重连并重新发现。
+
 ### 并发规则
 
 - `read_only && !exclusive` 的工具会被 runner 并发执行
@@ -324,11 +346,14 @@ emperor-agent doctor --dev
 - `memory/external/`（包含在 `memory/`，External durable store）
 - `.team/`
 - `model_config.json`
+- `mcp_config.json`
 - `emperor.local.json`
 - `templates/USER.local.md`
 - `.env`
 - `webui/dist/`
 - `webui/node_modules/`
+- `desktop-pet/node_modules/`
+- `desktop/node_modules/`
 
 ### 10.2 新能力扩展路径
 
@@ -339,8 +364,10 @@ emperor-agent doctor --dev
 - 新 Chat 行为事件：优先接入 `agent/runtime/` 持久化，事件需带 `turn_id`，并同步 `agent/runtime/events.py`、`webui/src/types.ts`、`webui/src/runtime/*` 与 `useRuntime.ts` replay 分支
 - 新 Team 能力：优先放在 `agent/team/`，同步 `agent/web/routes/team.py` API、`webui/src/types.ts` 与 `TeamPanel.vue`
 - 新外部平台接入：优先放在 `agent/external/`，通过 `ExternalAdapter` 标准化入站/出站，并复用 `ExternalBridgeService`；禁止引入 `session_id`、会话列表或 `channel:chat_id` 多会话模型。
+- 新 MCP 服务器：在 `mcp_config.json` 中配置即可，无需改代码；如需调整连接/发现行为再动 `agent/mcp/`
 - 新子代理：`templates/subagents/*.md` + `subagents/registry.py` 白名单
 - 新技能：`skills/<name>/SKILL.md`
+- 扩展桌面壳：可测纯逻辑放进 `desktop/*.js` 独立模块并配 `desktop/test/*.test.js`（`node --test`），`main.js` 只做装配，不在其中堆业务分支；不要让桌面壳改动 `webui/` 前端源码或后端 `agent/`（保持网页端不变 + 同源 loadURL）。
 
 ### 10.3 前端改动注意
 
