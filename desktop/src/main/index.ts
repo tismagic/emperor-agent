@@ -108,9 +108,12 @@ function createWindow(): void {
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: false,
-      additionalArguments: process.env.ELECTRON_RENDERER_URL
-        ? []
-        : [`--backend-url=${config.backendBaseUrl}`],
+      // In dev mode (isPackaged==false) the Vite dev server proxies /api
+      // and /ws, so the renderer should use same-origin relative paths.
+      // In prod mode (app://) the preload injects the absolute backend URL.
+      additionalArguments: app.isPackaged
+        ? [`--backend-url=${config.backendBaseUrl}`]
+        : [],
     },
   })
 
