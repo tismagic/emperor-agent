@@ -15,9 +15,12 @@ from uuid import uuid4
 class RuntimeEventStore:
     """Hot/cold durable event log for reconstructing the WebUI chat timeline."""
 
-    def __init__(self, root: Path):
+    def __init__(self, root: Path, *, session_dir_override: bool = False):
         self.root = Path(root).resolve()
-        self.runtime_dir = self.root / "memory" / "runtime"
+        if session_dir_override:
+            self.runtime_dir = self.root / "runtime"
+        else:
+            self.runtime_dir = self.root / "memory" / "runtime"
         self.events_file = self.runtime_dir / "events.jsonl"
         self.archive_dir = self.runtime_dir / "archive"
         self.index_file = self.runtime_dir / "index.json"
