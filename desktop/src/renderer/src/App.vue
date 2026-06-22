@@ -59,6 +59,7 @@ const {
   messages,
   busy,
   status,
+  switchSession,
   pending,
   runtimeText,
   connectSocket,
@@ -72,6 +73,11 @@ const {
   addLocalCommand,
   restoreFromHistory,
 } = runtime
+
+function onSessionActivate(id: string) {
+  switchSession(id)
+  bootstrap.loadBootstrap(false)
+}
 
 const tokensClient = useTokens(showToast)
 const { data: tokensData, loading: tokensLoading, load: loadTokens } = tokensClient
@@ -559,7 +565,7 @@ provideAppContext({
 
   <div v-else class="app-shell">
     <NavRail />
-    <SessionSidebar />
+    <SessionSidebar @activate="onSessionActivate" />
     <router-view v-slot="{ Component }">
       <keep-alive>
         <component :is="Component" />

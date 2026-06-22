@@ -34,6 +34,7 @@ export function useRuntime(options: {
   const busy = ref(false)
   const status = ref<RuntimeStatus>('connecting')
   const currentAssistantId = ref<string | null>(null)
+  const sessionId = ref<string>('')
   const pending = reactive<PendingState>({ label: '', detail: '' })
   const reconnectAttempts = ref(0)
   const socket = ref<WebSocket | null>(null)
@@ -81,6 +82,7 @@ export function useRuntime(options: {
     if (active && (active.readyState === WebSocket.OPEN || active.readyState === WebSocket.CONNECTING)) return
     status.value = 'connecting'
     const params = new URLSearchParams({ last_seq: String(lastSeq.value) })
+    if (sessionId.value) params.set('session', sessionId.value)
     const ws = new WebSocket(wsUrl(`/ws?${params.toString()}`))
     socket.value = ws
 
@@ -1068,8 +1070,10 @@ export function useRuntime(options: {
     messages,
     busy,
     status,
+    sessionId,
     pending,
     runtimeText,
+    switchSession(id: string) { sessionId.value = id; messages.value = []; lastSeq.value = 0; connectSocket() },
     connectSocket,
     sendMessage,
     sendInteractionAnswer,

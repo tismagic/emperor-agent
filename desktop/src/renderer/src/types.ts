@@ -718,3 +718,12 @@ export type WsEvent = ({ seq?: number; ts?: number; turn_id?: string; client_mes
   | { event: 'scheduler_run_cancelled'; job?: SchedulerJob; reason?: string }
   | { event: 'runtime_task_cancelled'; task?: { id?: string; kind?: string; label?: string; turnId?: string; jobId?: string }; reason?: string }
 ))
+
+export interface SessionInfo {
+  id: string
+  title: string
+  created_at: string
+  updated_at: string
+  preview: string
+  version: number
+}
