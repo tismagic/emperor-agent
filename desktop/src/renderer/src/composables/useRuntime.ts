@@ -1,10 +1,7 @@
 import { computed, reactive, ref, watch, type Ref } from 'vue'
-import type { AssistantMessage, AttachmentRef, BootstrapPayload, ChatMessage, ChatSendPayload, ControlInteraction, PendingState, RuntimeEventEnvelope, RuntimeHistoryItem, RuntimeStatus, SchedulerMessageMeta, SubagentState, TeamMessage, ThoughtSegment, ToolSegment, ToolStatus, WsEvent } from '../types'
+import type { AssistantMessage, AttachmentRef, BootstrapPayload, ChatMessage, ChatSendPayload, ControlInteraction, PendingState, RuntimeEventEnvelope, RuntimeHistoryItem, RuntimeStatus, SubagentState, TeamMessage, ThoughtSegment, ToolSegment, ToolStatus, WsEvent } from '../types'
 import {
   clearRuntimeSnapshotRaw,
-  IN_FLIGHT_MAX_AGE_MS,
-  readRuntimeSnapshotRaw,
-  RUNTIME_MAX_AGE_MS,
   writeRuntimeSnapshotRaw,
 } from '../runtime/persistence'
 import { replayRuntimeEvents } from '../runtime/reducer'
@@ -12,6 +9,8 @@ import { findSubagent, findSubagentTool, findToolSegment } from '../runtime/sele
 import { applySchedulerEventToBootstrap } from '../runtime/handlers/scheduler'
 import { apiUrl, wsUrl } from '../api/backend'
 import { applyTeamEventToBootstrap } from '../runtime/handlers/team'
+import { SCHEDULER_CLIENT_ID_PREFIX, schedulerMessageMeta } from '../runtime/schedulerMeta'
+import { loadRuntimeSnapshot, transcriptFromMessages, type RuntimeSnapshot } from '../runtime/snapshot'
 
 function nextId(prefix: string) {
   const random = typeof crypto !== 'undefined' && 'randomUUID' in crypto ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(16).slice(2)}`
@@ -24,40 +23,7 @@ function compactJson(value: unknown, limit = 180) {
   return text.length > limit ? `${text.slice(0, limit)}...` : text
 }
 
-const SCHEDULER_CLIENT_ID_PREFIX = 'scheduler:'
-const SCHEDULER_TRIGGER_PREFIXES = ['定时任务触发 ·', '司时台触发 ·']
 const SCHEDULER_DONE_PENDING_MS = 2500
-
-function schedulerTriggerPrefix(content: string) {
-  const text = content.trimStart()
-  return SCHEDULER_TRIGGER_PREFIXES.find((prefix) => text.startsWith(prefix)) || ''
-}
-
-function schedulerMessageMeta(
-  content: string,
-  clientId = '',
-  source?: string,
-  scheduler?: SchedulerMessageMeta,
-): { source?: string; scheduler?: SchedulerMessageMeta } {
-  const displayPrefix = schedulerTriggerPrefix(content)
-  const isScheduler = source === 'scheduler' ||
-    clientId.startsWith(SCHEDULER_CLIENT_ID_PREFIX) ||
-    Boolean(displayPrefix)
-  if (!isScheduler) return source ? { source } : {}
-
-  const meta: SchedulerMessageMeta = { ...(scheduler || {}) }
-  if (!meta.jobName) {
-    const firstLine = content.trimStart().split(/\r?\n/, 1)[0] || ''
-    const parsedName = displayPrefix && firstLine.startsWith(displayPrefix)
-      ? firstLine.slice(displayPrefix.length).trim()
-      : ''
-    if (parsedName) meta.jobName = parsedName
-  }
-  return {
-    source: 'scheduler',
-    scheduler: Object.keys(meta).length ? meta : undefined,
-  }
-}
 
 export function useRuntime(options: {
   boot: Ref<BootstrapPayload | null>
@@ -1115,102 +1081,4 @@ export function useRuntime(options: {
     addLocalCommand,
     restoreFromHistory,
   }
-}
-
-interface RuntimeSnapshot {
-  messages: ChatMessage[]
-  currentAssistantId: string | null
-  lastSeq: number
-  savedAt: number
-  transcript?: RuntimeHistoryItem[]
-}
-
-function loadRuntimeSnapshot(history: RuntimeHistoryItem[]): RuntimeSnapshot | null {
-  try {
-    const raw = readRuntimeSnapshotRaw()
-    if (!raw) return null
-    const snapshot = JSON.parse(raw) as RuntimeSnapshot
-    if (!snapshot.savedAt || Date.now() - snapshot.savedAt > RUNTIME_MAX_AGE_MS) {
-      clearRuntimeSnapshotRaw()
-      return null
-    }
-    if (!Array.isArray(snapshot.messages)) return null
-    if (snapshot.currentAssistantId) {
-      if (Date.now() - snapshot.savedAt > IN_FLIGHT_MAX_AGE_MS) {
-        return finalizedSnapshot(snapshot)
-      }
-      if (!matchesInFlightBackendHistory(snapshot, history)) return null
-      return snapshot
-    }
-    if (!matchesBackendHistory(snapshot, history)) return null
-    return snapshot
-  } catch {
-    return null
-  }
-}
-
-function finalizedSnapshot(snapshot: RuntimeSnapshot): RuntimeSnapshot {
-  const messages = snapshot.messages.map((message) => {
-    if (message.role !== 'assistant' || message.id !== snapshot.currentAssistantId) return message
-    const fallback = '（上次回复已超时中断，请重新发送。）'
-    const baseSegments = message.segments.map((segment) => {
-      if (segment.type !== 'thought' || segment.status !== 'running') return segment
-      const endedAt = snapshot.savedAt
-      return {
-        ...segment,
-        status: 'error_aborted' as const,
-        endedAt,
-        durationMs: segment.startedAt ? Math.max(0, endedAt - segment.startedAt) : segment.durationMs,
-      }
-    })
-    const hasText = baseSegments.some((segment) => segment.type === 'text')
-    const segments = hasText
-      ? baseSegments
-      : [...baseSegments, { id: nextId('segment'), type: 'text' as const, content: fallback }]
-    const content = message.content || fallback
-    return { ...message, content, segments, streaming: false } satisfies AssistantMessage
-  })
-  return { ...snapshot, messages, currentAssistantId: null, lastSeq: 0 }
-}
-
-function matchesInFlightBackendHistory(snapshot: RuntimeSnapshot, history: RuntimeHistoryItem[]) {
-  const expected = normalizeTranscript(history)
-  const actual = normalizeTranscript(transcriptFromMessages(withoutCurrentAssistant(snapshot)))
-  if (actual.length !== expected.length) return false
-  return expected.every((item, index) => item.role === actual[index]?.role && item.content === actual[index]?.content)
-}
-
-function withoutCurrentAssistant(snapshot: RuntimeSnapshot) {
-  return snapshot.messages.filter((message) => message.id !== snapshot.currentAssistantId)
-}
-
-function matchesBackendHistory(snapshot: RuntimeSnapshot, history: RuntimeHistoryItem[]) {
-  const expected = normalizeTranscript(history)
-  if (!expected.length) return false
-  const actual = normalizeTranscript(snapshot.transcript?.length ? snapshot.transcript : transcriptFromMessages(snapshot.messages))
-  if (actual.length !== expected.length) return false
-  return expected.every((item, index) => item.role === actual[index]?.role && item.content === actual[index]?.content)
-}
-
-function normalizeTranscript(items: RuntimeHistoryItem[]) {
-  return items
-    .filter((item) => (item.role === 'user' || item.role === 'assistant') && typeof item.content === 'string')
-    .map((item) => ({ role: item.role, content: item.content }))
-}
-
-function transcriptFromMessages(items: ChatMessage[]): RuntimeHistoryItem[] {
-  return items
-    .filter((message) => !message.local)
-    .map((message) => {
-      if (message.role === 'user') return { role: 'user', content: message.content }
-      return { role: 'assistant', content: assistantText(message) }
-    })
-}
-
-function assistantText(message: AssistantMessage) {
-  if (message.content) return message.content
-  return message.segments
-    .filter((segment) => segment.type === 'text')
-    .map((segment) => segment.content)
-    .join('')
 }

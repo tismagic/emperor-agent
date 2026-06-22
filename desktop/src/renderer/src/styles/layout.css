@@ -38,7 +38,7 @@
   .view-head::after {
     content: '';
     @apply pointer-events-none absolute -right-8 -top-12 h-36 w-36 opacity-5;
-    background: url('../assets/textures/texture-seal.png') center / contain no-repeat;
+    background: url('../../../../../assets/textures/texture-seal.png') center / contain no-repeat;
   }
 
   .view-head h1 {

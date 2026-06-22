@@ -2,11 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
-import re
-import shutil
-import tempfile
 import uuid
-import zipfile
 from pathlib import Path
 from typing import Any
 
@@ -21,7 +17,6 @@ from ..desktop_pet import DesktopPetManager
 from ..external import ExternalBridgeService
 from ..logger import configure as configure_logging
 from ..loop import AgentLoop
-from ..mcp.config import load_mcp_config, save_mcp_config
 from ..runtime import RuntimeEventStore
 from ..runtime import events as runtime_events
 from ..runtime.active import ActiveTaskInfo, ActiveTaskRegistry
@@ -29,16 +24,17 @@ from ..watchlist import WatchlistService
 from .mutation_guard import assert_web_mutation_allowed
 from .services import (
     ChatService,
+    ConfigService,
     DiagnosticsService,
     MainlineTurnService,
     MemoryService,
     ModelService,
     SchedulerJobExecutor,
     SchedulerWebService,
+    SkillService,
     TeamService,
+    ensure_tool_config,
 )
-
-_SKILL_RE = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,80}$")
 
 
 class WebUIState:
@@ -55,7 +51,7 @@ class WebUIState:
         self.webui_host = webui_host
         self.webui_port = webui_port
         configure_logging(self.root)
-        self._ensure_tool_config()
+        ensure_tool_config(self.root)
         self.loop = AgentLoop(root=self.root, verbose=False, startup_compaction=False)
         self.loop.init_mcp()
         self.mainline_turn_service = MainlineTurnService(self)
@@ -69,6 +65,8 @@ class WebUIState:
         self.diagnostics_service = DiagnosticsService(self)
         self.memory_service = MemoryService(self)
         self.model_service = ModelService(self)
+        self.skill_service = SkillService(self)
+        self.config_service = ConfigService(self)
         self.team_service = TeamService(self)
         self.scheduler_web_service = SchedulerWebService(self)
         self.scheduler_job_executor = SchedulerJobExecutor(self)
@@ -98,8 +96,8 @@ class WebUIState:
             "model": self.loop.model,
             "provider": self.loop.provider_name,
             "providerLabel": self.loop.provider_label,
-            "tools": self.tools(),
-            "skills": self.skills(),
+            "tools": self.skill_service.tools(),
+            "skills": self.skill_service.skills(),
             "memory": self.memory_service.memory(),
             "modelConfig": self.model_config(),
             "team": self.team_service.team(),
@@ -242,75 +240,8 @@ class WebUIState:
             turn_id=info.turn_id,
         )
 
-    async def get_tools(self, request: web.Request) -> web.Response:
-        return self._json(self.tools())
-
     async def get_external(self, request: web.Request) -> web.Response:
         return self._json(self.external_bridge.payload())
-
-    async def get_skills(self, request: web.Request) -> web.Response:
-        return self._json(self.skills())
-
-    async def get_skill(self, request: web.Request) -> web.Response:
-        return self._json(self.read_skill(request.query.get("name", "")))
-
-    async def post_skill(self, request: web.Request) -> web.Response:
-        body = await self._body(request)
-        data = self.write_skill(str(body.get("name") or ""), str(body.get("content") or ""))
-        return self._json(data)
-
-    async def delete_skill(self, request: web.Request) -> web.Response:
-        name = request.query.get("name", "")
-        if not _SKILL_RE.match(name):
-            raise web.HTTPBadRequest(reason="Invalid skill name")
-        skill_dir = self.root / "skills" / name
-        if not skill_dir.exists():
-            raise web.HTTPNotFound(reason=f"Skill not found: {name}")
-        shutil.rmtree(skill_dir, ignore_errors=True)
-        self.loop.refresh_runtime_context()
-        return self._json({"deleted": name})
-
-    async def import_skills(self, request: web.Request) -> web.Response:
-        reader = await request.multipart()
-        field = await reader.next()
-        if field is None or field.name != "file":
-            raise web.HTTPBadRequest(reason="Expected multipart field 'file'")
-        tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".zip")
-        try:
-            while True:
-                chunk = await field.read_chunk()
-                if not chunk:
-                    break
-                tmp.write(chunk)
-            tmp.close()
-            with zipfile.ZipFile(tmp.name, "r") as zf:
-                namelist = zf.namelist()
-                if not namelist:
-                    raise web.HTTPBadRequest(reason="Empty zip file")
-                root = namelist[0].split("/")[0]
-                if not root or root == ".":
-                    raise web.HTTPBadRequest(reason="Cannot determine root directory from zip")
-                skill_md = f"{root}/SKILL.md"
-                if skill_md not in namelist and f"{root}SKILL.md" in namelist:
-                    skill_md = f"{root}SKILL.md"
-                if skill_md not in namelist:
-                    raise web.HTTPBadRequest(reason=f"Missing SKILL.md in zip root ({root})")
-                target = self.root / "skills" / root
-                if target.exists():
-                    shutil.rmtree(target, ignore_errors=True)
-                zf.extractall(self.root / "skills")
-            self.loop.refresh_runtime_context()
-            return self._json({"imported": root})
-        finally:
-            Path(tmp.name).unlink(missing_ok=True)
-
-    async def get_config(self, request: web.Request) -> web.Response:
-        return self._json(self.read_user_config())
-
-    async def post_config(self, request: web.Request) -> web.Response:
-        body = await self._body(request)
-        data = self.write_user_config(str(body.get("content") or ""))
-        return self._json(data)
 
     async def get_control(self, request: web.Request) -> web.Response:
         return self._json(self.control())
@@ -383,97 +314,6 @@ class WebUIState:
         # serves the frontend itself, so there is no SPA HTML fallback here.
         return web.json_response({"error": "not_found"}, status=404)
 
-    def tools(self) -> list[dict[str, Any]]:
-        out = []
-        for definition in self.loop.registry.get_definitions():
-            tool = self.loop.registry.get(definition["name"])
-            is_mcp = definition["name"].startswith("mcp_")
-            server = ""
-            if is_mcp:
-                parts = definition["name"].split("_", 2)
-                server = parts[1] if len(parts) >= 2 else ""
-            out.append({
-                "name": definition["name"],
-                "description": definition["description"],
-                "parameters": definition["input_schema"],
-                "read_only": bool(getattr(tool, "read_only", False)),
-                "exclusive": bool(getattr(tool, "exclusive", False)),
-                "concurrency_safe": bool(getattr(tool, "concurrency_safe", False)),
-                "source": "mcp" if is_mcp else "builtin",
-                "server": server,
-            })
-        return out
-
-    async def get_mcp_config(self, request: web.Request) -> web.Response:
-        config = load_mcp_config(self.root)
-        raw: dict[str, Any] = {"servers": {}, "defaults": config.defaults}
-        for name, server in config.servers.items():
-            raw["servers"][name] = {
-                "transport": server.transport,
-                "command": server.command,
-                "args": list(server.args),
-                "env": server.env,
-                "url": server.url,
-                "headers": server.headers,
-                "enabled": server.enabled,
-                "tool_overrides": server.tool_overrides,
-            }
-        return self._json(raw)
-
-    async def post_mcp_config(self, request: web.Request) -> web.Response:
-        body = await self._body(request)
-        if not isinstance(body.get("servers"), dict):
-            raise web.HTTPBadRequest(reason="mcp_config: 'servers' must be an object")
-        save_mcp_config(self.root, body)
-        # 重新加载 MCP：关闭旧连接，重新初始化
-        self.loop.close_mcp()
-        self.loop.registry.unregister_mcp_tools()
-        self.loop.init_mcp()
-        return self._json({"saved": True})
-
-    def skills(self) -> list[dict[str, Any]]:
-        items = []
-        for name, skill in sorted(self.loop.skills.skills.items()):
-            items.append({
-                "name": name,
-                "description": skill["meta"].get("description", ""),
-                "path": self._rel(skill["path"]),
-                "tags": skill["meta"].get("tags", ""),
-                "always": bool(skill["meta"].get("always", False)),
-            })
-        return items
-
-    def read_skill(self, name: str) -> dict[str, Any]:
-        skill = self.loop.skills.skills.get(name)
-        if not skill:
-            raise web.HTTPNotFound(reason=f"Skill not found: {name}")
-        path = Path(skill["path"])
-        return {
-            "name": name,
-            "path": self._rel(path),
-            "content": path.read_text(encoding="utf-8"),
-        }
-
-    def write_skill(self, name: str, content: str) -> dict[str, Any]:
-        if not _SKILL_RE.match(name):
-            raise web.HTTPBadRequest(reason="Skill name must be a safe directory name")
-        skill_dir = self.root / "skills" / name
-        skill_dir.mkdir(parents=True, exist_ok=True)
-        path = skill_dir / "SKILL.md"
-        path.write_text(content.rstrip() + "\n", encoding="utf-8")
-        self.loop.refresh_runtime_context()
-        return self.read_skill(name)
-
-    def read_user_config(self) -> dict[str, str]:
-        path = self._user_config_path()
-        return {"path": "templates/USER.local.md", "content": path.read_text(encoding="utf-8")}
-
-    def write_user_config(self, content: str) -> dict[str, str]:
-        path = self._user_config_path()
-        path.write_text(content.rstrip() + "\n", encoding="utf-8")
-        self.loop.refresh_runtime_context()
-        return self.read_user_config()
-
     def control(self) -> dict[str, Any]:
         return self.loop.control_manager.payload()
 
@@ -498,14 +338,6 @@ class WebUIState:
     def model_config(self) -> dict[str, Any]:
         return self.model_service.payload()
 
-    def _user_config_path(self) -> Path:
-        template = self.root / "templates" / "init" / "USER.md"
-        local = self.root / "templates" / "USER.local.md"
-        if not local.exists() and template.exists():
-            local.parent.mkdir(parents=True, exist_ok=True)
-            local.write_text(template.read_text(encoding="utf-8"), encoding="utf-8")
-        return local
-
     def _webui_host(self) -> str:
         from ..local_config import load_local_config
 
@@ -515,25 +347,6 @@ class WebUIState:
         from ..local_config import load_local_config
 
         return load_local_config(self.root).webui.port
-
-    def _rel(self, path: str | Path) -> str:
-        return Path(path).resolve().relative_to(self.root).as_posix()
-
-    def _ensure_tool_config(self) -> None:
-        path = self.root / "templates" / "TOOL.md"
-        path.parent.mkdir(parents=True, exist_ok=True)
-        if path.exists():
-            return
-        path.write_text(
-            "# 工具配置\n\n"
-            "记录工具使用偏好、权限边界和默认工作方式。\n\n"
-            "## 默认原则\n\n"
-            "- 优先使用最小权限工具。\n"
-            "- 简单检索优先使用 `grep` / `glob`。\n"
-            "- 修改文件前先确认目标和影响范围。\n"
-            "- 子代理适合独立、可并行、上下文较重的差事。\n",
-            encoding="utf-8",
-        )
 
     @staticmethod
     async def _body(request: web.Request) -> dict[str, Any]:
