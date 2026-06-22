@@ -10,6 +10,7 @@ import {
 import { replayRuntimeEvents } from '../runtime/reducer'
 import { findSubagent, findSubagentTool, findToolSegment } from '../runtime/selectors'
 import { applySchedulerEventToBootstrap } from '../runtime/handlers/scheduler'
+import { apiUrl, wsUrl } from '../api/backend'
 import { applyTeamEventToBootstrap } from '../runtime/handlers/team'
 
 function nextId(prefix: string) {
@@ -113,9 +114,8 @@ export function useRuntime(options: {
     const active = socket.value
     if (active && (active.readyState === WebSocket.OPEN || active.readyState === WebSocket.CONNECTING)) return
     status.value = 'connecting'
-    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
     const params = new URLSearchParams({ last_seq: String(lastSeq.value) })
-    const ws = new WebSocket(`${protocol}//${window.location.host}/ws?${params.toString()}`)
+    const ws = new WebSocket(wsUrl(`/ws?${params.toString()}`))
     socket.value = ws
 
     ws.addEventListener('open', () => {
@@ -238,7 +238,7 @@ export function useRuntime(options: {
   async function stopActive() {
     updatePending('正在停止当前任务...', '', 'running')
     try {
-      const res = await fetch('/api/runtime/stop', {
+      const res = await fetch(apiUrl('/api/runtime/stop'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({}),

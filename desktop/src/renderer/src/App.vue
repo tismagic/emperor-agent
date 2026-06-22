@@ -9,6 +9,7 @@ import { useTokens } from './composables/useTokens'
 import { provideAppContext } from './composables/useAppContext'
 import type { ChatSendPayload, CompactResult, TokenStatsRow } from './types'
 import { brandAssets } from './assets'
+import { apiUrl } from './api/backend'
 import { formatNumber, usageTypeLabel } from './utils/format'
 
 const router = useRouter()
@@ -317,7 +318,7 @@ function renderModeStatus() {
 
 async function setControlMode(mode: 'ask_before_edit' | 'auto' | 'plan'): Promise<{ ok: boolean; error?: string }> {
   try {
-    const res = await fetch('/api/control/mode', {
+    const res = await fetch(apiUrl('/api/control/mode'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ mode }),

@@ -1,5 +1,7 @@
+import { apiUrl } from './backend'
+
 export async function api<T>(path: string, options: RequestInit = {}): Promise<T> {
-  const response = await fetch(path, {
+  const response = await fetch(apiUrl(path), {
     headers: { 'content-type': 'application/json', ...(options.headers || {}) },
     ...options,
   })

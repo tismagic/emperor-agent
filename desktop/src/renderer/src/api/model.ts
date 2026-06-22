@@ -1,11 +1,12 @@
 import type { ModelTestResult } from '../types'
+import { apiUrl } from './backend'
 
 export async function testModelEntry(
   entryName: string,
   kind: 'text' | 'vision',
   role: 'main' | 'secondary' = 'main',
 ): Promise<ModelTestResult> {
-  const r = await fetch('/api/model-test', {
+  const r = await fetch(apiUrl('/api/model-test'), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ entryName, kind, role }),
