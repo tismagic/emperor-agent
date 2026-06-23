@@ -682,6 +682,7 @@ class AgentLoop:
                 parent_registry=self._team_registry_for_project(project_path),
                 subagent_registry=self.subagent_registry,
                 runner_factory=self._team_runner_factory(safe_project_id),
+                task_manager=self.task_manager,
             )
         return self._team_managers[safe_project_id]
 

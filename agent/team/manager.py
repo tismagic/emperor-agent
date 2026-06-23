@@ -11,6 +11,7 @@ from loguru import logger
 
 from ..providers.base import run_sync
 from ..subagents import SubagentSpec
+from ..tasks import TaskKind
 from ..tools.registry import ToolRegistry
 from . import events
 from .bus import MessageBus
@@ -51,6 +52,7 @@ class TeamManager:
         parent_registry: ToolRegistry,
         subagent_registry,
         runner_factory,
+        task_manager=None,
     ):
         self.project_id = str(project_id or "").strip() or None
         self.store = TeamStore(root, team_dir=Path(team_dir) if team_dir is not None else None)
@@ -58,6 +60,7 @@ class TeamManager:
         self.parent_registry = parent_registry
         self.subagent_registry = subagent_registry
         self.runner_factory = runner_factory
+        self.task_manager = task_manager
         self._locks: dict[str, Lock] = {}
         self._locks_guard = Lock()
 
@@ -311,6 +314,33 @@ class TeamManager:
             pending_message_ids=pending_message_ids,
         )
 
+        task_record = None
+        if self.task_manager is not None:
+            task_record = self.task_manager.start_task(
+                kind=TaskKind.TEAM_WAKE.value,
+                title=f"Team wake: {working.name}",
+                source="team",
+                metadata={
+                    "project_id": self.project_id or "default",
+                    "member": working.name,
+                    "role": working.role,
+                    "agent_type": working.agent_type,
+                    "parent_call_id": parent_call_id,
+                    "pending_message_ids": list(pending_message_ids),
+                    "resumed_from_checkpoint": bool(checkpoint),
+                },
+            )
+            user_content = self._latest_user_content(history)
+            if user_content:
+                self.task_manager.append_sidechain(task_record.id, {
+                    "role": "user",
+                    "content": user_content,
+                    "metadata": {
+                        "member": working.name,
+                        "pending_message_ids": list(pending_message_ids),
+                    },
+                })
+
         spec = self._require_spec(working.agent_type)
         sub_registry = self._registry_for_member(working, spec)
         runner = self.runner_factory(member=working, spec=spec, sub_registry=sub_registry)
@@ -360,6 +390,13 @@ class TeamManager:
                     meta={"role": working.role, "agent_type": working.agent_type},
                 )
                 self._emit(events.message_event(result_msg), emit, loop)
+            if task_record is not None and self.task_manager is not None:
+                self.task_manager.append_sidechain(task_record.id, {
+                    "role": "assistant",
+                    "content": final,
+                    "metadata": {"member": working.name},
+                })
+                self.task_manager.complete_task(task_record.id, summary=final[:500])
             logger.info(f"[队友回禀 · {working.name}]: {final[:500]}")
             return final
         except Exception as exc:
@@ -387,6 +424,13 @@ class TeamManager:
                 meta={"role": working.role, "agent_type": working.agent_type},
             )
             self._emit(events.message_event(error_msg), emit, loop)
+            if task_record is not None and self.task_manager is not None:
+                self.task_manager.append_sidechain(task_record.id, {
+                    "role": "error",
+                    "content": err,
+                    "metadata": {"member": working.name},
+                })
+                self.task_manager.fail_task(task_record.id, error=err)
             return f"Error: teammate '{working.name}' raised: {err}"
 
     def _registry_for_member(self, member: TeamMember, spec: SubagentSpec) -> ToolRegistry:
@@ -422,6 +466,13 @@ class TeamManager:
                 "content": str(content)[:2000],
             })
         return out
+
+    @staticmethod
+    def _latest_user_content(history: list[dict[str, Any]]) -> str:
+        for item in reversed(history):
+            if item.get("role") == "user":
+                return str(item.get("content") or "")
+        return ""
 
     def _require_member(self, name: str) -> TeamMember:
         member = self.store.get_member(name)

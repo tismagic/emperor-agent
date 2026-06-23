@@ -11,6 +11,7 @@ from typing import Any
 import pytest
 
 from agent.subagents import SubagentSpec
+from agent.tasks import TaskKind, TaskManager, TaskStatus
 from agent.team import (
     MessageBus,
     TeamManager,
@@ -85,7 +86,7 @@ class FakeRunner:
         return self.reply
 
 
-def make_manager(tmp_path: Path, runner_factory=None) -> TeamManager:
+def make_manager(tmp_path: Path, runner_factory=None, task_manager: TaskManager | None = None) -> TeamManager:
     if runner_factory is None:
         def runner_factory(**kwargs):
             return FakeRunner("fake teammate result")
@@ -95,6 +96,7 @@ def make_manager(tmp_path: Path, runner_factory=None) -> TeamManager:
         parent_registry=ToolRegistry(),
         subagent_registry=FakeSubagentRegistry(),
         runner_factory=runner_factory,
+        task_manager=task_manager,
     )
 
 
@@ -229,6 +231,31 @@ def test_send_message_wake_uses_existing_thread(tmp_path: Path) -> None:
     assert len([msg for msg in manager.bus.all_messages("lead") if msg.type == "result"]) == 2
 
 
+def test_team_wake_records_task_and_sidechain(tmp_path: Path) -> None:
+    task_manager = TaskManager(tmp_path)
+    manager = make_manager(tmp_path, task_manager=task_manager)
+    manager.spawn_teammate(name="alice", role="coder")
+
+    manager.send_message(to="alice", content="build the feature", wake=True)
+
+    tasks = task_manager.store.list()
+    assert len(tasks) == 1
+    task = tasks[0]
+    assert task.kind == TaskKind.TEAM_WAKE.value
+    assert task.status == TaskStatus.COMPLETED.value
+    assert task.source == "team"
+    assert task.title == "Team wake: alice"
+    assert task.metadata["member"] == "alice"
+    assert task.metadata["project_id"] == "default"
+    assert task.metadata["agent_type"] == "neiguan_yingzao"
+    assert task.progress["summary"] == "fake teammate result"
+
+    transcript = task_manager.read_sidechain(task.id)
+    assert [msg["role"] for msg in transcript["messages"]] == ["user", "assistant"]
+    assert "build the feature" in transcript["messages"][0]["content"]
+    assert transcript["messages"][1]["content"] == "fake teammate result"
+
+
 def test_explicit_teammate_reply_suppresses_fallback_result(tmp_path: Path) -> None:
     holder: dict[str, TeamManager] = {}
 
@@ -278,6 +305,30 @@ def test_failed_wake_keeps_unread_and_reuses_checkpoint(tmp_path: Path) -> None:
     user_messages = [msg for msg in thread if msg.get("role") == "user"]
     assert len(user_messages) == 1
     assert "fragile work" in user_messages[0]["content"]
+
+
+def test_failed_team_wake_records_failed_task(tmp_path: Path) -> None:
+    def runner_factory(**kwargs):
+        return FakeRunner("unused", should_raise=lambda: True)
+
+    task_manager = TaskManager(tmp_path)
+    manager = make_manager(tmp_path, runner_factory=runner_factory, task_manager=task_manager)
+    manager.spawn_teammate(name="alice", role="coder")
+
+    raw = manager.send_message(to="alice", content="fragile work", wake=True)
+    payload = json.loads(raw)
+
+    assert payload["result"].startswith("Error:")
+    tasks = task_manager.store.list()
+    assert len(tasks) == 1
+    task = tasks[0]
+    assert task.kind == TaskKind.TEAM_WAKE.value
+    assert task.status == TaskStatus.FAILED.value
+    assert task.progress["error"] == "fake wake failure"
+    transcript = task_manager.read_sidechain(task.id)
+    assert [msg["role"] for msg in transcript["messages"]] == ["user", "error"]
+    assert "fragile work" in transcript["messages"][0]["content"]
+    assert transcript["messages"][1]["content"] == "fake wake failure"
 
 
 def test_message_bus_concurrent_append_keeps_jsonl_intact(tmp_path: Path) -> None:
