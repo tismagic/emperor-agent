@@ -580,7 +580,10 @@ class AgentRunner:
             results_by_id[call.id] = content
             self._maybe_pause_for_control(content, tool_calls, results_by_id)
             if not content.startswith("Error:"):
+                plan_update = self._sync_plan_from_todo_tool(call, content)
                 await self._emit_tool_result(call, content, emit)
+                if plan_update is not None and emit:
+                    await emit(runtime_events.plan_runtime_update(plan_update.to_dict()))
             return content
 
         return await self.tool_execution_engine.run_batch(tool_calls, emit=emit, run_one=run_one)
@@ -695,6 +698,21 @@ class AgentRunner:
             return
         tool_messages = self._tool_messages_for_pause(tool_calls, results_by_id, interaction)
         raise TurnPaused(interaction=interaction, tool_messages=tool_messages)
+
+    def _sync_plan_from_todo_tool(self, call: ToolCallRequest, content: str):
+        if call.name != "update_todos" or self.control_manager is None:
+            return None
+        todos = call.arguments.get("todos")
+        if not isinstance(todos, list) or not hasattr(self.control_manager, "sync_plan_from_todos"):
+            return None
+        return self.control_manager.sync_plan_from_todos(
+            todos,
+            evidence={
+                "source": "update_todos",
+                "tool_call_id": call.id,
+                "summary": _summarize_tool_result(content),
+            },
+        )
 
     @staticmethod
     def _tool_messages_for_pause(

@@ -1,12 +1,12 @@
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any
 from uuid import uuid4
 
 from ..permissions import PermissionManager
-from ..plans import PlanExecutionState, PlanRecord, PlanStatus, PlanStep, PlanStore
+from ..plans import PlanExecutionState, PlanRecord, PlanStatus, PlanStep, PlanStepStatus, PlanStore
 from .clarification import ClarificationAssessment, ClarificationPolicy
 from .models import (
     ControlMode,
@@ -375,6 +375,54 @@ class ControlManager:
     def permission_approval_result(self, decision, *, parent_call_id: str | None = None) -> str:
         return self.permission_manager.require_approval(decision, parent_call_id=parent_call_id)
 
+    def sync_plan_from_todos(
+        self,
+        todos: list[dict[str, Any]],
+        *,
+        evidence: dict[str, Any] | None = None,
+    ) -> PlanRecord | None:
+        record = self._latest_executable_plan()
+        if record is None or not record.steps:
+            return None
+        todo_by_index = {
+            int(item.get("id")) - 1: item
+            for item in todos
+            if isinstance(item, dict) and _is_positive_int(item.get("id"))
+        }
+        now = now_ts()
+        steps: list[PlanStep] = []
+        for index, step in enumerate(record.steps):
+            todo = todo_by_index.get(index)
+            if todo is None:
+                steps.append(step)
+                continue
+            todo_status = str(todo.get("status") or "pending")
+            next_status = _plan_status_from_todo(todo_status)
+            step_evidence = list(step.evidence)
+            if next_status == PlanStepStatus.DONE.value and step.status != PlanStepStatus.DONE.value:
+                step_evidence.append({
+                    **(evidence or {}),
+                    "todo_id": todo.get("id"),
+                    "todo_status": todo_status,
+                    "synced_at": now,
+                })
+            steps.append(replace(step, status=next_status, evidence=step_evidence))
+
+        plan_status = (
+            PlanStatus.COMPLETED.value
+            if steps and all(step.status in {PlanStepStatus.DONE.value, PlanStepStatus.SKIPPED.value} for step in steps)
+            else PlanStatus.EXECUTING.value
+        )
+        updated = replace(
+            record,
+            status=plan_status,
+            completed_at=now if plan_status == PlanStatus.COMPLETED.value else record.completed_at,
+            updated_at=now,
+            steps=steps,
+        )
+        self.plan_store.save(updated)
+        return updated
+
     def _update_plan_status(self, interaction: Interaction, status: str, *, approved: bool = False) -> None:
         plan_id = str(interaction.meta.get("plan_id") or "")
         if not plan_id:
@@ -405,6 +453,15 @@ class ControlManager:
         self.plan_store.save(activated)
         self.todo_store.sync_from_plan_steps([step.to_dict() for step in activated.steps])
         return activated
+
+    def _latest_executable_plan(self) -> PlanRecord | None:
+        plans = [
+            plan for plan in self.plan_store.list()
+            if plan.status in {PlanStatus.APPROVED.value, PlanStatus.EXECUTING.value}
+        ]
+        if not plans:
+            return None
+        return max(plans, key=lambda item: item.updated_at)
 
     @staticmethod
     def _restore_mode(state: ControlState) -> str:
@@ -470,3 +527,18 @@ def _parse_plan_steps(items: list[dict[str, Any]]) -> list[PlanStep]:
             )
         )
     return steps
+
+
+def _is_positive_int(value: Any) -> bool:
+    try:
+        return int(value) > 0
+    except (TypeError, ValueError):
+        return False
+
+
+def _plan_status_from_todo(status: str) -> str:
+    if status == "completed":
+        return PlanStepStatus.DONE.value
+    if status == "in_progress":
+        return PlanStepStatus.ACTIVE.value
+    return PlanStepStatus.PENDING.value

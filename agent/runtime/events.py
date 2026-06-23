@@ -171,6 +171,14 @@ def plan_verification_done(*, plan_id: str, step_id: str, result: dict[str, Any]
     return runtime_event("plan_verification_done", plan_id=plan_id, step_id=step_id, result=result)
 
 
+def plan_runtime_update(plan: dict[str, Any]) -> dict[str, Any]:
+    return runtime_event("plan_runtime_update", plan=plan)
+
+
+def plan_step_update(*, plan_id: str, step: dict[str, Any]) -> dict[str, Any]:
+    return runtime_event("plan_step_update", plan_id=plan_id, step=step)
+
+
 def task_started(task: dict[str, Any]) -> dict[str, Any]:
     return runtime_event("task_started", task=task)
 
