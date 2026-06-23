@@ -427,7 +427,7 @@ class TaskRecord:
 第四阶段：高级上下文恢复
 
 1. ToolResultStore、ContextPipeline replacement、AgentRunner 默认 store-backed 投影、工具级 `max_result_chars` 预算链路、首批内置工具预算、MCP defaults/tool override 预算，以及 `ToolResult` 在 registry/execution engine/runner/runtime 类型中的结构化贯通已落地：大工具结果可稳定落盘，模型可见消息只保留 preview 与 artifact path，runtime summary 使用 `display_summary`，artifact metadata 可随事件 replay 保留。`read_file`、`grep`、`run_command`、`write_file`、`edit_file` 已提供原生 summary/metadata mapping，Chat 工具卡片已展示 artifact/diff 证据。
-2. Microcompact。
+2. Local microcompact 已落地第一版：旧超长普通文本消息会在请求前投影中稳定缩短，保留 head/tail 和诊断 report。
 3. Reactive compact。
 4. 主会话后台化。
 

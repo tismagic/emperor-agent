@@ -66,7 +66,8 @@ Do not start Phase 6 before Phase 3 and Phase 4 are merged, because sidechain tr
 - `PlanContextBuilder` now injects durable plan runtime context into model projection and memory compaction prompts, preserving active step, failed evidence, blocked reason, open questions, files, and artifacts after compaction/recovery.
 - Independent Verification Gate is now part of Plan Runtime v3: non-trivial completed plans require reviewer PASS with command evidence or user waiver before final answer, and PlanCard projects required/passed/failed/waived/missing-evidence states.
 - Task Framework v1 is in place: `TaskStore`, `TaskManager`, `SidechainTranscript`, task lifecycle runtime events, frontend task projection, subagent task registration, Team wake task records, Scheduler task records, and task transcript API are all covered by focused tests.
-- The remaining upgrade lane is task transcript consolidation across more long-running tools plus microcompact/reactive compact refinements on top of the file-backed tool result store.
+- Local microcompact is now part of `ContextPipeline`: older oversized plain text user/assistant messages are shortened into stable head/tail records before model requests while recent messages, tool results, tool_calls, and multimodal content are preserved.
+- The remaining upgrade lane is task transcript consolidation across more long-running tools plus model microcompact / reactive compact refinements on top of the file-backed tool result store.
 
 ## File Structure
 

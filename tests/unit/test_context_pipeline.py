@@ -151,3 +151,54 @@ def test_context_pipeline_uses_tool_specific_result_budget(tmp_path) -> None:
     assert projection.report["replaced_tool_results"] == 1
     assert projection.report["tool_result_replacements"][0]["tool_name"] == "grep"
     assert "original_chars: 3000" in projection.messages[1]["content"]
+
+
+def test_context_pipeline_microcompacts_old_large_text_messages() -> None:
+    long_text = "alpha " * 900
+    recent_text = "beta " * 900
+    history = [
+        {"role": "user", "content": long_text},
+        {"role": "assistant", "content": "short reply"},
+        {"role": "user", "content": recent_text},
+    ]
+
+    projection = ContextPipeline(
+        microcompact_keep_recent=1,
+        microcompact_min_chars=1000,
+        microcompact_head_chars=80,
+        microcompact_tail_chars=60,
+    ).project(history)
+
+    assert projection.report["microcompacted_messages"] == 1
+    assert projection.report["microcompact_records"][0]["index"] == 0
+    assert projection.messages[0]["content"].startswith("[local_microcompact]")
+    assert "original_chars:" in projection.messages[0]["content"]
+    assert "alpha alpha" in projection.messages[0]["content"]
+    assert projection.messages[2]["content"] == recent_text
+    assert history[0]["content"] == long_text
+
+
+def test_context_pipeline_microcompact_preserves_tool_call_messages() -> None:
+    history = [
+        {
+            "role": "assistant",
+            "content": "x" * 3000,
+            "tool_calls": [
+                {
+                    "id": "call_1",
+                    "type": "function",
+                    "function": {"name": "read_file", "arguments": "{}"},
+                }
+            ],
+        },
+        {"role": "tool", "tool_call_id": "call_1", "name": "read_file", "content": "ok"},
+        {"role": "user", "content": "next"},
+    ]
+
+    projection = ContextPipeline(
+        microcompact_keep_recent=1,
+        microcompact_min_chars=1000,
+    ).project(history)
+
+    assert projection.report["microcompacted_messages"] == 0
+    assert projection.messages[0]["tool_calls"][0]["id"] == "call_1"

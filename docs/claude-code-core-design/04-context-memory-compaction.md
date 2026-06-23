@@ -37,7 +37,7 @@ Claude Code 这里有两层预算：
 - `read_file`、`grep`、`run_command` 已有第一批原生 result mapping：真实项目执行时，读文件、搜索和验证命令会产生更短 UI summary 与可复盘 metadata。
 - `write_file`、`edit_file` 已有第一批结构化 diff/result mapping：真实项目修改会产生短 summary、文件 artifact、unified diff preview 和变更 metadata。
 - 工具卡片已能展示 artifact 路径、类型、大小和 diff preview，刷新 replay 后这些证据仍来自后端 runtime 事件。
-- 剩余缺口是外部工具预算标注、MCP/external artifact mapping，以及更高级的 microcompact/reactive compact。
+- 剩余缺口是 MCP/external artifact mapping，以及更高级的模型 microcompact / reactive compact。
 
 升级建议：
 
@@ -82,13 +82,13 @@ Claude Code 这里有两层预算：
 
 与 Emperor 对照：
 
-- Emperor 没有 microcompact 概念。
+- Emperor 已落地第一版本地 microcompact。
 - 当前压缩由 `Compactor` 调模型生成 episode、memory、user 三块。
+- `ContextPipeline` 现在会对较旧、超长的普通 user/assistant 文本消息执行 `local_microcompact`，保留 head/tail 和原始长度；它跳过最近消息、tool result、assistant tool_calls 和多模态内容，避免破坏工具配对与当前执行边界。
 
 升级建议：
 
-- 不急于实现复杂 cached microcompact。
-- 先加入 `LocalMicrocompactStage`：把旧工具结果和重复上下文变成稳定短摘要，不调用模型。
+- 已加入 `LocalMicrocompactStage`：把旧超长文本上下文变成稳定短摘要，不调用模型。
 - 再加入可选 `ModelMicrocompactStage`：只总结最近 N 个工具密集回合，不写长期记忆。
 
 ### 4. Context Collapse
@@ -202,7 +202,7 @@ Claude Code 这里有两层预算：
 
 1. 先把 `_pair_tool_calls()`、`_cap_tool_result()`、`_shrink_old_tool_results()` 原样迁入 pipeline，保持行为不变。
 2. 加入 `ContextBudgetReport` runtime event。
-3. 已让工具结果 store 服务 `ContextPipeline`，并接入 `AgentRunner` 默认请求投影；工具级 `max_result_chars` 已进入预算链路，结构化 `ToolResult` 已贯通执行器和 runtime，且 `read_file`/`grep`/`run_command`/`write_file`/`edit_file` 已有原生 mapping；MCP 工具已支持 defaults/tool override 预算；Chat 工具卡片已展示 artifact/diff 证据。下一步为 MCP/external 工具补 artifact mapping。
+3. 已让工具结果 store 服务 `ContextPipeline`，并接入 `AgentRunner` 默认请求投影；工具级 `max_result_chars` 已进入预算链路，结构化 `ToolResult` 已贯通执行器和 runtime，且 `read_file`/`grep`/`run_command`/`write_file`/`edit_file` 已有原生 mapping；MCP 工具已支持 defaults/tool override 预算；Chat 工具卡片已展示 artifact/diff 证据；本地 microcompact 已进入请求前投影。下一步为 MCP/external 工具补 artifact mapping。
 4. 拆分 compactor 的上下文摘要与长期记忆更新。
 5. 引入 reactive recovery。
 

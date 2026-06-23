@@ -1,5 +1,12 @@
+from .microcompact import MicrocompactRecord
 from .models import ContextProjection, ToolResultReplacementRecord
 from .pipeline import ContextPipeline
 from .tool_results import ToolResultStore
 
-__all__ = ["ContextPipeline", "ContextProjection", "ToolResultReplacementRecord", "ToolResultStore"]
+__all__ = [
+    "ContextPipeline",
+    "ContextProjection",
+    "MicrocompactRecord",
+    "ToolResultReplacementRecord",
+    "ToolResultStore",
+]
