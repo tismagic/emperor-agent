@@ -5,6 +5,8 @@ from threading import Lock
 from loguru import logger
 
 from ..providers.base import run_sync
+from ..runtime import events as runtime_events
+from ..tasks import TaskKind
 from .base import Tool
 from .registry import ToolRegistry
 from .schema import StringSchema, tool_parameters_schema
@@ -27,12 +29,14 @@ class DispatchSubagentTool(Tool):
     def __init__(self, *, client, model: str,
                  parent_registry: ToolRegistry,
                  subagent_registry,
-                 runner_factory):
+                 runner_factory,
+                 task_manager=None):
         self._client = client
         self._model = model
         self._parent_registry = parent_registry
         self._subagent_registry = subagent_registry
         self._runner_factory = runner_factory   # 注入: spec, sub_registry -> AgentRunner
+        self._task_manager = task_manager
         self._counter = 0
         self._counter_lock = Lock()
 
@@ -88,6 +92,10 @@ class DispatchSubagentTool(Tool):
                 emit=None, loop=None, parent_call_id=None) -> str:
         import asyncio as asyncio_mod
 
+        def bridge_emit(evt):
+            if emit is not None and loop is not None:
+                asyncio_mod.run_coroutine_threadsafe(emit(evt), loop)
+
         spec = self._subagent_registry.get(agent_type)
         if spec is None:
             return (
@@ -118,12 +126,20 @@ class DispatchSubagentTool(Tool):
         logger.info("  ┌── subagent context start ──")
 
         history: list = [{"role": "user", "content": subagent_task}]
+        task_record = None
+        if self._task_manager is not None:
+            task_record = self._task_manager.start_task(
+                kind=TaskKind.SUBAGENT.value,
+                title=purpose or task[:80],
+                source="dispatch_subagent",
+                tool_call_id=parent_call_id,
+                metadata={"agent_type": agent_type, "subagent_name": spec.name},
+            )
+            self._task_manager.append_sidechain(task_record.id, history[0])
+            bridge_emit(runtime_events.task_started(task_record.to_runtime_dict()))
 
         if emit is not None and loop is not None and parent_call_id is not None:
             subagent_id = f"sub_{counter}"
-
-            def bridge_emit(evt):
-                asyncio_mod.run_coroutine_threadsafe(emit(evt), loop)
 
             async def sub_emit(evt):
                 evt_type = evt.get("event", "")
@@ -162,14 +178,26 @@ class DispatchSubagentTool(Tool):
                     "subagent_id": subagent_id,
                     "message": str(exc),
                 })
+                if task_record is not None:
+                    failed = self._task_manager.fail_task(task_record.id, error=str(exc))
+                    if failed is not None:
+                        bridge_emit(runtime_events.task_error(failed.to_runtime_dict(), error=str(exc)))
                 logger.warning(f"  └── subagent context end (异常: {exc}) ──")
                 return f"Error: subagent '{agent_type}' raised: {exc}"
         else:
             try:
                 final = runner.step(history)
             except Exception as exc:
+                if task_record is not None:
+                    self._task_manager.fail_task(task_record.id, error=str(exc))
                 logger.warning(f"  └── subagent context end (异常: {exc}) ──")
                 return f"Error: subagent '{agent_type}' raised: {exc}"
+
+        if task_record is not None:
+            self._task_manager.append_sidechain(task_record.id, {"role": "assistant", "content": final})
+            completed = self._task_manager.complete_task(task_record.id, summary=final[:500])
+            if completed is not None:
+                bridge_emit(runtime_events.task_done(completed.to_runtime_dict()))
 
         logger.info(f"  └── subagent context end (内部 history {len(history)} 条, 回传 {len(final)} 字) ──")
         logger.info(f"[小太监回禀]: {final}")

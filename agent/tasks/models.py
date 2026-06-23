@@ -42,6 +42,24 @@ class TaskRecord:
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
 
+    def to_runtime_dict(self) -> dict[str, Any]:
+        return {
+            "id": self.id,
+            "kind": self.kind,
+            "status": self.status,
+            "title": self.title,
+            "source": self.source,
+            "startedAt": self.started_at,
+            "turnId": self.turn_id,
+            "toolCallId": self.tool_call_id,
+            "jobId": self.job_id,
+            "endedAt": self.ended_at,
+            "outputPath": self.output_path,
+            "transcriptPath": self.transcript_path,
+            "progress": dict(self.progress),
+            "metadata": dict(self.metadata),
+        }
+
     @classmethod
     def from_dict(cls, payload: dict[str, Any]) -> TaskRecord:
         return cls(
