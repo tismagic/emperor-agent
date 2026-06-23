@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import type { ToolSegment, ToolStatus } from '../../types'
+import type { ToolArtifactRef, ToolSegment, ToolStatus } from '../../types'
 import { compactJson } from '../../utils/format'
 import { toolIcon } from '../../icons'
 import ExpandableText from './ExpandableText.vue'
@@ -9,9 +9,21 @@ import SubagentTrail from './SubagentTrail.vue'
 const props = defineProps<{ segment: ToolSegment }>()
 const inputText = computed(() => fullJson(props.segment.arguments))
 const outputText = computed(() => props.segment.summary || (props.segment.status === 'running' ? '等待结果...' : '已记录执行结果'))
+const artifacts = computed(() => props.segment.artifacts || [])
+const metadata = computed(() => props.segment.metadata || {})
+const diffText = computed(() => typeof metadata.value.diff === 'string' ? metadata.value.diff : '')
 const hasInput = computed(() => Boolean(inputText.value))
 const hasOutput = computed(() => Boolean(outputText.value))
-const hasBody = computed(() => Boolean(hasInput.value || hasOutput.value || props.segment.subagents?.length || props.segment.todos?.length))
+const hasArtifacts = computed(() => artifacts.value.length > 0)
+const hasDiff = computed(() => Boolean(diffText.value))
+const hasEvidence = computed(() => hasArtifacts.value || hasDiff.value)
+const hasBody = computed(() => Boolean(
+  hasInput.value ||
+  hasOutput.value ||
+  hasEvidence.value ||
+  props.segment.subagents?.length ||
+  props.segment.todos?.length,
+))
 const title = computed(() => props.segment.displayName || displayName(props.segment.name))
 const purpose = computed(() => toolPurpose(props.segment.name))
 const defaultOpen = computed(() =>
@@ -81,6 +93,17 @@ function durationLabel(ms?: number) {
   if (ms < 1000) return `${ms}ms`
   return `${(ms / 1000).toFixed(ms < 10_000 ? 1 : 0)}s`
 }
+
+function artifactKind(artifact: ToolArtifactRef) {
+  return artifact.kind || 'artifact'
+}
+
+function artifactSize(artifact: ToolArtifactRef) {
+  if (!artifact.bytes && artifact.bytes !== 0) return ''
+  if (artifact.bytes < 1024) return `${artifact.bytes} B`
+  if (artifact.bytes < 1024 * 1024) return `${(artifact.bytes / 1024).toFixed(1)} KB`
+  return `${(artifact.bytes / 1024 / 1024).toFixed(1)} MB`
+}
 </script>
 
 <template>
@@ -110,6 +133,23 @@ function durationLabel(ms?: number) {
         <div v-if="hasOutput" class="tool-io-panel">
           <span>{{ props.segment.outputLabel || 'OUT' }}</span>
           <ExpandableText class="tool-summary" :text="outputText" :limit="360" />
+        </div>
+      </div>
+
+      <div v-if="hasEvidence" class="tool-evidence">
+        <div v-if="hasArtifacts" class="tool-artifacts">
+          <span>ARTIFACTS</span>
+          <div class="tool-artifact-list">
+            <div v-for="artifact in artifacts" :key="`${artifact.kind || 'artifact'}:${artifact.path}`" class="tool-artifact-item">
+              <strong>{{ artifact.path }}</strong>
+              <em>{{ artifactKind(artifact) }}</em>
+              <small v-if="artifactSize(artifact)">{{ artifactSize(artifact) }}</small>
+            </div>
+          </div>
+        </div>
+        <div v-if="hasDiff" class="tool-diff">
+          <span>DIFF</span>
+          <ExpandableText class="tool-summary tool-code" :text="diffText" :limit="900" />
         </div>
       </div>
 

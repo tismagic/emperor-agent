@@ -55,7 +55,8 @@ Do not start Phase 6 before Phase 3 and Phase 4 are merged, because sidechain tr
 - Structured `ToolResult` is now preserved across `ToolRegistry.execute_result()`, `ToolExecutionEngine`, `AgentRunner` tool messages/runtime summaries, and WebUI replay types. Legacy `execute()` remains string-compatible.
 - First native high-value tool mappings are now in place: `read_file` emits source-file artifact metadata and line ranges, `grep` emits match/search metadata, and `run_command` emits command/exit/timeout/truncation metadata while keeping legacy `execute()` string-compatible.
 - Write/edit result mapping is now in place: `write_file` and `edit_file` emit file artifacts, concise summaries, unified diff previews, and change metadata while keeping legacy `execute()` string-compatible.
-- The next upgrade lane is continuing the later Epics: MCP/external-tool budget overrides, tool-card artifact display, microcompact/reactive compact, task framework consolidation, and sidechain/runtime replay hardening.
+- Tool-card evidence display is now in place: Chat tool cards render artifact paths, artifact kind/size, and diff previews from replayed runtime metadata.
+- The next upgrade lane is continuing the later Epics: MCP/external-tool budget overrides, microcompact/reactive compact, task framework consolidation, and sidechain/runtime replay hardening.
 
 ## File Structure
 

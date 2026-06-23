@@ -35,7 +35,8 @@ Claude Code 这里有两层预算：
 - `ToolRegistry.execute_result()`、`ToolExecutionEngine`、`AgentRunner` 和 WebUI runtime 类型已贯通 `ToolResult(model_content, display_summary, raw_content, artifacts, metadata)`：模型上下文使用 `model_content`，runtime summary 使用 `display_summary`，artifact metadata 可被事件 replay 保留。
 - `read_file`、`grep`、`run_command` 已有第一批原生 result mapping：真实项目执行时，读文件、搜索和验证命令会产生更短 UI summary 与可复盘 metadata。
 - `write_file`、`edit_file` 已有第一批结构化 diff/result mapping：真实项目修改会产生短 summary、文件 artifact、unified diff preview 和变更 metadata。
-- 剩余缺口是 MCP/外部工具预算标注，以及工具卡片中的 artifact/diff 展示。
+- 工具卡片已能展示 artifact 路径、类型、大小和 diff preview，刷新 replay 后这些证据仍来自后端 runtime 事件。
+- 剩余缺口是 MCP/外部工具预算标注，以及更高级的 microcompact/reactive compact。
 
 升级建议：
 
@@ -200,7 +201,7 @@ Claude Code 这里有两层预算：
 
 1. 先把 `_pair_tool_calls()`、`_cap_tool_result()`、`_shrink_old_tool_results()` 原样迁入 pipeline，保持行为不变。
 2. 加入 `ContextBudgetReport` runtime event。
-3. 已让工具结果 store 服务 `ContextPipeline`，并接入 `AgentRunner` 默认请求投影；工具级 `max_result_chars` 已进入预算链路，结构化 `ToolResult` 已贯通执行器和 runtime，且 `read_file`/`grep`/`run_command`/`write_file`/`edit_file` 已有原生 mapping。下一步为 MCP 工具补预算/artifact mapping 与 UI artifact 展示。
+3. 已让工具结果 store 服务 `ContextPipeline`，并接入 `AgentRunner` 默认请求投影；工具级 `max_result_chars` 已进入预算链路，结构化 `ToolResult` 已贯通执行器和 runtime，且 `read_file`/`grep`/`run_command`/`write_file`/`edit_file` 已有原生 mapping；Chat 工具卡片已展示 artifact/diff 证据。下一步为 MCP 工具补预算/artifact mapping。
 4. 拆分 compactor 的上下文摘要与长期记忆更新。
 5. 引入 reactive recovery。
 

@@ -145,7 +145,7 @@ Emperor 当前：
 升级方向：
 
 - MCP/外部工具先通过 adapter 包装，后续支持 server/tool 级预算、artifact override 和 provider-specific metadata。
-- Runtime UI 已能保留 artifacts/metadata，下一步需要在工具卡片中展示 artifact 链接和计划验证证据。
+- Runtime UI 已能保留并展示 artifacts/metadata：Chat 工具卡片展示 artifact 路径、类型、大小和 diff preview；计划验证证据继续由 PlanCard 展示。
 
 ### 7. UI 元数据
 
