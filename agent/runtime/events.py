@@ -127,3 +127,11 @@ def scheduler_run_cancelled(job: dict[str, Any], *, reason: str = "cancelled") -
 
 def runtime_task_cancelled(task: dict[str, Any], *, reason: str = "cancelled") -> dict[str, Any]:
     return runtime_event("runtime_task_cancelled", task=task, reason=reason)
+
+
+def plan_verification_start(*, plan_id: str, step_id: str, command: str) -> dict[str, Any]:
+    return runtime_event("plan_verification_start", plan_id=plan_id, step_id=step_id, command=command)
+
+
+def plan_verification_done(*, plan_id: str, step_id: str, result: dict[str, Any]) -> dict[str, Any]:
+    return runtime_event("plan_verification_done", plan_id=plan_id, step_id=step_id, result=result)

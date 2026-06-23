@@ -105,6 +105,31 @@ class ProposePlanTool(Tool):
 
     @property
     def parameters(self) -> dict:
+        step = ObjectSchema(
+            "计划步骤",
+            properties={
+                "id": StringSchema("稳定步骤 id，如 step_1", min_length=1, max_length=64),
+                "title": StringSchema("步骤标题", min_length=1, max_length=160),
+                "description": StringSchema("步骤说明", max_length=1000, nullable=True),
+                "files": ArraySchema(
+                    "涉及文件",
+                    items=StringSchema("文件路径", max_length=240),
+                    max_items=30,
+                ),
+                "commands": ArraySchema(
+                    "验证或执行命令",
+                    items=StringSchema("命令", max_length=300),
+                    max_items=12,
+                ),
+                "acceptance": ArraySchema(
+                    "验收条件",
+                    items=StringSchema("验收条件", max_length=300),
+                    max_items=12,
+                ),
+                "risk": StringSchema("风险级别", enum=["low", "medium", "high"], nullable=True),
+            },
+            required=["id", "title"],
+        )
         return {
             "type": "object",
             "properties": {
@@ -120,6 +145,11 @@ class ProposePlanTool(Tool):
                     "风险级别",
                     enum=["low", "medium", "high"],
                 ).to_json_schema(),
+                "steps": ArraySchema(
+                    "结构化执行步骤。每一步必须可验证；复杂项目至少 2 步。",
+                    items=step,
+                    max_items=30,
+                ).to_json_schema(),
             },
             "required": ["title", "summary", "plan_markdown"],
         }
@@ -131,6 +161,7 @@ class ProposePlanTool(Tool):
         plan_markdown: str,
         assumptions: list[str] | None = None,
         risk_level: str = "medium",
+        steps: list[dict[str, Any]] | None = None,
         **kwargs: Any,
     ) -> str:
         interaction = self.manager.create_plan(
@@ -139,6 +170,7 @@ class ProposePlanTool(Tool):
             plan_markdown=plan_markdown,
             assumptions=assumptions or [],
             risk_level=risk_level,
+            steps=steps or [],
             parent_call_id=kwargs.get("parent_call_id"),
         )
         return make_pause_result(interaction.to_dict())

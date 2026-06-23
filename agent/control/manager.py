@@ -3,8 +3,10 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 from typing import Any
+from uuid import uuid4
 
 from ..permissions import PermissionManager
+from ..plans import PlanRecord, PlanStatus, PlanStep, PlanStore
 from .clarification import ClarificationAssessment, ClarificationPolicy
 from .models import (
     ControlMode,
@@ -30,6 +32,7 @@ class ControlResume:
 class ControlManager:
     def __init__(self, root):
         self.store = ControlStore(root)
+        self.plan_store = PlanStore(root)
         self.policy = ControlPolicy(self)
         self.clarification_policy = ClarificationPolicy()
         self.permission_manager = PermissionManager(self)
@@ -94,9 +97,14 @@ class ControlManager:
         plan_markdown: str,
         assumptions: list[str] | None = None,
         risk_level: str = "medium",
+        steps: list[dict[str, Any]] | None = None,
         parent_call_id: str | None = None,
+        meta: dict[str, Any] | None = None,
     ) -> Interaction:
         self.ensure_no_pending()
+        plan_id = f"plan_{uuid4().hex[:12]}"
+        now = now_ts()
+        structured_steps = _parse_plan_steps(steps or [])
         interaction = Interaction.plan(
             title=title,
             summary=summary,
@@ -104,6 +112,22 @@ class ControlManager:
             assumptions=assumptions,
             risk_level=risk_level,
             parent_call_id=parent_call_id,
+            meta={**(meta or {}), "plan_id": plan_id},
+        )
+        self.plan_store.save(
+            PlanRecord(
+                id=plan_id,
+                title=interaction.title,
+                summary=interaction.summary,
+                status=PlanStatus.WAITING_APPROVAL.value,
+                created_at=now,
+                updated_at=now,
+                source_interaction_id=interaction.id,
+                plan_markdown=interaction.plan_markdown,
+                assumptions=list(interaction.assumptions),
+                steps=structured_steps,
+                metadata={"risk_level": interaction.risk_level},
+            )
         )
         self._set_pending(interaction)
         return interaction
@@ -179,6 +203,7 @@ class ControlManager:
     def approve(self, interaction_id: str) -> ControlResume:
         interaction = self._require_pending(interaction_id, InteractionKind.PLAN)
         updated = interaction.touch(status=InteractionStatus.APPROVED.value)
+        self._update_plan_status(updated, PlanStatus.APPROVED.value, approved=True)
         state = self.store.load()
         state.mode = self._restore_mode(state)
         state.previous_mode = None
@@ -196,6 +221,8 @@ class ControlManager:
     def cancel(self, interaction_id: str) -> dict[str, Any]:
         pending = self._require_pending(interaction_id)
         updated = pending.touch(status=InteractionStatus.CANCELLED.value)
+        if pending.kind == InteractionKind.PLAN.value:
+            self._update_plan_status(updated, PlanStatus.CANCELLED.value)
         if pending.kind == InteractionKind.PLAN.value:
             state = self.store.load()
             state.mode = self._restore_mode(state)
@@ -290,6 +317,10 @@ class ControlManager:
             f"interaction_id: {interaction.id}\n"
             "用户已批准以下计划。现在切换到执行模式，请按计划实施；执行中如出现新的高影响歧义，可再次 ask_user。\n\n"
             f"# {interaction.title}\n\n{interaction.plan_markdown}"
+            "\n\n[PLAN_EXECUTION]\n"
+            "- Convert the approved plan into todos before editing.\n"
+            "- Keep exactly one plan step active while executing.\n"
+            "- Run each step's verification commands before marking the step done.\n"
         )
 
     def _cancel_message(self, interaction: Interaction) -> str:
@@ -333,6 +364,23 @@ class ControlManager:
     def permission_approval_result(self, decision, *, parent_call_id: str | None = None) -> str:
         return self.permission_manager.require_approval(decision, parent_call_id=parent_call_id)
 
+    def _update_plan_status(self, interaction: Interaction, status: str, *, approved: bool = False) -> None:
+        plan_id = str(interaction.meta.get("plan_id") or "")
+        if not plan_id:
+            return
+        record = self.plan_store.get(plan_id)
+        if record is None:
+            return
+        now = now_ts()
+        payload = {
+            **record.to_dict(),
+            "status": status,
+            "updated_at": now,
+        }
+        if approved:
+            payload["approved_at"] = now
+        self.plan_store.save(PlanRecord.from_dict(payload))
+
     @staticmethod
     def _restore_mode(state: ControlState) -> str:
         if state.previous_mode in {ControlMode.ASK_BEFORE_EDIT.value, ControlMode.AUTO.value}:
@@ -375,3 +423,25 @@ def _looks_like_plan(text: str) -> bool:
         or "验收" in text
         or "Test Plan" in text
     )
+
+
+def _parse_plan_steps(items: list[dict[str, Any]]) -> list[PlanStep]:
+    steps: list[PlanStep] = []
+    for index, item in enumerate(items, start=1):
+        if not isinstance(item, dict):
+            continue
+        title = str(item.get("title") or "").strip()
+        if not title:
+            continue
+        steps.append(
+            PlanStep(
+                id=str(item.get("id") or f"step_{index}").strip()[:64],
+                title=title[:160],
+                description=str(item.get("description") or "").strip()[:1000],
+                files=[str(path) for path in item.get("files") or []][:30],
+                commands=[str(command) for command in item.get("commands") or []][:12],
+                acceptance=[str(rule) for rule in item.get("acceptance") or []][:12],
+                risk=str(item.get("risk") or "medium").strip()[:24],
+            )
+        )
+    return steps

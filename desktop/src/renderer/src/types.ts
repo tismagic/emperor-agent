@@ -508,6 +508,30 @@ export interface ControlPayload {
   updated_at?: number
 }
 
+export interface RuntimePlanStep {
+  id: string
+  title: string
+  status: string
+  description?: string
+  files?: string[]
+  commands?: string[]
+  acceptance?: string[]
+  evidence?: Array<Record<string, unknown>>
+  risk?: string
+}
+
+export interface RuntimePlanRecord {
+  id: string
+  title: string
+  summary?: string
+  status: string
+  steps: RuntimePlanStep[]
+  plan_markdown?: string
+  planMarkdown?: string
+  assumptions?: string[]
+  verification?: Array<Record<string, unknown>>
+}
+
 export interface AskSegment {
   id: string
   type: 'ask'
@@ -721,6 +745,10 @@ export type WsEvent = ({ seq?: number; ts?: number; turn_id?: string; client_mes
   | { event: 'plan_draft'; interaction?: ControlInteraction }
   | { event: 'plan_comment_added'; interaction?: ControlInteraction; comment?: string }
   | { event: 'plan_approved'; interaction?: ControlInteraction; control?: ControlPayload }
+  | { event: 'plan_runtime_update'; plan?: RuntimePlanRecord }
+  | { event: 'plan_step_update'; plan_id?: string; step?: RuntimePlanStep }
+  | { event: 'plan_verification_start'; plan_id?: string; step_id?: string; command?: string }
+  | { event: 'plan_verification_done'; plan_id?: string; step_id?: string; result?: Record<string, unknown> }
   | { event: 'interaction_cancelled'; interaction?: ControlInteraction; control?: ControlPayload }
   | { event: 'turn_paused'; interaction?: ControlInteraction }
   | { event: 'subagent_start'; parent_id?: string; subagent_id?: string; agent_type?: string; purpose?: string }

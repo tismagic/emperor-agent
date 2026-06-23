@@ -6,6 +6,7 @@ import {
 } from '../runtime/persistence'
 import { replayRuntimeEvents } from '../runtime/reducer'
 import { findSubagent, findSubagentTool, findToolSegment } from '../runtime/selectors'
+import { applyPlanEvent, type PlanProjection } from '../runtime/handlers/plans'
 import { applySchedulerEventToBootstrap } from '../runtime/handlers/scheduler'
 import { apiUrl, wsUrl } from '../api/backend'
 import { applyTeamEventToBootstrap } from '../runtime/handlers/team'
@@ -40,6 +41,7 @@ export function useRuntime(options: {
   const currentAssistantId = ref<string | null>(null)
   const sessionId = ref<string>('')
   const pending = reactive<PendingState>({ label: '', detail: '' })
+  const planProjection = reactive<PlanProjection>({ plans: [] })
   const reconnectAttempts = ref(0)
   const socket = ref<WebSocket | null>(null)
   const lastSeq = ref(0)
@@ -557,6 +559,17 @@ export function useRuntime(options: {
       currentAssistantId.value = null
       busy.value = false
       updatePending('任务已停止', data.task?.label || data.reason || '', 'done')
+      return
+    }
+
+    if (
+      data.event === 'plan_runtime_update' ||
+      data.event === 'plan_step_update' ||
+      data.event === 'plan_verification_start' ||
+      data.event === 'plan_verification_done'
+    ) {
+      const next = applyPlanEvent({ plans: planProjection.plans }, data)
+      planProjection.plans.splice(0, planProjection.plans.length, ...next.plans)
       return
     }
 
@@ -1109,6 +1122,7 @@ export function useRuntime(options: {
     status,
     sessionId,
     pending,
+    planProjection,
     runtimeText,
     switchSession(id: string) {
       sessionId.value = id

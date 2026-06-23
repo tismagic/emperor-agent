@@ -61,6 +61,27 @@ class TodoStore:
         )
         return summary + "\n\n当前列表：\n" + _render(self.todos)
 
+    def sync_from_plan_steps(self, steps: list[dict]) -> str:
+        status_map = {
+            "pending": "pending",
+            "active": "in_progress",
+            "done": "completed",
+            "failed": "pending",
+            "blocked": "pending",
+            "skipped": "completed",
+        }
+        todos: list[dict] = []
+        for index, step in enumerate(steps, start=1):
+            title = str(step.get("title") or "").strip()
+            if not title:
+                continue
+            todos.append({
+                "id": index,
+                "content": title,
+                "status": status_map.get(str(step.get("status") or "pending"), "pending"),
+            })
+        return self.update(todos)
+
     def render(self) -> str:
         return _render(self.todos)
 

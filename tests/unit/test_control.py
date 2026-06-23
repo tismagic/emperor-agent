@@ -84,6 +84,7 @@ def test_propose_plan_comment_and_approve_restores_previous_mode(tmp_path: Path)
         assumptions=["v1 only"],
         risk_level="medium",
     )
+    assert manager.payload()["pending"]["meta"]["plan_id"].startswith("plan_")
 
     comment = manager.comment(interaction.id, "补充 CLI")
     assert "补充 CLI" in comment.message

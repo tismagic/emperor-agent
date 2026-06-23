@@ -14,6 +14,10 @@ class WebContainer:
 
     state: WebUIState
 
+    @property
+    def plan_store(self):
+        return self.state.loop.control_manager.plan_store
+
     @classmethod
     def create(
         cls,
