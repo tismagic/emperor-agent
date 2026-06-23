@@ -29,7 +29,8 @@ Claude Code 这里有两层预算：
 - Emperor 早期 `_cap_tool_result()` 对单条 tool message 做硬截断，`_shrink_old_tool_results()` 对旧工具结果做摘要替换。
 - 当前已抽出 `agent/context_pipeline/ContextPipeline`，保留 pairing、cap、shrink 的兼容行为。
 - 当前已新增 `ToolResultStore` 并接入 `ContextPipeline(tool_result_store=...)`：大工具结果会落到 `memory/tool-results/`，模型请求投影只保留 preview、artifact path、原始长度和恢复提示。
-- 结果仍未完全贯通到所有旧工具的 `ToolResult(raw, model_content, display_summary, artifacts)` 协议，runner 默认路径也还需要继续注入 store-backed pipeline。
+- `AgentRunner` 默认请求路径已在存在 `memory_store` 时使用 store-backed `ContextPipeline`，并通过 `context_projection` runtime event 暴露 replacement 计数和记录。
+- 结果仍未完全贯通到所有旧工具的 `ToolResult(raw, model_content, display_summary, artifacts)` 协议，后续还需要工具级预算和 UI summary/artifact 协议。
 
 升级建议：
 
@@ -194,7 +195,7 @@ Claude Code 这里有两层预算：
 
 1. 先把 `_pair_tool_calls()`、`_cap_tool_result()`、`_shrink_old_tool_results()` 原样迁入 pipeline，保持行为不变。
 2. 加入 `ContextBudgetReport` runtime event。
-3. 已让工具结果 store 可服务 `ContextPipeline`；下一步把 runner 默认投影切到 store-backed pipeline，并让新旧工具都能产生 artifact-backed model content。
+3. 已让工具结果 store 服务 `ContextPipeline`，并接入 `AgentRunner` 默认请求投影；下一步让新旧工具都能产生 artifact-backed model content。
 4. 拆分 compactor 的上下文摘要与长期记忆更新。
 5. 引入 reactive recovery。
 

@@ -4,6 +4,7 @@ from typing import Any
 
 import pytest
 
+from agent.memory import MemoryStore
 from agent.providers.base import LLMProvider, LLMResponse, ToolCallRequest
 from agent.runner import AgentRunner
 from agent.runner_state import TurnPhase, TurnState
@@ -147,3 +148,55 @@ async def test_runner_emits_context_projection_report() -> None:
     assert context_events[0]["report"]["paired_missing_tool_results"] == 1
     assert context_events[0]["message_count"] == 3
     assert provider.seen_messages[0][-1]["tool_call_id"] == "call_1"
+
+
+@pytest.mark.anyio
+async def test_runner_default_context_pipeline_replaces_large_tool_results(tmp_path) -> None:
+    content = "x" * 9000
+    memory = MemoryStore(tmp_path / "memory", tmp_path / "USER.local.md")
+    provider = FakeProvider([LLMResponse(content="done")])
+    runner = AgentRunner(
+        provider=provider,
+        model="fake",
+        registry=ToolRegistry(),
+        system_prompt="system",
+        memory_store=memory,
+    )
+    emitted: list[dict[str, Any]] = []
+
+    async def emit(event: dict[str, Any]) -> None:
+        emitted.append(event)
+
+    await runner.step_async(
+        [
+            {"role": "user", "content": "inspect"},
+            {
+                "role": "assistant",
+                "content": "",
+                "tool_calls": [
+                    {
+                        "id": "call_1",
+                        "type": "function",
+                        "function": {"name": "grep", "arguments": "{}"},
+                    }
+                ],
+            },
+            {
+                "role": "tool",
+                "turn_id": "turn_1",
+                "tool_call_id": "call_1",
+                "name": "grep",
+                "content": content,
+            },
+        ],
+        emit=emit,
+    )
+
+    projected_tool = provider.seen_messages[0][-1]
+    context_event = next(event for event in emitted if event.get("event") == "context_projection")
+    replacement = context_event["report"]["tool_result_replacements"][0]
+
+    assert context_event["report"]["replaced_tool_results"] == 1
+    assert "Tool result stored outside the model context" in projected_tool["content"]
+    assert replacement["artifact_path"] in projected_tool["content"]
+    assert (tmp_path / replacement["artifact_path"]).read_text(encoding="utf-8") == content
