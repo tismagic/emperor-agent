@@ -48,6 +48,16 @@ _BUILTIN_SPECS: dict[str, dict] = {
         ),
         "max_turns": 12,
     },
+    "verification_reviewer": {
+        "description": (
+            "独立复核小太监。只读审查项目变更, 适合对非平凡计划做"
+            "对抗式复核、验证命令核验、风险遗漏检查。"
+        ),
+        "tool_names": (
+            "run_command", "read_file", "glob", "grep",
+        ),
+        "max_turns": 14,
+    },
     "neiguan_yingzao": {
         "description": (
             "内官监营造小太监。可读写可执行命令, 适合修改文件、"
@@ -65,6 +75,7 @@ _ALIASES = {
     # 兼容旧版工程代码和历史 prompt 中的身份名。
     "researcher": "dongchang_tanshi",
     "general": "neiguan_yingzao",
+    "reviewer": "verification_reviewer",
 }
 
 _DEFAULT_PROMPT = (

@@ -97,6 +97,7 @@ def test_subagent_templates_match_registry_fact_source(tmp_path: Path) -> None:
     assert registry.aliases() == {
         "general": "neiguan_yingzao",
         "researcher": "dongchang_tanshi",
+        "reviewer": "verification_reviewer",
     }
 
 

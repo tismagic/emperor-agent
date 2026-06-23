@@ -436,6 +436,20 @@ class AgentRunner:
                 )
                 continue
 
+            verification_followup = self._plan_independent_verification_followup()
+            if verification_followup is not None:
+                history.append({"role": "user", "content": str(verification_followup["message"])})
+                await self._emit_turn_phase(
+                    turn_state,
+                    TurnPhase.PLAN_FOLLOWUP,
+                    emit,
+                    detail={
+                        "plan_id": verification_followup.get("plan_id"),
+                        "verification": verification_followup.get("status"),
+                    },
+                )
+                continue
+
             await self._emit_turn_phase(turn_state, TurnPhase.COMPACT_CHECK, emit)
             await self._maybe_compact(history)
             # turn 正常落地 → 清掉 checkpoint
@@ -833,6 +847,15 @@ class AgentRunner:
         if self.control_manager is None or not hasattr(self.control_manager, "plan_completion_followup"):
             return None
         return self.control_manager.plan_completion_followup()
+
+    def _plan_independent_verification_followup(self) -> dict[str, Any] | None:
+        if self.control_manager is None:
+            return None
+        if not hasattr(self.control_manager, "plan_independent_verification_followup"):
+            return None
+        return self.control_manager.plan_independent_verification_followup(
+            dispatch_available=self.registry.get("dispatch_subagent") is not None,
+        )
 
     def _plan_verification_target(self, call: ToolCallRequest) -> dict[str, str] | None:
         if call.name != "run_command" or self.control_manager is None:

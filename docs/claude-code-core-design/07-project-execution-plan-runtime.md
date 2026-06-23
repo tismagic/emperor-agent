@@ -361,12 +361,16 @@ ControlManager.set_mode("plan")
 
 目标：对非平凡项目改动引入对抗式复核。
 
+状态：已落地第一版。当前实现把独立验证作为 Final Answer Gate 的一部分，而不是只写在 prompt 中。非平凡或敏感计划完成后，Runner 会在最终答复前调用 `ControlManager.plan_independent_verification_followup()`；没有 reviewer PASS + command evidence，也没有用户豁免时，会追加 `[PLAN_INDEPENDENT_VERIFICATION_REQUIRED]` 让模型继续派复核或请求豁免。复核 FAIL 会追加 `[PLAN_INDEPENDENT_VERIFICATION_FAILED]`，强制回到修复循环。
+
 目标文件：
 
 - `agent/subagents/registry.py`
-- `agent/tasks/*`
 - `agent/runner.py`
 - `agent/control/manager.py`
+- `agent/plans/verification.py`
+- `templates/subagents/verification_reviewer.md`
+- `tests/unit/test_plan_independent_verification.py`
 
 触发条件：
 
@@ -376,9 +380,17 @@ ControlManager.set_mode("plan")
 
 验收：
 
-- 非平凡计划完成后，最终答复前必须有 reviewer/verification task 结果或明确用户豁免。
+- 非平凡计划完成后，最终答复前必须有 reviewer/verification 结果或明确用户豁免。
+- verification PASS 必须带 command evidence；只给口头 PASS 仍会被视为缺证据。
 - verification FAIL 会生成修复 follow-up。
-- verification PASS 仍要求主 Agent spot check 关键命令。
+- 如果 `dispatch_subagent` 不可用、仍在 Plan 模式或存在 pending Ask/Plan，门禁不会静默跳过，而是要求 `ask_user` 明确豁免。
+- `verification_reviewer` 是只读复核子代理，不含 `write_file` / `edit_file` / `dispatch_subagent`。
+
+第一版边界：
+
+- 已完成 final answer gate、风险识别、`VerificationReviewRequest` metadata、`PlanRecord.verification` PASS/FAIL/waiver evidence、`verification_reviewer` registry/template。
+- 尚未把复核状态投影到 PlanCard；这部分进入 PE-9 / Task 6L。
+- 尚未把 reviewer 执行结果自动映射为持久 task transcript；这部分进入统一 Task Framework。
 
 ### PE-8：Plan Runtime 恢复附件
 

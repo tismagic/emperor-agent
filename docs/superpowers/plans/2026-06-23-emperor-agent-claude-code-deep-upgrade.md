@@ -3145,13 +3145,15 @@ Result: `22 passed`; ruff passed.
 
 ### Task 6K: Independent Verification Gate
 
+Status: done in branch `codex/plan-runtime-v2`.
+
 **Files:**
 - Modify: `agent/control/manager.py`
 - Modify: `agent/runner.py`
 - Modify: `agent/subagents/registry.py`
 - Create: `tests/unit/test_plan_independent_verification.py`
 
-- [ ] **Step 1: Add gate tests**
+- [x] **Step 1: Add gate tests**
 
 Trigger independent verification when a plan or turn has:
 
@@ -3164,15 +3166,15 @@ The final answer gate should require either:
 - a verification subagent PASS with command evidence, or
 - an explicit user-approved waiver stored in the plan evidence.
 
-- [ ] **Step 2: Add verification request model**
+- [x] **Step 2: Add verification request model**
 
 Add a small `VerificationReviewRequest` metadata record with changed files, plan id, commands run, and risk signals.
 
-- [ ] **Step 3: Wire reviewer dispatch conservatively**
+- [x] **Step 3: Wire reviewer dispatch conservatively**
 
 Use existing subagent dispatch only outside Plan mode and only when no Ask/Plan pending exists. If dispatch is unavailable, block final completion with an `ask_user` question rather than silently skipping.
 
-- [ ] **Step 4: Verify**
+- [x] **Step 4: Verify**
 
 Run:
 
@@ -3181,6 +3183,14 @@ Run:
 ```
 
 Expected: all tests pass.
+
+Result:
+
+```bash
+.venv/bin/python -m pytest tests/unit/test_plan_independent_verification.py tests/unit/test_plan_runtime.py tests/unit/test_runner_state.py tests/unit/test_agent_prompt_contracts.py -q
+```
+
+Result: `27 passed`.
 
 ### Task 6L: Project Execution Web Projection
 

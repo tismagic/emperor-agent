@@ -78,3 +78,16 @@ def _strip_tool_error_hint(text: str) -> str:
     if lines and lines[-1].strip() == _TOOL_ERROR_HINT:
         return "\n".join(lines[:-1]).strip()
     return text
+
+
+@dataclass(frozen=True)
+class VerificationReviewRequest:
+    plan_id: str
+    changed_files: list[str]
+    commands: list[str]
+    risk_signals: list[str]
+    created_at: float
+    reason: str = ""
+
+    def to_dict(self) -> dict:
+        return asdict(self)

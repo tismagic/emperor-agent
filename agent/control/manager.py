@@ -17,6 +17,7 @@ from ..plans import (
     PlanStep,
     PlanStepStatus,
     PlanStore,
+    VerificationReviewRequest,
 )
 from .clarification import ClarificationAssessment, ClarificationPolicy
 from .models import (
@@ -39,6 +40,16 @@ class ControlResume:
     message: str
     event: dict[str, Any]
     resume: bool = True
+
+
+_INDEPENDENT_VERIFICATION_SOURCE = "independent_verification"
+_INDEPENDENT_VERIFICATION_WAIVER_SOURCE = "independent_verification_waiver"
+_INDEPENDENT_VERIFICATION_SOURCES = {
+    _INDEPENDENT_VERIFICATION_SOURCE,
+    "verification_reviewer",
+    "reviewer",
+    "verification_subagent",
+}
 
 
 class ControlManager:
@@ -625,6 +636,98 @@ class ControlManager:
             "plan": record.to_dict(),
         }
 
+    def record_independent_verification_result(
+        self,
+        *,
+        plan_id: str,
+        result: dict[str, Any],
+    ) -> PlanRecord | None:
+        record = self.plan_store.get(plan_id)
+        if record is None:
+            return None
+        now = now_ts()
+        payload = dict(result or {})
+        payload["source"] = str(payload.get("source") or _INDEPENDENT_VERIFICATION_SOURCE)
+        payload["checked_at"] = float(payload.get("checked_at") or now)
+        if "commands" in payload:
+            payload["commands"] = _dedupe_strings([str(item) for item in payload.get("commands") or []])
+        metadata = dict(record.metadata)
+        metadata["independent_verification_latest"] = payload
+        updated = replace(
+            record,
+            updated_at=now,
+            verification=[*record.verification, payload],
+            metadata=metadata,
+        )
+        self.plan_store.save(updated)
+        return updated
+
+    def waive_independent_verification(self, *, plan_id: str, reason: str) -> PlanRecord | None:
+        record = self.plan_store.get(plan_id)
+        if record is None:
+            return None
+        text = str(reason or "").strip()
+        if not text:
+            raise ValueError("waiver reason is required")
+        now = now_ts()
+        payload = {
+            "source": _INDEPENDENT_VERIFICATION_WAIVER_SOURCE,
+            "waived": True,
+            "passed": True,
+            "reason": text[:1000],
+            "approved_by": "user",
+            "checked_at": now,
+        }
+        metadata = dict(record.metadata)
+        metadata["independent_verification_waiver"] = payload
+        updated = replace(
+            record,
+            updated_at=now,
+            verification=[*record.verification, payload],
+            metadata=metadata,
+        )
+        self.plan_store.save(updated)
+        return updated
+
+    def plan_independent_verification_followup(
+        self,
+        *,
+        dispatch_available: bool = False,
+    ) -> dict[str, Any] | None:
+        record = self._latest_reviewable_plan()
+        if record is None or not record.steps or not _plan_steps_finished(record):
+            return None
+        request = self._independent_verification_request(record)
+        if request is None:
+            return None
+        record = self._persist_independent_verification_request(record, request)
+        latest = _latest_independent_verification_evidence(record)
+        if latest is not None and latest.get("source") == _INDEPENDENT_VERIFICATION_WAIVER_SOURCE:
+            return None
+        if latest is not None and latest.get("passed") is False:
+            return {
+                "status": "failed",
+                "plan_id": record.id,
+                "request": request.to_dict(),
+                "message": self._independent_verification_failed_message(record, request, latest),
+                "plan": record.to_dict(),
+            }
+        if latest is not None and latest.get("passed") is True and _has_command_evidence(latest):
+            return None
+        status = "required" if latest is None else "missing_command_evidence"
+        return {
+            "status": status,
+            "plan_id": record.id,
+            "request": request.to_dict(),
+            "message": self._independent_verification_required_message(
+                record,
+                request,
+                dispatch_available=dispatch_available,
+                missing_command_evidence=latest is not None,
+            ),
+            "plan": record.to_dict(),
+        }
+
     def _ensure_plan_draft(self) -> PlanRecord:
         existing = self._latest_draft_plan()
         if existing is not None:
@@ -784,6 +887,127 @@ class ControlManager:
             return None
         return max(plans, key=lambda item: item.updated_at)
 
+    def _latest_reviewable_plan(self) -> PlanRecord | None:
+        plans = [
+            plan for plan in self.plan_store.list()
+            if plan.status in {
+                PlanStatus.APPROVED.value,
+                PlanStatus.EXECUTING.value,
+                PlanStatus.COMPLETED.value,
+            }
+        ]
+        if not plans:
+            return None
+        return max(plans, key=lambda item: item.updated_at)
+
+    def _independent_verification_request(self, record: PlanRecord) -> VerificationReviewRequest | None:
+        changed_files = _plan_changed_files(record)
+        risk_signals = _independent_verification_risk_signals(record, changed_files)
+        if not risk_signals:
+            return None
+        existing = record.metadata.get("independent_verification_request")
+        created_at = now_ts()
+        if isinstance(existing, dict):
+            try:
+                created_at = float(existing.get("created_at") or created_at)
+            except (TypeError, ValueError):
+                pass
+        return VerificationReviewRequest(
+            plan_id=record.id,
+            changed_files=changed_files,
+            commands=_plan_commands(record),
+            risk_signals=risk_signals,
+            created_at=created_at,
+            reason="; ".join(risk_signals),
+        )
+
+    def _persist_independent_verification_request(
+        self,
+        record: PlanRecord,
+        request: VerificationReviewRequest,
+    ) -> PlanRecord:
+        payload = request.to_dict()
+        if record.metadata.get("independent_verification_request") == payload:
+            return record
+        metadata = dict(record.metadata)
+        metadata["independent_verification_request"] = payload
+        updated = replace(record, updated_at=now_ts(), metadata=metadata)
+        self.plan_store.save(updated)
+        return updated
+
+    def _independent_verification_required_message(
+        self,
+        record: PlanRecord,
+        request: VerificationReviewRequest,
+        *,
+        dispatch_available: bool,
+        missing_command_evidence: bool,
+    ) -> str:
+        state = self.store.load()
+        has_pending = bool(state.pending and state.pending.status == InteractionStatus.WAITING.value)
+        can_dispatch = bool(
+            dispatch_available
+            and state.mode != ControlMode.PLAN.value
+            and not has_pending
+        )
+        lines = [
+            "[PLAN_INDEPENDENT_VERIFICATION_REQUIRED]",
+            f"plan_id: {record.id}",
+            f"changed_files: {len(request.changed_files)}",
+            f"risk_signals: {'; '.join(request.risk_signals)}",
+            "",
+            "该计划属于非平凡或敏感项目变更，不能在没有独立复核证据时最终答复。",
+        ]
+        if missing_command_evidence:
+            lines.append("已有复核声明缺少 command evidence，因此不能视为 PASS。")
+        if request.changed_files:
+            lines.extend(["", "changed_files:"])
+            for path in request.changed_files[:12]:
+                lines.append(f"- {path}")
+        if request.commands:
+            lines.extend(["", "commands_to_spot_check:"])
+            for command in request.commands[:8]:
+                lines.append(f"- {command}")
+        lines.append("")
+        if can_dispatch:
+            lines.extend([
+                "请先调用 `dispatch_subagent` 派遣独立复核：",
+                '- agent_type: "verification_reviewer"',
+                "- task: 复核变更文件、计划证据和关键验证命令，输出 PASS/FAIL、证据和风险。",
+                "复核 PASS 后，必须把 reviewer 结论和 command evidence 记录为 plan independent verification evidence；"
+                "若 FAIL，先修复再重新验证。",
+            ])
+        else:
+            lines.extend([
+                "当前不能安全自动派遣 reviewer。请调用 `ask_user` 请求明确豁免，",
+                "或先恢复到可派遣状态后再派 `verification_reviewer`。用户豁免必须记录为 plan verification evidence。",
+            ])
+        return "\n".join(lines)
+
+    def _independent_verification_failed_message(
+        self,
+        record: PlanRecord,
+        request: VerificationReviewRequest,
+        latest: dict[str, Any],
+    ) -> str:
+        summary = str(latest.get("summary") or latest.get("reason") or "independent verification failed").strip()
+        lines = [
+            "[PLAN_INDEPENDENT_VERIFICATION_FAILED]",
+            f"plan_id: {record.id}",
+            f"reviewer: {latest.get('reviewer') or latest.get('source') or 'unknown'}",
+            f"risk_signals: {'; '.join(request.risk_signals)}",
+            f"summary: {summary[:800]}",
+            "",
+            "独立复核为 FAIL。不要最终答复；先按复核意见诊断并修复，再重新执行关键验证命令。",
+            "修复后需要重新取得 independent verification PASS，或取得用户明确豁免并入库。",
+        ]
+        commands = latest.get("commands")
+        if isinstance(commands, list) and commands:
+            lines.extend(["", "review_commands:"])
+            for command in commands[:8]:
+                lines.append(f"- {command}")
+        return "\n".join(lines)
+
     @staticmethod
     def _restore_mode(state: ControlState) -> str:
         if state.previous_mode in {ControlMode.ASK_BEFORE_EDIT.value, ControlMode.AUTO.value}:
@@ -920,3 +1144,139 @@ def _verification_state_by_command(step: PlanStep) -> dict[str, bool]:
 
 def _normalize_command(command: Any) -> str:
     return " ".join(str(command or "").strip().split())
+
+
+def _plan_steps_finished(record: PlanRecord) -> bool:
+    return bool(record.steps) and all(
+        step.status in {PlanStepStatus.DONE.value, PlanStepStatus.SKIPPED.value}
+        for step in record.steps
+    )
+
+
+def _plan_changed_files(record: PlanRecord) -> list[str]:
+    files: list[str] = []
+    files.extend(record.draft.relevant_files)
+    for step in record.steps:
+        files.extend(step.files)
+    return _dedupe_strings(files)
+
+
+def _plan_commands(record: PlanRecord) -> list[str]:
+    commands: list[str] = []
+    commands.extend(record.draft.verification_strategy)
+    for step in record.steps:
+        commands.extend(step.commands)
+    return _dedupe_strings(commands)
+
+
+def _independent_verification_risk_signals(record: PlanRecord, changed_files: list[str]) -> list[str]:
+    signals: list[str] = []
+    if len(changed_files) >= 3:
+        signals.append("changed_files>=3")
+    for path in changed_files:
+        _append_file_risk_signals(signals, path)
+    text = _plan_risk_text(record)
+    for token, signal in (
+        ("delete", "deletion"),
+        ("remove", "deletion"),
+        ("rm ", "deletion"),
+        ("删除", "deletion"),
+        ("移除", "deletion"),
+        ("deploy", "deployment"),
+        ("deployment", "deployment"),
+        ("publish", "deployment"),
+        ("release", "deployment"),
+        ("部署", "deployment"),
+        ("发布", "deployment"),
+        ("external send", "external_send"),
+        ("send_external", "external_send"),
+        ("outbound", "external_send"),
+        ("外发", "external_send"),
+        ("外部发送", "external_send"),
+        ("security", "security"),
+        ("auth", "security"),
+        ("secret", "security"),
+        ("token", "security"),
+        ("permission", "permission"),
+        ("权限", "permission"),
+        ("安全", "security"),
+        ("migration", "data_migration"),
+        ("migrate", "data_migration"),
+        ("schema", "data_migration"),
+        ("迁移", "data_migration"),
+    ):
+        if token in text:
+            _append_unique(signals, signal)
+    return signals
+
+
+def _append_file_risk_signals(signals: list[str], path: str) -> None:
+    normalized = str(path or "").strip().replace("\\", "/").lower()
+    if not normalized:
+        return
+    checks = (
+        (("agent/web/", "agent/webui.py", "webui.py", "/routes/", "/api/"), "api"),
+        (("agent/permissions/", "permission"), "permission"),
+        (("agent/control/",), "control"),
+        (("agent/scheduler/", "scheduler"), "scheduler"),
+        (("agent/runtime/", "desktop/src/renderer/src/runtime/", "/runtime/"), "runtime"),
+        (("agent/external/", "external", "outbox", "outbound"), "external_send"),
+        (("agent/runner.py", "agent/loop.py", "agent/tools/", "agent/tasks/", "agent/team/", "agent/mcp/"), "backend"),
+        (("security", "auth", "secret", "token", "credential"), "security"),
+        (("migration", "migrations", "schema"), "data_migration"),
+        (("deploy", "release", "publish"), "deployment"),
+        (("delete", "remove", "unlink"), "deletion"),
+    )
+    for needles, signal in checks:
+        if any(needle in normalized for needle in needles):
+            _append_unique(signals, signal)
+
+
+def _plan_risk_text(record: PlanRecord) -> str:
+    parts = [
+        record.title,
+        record.summary,
+        record.plan_markdown,
+        *(record.assumptions or []),
+    ]
+    for step in record.steps:
+        parts.extend([
+            step.title,
+            step.description,
+            step.risk_note,
+            step.rollback,
+            *(step.acceptance or []),
+            *(step.commands or []),
+            *(step.files or []),
+        ])
+    return "\n".join(str(item or "") for item in parts).lower()
+
+
+def _latest_independent_verification_evidence(record: PlanRecord) -> dict[str, Any] | None:
+    candidates = []
+    for item in record.verification:
+        if not isinstance(item, dict):
+            continue
+        source = str(item.get("source") or "")
+        if source in _INDEPENDENT_VERIFICATION_SOURCES or source == _INDEPENDENT_VERIFICATION_WAIVER_SOURCE:
+            candidates.append(item)
+    return candidates[-1] if candidates else None
+
+
+def _has_command_evidence(evidence: dict[str, Any]) -> bool:
+    command = str(evidence.get("command") or "").strip()
+    commands = evidence.get("commands")
+    if command:
+        return True
+    if isinstance(commands, list) and any(str(item or "").strip() for item in commands):
+        return True
+    command_evidence = evidence.get("command_evidence")
+    return isinstance(command_evidence, list) and any(
+        isinstance(item, dict) and str(item.get("command") or "").strip()
+        for item in command_evidence
+    )
+
+
+def _append_unique(items: list[str], value: str) -> None:
+    if value not in items:
+        items.append(value)

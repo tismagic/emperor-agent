@@ -4,7 +4,7 @@ from .execution import PlanExecutionState
 from .models import PlanDraftPhase, PlanDraftState, PlanRecord, PlanStatus, PlanStep, PlanStepStatus
 from .quality import PlanQualityError, PlanQualityGate, PlanQualityResult, format_plan_quality_error
 from .store import PlanStore
-from .verification import VerificationCommand, VerificationResult
+from .verification import VerificationCommand, VerificationResult, VerificationReviewRequest
 
 __all__ = [
     "PlanExecutionState",
@@ -22,6 +22,7 @@ __all__ = [
     "PlanStore",
     "VerificationCommand",
     "VerificationResult",
+    "VerificationReviewRequest",
     "format_plan_evidence_error",
     "format_plan_quality_error",
 ]
