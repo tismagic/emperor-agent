@@ -28,6 +28,18 @@ def test_verification_result_records_failure() -> None:
     assert result.summary == "ruff failed"
 
 
+def test_verification_result_parses_run_command_failure() -> None:
+    result = VerificationResult.from_tool_output(
+        VerificationCommand(command="pytest -q"),
+        "Error: command exited with code 2\nfailed tests",
+    )
+
+    assert result.exit_code == 2
+    assert result.passed is False
+    assert result.summary == "failed tests"
+    assert result.stderr_tail == "failed tests"
+
+
 def test_plan_verification_runtime_events() -> None:
     start = runtime_events.plan_verification_start(plan_id="plan_1", step_id="step_1", command="pytest")
     done = runtime_events.plan_verification_done(

@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+import re
 import time
 from dataclasses import asdict, dataclass
+
+_TOOL_ERROR_HINT = "[Analyze the error above and try a different approach.]"
 
 
 @dataclass(frozen=True)
@@ -45,5 +48,33 @@ class VerificationResult:
             checked_at=time.time(),
         )
 
+    @classmethod
+    def from_tool_output(cls, command: VerificationCommand, content: str) -> VerificationResult:
+        text = _strip_tool_error_hint(str(content or "").strip())
+        failed: re.Match[str] | None = re.match(
+            r"^Error: command exited with code (?P<code>\d+)\n?(?P<body>.*)$",
+            text,
+            re.DOTALL,
+        )
+        if failed is not None:
+            return cls.from_completed(
+                command,
+                exit_code=int(failed.group("code")),
+                stdout="",
+                stderr=failed.group("body").strip(),
+            )
+        if text.startswith("Error: command timed out"):
+            return cls.from_completed(command, exit_code=124, stdout="", stderr=text)
+        if text.startswith("Error:"):
+            return cls.from_completed(command, exit_code=1, stdout="", stderr=text)
+        return cls.from_completed(command, exit_code=0, stdout=text, stderr="")
+
     def to_dict(self) -> dict:
         return asdict(self)
+
+
+def _strip_tool_error_hint(text: str) -> str:
+    lines = text.splitlines()
+    if lines and lines[-1].strip() == _TOOL_ERROR_HINT:
+        return "\n".join(lines[:-1]).strip()
+    return text

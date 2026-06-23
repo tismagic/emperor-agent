@@ -279,12 +279,11 @@ ControlManager.set_mode("plan")
 - `propose_plan` 不再只是 Markdown 预览，可以保存结构化 `steps`、`files`、`commands`、`acceptance`。
 - 用户批准后，结构化 plan 会同步成 todos，并保持单个 `in_progress` 步骤。
 - `update_todos` 成功后，Runner 会把 todo 状态回写到 `PlanStep.status`，完成步骤会追加 `evidence`。
+- active PlanStep 中声明的 `commands` 被 `run_command` 执行时，Runner 会记录 `VerificationResult`，并发出 `plan_verification_start`、`plan_verification_done`、`plan_runtime_update`。
 - 后端发送 `plan_runtime_update`，前端可通过 runtime replay 恢复计划状态。
 
 下一步应补齐的部分：
 
-- `run_command` 完成后自动将命令退出码、stdout/stderr tail 转为 `VerificationResult`。
-- PlanStep 的 `commands` 应能被工具层识别为“待验证命令”，不只依赖模型自然语言记忆。
 - 失败验证应把 step 标记为 `failed` 或 `blocked`，并触发诊断继续，而不是只靠普通模型回复。
 - 最终答复前应检查最新 PlanRecord：若还有 active/pending/failed step，必须继续执行或说明阻塞原因。
 

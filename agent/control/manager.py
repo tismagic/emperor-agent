@@ -423,6 +423,44 @@ class ControlManager:
         self.plan_store.save(updated)
         return updated
 
+    def plan_verification_target(self, command: str) -> dict[str, str] | None:
+        record = self._latest_executable_plan()
+        if record is None:
+            return None
+        requested = _normalize_command(command)
+        for step in record.steps:
+            if step.status != PlanStepStatus.ACTIVE.value:
+                continue
+            for expected in step.commands:
+                if _normalize_command(expected) == requested:
+                    return {
+                        "plan_id": record.id,
+                        "step_id": step.id,
+                        "command": expected,
+                    }
+        return None
+
+    def record_plan_verification_result(
+        self,
+        *,
+        plan_id: str,
+        step_id: str,
+        result: dict[str, Any],
+    ) -> PlanRecord | None:
+        record = self.plan_store.get(plan_id)
+        if record is None:
+            return None
+        now = now_ts()
+        steps = [
+            replace(step, evidence=[*step.evidence, result])
+            if step.id == step_id
+            else step
+            for step in record.steps
+        ]
+        updated = replace(record, updated_at=now, steps=steps)
+        self.plan_store.save(updated)
+        return updated
+
     def _update_plan_status(self, interaction: Interaction, status: str, *, approved: bool = False) -> None:
         plan_id = str(interaction.meta.get("plan_id") or "")
         if not plan_id:
@@ -542,3 +580,7 @@ def _plan_status_from_todo(status: str) -> str:
     if status == "in_progress":
         return PlanStepStatus.ACTIVE.value
     return PlanStepStatus.PENDING.value
+
+
+def _normalize_command(command: Any) -> str:
+    return " ".join(str(command or "").strip().split())

@@ -9,7 +9,7 @@ from agent.plans.models import PlanStatus, PlanStepStatus
 from agent.plans.store import PlanStore
 from agent.providers.base import LLMProvider, LLMResponse, ToolCallRequest
 from agent.runner import AgentRunner
-from agent.tools import ToolRegistry, UpdateTodosTool
+from agent.tools import Tool, ToolRegistry, UpdateTodosTool
 from agent.tools.todo import TodoStore
 
 
@@ -22,6 +22,23 @@ class FakeProvider(LLMProvider):
         if self.responses:
             return self.responses.pop(0)
         return LLMResponse(content="done")
+
+
+class FakeCommandTool(Tool):
+    name = "run_command"
+    description = "fake command tool"
+    exclusive = True
+    parameters = {
+        "type": "object",
+        "properties": {"command": {"type": "string"}},
+        "required": ["command"],
+    }
+
+    def __init__(self, outputs: dict[str, str]) -> None:
+        self.outputs = outputs
+
+    def execute(self, command: str) -> str:
+        return self.outputs[command]
 
 
 def test_propose_plan_persists_structured_steps(tmp_path: Path) -> None:
@@ -217,3 +234,115 @@ async def test_runner_update_todos_emits_plan_runtime_update(tmp_path: Path) -> 
     assert plan_events[-1]["plan"]["id"] == plan_id
     assert plan_events[-1]["plan"]["status"] == PlanStatus.COMPLETED.value
     assert plan_events[-1]["plan"]["steps"][0]["evidence"][-1]["tool_call_id"] == "call_1"
+
+
+@pytest.mark.anyio
+async def test_runner_run_command_records_plan_verification(tmp_path: Path) -> None:
+    manager = ControlManager(tmp_path)
+    todo_store = TodoStore()
+    manager.set_todo_store(todo_store)
+    manager.set_mode("plan")
+    tool = ProposePlanTool(manager)
+    command = ".venv/bin/python -m pytest tests/unit/test_plan_store.py -q"
+    tool.execute(
+        title="Runner upgrade",
+        summary="Verify plan store",
+        plan_markdown="# Plan\n\n- Run tests",
+        steps=[{"id": "step_1", "title": "Run tests", "commands": [command]}],
+        assumptions=[],
+        risk_level="low",
+    )
+    pending = manager.payload()["pending"]
+    plan_id = pending["meta"]["plan_id"]
+    manager.approve(pending["id"])
+
+    registry = ToolRegistry()
+    registry.register(FakeCommandTool({command: "2 passed"}))
+    runner = AgentRunner(
+        provider=FakeProvider([
+            LLMResponse(
+                content="",
+                tool_calls=[ToolCallRequest(id="call_1", name="run_command", arguments={"command": command})],
+                finish_reason="tool_calls",
+            ),
+            LLMResponse(content="done"),
+        ]),
+        model="fake",
+        registry=registry,
+        system_prompt="system",
+        control_manager=manager,
+    )
+    emitted: list[dict] = []
+
+    async def emit(event: dict) -> None:
+        emitted.append(event)
+
+    await runner.step_async([{"role": "user", "content": "execute approved plan"}], emit=emit)
+
+    saved = manager.plan_store.get(plan_id)
+    assert saved is not None
+    evidence = saved.steps[0].evidence[-1]
+    assert evidence["source"] == "run_command"
+    assert evidence["tool_call_id"] == "call_1"
+    assert evidence["command"] == command
+    assert evidence["passed"] is True
+    assert evidence["summary"] == "2 passed"
+    assert [event["event"] for event in emitted if event["event"].startswith("plan_verification_")] == [
+        "plan_verification_start",
+        "plan_verification_done",
+    ]
+    plan_updates = [event for event in emitted if event.get("event") == "plan_runtime_update"]
+    assert plan_updates[-1]["plan"]["steps"][0]["evidence"][-1]["command"] == command
+
+
+@pytest.mark.anyio
+async def test_failed_run_command_records_plan_verification(tmp_path: Path) -> None:
+    manager = ControlManager(tmp_path)
+    todo_store = TodoStore()
+    manager.set_todo_store(todo_store)
+    manager.set_mode("plan")
+    tool = ProposePlanTool(manager)
+    command = ".venv/bin/python -m pytest tests/unit/test_plan_store.py -q"
+    tool.execute(
+        title="Runner upgrade",
+        summary="Verify plan store",
+        plan_markdown="# Plan\n\n- Run tests",
+        steps=[{"id": "step_1", "title": "Run tests", "commands": [command]}],
+        assumptions=[],
+        risk_level="low",
+    )
+    pending = manager.payload()["pending"]
+    plan_id = pending["meta"]["plan_id"]
+    manager.approve(pending["id"])
+
+    registry = ToolRegistry()
+    registry.register(FakeCommandTool({command: "Error: command exited with code 2\nfailed tests"}))
+    runner = AgentRunner(
+        provider=FakeProvider([
+            LLMResponse(
+                content="",
+                tool_calls=[ToolCallRequest(id="call_1", name="run_command", arguments={"command": command})],
+                finish_reason="tool_calls",
+            ),
+            LLMResponse(content="diagnosed"),
+        ]),
+        model="fake",
+        registry=registry,
+        system_prompt="system",
+        control_manager=manager,
+    )
+    emitted: list[dict] = []
+
+    async def emit(event: dict) -> None:
+        emitted.append(event)
+
+    await runner.step_async([{"role": "user", "content": "execute approved plan"}], emit=emit)
+
+    saved = manager.plan_store.get(plan_id)
+    assert saved is not None
+    evidence = saved.steps[0].evidence[-1]
+    assert evidence["passed"] is False
+    assert evidence["exit_code"] == 2
+    assert evidence["summary"] == "failed tests"
+    done_events = [event for event in emitted if event.get("event") == "plan_verification_done"]
+    assert done_events[-1]["result"]["passed"] is False

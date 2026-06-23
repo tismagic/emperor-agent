@@ -8,6 +8,7 @@ from loguru import logger
 
 from .context_pipeline import ContextPipeline
 from .control import ClarificationAssessment, TurnPaused, parse_pause_result
+from .plans.verification import VerificationCommand, VerificationResult
 from .providers import LLMProvider, ToolCallRequest
 from .providers.base import is_truncated, run_sync
 from .query_state import (
@@ -576,9 +577,24 @@ class AgentRunner:
 
         async def run_one(call: ToolCallRequest) -> str:
             await self._emit_tool_call(call, emit)
+            verification_target = self._plan_verification_target(call)
+            if verification_target is not None and emit:
+                await emit(runtime_events.plan_verification_start(
+                    plan_id=verification_target["plan_id"],
+                    step_id=verification_target["step_id"],
+                    command=verification_target["command"],
+                ))
             content = await self._run_tool(call, emit, clarification=clarification)
             results_by_id[call.id] = content
             self._maybe_pause_for_control(content, tool_calls, results_by_id)
+            verification_update = self._record_plan_verification(call, content, verification_target)
+            if verification_update is not None and emit:
+                await emit(runtime_events.plan_verification_done(
+                    plan_id=verification_update["target"]["plan_id"],
+                    step_id=verification_update["target"]["step_id"],
+                    result=verification_update["result"],
+                ))
+                await emit(runtime_events.plan_runtime_update(verification_update["plan"].to_dict()))
             if not content.startswith("Error:"):
                 plan_update = self._sync_plan_from_todo_tool(call, content)
                 await self._emit_tool_result(call, content, emit)
@@ -713,6 +729,41 @@ class AgentRunner:
                 "summary": _summarize_tool_result(content),
             },
         )
+
+    def _plan_verification_target(self, call: ToolCallRequest) -> dict[str, str] | None:
+        if call.name != "run_command" or self.control_manager is None:
+            return None
+        command = call.arguments.get("command")
+        if not isinstance(command, str) or not hasattr(self.control_manager, "plan_verification_target"):
+            return None
+        return self.control_manager.plan_verification_target(command)
+
+    def _record_plan_verification(
+        self,
+        call: ToolCallRequest,
+        content: str,
+        target: dict[str, str] | None,
+    ) -> dict[str, Any] | None:
+        if target is None or self.control_manager is None:
+            return None
+        if not hasattr(self.control_manager, "record_plan_verification_result"):
+            return None
+        result = VerificationResult.from_tool_output(
+            VerificationCommand(command=target["command"]),
+            content,
+        ).to_dict()
+        result.update({
+            "source": "run_command",
+            "tool_call_id": call.id,
+        })
+        plan = self.control_manager.record_plan_verification_result(
+            plan_id=target["plan_id"],
+            step_id=target["step_id"],
+            result=result,
+        )
+        if plan is None:
+            return None
+        return {"target": target, "result": result, "plan": plan}
 
     @staticmethod
     def _tool_messages_for_pause(
