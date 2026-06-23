@@ -60,7 +60,8 @@ Do not start Phase 6 before Phase 3 and Phase 4 are merged, because sidechain tr
 - Tool-card evidence display is now in place: Chat tool cards render artifact paths, artifact kind/size, and diff previews from replayed runtime metadata.
 - Project Execution and Plan Runtime v3 has started: `PlanDecisionPolicy` now deterministically classifies required/recommended/proceed planning cases and Runner blocks non-read-only tools for required-plan requests before files are modified.
 - `PlanDraftState` now persists plan phase, relevant files, open/resolved questions, alternatives, recommended approach, verification strategy, and plan comment revision snapshots across `PlanRecord` reloads.
-- The next upgrade lane is continuing Plan Runtime v3: plan quality gate, evidence gate, plan recovery attachments, independent verification, then external-tool budget overrides, MCP/external artifact mapping, microcompact/reactive compact, task framework consolidation, and sidechain/runtime replay hardening.
+- `PlanQualityGate` now rejects weak `propose_plan` calls before a PlanCard is created, requiring concrete scope, verification, and high-risk risk/rollback notes.
+- The next upgrade lane is continuing Plan Runtime v3: evidence gate, plan recovery attachments, independent verification, then external-tool budget overrides, MCP/external artifact mapping, microcompact/reactive compact, task framework consolidation, and sidechain/runtime replay hardening.
 
 ## File Structure
 
@@ -3006,7 +3007,7 @@ Result: `40 passed`; ruff passed.
 - Modify: `agent/plans/models.py`
 - Create: `tests/unit/test_plan_quality_gate.py`
 
-- [ ] **Step 1: Add failing tests for weak plans**
+- [x] **Step 1: Add failing tests for weak plans**
 
 Reject `propose_plan` when:
 
@@ -3017,7 +3018,7 @@ Reject `propose_plan` when:
 
 Accept a plan with concrete steps, target files, acceptance checks, and verification.
 
-- [ ] **Step 2: Implement `PlanQualityGate`**
+- [x] **Step 2: Implement `PlanQualityGate`**
 
 Return a structured tool error that the model can repair:
 
@@ -3029,7 +3030,7 @@ Error: plan quality gate failed
 
 Do not create a pending PlanCard for a rejected plan.
 
-- [ ] **Step 3: Verify**
+- [x] **Step 3: Verify**
 
 Run:
 
@@ -3038,6 +3039,15 @@ Run:
 ```
 
 Expected: all tests pass.
+
+Actual verification:
+
+```bash
+.venv/bin/python -m pytest tests/unit/test_plan_quality_gate.py tests/unit/test_plan_runtime.py tests/unit/test_control.py tests/unit/test_plan_draft_state.py -q
+.venv/bin/python -m ruff check agent/plans agent/control tests/unit/test_plan_quality_gate.py tests/unit/test_plan_runtime.py tests/unit/test_control.py tests/unit/test_plan_draft_state.py
+```
+
+Result: `32 passed`; ruff passed.
 
 ### Task 6I: Evidence Gate for Step Completion
 

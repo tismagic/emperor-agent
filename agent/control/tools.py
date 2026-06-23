@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
+from ..plans import PlanQualityError
 from ..tools.base import Tool
 from ..tools.schema import ArraySchema, ObjectSchema, StringSchema
 
@@ -127,6 +128,8 @@ class ProposePlanTool(Tool):
                     max_items=12,
                 ),
                 "risk": StringSchema("风险级别", enum=["low", "medium", "high"], nullable=True),
+                "risk_note": StringSchema("高风险步骤的风险说明", max_length=1000, nullable=True),
+                "rollback": StringSchema("高风险步骤的回滚路径或降级方案", max_length=1000, nullable=True),
             },
             required=["id", "title"],
         )
@@ -164,13 +167,17 @@ class ProposePlanTool(Tool):
         steps: list[dict[str, Any]] | None = None,
         **kwargs: Any,
     ) -> str:
-        interaction = self.manager.create_plan(
-            title=title,
-            summary=summary,
-            plan_markdown=plan_markdown,
-            assumptions=assumptions or [],
-            risk_level=risk_level,
-            steps=steps or [],
-            parent_call_id=kwargs.get("parent_call_id"),
-        )
+        try:
+            interaction = self.manager.create_plan(
+                title=title,
+                summary=summary,
+                plan_markdown=plan_markdown,
+                assumptions=assumptions or [],
+                risk_level=risk_level,
+                steps=steps or [],
+                parent_call_id=kwargs.get("parent_call_id"),
+                enforce_quality=True,
+            )
+        except PlanQualityError as exc:
+            return str(exc)
         return make_pause_result(interaction.to_dict())

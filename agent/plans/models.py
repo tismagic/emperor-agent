@@ -113,6 +113,8 @@ class PlanStep:
     acceptance: list[str] = field(default_factory=list)
     evidence: list[dict[str, Any]] = field(default_factory=list)
     risk: str = "medium"
+    risk_note: str = ""
+    rollback: str = ""
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -133,6 +135,8 @@ class PlanStep:
             acceptance=[str(item) for item in raw.get("acceptance") or []],
             evidence=[item for item in raw.get("evidence") or [] if isinstance(item, dict)],
             risk=str(raw.get("risk") or "medium"),
+            risk_note=str(raw.get("risk_note") or raw.get("riskNote") or ""),
+            rollback=str(raw.get("rollback") or raw.get("rollback_path") or raw.get("rollbackPath") or ""),
         )
 
 

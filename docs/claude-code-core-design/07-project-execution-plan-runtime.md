@@ -287,6 +287,8 @@ ControlManager.set_mode("plan")
 
 目标：`propose_plan` 不只收 steps，还要验证每个 step 是否可执行。
 
+状态：已落地第一版。当前实现位于 `agent/plans/quality.py`，并通过 `ProposePlanTool` 的 `enforce_quality=True` 接入模型提交计划路径；测试见 `tests/unit/test_plan_quality_gate.py`。
+
 目标文件：
 
 - `agent/control/tools.py`
@@ -297,14 +299,14 @@ ControlManager.set_mode("plan")
 门禁：
 
 - 每个 step 必须有目标、相关文件或探索依据、验收方式。
-- 至少一个最终 verification command 或 manual verification。
-- 高风险 step 必须有 rollback 或 risk note。
+- 每个 step 必须有 verification command 或 manual verification rule。
+- 高风险 step 必须同时有 risk note 和 rollback path。
 - 不允许只有泛泛描述，如“优化代码”“修复问题”。
 
 验收：
 
-- 低质量计划返回工具错误，要求模型修订。
-- 高质量计划保存为 waiting_approval。
+- 低质量计划返回 `Error: plan quality gate failed` 工具错误，要求模型修订，且不创建 pending PlanCard。
+- 高质量计划保存为 `waiting_approval`。
 
 ### PE-5：批准后权限与命令白名单
 
@@ -428,10 +430,10 @@ ControlManager.set_mode("plan")
 
 优先做：
 
-1. `PE-4 结构化计划质量门禁`：提高批准前计划质量。
-2. `PE-6 Step Evidence Gate`：堵住“没验证就完成”的口子。
-3. `PE-8 Plan Runtime 恢复附件`：保证长任务压缩后不断线。
-4. `PE-3 只读探索扇出`：把探索发现自动写入 plan draft。
+1. `PE-6 Step Evidence Gate`：堵住“没验证就完成”的口子。
+2. `PE-8 Plan Runtime 恢复附件`：保证长任务压缩后不断线。
+3. `PE-3 只读探索扇出`：把探索发现自动写入 plan draft。
+4. `PE-7 独立验证子代理`：让非平凡项目最终答复前有复核证据。
 
 暂缓做：
 

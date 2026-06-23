@@ -10,6 +10,7 @@ from ..plans import (
     PlanDraftPhase,
     PlanDraftState,
     PlanExecutionState,
+    PlanQualityGate,
     PlanRecord,
     PlanStatus,
     PlanStep,
@@ -121,6 +122,7 @@ class ControlManager:
         steps: list[dict[str, Any]] | None = None,
         parent_call_id: str | None = None,
         meta: dict[str, Any] | None = None,
+        enforce_quality: bool = False,
     ) -> Interaction:
         self.ensure_no_pending()
         plan_meta = dict(meta or {})
@@ -142,6 +144,8 @@ class ControlManager:
             summary=interaction.summary,
             steps=structured_steps,
         )
+        if enforce_quality:
+            PlanQualityGate().require_ok(steps=structured_steps, draft=draft)
         self.plan_store.save(
             PlanRecord(
                 id=plan_id,
@@ -781,6 +785,10 @@ def _parse_plan_steps(items: list[dict[str, Any]]) -> list[PlanStep]:
                 commands=[str(command) for command in item.get("commands") or []][:12],
                 acceptance=[str(rule) for rule in item.get("acceptance") or []][:12],
                 risk=str(item.get("risk") or "medium").strip()[:24],
+                risk_note=str(item.get("risk_note") or item.get("riskNote") or "").strip()[:1000],
+                rollback=str(
+                    item.get("rollback") or item.get("rollback_path") or item.get("rollbackPath") or ""
+                ).strip()[:1000],
             )
         )
     return steps

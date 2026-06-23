@@ -43,6 +43,25 @@ class FakeCommandTool(Tool):
         return self.outputs[command]
 
 
+def quality_step(
+    step_id: str,
+    title: str,
+    *,
+    command: str | None = None,
+    file: str = "agent/runner.py",
+) -> dict[str, object]:
+    step: dict[str, object] = {
+        "id": step_id,
+        "title": title,
+        "description": f"Concrete work for {title}.",
+        "files": [file],
+        "acceptance": [f"{title} has observable acceptance."],
+    }
+    if command:
+        step["commands"] = [command]
+    return step
+
+
 def test_propose_plan_persists_structured_steps(tmp_path: Path) -> None:
     manager = ControlManager(tmp_path)
     manager.plan_store = PlanStore(tmp_path)
@@ -84,7 +103,13 @@ def test_plan_approval_marks_structured_plan_approved(tmp_path: Path) -> None:
         title="Runner upgrade",
         summary="Extract context pipeline",
         plan_markdown="# Plan\n\n- Add context pipeline",
-        steps=[{"id": "step_1", "title": "Add failing tests"}],
+        steps=[
+            quality_step(
+                "step_1",
+                "Add failing tests",
+                file="tests/unit/test_context_pipeline.py",
+            )
+        ],
         assumptions=[],
         risk_level="low",
     )
@@ -111,8 +136,8 @@ def test_plan_approval_activates_first_step_when_todo_store_is_attached(tmp_path
         summary="Extract context pipeline",
         plan_markdown="# Plan\n\n- Add context pipeline\n- Run tests",
         steps=[
-            {"id": "step_1", "title": "Add failing tests"},
-            {"id": "step_2", "title": "Run focused tests"},
+            quality_step("step_1", "Add failing tests", file="tests/unit/test_context_pipeline.py"),
+            quality_step("step_2", "Run focused tests", file="tests/unit/test_context_pipeline.py"),
         ],
         assumptions=[],
         risk_level="low",
@@ -147,12 +172,13 @@ def test_plan_approval_message_contains_project_execution_contract(tmp_path: Pat
         summary="Extract context pipeline",
         plan_markdown="# Plan\n\n- Add failing tests\n- Run focused tests",
         steps=[
-            {
-                "id": "step_1",
-                "title": "Add failing tests",
-                "commands": [".venv/bin/python -m pytest tests/unit/test_context_pipeline.py -q"],
-            },
-            {"id": "step_2", "title": "Run focused tests"},
+            quality_step(
+                "step_1",
+                "Add failing tests",
+                command=".venv/bin/python -m pytest tests/unit/test_context_pipeline.py -q",
+                file="tests/unit/test_context_pipeline.py",
+            ),
+            quality_step("step_2", "Run focused tests", file="tests/unit/test_context_pipeline.py"),
         ],
         assumptions=[],
         risk_level="low",
@@ -198,8 +224,8 @@ def test_control_manager_syncs_todos_back_to_plan_steps(tmp_path: Path) -> None:
         summary="Extract context pipeline",
         plan_markdown="# Plan\n\n- Add failing tests\n- Run focused tests",
         steps=[
-            {"id": "step_1", "title": "Add failing tests"},
-            {"id": "step_2", "title": "Run focused tests"},
+            quality_step("step_1", "Add failing tests", file="tests/unit/test_context_pipeline.py"),
+            quality_step("step_2", "Run focused tests", file="tests/unit/test_context_pipeline.py"),
         ],
         assumptions=[],
         risk_level="low",
@@ -236,8 +262,8 @@ async def test_runner_update_todos_emits_plan_runtime_update(tmp_path: Path) -> 
         summary="Extract context pipeline",
         plan_markdown="# Plan\n\n- Add failing tests\n- Run focused tests",
         steps=[
-            {"id": "step_1", "title": "Add failing tests"},
-            {"id": "step_2", "title": "Run focused tests"},
+            quality_step("step_1", "Add failing tests", file="tests/unit/test_context_pipeline.py"),
+            quality_step("step_2", "Run focused tests", file="tests/unit/test_context_pipeline.py"),
         ],
         assumptions=[],
         risk_level="low",
@@ -302,7 +328,14 @@ async def test_runner_run_command_records_plan_verification(tmp_path: Path) -> N
         title="Runner upgrade",
         summary="Verify plan store",
         plan_markdown="# Plan\n\n- Run tests",
-        steps=[{"id": "step_1", "title": "Run tests", "commands": [command]}],
+        steps=[
+            quality_step(
+                "step_1",
+                "Run tests",
+                command=command,
+                file="tests/unit/test_plan_store.py",
+            )
+        ],
         assumptions=[],
         risk_level="low",
     )
@@ -362,7 +395,14 @@ async def test_failed_run_command_records_plan_verification(tmp_path: Path) -> N
         title="Runner upgrade",
         summary="Verify plan store",
         plan_markdown="# Plan\n\n- Run tests",
-        steps=[{"id": "step_1", "title": "Run tests", "commands": [command]}],
+        steps=[
+            quality_step(
+                "step_1",
+                "Run tests",
+                command=command,
+                file="tests/unit/test_plan_store.py",
+            )
+        ],
         assumptions=[],
         risk_level="low",
     )
@@ -422,7 +462,7 @@ async def test_runner_final_answer_gate_continues_incomplete_plan(tmp_path: Path
         title="Runner upgrade",
         summary="Verify final gate",
         plan_markdown="# Plan\n\n- Run tests",
-        steps=[{"id": "step_1", "title": "Run tests"}],
+        steps=[quality_step("step_1", "Run tests", file="tests/unit/test_plan_runtime.py")],
         assumptions=[],
         risk_level="low",
     )
