@@ -10,6 +10,18 @@ from .context_pipeline import ContextPipeline
 from .control import ClarificationAssessment, TurnPaused, parse_pause_result
 from .providers import LLMProvider, ToolCallRequest
 from .providers.base import is_truncated, run_sync
+from .query_state import (
+    QueryState,
+    TransitionReason,
+    begin_iteration,
+    empty_response_retry,
+    length_recovery,
+    mark_completed,
+    mark_paused,
+    max_turns_reached,
+    todo_followup,
+    tool_followup,
+)
 from .runner_model import ModelCaller
 from .runner_state import TurnPhase, TurnState
 from .tools.execution import ToolExecutionEngine
@@ -131,18 +143,18 @@ class AgentRunner:
             emit,
             detail={"history_length": len(history)},
         )
-        turns = 0
+        query_state = QueryState(turn_id=turn_id, max_turns=self.max_turns)
         final_parts: list[str] = []
-        empty_retries = 0
-        length_retries = 0
         clarification = self._assess_clarification(history)
         # 进入 turn 时先记一次快照，防止 LLM 还没回应就被杀
         if self.memory_store is not None:
             self.memory_store.write_checkpoint(history)
             await self._emit_turn_phase(turn_state, TurnPhase.CHECKPOINT, emit, detail={"reason": "turn_start"})
         while True:
-            if self.max_turns is not None and turns >= self.max_turns:
-                reply = f"（达到 max_turns={self.max_turns} 上限，未办妥；history 中已有部分进展）"
+            max_turns_transition = max_turns_reached(query_state)
+            if max_turns_transition is not None:
+                query_state = max_turns_transition.next_state
+                reply = max_turns_transition.terminal_reply or ""
                 message = {"role": "assistant", "content": reply}
                 if turn_id:
                     message["turn_id"] = turn_id
@@ -153,7 +165,9 @@ class AgentRunner:
                     self.memory_store.clear_checkpoint()
                 await self._emit_turn_phase(turn_state, TurnPhase.MAX_TURNS, emit, detail={"max_turns": self.max_turns})
                 return reply
-            turns = turn_state.start_iteration()
+            query_transition = begin_iteration(query_state)
+            query_state = query_transition.next_state
+            turn_state.start_iteration()
 
             await self._emit_turn_phase(turn_state, TurnPhase.MODEL_REQUEST, emit)
             response = await self._ask_model(history, emit, clarification=clarification)
@@ -228,8 +242,8 @@ class AgentRunner:
                 )
 
             if response.should_execute_tools:
-                empty_retries = 0
-                length_retries = 0
+                query_transition = tool_followup(query_state)
+                query_state = query_transition.next_state
                 assistant_content = response.content or ""
                 if assistant_content:
                     final_parts.append(assistant_content)
@@ -303,54 +317,42 @@ class AgentRunner:
 
             # —— 空响应救援 ——
             if not reply.strip() and not response.tool_calls:
-                if empty_retries < _MAX_EMPTY_RETRIES:
-                    empty_retries += 1
-                    history.append({
-                        "role": "user",
-                        "content": "（上一轮无任何输出，请继续推进或给出最终答复）",
-                    })
+                query_transition = empty_response_retry(query_state, max_retries=_MAX_EMPTY_RETRIES)
+                if query_transition is not None:
+                    query_state = query_transition.next_state
+                    history.extend(query_transition.messages)
                     await self._emit_turn_phase(
                         turn_state,
                         TurnPhase.EMPTY_RETRY,
                         emit,
-                        detail={"attempt": empty_retries, "max": _MAX_EMPTY_RETRIES},
+                        detail={"attempt": query_state.empty_retries, "max": _MAX_EMPTY_RETRIES},
                     )
                     if emit:
-                        await emit({
-                            "event": "tool_error",
-                            "name": "_empty_response",
-                            "message": f"empty response, retry {empty_retries}/{_MAX_EMPTY_RETRIES}",
-                        })
+                        for event in query_transition.events:
+                            await emit(event)
                     continue
 
             # —— 截断续写 ——
-            if is_truncated(response.finish_reason) and length_retries < _MAX_LENGTH_RECOVERIES:
-                length_retries += 1
-                if reply:
-                    final_parts.append(reply)
-                    message = {"role": "assistant", "content": reply}
-                    if turn_id:
-                        message["turn_id"] = turn_id
-                    history.append(message)
-                history.append({
-                    "role": "user",
-                    "content": "（上一轮被 max_tokens 截断，请从中断处续写，不要重复已输出内容）",
-                })
-                await self._emit_turn_phase(
-                    turn_state,
-                    TurnPhase.LENGTH_RETRY,
-                    emit,
-                    detail={"attempt": length_retries, "max": _MAX_LENGTH_RECOVERIES},
-                )
-                if emit:
-                    await emit({
-                        "event": "tool_error",
-                        "name": "_length_truncation",
-                        "message": f"truncated, continuing {length_retries}/{_MAX_LENGTH_RECOVERIES}",
-                    })
-                continue
+            if is_truncated(response.finish_reason):
+                query_transition = length_recovery(query_state, reply, max_retries=_MAX_LENGTH_RECOVERIES)
+                if query_transition is not None:
+                    query_state = query_transition.next_state
+                    if reply:
+                        final_parts.append(reply)
+                    history.extend(query_transition.messages)
+                    await self._emit_turn_phase(
+                        turn_state,
+                        TurnPhase.LENGTH_RETRY,
+                        emit,
+                        detail={"attempt": query_state.length_retries, "max": _MAX_LENGTH_RECOVERIES},
+                    )
+                    if emit:
+                        for event in query_transition.events:
+                            await emit(event)
+                    continue
 
             if clarification.required and reply.strip():
+                query_state = mark_paused(query_state, TransitionReason.ASK_PAUSE).next_state
                 await self._emit_turn_phase(
                     turn_state,
                     TurnPhase.PAUSED,
@@ -360,6 +362,7 @@ class AgentRunner:
                 await self._pause_for_clarification(history, clarification, emit, turn_id=turn_id)
 
             if self._must_pause_for_plan(reply):
+                query_state = mark_paused(query_state, TransitionReason.PLAN_PAUSE).next_state
                 await self._emit_turn_phase(
                     turn_state,
                     TurnPhase.PAUSED,
@@ -387,12 +390,14 @@ class AgentRunner:
             if self.todo_store and self.todo_store.todos:
                 unfinished = [t for t in self.todo_store.todos if t["status"] != "completed"]
                 if unfinished:
-                    nudge = (
-                        "差事尚未办妥，以下任务仍未完成，请按计划继续执行，"
-                        "并按规矩更新 todolist 状态：\n" + _render_todos(unfinished)
-                    )
                     logger.info(f"\n[计划尚未办妥，继续执行...]\n{_render_todos(self.todo_store.todos)}\n")
-                    history.append({"role": "user", "content": nudge})
+                    query_transition = todo_followup(
+                        query_state,
+                        unfinished_text=_render_todos(unfinished),
+                        unfinished_count=len(unfinished),
+                    )
+                    query_state = query_transition.next_state
+                    history.extend(query_transition.messages)
                     await self._emit_turn_phase(
                         turn_state,
                         TurnPhase.TODO_FOLLOWUP,
@@ -408,6 +413,7 @@ class AgentRunner:
             # turn 正常落地 → 清掉 checkpoint
             if self.memory_store is not None:
                 self.memory_store.clear_checkpoint()
+            query_state = mark_completed(query_state).next_state
             await self._emit_turn_phase(
                 turn_state,
                 TurnPhase.COMPLETED,
