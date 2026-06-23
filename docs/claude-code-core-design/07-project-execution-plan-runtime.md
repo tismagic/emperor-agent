@@ -180,6 +180,350 @@ Emperor 已落地：
 - 支持“命令未在 plan 中声明但可作为 evidence”的匹配策略，但必须写回 step。
 - 引入 `verification_agent` 或 reviewer subagent gate：3+ 文件、后端/API、权限/安全、调度/长期任务变更必须独立复核。
 
+## 源码级真实项目执行状态机
+
+Claude Code 编写真实项目时，主循环不是“收到用户需求 -> 直接改文件 -> 总结”。更准确的流程如下：
+
+```text
+用户提出实现需求
+-> EnterPlanMode 判定或用户手动 /plan
+-> bootstrap/app state 记录 prePlanMode、plan slug、plan exit flags
+-> 每轮请求前注入 plan_mode attachment
+-> 只读探索：Glob/Grep/Read/Bash read-only/Explore Agent
+-> 增量写 plan file，记录文件路径、复用函数、验证命令
+-> 有用户决策点时 AskUserQuestion，不能用文字问“计划是否可以”
+-> ExitPlanMode 读取 plan file 并触发用户批准
+-> 批准后恢复 prePlanMode 或降级到安全 default
+-> initialMessage 注入 Approved Plan 和 allowedPrompts
+-> TodoWrite 或 TaskCreate/TaskUpdate 建立执行清单
+-> 执行工具：Edit/Write/Bash/Agent/Team
+-> 每个任务完成时更新 todo/task 状态
+-> 运行计划声明的验证命令或触发 verification agent
+-> 失败证据进入下一轮修复，不能进入最终答复
+-> 完成后最终答复只总结已验证事实、残留风险和命令结果
+```
+
+这条状态机有几个关键“硬边界”：
+
+| 边界 | Claude Code 源码机制 | Emperor 应吸收的语义 |
+|---|---|---|
+| 计划入口 | `EnterPlanModeTool` 修改 `toolPermissionContext.mode`，并通过 `prepareContextForPlanMode()` 保存/剥离权限 | `ControlManager.set_mode("plan")` 不只是 UI 模式，而是工具曝光、权限、prompt attachment 的共同输入 |
+| 计划事实 | `utils/plans.ts` 为 session 生成 slug，`getPlanFilePath()` 指向唯一 plan file | `PlanRecord` 是后端事实；可选 Markdown plan file 只是人类投影，必须能从 `PlanStore` 重建 |
+| 计划附件 | `utils/attachments.ts` 注入 `plan_mode`、`plan_mode_reentry`、`plan_mode_exit`，`messages.ts` 区分 full/sparse/re-entry/exit 文案 | `PlanContextBuilder` 需要扩展成按阶段输出：full、sparse、reentry、approved、blocked、verification_failed |
+| 审批出口 | `ExitPlanModeV2Tool` 从磁盘读取计划，`requiresUserInteraction()` 触发批准 UI，批准后返回 Approved Plan | `propose_plan` / PlanCard approval 必须是唯一批准出口，普通文字不能绕过计划批准 |
+| 权限恢复 | 退出计划时恢复 `prePlanMode`，auto gate 关闭时降级 default，dangerous rules 按模式恢复 | 批准计划不能等于无限授权；只能生成计划内命令/步骤的短期许可 |
+| 执行清单 | `TodoWriteTool` / `TaskCreateTool` / `TaskUpdateTool` 要求 activeForm、单 active、完成即更新、失败不完成 | `TodoStore` 与 `PlanStep` 需要一对一同步，且用 `plan_step_id` 防止靠数组下标错配 |
+| 验证提醒 | Todo/Task 关闭 3+ 项且没有 verification 项时追加验证 nudge | `PlanEvidenceGate` 和 independent verification gate 应是后端门禁，不只靠提示词 |
+| 恢复连续性 | plan slug、file snapshot、message recovery、plan_mode_exit attachment、pendingPlanVerification | `memory/plans/index.json`、runtime replay、compaction context、task transcript 要共同恢复 active plan |
+
+### 端到端执行能力的核心不变量
+
+1. **计划必须基于源码事实**：计划里要有文件路径、既有函数/工具、复用点、测试入口。只写“实现某功能”不够。
+2. **批准前只能读和写计划**：读文件、搜索、只读子代理可以并发；业务文件、配置、提交、部署都必须被 Plan Mode 拦住。
+3. **批准后第一件事是任务化**：Claude Code 通过 `TodoWrite` 或 Task V2 把计划拆成可见状态；Emperor 应把 `PlanStep` 激活同步为 todo/task。
+4. **完成状态必须有证据**：step 声明了命令，就必须看到通过的 `VerificationResult`；命令失败时 step 留在 failed，不允许模型口头跳过。
+5. **阻塞要转成交互**：缺需求、缺凭证、需要产品取舍时，状态机进入 `ask_user`，不能在最终答复里模糊带过。
+6. **最终答复是状态机出口**：只有 active plan 没有 pending/active/failed/blocked step，且独立验证满足策略时，Runner 才能结束。
+7. **压缩不能抹掉项目边界**：active step、失败证据、计划文件、相关 artifact、用户评论必须进入 compact/runtime attachment。
+
+## Emperor Plan Runtime v4 升级细化
+
+前面 PE-1 至 PE-9 已经把计划从 Markdown 卡片推进到结构化执行态。下一阶段要补的是“真实项目编写闭环”：计划触发更稳、探索证据更强、任务推进更像工程执行、验证和 UI 更可审计。
+
+### PE-10：Plan Entry Runtime Contract
+
+目标：把“该不该进入 Plan”从单次写工具前 guard 升级为整轮 runtime contract。
+
+目标文件：
+
+- `agent/control/plan_policy.py`
+- `agent/control/manager.py`
+- `agent/runner.py`
+- `agent/runtime/events.py`
+- `desktop/src/renderer/src/runtime/handlers/plans.ts`
+- `tests/unit/test_plan_decision_policy.py`
+- `tests/unit/test_control.py`
+
+新增接口：
+
+```python
+@dataclass(frozen=True)
+class PlanEntryDecision:
+    decision: str              # required | recommended | proceed
+    reason: str
+    triggers: list[str]
+    suggested_questions: list[str]
+    recommended_readonly_scopes: list[str]
+```
+
+执行点：
+
+1. turn 开始时根据用户消息生成 `PlanEntryDecision`，写入本轮 runtime event。
+2. `required` 时，Runner 在任何非只读工具前返回 `PLAN_GUARD_REQUIRED`，并附带 recommended readonly scopes。
+3. `recommended` 时不阻断，但 WebUI 和模型上下文收到轻量提示，鼓励先探索/提问。
+4. 用户已给出完整实施计划时，decision 为 `proceed`，但仍要求 `update_todos` 或 `PlanRecord` 绑定。
+
+验收：
+
+- 高影响改造在写文件前必定出现 `PLAN_GUARD_REQUIRED`。
+- 明确单文件 bugfix 不触发 required。
+- WebUI replay 能展示本轮为何建议或要求计划。
+
+### PE-11：Plan Discovery Ledger
+
+目标：让只读探索结果进入 `PlanDraftState.discoveries`，计划质量门禁可以引用这些事实。
+
+目标文件：
+
+- `agent/plans/models.py`
+- `agent/plans/store.py`
+- `agent/control/manager.py`
+- `agent/tools/subagent.py`
+- `agent/tools/grep.py`
+- `agent/tools/read_file.py`
+- `tests/unit/test_plan_discovery_ledger.py`
+
+新增结构：
+
+```python
+@dataclass(frozen=True)
+class PlanDiscovery:
+    id: str
+    source: str                # read_file | grep | subagent | mcp
+    summary: str
+    files: list[str]
+    symbols: list[str]
+    evidence_refs: list[str]
+    created_at: float
+```
+
+执行点：
+
+1. Plan 模式下只读工具可以选择性上报 discovery summary。
+2. 只读探索子代理结束时，把结论、证据文件、风险写入 discovery ledger。
+3. `PlanQualityGate` 要求每个非平凡 step 至少引用文件、discovery 或用户决策。
+4. Discovery 只保存摘要和 artifact refs，不把大段文件内容塞进 plan store。
+
+验收：
+
+- Plan 模式下 `read_file` / `grep` / 只读 subagent 能生成 discovery。
+- 没有文件/发现依据的泛泛计划会被质量门禁拒绝。
+- 压缩后 `PlanContextBuilder` 仍能注入最近 discovery 摘要。
+
+### PE-12：只读探索扇出执行器
+
+目标：吸收 Claude Code Explore/Plan agent 并行探索能力，但保持 Emperor 的子代理权限白名单。
+
+目标文件：
+
+- `agent/subagents/registry.py`
+- `agent/tools/subagent.py`
+- `agent/tasks/manager.py`
+- `agent/tasks/sidechain.py`
+- `agent/runtime/events.py`
+- `tests/unit/test_plan_readonly_exploration.py`
+
+行为：
+
+1. Plan 模式允许 `dispatch_subagent(agent_type in readonly_explorers)`。
+2. 每个探索任务必须带 `scope_limit`、`expected_output`、`evidence_required`。
+3. 探索结果写入 sidechain transcript，并登记到 `PlanDiscovery`。
+4. 写入型子代理、能修改文件的 teammate、scheduler mutation 在 Plan 模式继续拒绝。
+
+验收：
+
+- 多个只读探索任务可以并发启动并产生 task lifecycle event。
+- 只读探索不能调用 `write_file` / `edit_file` / `run_command` 写入类命令。
+- PlanCard 能显示“探索证据数量”和最近 discovery 摘要。
+
+### PE-13：Approved Plan Permission Token
+
+目标：批准计划后生成短期、可撤销、可审计的权限 token，而不是长期放宽模式。
+
+目标文件：
+
+- `agent/permissions/models.py`
+- `agent/permissions/manager.py`
+- `agent/control/manager.py`
+- `agent/plans/models.py`
+- `tests/unit/test_plan_permission_tokens.py`
+
+新增结构：
+
+```python
+@dataclass(frozen=True)
+class PlanPermissionToken:
+    plan_id: str
+    step_id: str
+    tool_name: str
+    argument_hash: str
+    expires_at: float
+    uses_remaining: int
+    reason: str
+```
+
+执行点：
+
+1. Plan approval 为每个 active step 的非高风险验证命令生成一次性 token。
+2. 用户 comment、plan revision、step failed、mode 切换时撤销旧 token。
+3. token 只能降低无意义重复审批，不允许绕过高风险 shell、敏感路径写入、部署、push。
+4. permission runtime event 记录 token 命中或拒绝原因。
+
+验收：
+
+- 同一计划命令第一次执行可命中 token，第二次需要重新评估或消耗新 token。
+- 修改计划后旧 token 不再生效。
+- `git push`、删除、部署即使在计划里也不被 token 放行。
+
+### PE-14：Plan Step Task Binding
+
+目标：把 `PlanStep`、todo、TaskRecord、sidechain transcript 合并成一个可恢复执行单元。
+
+目标文件：
+
+- `agent/plans/execution.py`
+- `agent/tasks/models.py`
+- `agent/tasks/manager.py`
+- `agent/tools/todo.py`
+- `agent/runtime/events.py`
+- `desktop/src/renderer/src/runtime/handlers/tasks.ts`
+- `tests/unit/test_plan_task_binding.py`
+
+行为：
+
+1. 批准计划后，每个 `PlanStep` 创建或绑定一个 `TaskRecord(kind="plan_step")`。
+2. active step 对应 task 进入 `running`，pending step 对应 task 进入 `queued`。
+3. 工具输出、验证命令、子代理复核写入 step task sidechain。
+4. `update_todos` 只更新展示清单；PlanStep 状态以 task/evidence gate 为准。
+
+验收：
+
+- 重启后可从 `PlanStore` + `TaskStore` 恢复 active step 和 transcript。
+- WebUI Task projection 能定位到 plan id/step id。
+- step done 前 transcript 至少包含修改摘要或验证证据。
+
+### PE-15：Verification Matrix
+
+目标：把每个 step 的验证从单条 command 升级为 required/optional/manual 矩阵。
+
+目标文件：
+
+- `agent/plans/verification.py`
+- `agent/plans/evidence.py`
+- `agent/control/manager.py`
+- `agent/runner.py`
+- `tests/unit/test_plan_verification_matrix.py`
+
+新增结构：
+
+```python
+@dataclass(frozen=True)
+class VerificationRequirement:
+    id: str
+    kind: str                  # command | manual | reviewer | smoke
+    required: bool
+    command: str
+    description: str
+    status: str                # pending | passed | failed | skipped
+    evidence_refs: list[str]
+```
+
+执行点：
+
+1. `PlanStep.commands` 兼容映射成 required command requirements。
+2. `run_command` 通过时只满足匹配 requirement，不自动完成整个 step。
+3. manual verification 必须有用户或 reviewer 明确记录，不能由模型自称。
+4. skipped 需要 reason，并进入最终答复风险段。
+
+验收：
+
+- 多条 required command 必须全部 passed 才能完成 step。
+- optional command 失败不会阻止 step，但会进入风险摘要。
+- manual verification 缺证据时 final answer gate 阻断。
+
+### PE-16：Reviewer Task Transcript 收敛
+
+目标：让 independent verification 不只是 `PlanRecord.verification` 的一条 dict，而是可打开的复核任务。
+
+目标文件：
+
+- `agent/control/manager.py`
+- `agent/subagents/registry.py`
+- `agent/tasks/manager.py`
+- `agent/tasks/sidechain.py`
+- `desktop/src/renderer/src/components/chat/PlanCard.vue`
+- `tests/unit/test_plan_reviewer_task_transcript.py`
+
+行为：
+
+1. final answer gate 需要复核时创建 `TaskRecord(kind="verification")`。
+2. `verification_reviewer` 的输入、工具轨迹、结论写入 sidechain。
+3. reviewer PASS/FAIL 转换为 `PlanRecord.verification` evidence，并保留 task id。
+4. PlanCard 可以打开 reviewer transcript。
+
+验收：
+
+- reviewer FAIL 后 PlanRecord 保留失败原因、命令、task id。
+- reviewer PASS 但无命令 evidence 时状态为 `missing_command_evidence`。
+- 刷新后 PlanCard 仍能显示并打开复核 transcript。
+
+### PE-17：Project Execution Panel
+
+目标：把 Chat 内 PlanCard 升级为独立项目执行视图，适合真实项目长任务。
+
+目标文件：
+
+- `desktop/src/renderer/src/views/ProjectExecutionView.vue`
+- `desktop/src/renderer/src/components/panels/ProjectExecutionPanel.vue`
+- `desktop/src/renderer/src/runtime/handlers/plans.ts`
+- `desktop/src/renderer/src/runtime/handlers/tasks.ts`
+- `desktop/src/renderer/src/router.ts`
+- `tests` 对应前端 runtime/vitest 测试
+
+界面信息：
+
+- active plan、step、状态、风险。
+- discovery ledger。
+- step task transcript 入口。
+- verification matrix。
+- reviewer transcript。
+- 用户 comment / approval 历史。
+
+验收：
+
+- 刷新后由 runtime replay 恢复完整视图。
+- 长 stdout/stderr 只显示摘要和 artifact 链接。
+- 用户能一眼判断：正在做哪一步、为什么卡住、还差什么验证。
+
+### PE-18：Project Execution Smoke Gate
+
+目标：为“真实项目编写能力”建立端到端验收，而不是只看单元测试。
+
+目标文件：
+
+- `tests/integration/test_project_execution_flow.py`
+- `tests/unit/test_agent_prompt_contracts.py`
+- `scripts/check.sh`
+- `docs/claude-code-core-design/07-project-execution-plan-runtime.md`
+
+验收场景：
+
+1. 用户提出高影响多文件改造，系统 required plan 并阻止写入。
+2. Plan 模式只读探索生成 discovery。
+3. `propose_plan` 产生结构化 steps 和 verification matrix。
+4. 用户批准后同步 task/todo。
+5. 修改代码并运行验证命令。
+6. 验证失败时 step failed，模型继续修复。
+7. 验证通过且 reviewer PASS 后才允许最终答复。
+8. 重启或压缩后 active plan 能恢复。
+
+验收命令：
+
+```bash
+.venv/bin/python -m pytest tests/integration/test_project_execution_flow.py tests/unit/test_agent_prompt_contracts.py -q
+npm --prefix desktop run test -- planProjection taskProjection
+```
+
 ## Emperor 当前链路
 
 当前项目已经具备以下基础：
@@ -392,8 +736,8 @@ ControlManager.set_mode("plan")
 第一版边界：
 
 - 已完成 final answer gate、风险识别、`VerificationReviewRequest` metadata、`PlanRecord.verification` PASS/FAIL/waiver evidence、`verification_reviewer` registry/template。
-- 尚未把复核状态投影到 PlanCard；这部分进入 PE-9 / Task 6L。
-- 尚未把 reviewer 执行结果自动映射为持久 task transcript；这部分进入统一 Task Framework。
+- 已把复核状态投影到 PlanCard：required / passed / failed / waived / missing command evidence 均可回放。
+- 尚未把 reviewer 执行结果自动映射为可打开的持久 task transcript；这部分进入 PE-16。
 
 ### PE-8：Plan Runtime 恢复附件
 
@@ -460,10 +804,11 @@ ControlManager.set_mode("plan")
 
 优先做：
 
-1. `PE-7 独立验证子代理`：让非平凡项目最终答复前有复核证据。
-2. `PE-3 只读探索扇出`：把探索发现自动写入 plan draft。
-3. `PE-5 批准后权限与命令白名单`：已落地第一版，减少计划内非高风险验证命令的重复审批。
-4. `PE-9 WebUI Project Execution 面板`：把恢复后的计划状态做成稳定用户界面。
+1. `PE-11 Plan Discovery Ledger` + `PE-12 只读探索扇出执行器`：让计划基于可审计的源码探索证据。
+2. `PE-14 Plan Step Task Binding`：把每个计划步骤绑定到 TaskRecord 和 sidechain transcript。
+3. `PE-15 Verification Matrix`：支持多命令、manual、reviewer、smoke 的验证矩阵。
+4. `PE-16 Reviewer Task Transcript 收敛`：让独立复核可打开、可回放、可追溯。
+5. `PE-17 Project Execution Panel`：从 Chat PlanCard 升级到独立项目执行视图。
 
 暂缓做：
 

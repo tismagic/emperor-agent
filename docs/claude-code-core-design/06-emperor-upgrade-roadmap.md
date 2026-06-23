@@ -306,7 +306,7 @@ Plan 模式只读探索
 - PlanCard 已接入 `planProjection`，会展示 step 状态、文件/命令、验证 evidence 和失败原因；刷新后由 backend runtime replay 重建。
 - 批准计划后的系统恢复消息和 `templates/TOOL.md` / `templates/SOUL.md` 已写入 Project Execution Prompt Contract：保持一个 active todo 对齐 active PlanStep，完成前记录 verification evidence，failed 先修复重跑，blocked 调用 ask_user，未完成前不最终答复。
 
-后续任务点不要直接跳到通用 Task Framework。应先完成 `07-project-execution-plan-runtime.md` 中的 PE-1 至 PE-9：
+后续任务点不要直接跳到通用 Task Framework。应先按 `07-project-execution-plan-runtime.md` 把 PE-1 至 PE-18 分成两层推进：PE-1 至 PE-9 是 Plan Runtime v2/v3 基座，PE-10 至 PE-18 是面向真实项目编写能力的 v4 闭环。
 
 - `PE-1 PlanDecisionPolicy`：已落地第一版，能判断何时必须进入计划、何时建议计划、何时直接执行，并在 required-plan 请求写入前返回 `PLAN_GUARD_REQUIRED`。
 - `PE-2 PlanDraftState`：已落地第一版，把计划阶段、相关文件、未决/已答问题、候选方案、推荐方案、验证策略和评论修订快照结构化保存。
@@ -317,8 +317,17 @@ Plan 模式只读探索
 - `PE-7 独立验证子代理`：已落地第一版；非平凡项目改动最终答复前必须有 reviewer PASS + command evidence，或用户豁免。PlanCard 投影已接入，剩余工作是 task transcript 收敛。
 - `PE-8 Plan Runtime 恢复附件`：已落地第一版，ContextPipeline 与 Compactor 会注入紧凑 plan runtime context，压缩、刷新、重启后继续 active step。
 - `PE-9 WebUI Project Execution 面板`：已落地第一版；PlanCard 会优先显示 active step、失败验证摘要、blocked reason、open questions 和 independent verification 状态。剩余工作是独立面板页。
+- `PE-10 Plan Entry Runtime Contract`：把 required/recommended/proceed 计划判定变成本轮 runtime contract，带 triggers、reason 和 recommended readonly scopes。
+- `PE-11 Plan Discovery Ledger`：把 read/search/subagent 的只读探索摘要、文件路径、artifact refs 写入 `PlanDraftState.discoveries`，质量门禁可引用。
+- `PE-12 只读探索扇出执行器`：Plan 模式允许只读探索子代理并发，结果写入 task sidechain 和 discovery ledger，写入型子代理继续拒绝。
+- `PE-13 Approved Plan Permission Token`：批准计划后生成短期一次性 token，只覆盖 active step 的非高风险计划内命令；评论、修订、失败会撤销。
+- `PE-14 Plan Step Task Binding`：每个 PlanStep 绑定 TaskRecord，工具输出、验证命令、复核结果进入 step sidechain。
+- `PE-15 Verification Matrix`：把单条 `commands` 扩展为 required/optional/manual/reviewer/smoke 验证矩阵。
+- `PE-16 Reviewer Task Transcript 收敛`：independent verification 创建可打开的 verification task transcript，并把 PASS/FAIL 写回 PlanRecord evidence。
+- `PE-17 Project Execution Panel`：新增独立项目执行视图，展示 active step、discovery、verification matrix、reviewer transcript 和用户审批历史。
+- `PE-18 Project Execution Smoke Gate`：新增集成验收，覆盖 required plan、探索、批准、执行、失败修复、复核、压缩/重启恢复。
 
-完成这条链路后，再把计划执行、任务运行、工具结果和上下文压缩接入 Epic 6 的统一长期任务框架。
+完成 PE-10 至 PE-18 后，再把计划执行、任务运行、工具结果和上下文压缩接入 Epic 6 的统一长期任务框架。
 
 ## Epic 6：Task Framework
 

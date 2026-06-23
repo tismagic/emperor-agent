@@ -67,7 +67,7 @@ Do not start Phase 6 before Phase 3 and Phase 4 are merged, because sidechain tr
 - Independent Verification Gate is now part of Plan Runtime v3: non-trivial completed plans require reviewer PASS with command evidence or user waiver before final answer, and PlanCard projects required/passed/failed/waived/missing-evidence states.
 - Task Framework v1 is in place: `TaskStore`, `TaskManager`, `SidechainTranscript`, task lifecycle runtime events, frontend task projection, subagent task registration, Team wake task records, Scheduler task records, and task transcript API are all covered by focused tests.
 - Local microcompact is now part of `ContextPipeline`: older oversized plain text user/assistant messages are shortened into stable head/tail records before model requests while recent messages, tool results, tool_calls, and multimodal content are preserved.
-- The remaining upgrade lane is task transcript consolidation across more long-running tools plus model microcompact / reactive compact refinements on top of the file-backed tool result store.
+- The remaining upgrade lane is Project Execution Plan Runtime v4: discovery ledger, read-only exploration fanout, approved-plan permission tokens, plan-step task binding, verification matrix, reviewer transcripts, a Project Execution panel, and end-to-end smoke gates. After that, continue task transcript consolidation across more long-running tools plus model microcompact / reactive compact refinements on top of the file-backed tool result store.
 
 ## File Structure
 
@@ -3238,6 +3238,369 @@ npm --prefix desktop run typecheck
 ```
 
 Result: `6 passed`; typecheck passed. Full `make check` was run after implementation.
+
+## Phase 5.7: Project Execution and Plan Runtime v4
+
+This phase turns the existing Plan Runtime into a stronger real-project execution system. It follows `docs/claude-code-core-design/07-project-execution-plan-runtime.md` PE-10 through PE-18.
+
+### Task 6M: Plan Entry Runtime Contract
+
+Status: pending.
+
+**Files:**
+- Modify: `agent/control/plan_policy.py`
+- Modify: `agent/control/manager.py`
+- Modify: `agent/runner.py`
+- Modify: `agent/runtime/events.py`
+- Modify: `desktop/src/renderer/src/runtime/handlers/plans.ts`
+- Test: `tests/unit/test_plan_decision_policy.py`
+- Test: `tests/unit/test_control.py`
+
+- [ ] **Step 1: Add decision contract tests**
+
+Add tests that assert a high-impact multi-file request returns a required plan decision with reason, triggers, and readonly scopes; a focused single-file bugfix returns proceed; and a medium feature returns recommended.
+
+Run:
+
+```bash
+.venv/bin/python -m pytest tests/unit/test_plan_decision_policy.py -q
+```
+
+Expected: new assertions fail before the contract fields exist.
+
+- [ ] **Step 2: Add `PlanEntryDecision`**
+
+Extend the plan policy result with:
+
+```python
+@dataclass(frozen=True)
+class PlanEntryDecision:
+    decision: str
+    reason: str
+    triggers: list[str]
+    suggested_questions: list[str]
+    recommended_readonly_scopes: list[str]
+```
+
+Keep the existing `PlanDecision` API compatible by mapping it to `PlanEntryDecision` in `ControlManager.assess_plan_decision()`.
+
+- [ ] **Step 3: Emit plan entry runtime event**
+
+Add a runtime event carrying `decision`, `reason`, `triggers`, and `recommended_readonly_scopes` at the start of a turn. The event must not create a pending interaction by itself.
+
+- [ ] **Step 4: Verify**
+
+Run:
+
+```bash
+.venv/bin/python -m pytest tests/unit/test_plan_decision_policy.py tests/unit/test_control.py -q
+npm --prefix desktop run test -- planProjection
+```
+
+Expected: all tests pass.
+
+### Task 6N: Plan Discovery Ledger
+
+Status: pending.
+
+**Files:**
+- Modify: `agent/plans/models.py`
+- Modify: `agent/plans/store.py`
+- Modify: `agent/control/manager.py`
+- Modify: `agent/tools/read_file.py`
+- Modify: `agent/tools/grep.py`
+- Test: `tests/unit/test_plan_discovery_ledger.py`
+
+- [ ] **Step 1: Add ledger tests**
+
+Create tests that save read/search discoveries with file paths and evidence refs, reload the plan store, and assert `PlanQualityGate` can reject a non-trivial step with no file, discovery, or user-decision evidence.
+
+Run:
+
+```bash
+.venv/bin/python -m pytest tests/unit/test_plan_discovery_ledger.py -q
+```
+
+Expected: import or assertion failure before discovery models exist.
+
+- [ ] **Step 2: Add `PlanDiscovery` model**
+
+Persist discovery records under `PlanDraftState.discoveries` with `id`, `source`, `summary`, `files`, `symbols`, `evidence_refs`, and `created_at`.
+
+- [ ] **Step 3: Record discoveries from read/search tools in Plan mode**
+
+When `ControlManager.mode == "plan"`, allow `read_file` and `grep` to call a small manager method that records concise discovery summaries. Store artifact refs instead of large tool contents.
+
+- [ ] **Step 4: Verify**
+
+Run:
+
+```bash
+.venv/bin/python -m pytest tests/unit/test_plan_discovery_ledger.py tests/unit/test_plan_quality_gate.py -q
+```
+
+Expected: all tests pass.
+
+### Task 6O: Read-Only Exploration Fanout
+
+Status: pending.
+
+**Files:**
+- Modify: `agent/subagents/registry.py`
+- Modify: `agent/tools/subagent.py`
+- Modify: `agent/tasks/manager.py`
+- Modify: `agent/tasks/sidechain.py`
+- Modify: `agent/runtime/events.py`
+- Test: `tests/unit/test_plan_readonly_exploration.py`
+
+- [ ] **Step 1: Add fanout tests**
+
+Test that Plan mode allows `dispatch_subagent` only for read-only explorer/reviewer agent types, requires `scope_limit`, `expected_output`, and `evidence_required`, and rejects write-capable subagents.
+
+Run:
+
+```bash
+.venv/bin/python -m pytest tests/unit/test_plan_readonly_exploration.py -q
+```
+
+Expected: failure before the Plan-mode subagent allowlist exists.
+
+- [ ] **Step 2: Add read-only explorer policy**
+
+Expose a registry capability flag such as `plan_readonly_explorer=True`. The policy must be in the registry or permission layer, not in prompt text.
+
+- [ ] **Step 3: Write exploration results to plan discovery and sidechain**
+
+After a read-only exploration task finishes, append the transcript to `SidechainTranscript` and summarize its evidence into `PlanDiscovery`.
+
+- [ ] **Step 4: Verify**
+
+Run:
+
+```bash
+.venv/bin/python -m pytest tests/unit/test_plan_readonly_exploration.py tests/unit/test_subagent_task_sidechain.py -q
+```
+
+Expected: all tests pass.
+
+### Task 6P: Approved Plan Permission Tokens
+
+Status: pending.
+
+**Files:**
+- Modify: `agent/permissions/models.py`
+- Modify: `agent/permissions/manager.py`
+- Modify: `agent/control/manager.py`
+- Modify: `agent/plans/models.py`
+- Test: `tests/unit/test_plan_permission_tokens.py`
+
+- [ ] **Step 1: Add token tests**
+
+Test that approval creates a one-use token for an active step's exact non-high-risk command, consumes it once, revokes it after plan comment/revision/failure, and never allows high-risk shell commands.
+
+Run:
+
+```bash
+.venv/bin/python -m pytest tests/unit/test_plan_permission_tokens.py -q
+```
+
+Expected: failure before token model exists.
+
+- [ ] **Step 2: Add token model and store**
+
+Add `PlanPermissionToken` with `plan_id`, `step_id`, `tool_name`, `argument_hash`, `expires_at`, `uses_remaining`, and `reason`. Store tokens in `PlanRecord.metadata["permission_tokens"]`.
+
+- [ ] **Step 3: Integrate with permission manager**
+
+Check tokens before normal ask/deny decisions only for exact argument hashes and only after high-risk shell/path checks.
+
+- [ ] **Step 4: Verify**
+
+Run:
+
+```bash
+.venv/bin/python -m pytest tests/unit/test_plan_permission_tokens.py tests/unit/test_plan_command_permissions.py -q
+```
+
+Expected: all tests pass.
+
+### Task 6Q: Plan Step Task Binding
+
+Status: pending.
+
+**Files:**
+- Modify: `agent/plans/execution.py`
+- Modify: `agent/tasks/models.py`
+- Modify: `agent/tasks/manager.py`
+- Modify: `agent/tools/todo.py`
+- Modify: `agent/runtime/events.py`
+- Modify: `desktop/src/renderer/src/runtime/handlers/tasks.ts`
+- Test: `tests/unit/test_plan_task_binding.py`
+
+- [ ] **Step 1: Add binding tests**
+
+Test that approving a plan creates or binds one `TaskRecord(kind="plan_step")` per step, the active step task enters running, pending steps enter queued, and restart can recover the mapping.
+
+Run:
+
+```bash
+.venv/bin/python -m pytest tests/unit/test_plan_task_binding.py -q
+```
+
+Expected: failure before plan-step task binding exists.
+
+- [ ] **Step 2: Add plan-step task metadata**
+
+Extend task metadata with `plan_id`, `plan_step_id`, `sequence`, and `verification_status`.
+
+- [ ] **Step 3: Write tool and verification output to step sidechain**
+
+When a tool call is associated with the active plan step, append a concise sidechain entry with tool name, summary, artifact refs, and verification result.
+
+- [ ] **Step 4: Verify**
+
+Run:
+
+```bash
+.venv/bin/python -m pytest tests/unit/test_plan_task_binding.py tests/unit/test_tasks_store.py tests/unit/test_sidechain_transcript.py -q
+npm --prefix desktop run test -- taskProjection
+```
+
+Expected: all tests pass.
+
+### Task 6R: Verification Matrix
+
+Status: pending.
+
+**Files:**
+- Modify: `agent/plans/verification.py`
+- Modify: `agent/plans/evidence.py`
+- Modify: `agent/control/manager.py`
+- Modify: `agent/runner.py`
+- Test: `tests/unit/test_plan_verification_matrix.py`
+
+- [ ] **Step 1: Add matrix tests**
+
+Test that multiple required commands must all pass, optional command failure becomes a risk note, manual verification requires external evidence, and skipped requirements require a reason.
+
+Run:
+
+```bash
+.venv/bin/python -m pytest tests/unit/test_plan_verification_matrix.py -q
+```
+
+Expected: failure before verification requirements exist.
+
+- [ ] **Step 2: Add requirement model**
+
+Add `VerificationRequirement` with `id`, `kind`, `required`, `command`, `description`, `status`, `evidence_refs`, and `reason`.
+
+- [ ] **Step 3: Map legacy commands**
+
+Map `PlanStep.commands` into required command requirements so existing plans remain compatible.
+
+- [ ] **Step 4: Gate completion and final answer**
+
+Update `PlanEvidenceGate` and final-answer gate so required matrix items must pass before step completion or final answer.
+
+- [ ] **Step 5: Verify**
+
+Run:
+
+```bash
+.venv/bin/python -m pytest tests/unit/test_plan_verification_matrix.py tests/unit/test_plan_evidence_gate.py tests/unit/test_plan_runtime.py -q
+```
+
+Expected: all tests pass.
+
+### Task 6S: Reviewer Task Transcript
+
+Status: pending.
+
+**Files:**
+- Modify: `agent/control/manager.py`
+- Modify: `agent/tasks/manager.py`
+- Modify: `agent/tasks/sidechain.py`
+- Modify: `desktop/src/renderer/src/components/chat/PlanCard.vue`
+- Test: `tests/unit/test_plan_reviewer_task_transcript.py`
+- Test: `desktop/src/renderer/src/runtime/planProjection.test.ts`
+
+- [ ] **Step 1: Add reviewer transcript tests**
+
+Test that independent verification creates a verification task, stores reviewer input/output in sidechain, writes task id into `PlanRecord.verification`, and survives replay.
+
+Run:
+
+```bash
+.venv/bin/python -m pytest tests/unit/test_plan_reviewer_task_transcript.py -q
+npm --prefix desktop run test -- planProjection
+```
+
+Expected: failures before reviewer task ids and transcript links exist.
+
+- [ ] **Step 2: Bind reviewer evidence to task id**
+
+Persist `task_id` and sidechain offsets on independent verification evidence.
+
+- [ ] **Step 3: Render transcript link**
+
+Show a reviewer transcript link in PlanCard when evidence contains `task_id`.
+
+- [ ] **Step 4: Verify**
+
+Run:
+
+```bash
+.venv/bin/python -m pytest tests/unit/test_plan_reviewer_task_transcript.py tests/unit/test_plan_independent_verification.py -q
+npm --prefix desktop run test -- planProjection taskProjection
+```
+
+Expected: all tests pass.
+
+### Task 6T: Project Execution Panel and Smoke Gate
+
+Status: pending.
+
+**Files:**
+- Create: `desktop/src/renderer/src/views/ProjectExecutionView.vue`
+- Create: `desktop/src/renderer/src/components/panels/ProjectExecutionPanel.vue`
+- Modify: `desktop/src/renderer/src/router.ts`
+- Modify: `desktop/src/renderer/src/runtime/handlers/plans.ts`
+- Modify: `desktop/src/renderer/src/runtime/handlers/tasks.ts`
+- Create: `tests/integration/test_project_execution_flow.py`
+
+- [ ] **Step 1: Add projection and smoke tests**
+
+Add a frontend projection test for the Project Execution panel data model, and a Python integration test that covers required plan, exploration, approval, failed verification repair, reviewer PASS, and compact/restart recovery using fake tools/providers.
+
+Run:
+
+```bash
+.venv/bin/python -m pytest tests/integration/test_project_execution_flow.py -q
+npm --prefix desktop run test -- planProjection taskProjection
+```
+
+Expected: tests fail before panel selectors and smoke harness exist.
+
+- [ ] **Step 2: Build panel selectors**
+
+Expose derived data for active plan, active step, discoveries, verification matrix, reviewer transcript, and approval/comment history from replayed runtime state.
+
+- [ ] **Step 3: Add panel route**
+
+Add a route and panel component that renders execution state without depending on Chat scroll position.
+
+- [ ] **Step 4: Verify full project execution gate**
+
+Run:
+
+```bash
+.venv/bin/python -m pytest tests/integration/test_project_execution_flow.py tests/unit/test_agent_prompt_contracts.py -q
+npm --prefix desktop run test -- planProjection taskProjection
+npm --prefix desktop run typecheck
+```
+
+Expected: all tests pass.
 
 ## Phase 6: Task Framework and Sidechain Transcript
 
