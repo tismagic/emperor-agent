@@ -6,7 +6,7 @@ from typing import Any
 from uuid import uuid4
 
 from ..permissions import PermissionManager
-from ..plans import PlanRecord, PlanStatus, PlanStep, PlanStore
+from ..plans import PlanExecutionState, PlanRecord, PlanStatus, PlanStep, PlanStore
 from .clarification import ClarificationAssessment, ClarificationPolicy
 from .models import (
     ControlMode,
@@ -36,6 +36,10 @@ class ControlManager:
         self.policy = ControlPolicy(self)
         self.clarification_policy = ClarificationPolicy()
         self.permission_manager = PermissionManager(self)
+        self.todo_store = None
+
+    def set_todo_store(self, todo_store) -> None:
+        self.todo_store = todo_store
 
     @property
     def mode(self) -> str:
@@ -204,6 +208,7 @@ class ControlManager:
         interaction = self._require_pending(interaction_id, InteractionKind.PLAN)
         updated = interaction.touch(status=InteractionStatus.APPROVED.value)
         self._update_plan_status(updated, PlanStatus.APPROVED.value, approved=True)
+        plan_record = self._activate_approved_plan(updated)
         state = self.store.load()
         state.mode = self._restore_mode(state)
         state.previous_mode = None
@@ -215,7 +220,13 @@ class ControlManager:
         return ControlResume(
             interaction=updated.to_dict(),
             message=message,
-            event={"event": "plan_approved", "interaction": updated.to_dict(), "control": self.payload()},
+            event={
+                "event": "plan_approved",
+                "interaction": updated.to_dict(),
+                "control": self.payload(),
+                **({"plan": plan_record.to_dict()} if plan_record is not None else {}),
+                **({"todos": list(self.todo_store.todos)} if self.todo_store is not None else {}),
+            },
         )
 
     def cancel(self, interaction_id: str) -> dict[str, Any]:
@@ -380,6 +391,20 @@ class ControlManager:
         if approved:
             payload["approved_at"] = now
         self.plan_store.save(PlanRecord.from_dict(payload))
+
+    def _activate_approved_plan(self, interaction: Interaction) -> PlanRecord | None:
+        plan_id = str(interaction.meta.get("plan_id") or "")
+        if not plan_id:
+            return None
+        record = self.plan_store.get(plan_id)
+        if record is None:
+            return None
+        if self.todo_store is None or not record.steps:
+            return record
+        activated = PlanExecutionState(record).start_next_step()
+        self.plan_store.save(activated)
+        self.todo_store.sync_from_plan_steps([step.to_dict() for step in activated.steps])
+        return activated
 
     @staticmethod
     def _restore_mode(state: ControlState) -> str:

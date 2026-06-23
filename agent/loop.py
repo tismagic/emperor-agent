@@ -124,6 +124,7 @@ class AgentLoop:
         self.registry.register(ProposePlanTool(self.control_manager))
 
         self.todos = TodoStore()
+        self.control_manager.set_todo_store(self.todos)
         self.registry.register(UpdateTodosTool(self.todos))
 
         self.subagent_registry = SubagentRegistry(

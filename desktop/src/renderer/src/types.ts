@@ -767,7 +767,7 @@ export type WsEvent = ({ seq?: number; ts?: number; turn_id?: string; client_mes
   | { event: 'ask_answered'; interaction?: ControlInteraction }
   | { event: 'plan_draft'; interaction?: ControlInteraction }
   | { event: 'plan_comment_added'; interaction?: ControlInteraction; comment?: string }
-  | { event: 'plan_approved'; interaction?: ControlInteraction; control?: ControlPayload }
+  | { event: 'plan_approved'; interaction?: ControlInteraction; control?: ControlPayload; plan?: RuntimePlanRecord; todos?: TodoItem[] }
   | { event: 'plan_runtime_update'; plan?: RuntimePlanRecord }
   | { event: 'plan_step_update'; plan_id?: string; step?: RuntimePlanStep }
   | { event: 'plan_verification_start'; plan_id?: string; step_id?: string; command?: string }
