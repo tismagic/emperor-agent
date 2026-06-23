@@ -20,26 +20,42 @@ async def _body(request: web.Request) -> dict:
 def register(app: web.Application, state) -> None:
     loop = state.loop
 
-    async def list_sessions(_req: web.Request) -> web.Response:
-        items = loop.session_store.list()
+    async def list_sessions(req: web.Request) -> web.Response:
+        include_archived = str(req.query.get("archived") or "").lower() in {"1", "true", "yes"}
+        items = loop.session_store.list(include_archived=include_archived)
         return web.json_response(items, dumps=lambda v: _json.dumps(v, ensure_ascii=False))
 
     async def create_session(req: web.Request) -> web.Response:
         body = await _body(req)
         title = str(body.get("title", "") or "Untitled")
-        entry = loop.session_store.create(title)
+        mode = str(body.get("mode") or "chat")
+        project = body.get("project") if isinstance(body.get("project"), dict) else None
+        if mode == "build" and project is None:
+            project_path = str(body.get("project_path") or "").strip()
+            if not project_path:
+                raise web.HTTPBadRequest(reason="Build session requires project_path")
+            try:
+                project = state.loop.project_store.resolve(project_path)
+            except ValueError as exc:
+                raise web.HTTPBadRequest(reason=str(exc)) from exc
+        entry = loop.session_store.create(title, mode=mode, project=project)
         return web.json_response(entry, status=201, dumps=lambda v: _json.dumps(v, ensure_ascii=False))
 
     async def rename_session(req: web.Request) -> web.Response:
         sid = req.match_info["id"]
         body = await _body(req)
+        if "archived" in body:
+            entry = loop.session_store.archive(sid) if body.get("archived") else loop.session_store.restore(sid)
+            if entry is None:
+                raise web.HTTPNotFound()
+            return web.json_response(entry, dumps=lambda v: _json.dumps(v, ensure_ascii=False))
         title = str(body.get("title", "")).strip()
         if not title:
             raise web.HTTPBadRequest(reason="title is required")
         ok = loop.session_store.rename(sid, title)
         if not ok:
             raise web.HTTPNotFound()
-        items = loop.session_store.list()
+        items = loop.session_store.list(include_archived=True)
         entry = next((e for e in items if e["id"] == sid), None)
         return web.json_response(entry or {}, dumps=lambda v: _json.dumps(v, ensure_ascii=False))
 
@@ -52,7 +68,7 @@ def register(app: web.Application, state) -> None:
 
     async def activate_session(req: web.Request) -> web.Response:
         sid = req.match_info["id"]
-        loop.activate_session(sid)
+        state.activate_session(sid)
         return web.json_response({"active": sid, "complete": True}, dumps=lambda v: _json.dumps(v, ensure_ascii=False))
 
     app.router.add_get("/api/sessions", list_sessions)

@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, protocol, net } from 'electron'
+import { app, BrowserWindow, dialog, ipcMain, protocol, net, type OpenDialogOptions } from 'electron'
 import { spawn, type ChildProcess } from 'node:child_process'
 import * as fs from 'node:fs'
 import * as path from 'node:path'
@@ -24,6 +24,17 @@ let didLoadRetry = false
 protocol.registerSchemesAsPrivileged([
   { scheme: 'app', privileges: { standard: true, secure: true, supportFetchAPI: true } },
 ])
+
+ipcMain.handle('emperor:select-directory', async () => {
+  const options: OpenDialogOptions = {
+    properties: ['openDirectory'],
+  }
+  const result = mainWindow
+    ? await dialog.showOpenDialog(mainWindow, options)
+    : await dialog.showOpenDialog(options)
+  if (result.canceled || !result.filePaths.length) return null
+  return result.filePaths[0]
+})
 
 function errMessage(err: unknown): string {
   if (err instanceof Error) return err.message

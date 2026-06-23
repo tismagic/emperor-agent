@@ -58,10 +58,34 @@ export interface TokenTotals extends TokenStatsRow {
   calls?: number
 }
 
+export type SessionMode = 'chat' | 'build'
+
+export interface ProjectInfo {
+  project_id: string
+  project_path: string
+  project_name: string
+  summary?: string
+  agents_path?: string
+  created_at?: string
+  updated_at?: string
+  version?: number
+}
+
+export interface MemoryContextPayload {
+  mode?: SessionMode | string
+  session?: SessionInfo | null
+  sources?: string[]
+  project?: ProjectInfo | null
+  projectIndexSummary?: string
+  projectMemory?: string
+}
+
 export interface MemoryPayload {
   long_term?: string
   today_episode?: string
   episodes?: string[]
+  context?: MemoryContextPayload
+  projects?: ProjectInfo[]
   history?: HistoryStats
   tokens?: Record<string, TokenStatsRow>
   tokensByModel?: Record<string, TokenStatsRow>
@@ -361,6 +385,7 @@ export interface BootstrapPayload {
   desktopPet?: DesktopPetPayload
   runtime?: RuntimeReplayPayload
   diagnostics?: DiagnosticsPayload
+  projects?: ProjectInfo[]
   context_used?: number
   unarchivedHistory?: RuntimeHistoryItem[]
 }
@@ -619,6 +644,7 @@ export interface SchedulerJobPayload {
   kind: SchedulerPayloadKind
   message: string
   target?: string | null
+  projectId?: string | null
   deliver?: boolean
   meta?: Record<string, unknown>
 }
@@ -677,6 +703,8 @@ export type WsEvent = ({ seq?: number; ts?: number; turn_id?: string; client_mes
   | { event: 'message_delta'; delta?: string }
   | { event: 'context_usage'; used?: number; max?: number; threshold?: number; usage_type?: string; model_role?: string; model?: string; provider?: string; route_reason?: string; estimated_input_tokens?: number }
   | { event: 'model_route_fallback'; from_model?: string; to_model?: string; reason?: string; usage_type?: string }
+  | { event: 'session_created'; session?: SessionInfo; client_draft_id?: string }
+  | { event: 'session_title_updated'; session?: SessionInfo }
   | { event: 'external_inbound'; message?: Record<string, unknown> }
   | { event: 'external_queued'; message?: Record<string, unknown>; reason?: string }
   | { event: 'external_outbound_queued'; message?: Record<string, unknown> }
@@ -725,5 +753,25 @@ export interface SessionInfo {
   created_at: string
   updated_at: string
   preview: string
+  mode?: SessionMode
+  project_id?: string | null
+  project_path?: string | null
+  project_name?: string | null
+  message_count?: number
+  title_status?: string
+  archived_at?: string | null
   version: number
+  draft?: boolean
+}
+
+export type SidebarSortMode = 'manual' | 'created_at' | 'updated_at'
+
+export interface SidebarState {
+  section_order: Array<'projects' | 'chats'>
+  project_sort: SidebarSortMode
+  chat_sort: SidebarSortMode
+  project_order: string[]
+  chat_order: string[]
+  project_session_order: Record<string, string[]>
+  collapsed_project_ids: string[]
 }

@@ -445,69 +445,112 @@ async function runTest(kind: 'text' | 'vision', role: 'main' | 'secondary' = 'ma
         </div>
 
         <div class="model-form-v2">
-          <label class="form-row">
-            <span class="form-label">名称（唯一 key）</span>
-            <input
-              :value="editing.name"
-              class="form-input"
-              placeholder="deepseek-personal"
-              @input="onNameChange(($event.target as HTMLInputElement).value)"
-            />
-          </label>
-          <label class="form-row">
-            <span class="form-label">显示标签（可选）</span>
-            <input v-model="editing.label" class="form-input" placeholder="DeepSeek 个人 key" />
-          </label>
+          <section class="model-form-section">
+            <div class="model-form-section-head">
+              <h4>身份</h4>
+              <span>用于侧边栏与快捷切换显示</span>
+            </div>
+            <div class="model-form-grid">
+              <label class="form-row">
+                <span class="form-label">名称（唯一 key）</span>
+                <input
+                  :value="editing.name"
+                  class="form-input"
+                  placeholder="deepseek-personal"
+                  @input="onNameChange(($event.target as HTMLInputElement).value)"
+                />
+              </label>
+              <label class="form-row">
+                <span class="form-label">显示标签（可选）</span>
+                <input v-model="editing.label" class="form-input" placeholder="DeepSeek 个人 key" />
+              </label>
+            </div>
+          </section>
 
-          <label class="form-row">
-            <span class="form-label">Provider</span>
-            <select v-model="editing.provider" class="form-select" @change="onProviderChange">
-              <optgroup v-for="group in groupedOptions" :key="group.region" :label="group.label">
-                <option v-for="opt in group.items" :key="opt.name" :value="opt.name">
-                  {{ opt.displayName || opt.name }}
-                </option>
-              </optgroup>
-            </select>
-          </label>
+          <section class="model-form-section">
+            <div class="model-form-section-head">
+              <h4>容量</h4>
+              <span>上下文窗口与单次输出长度在这里设置</span>
+            </div>
+            <div class="model-form-grid capacity-grid">
+              <label class="form-row">
+                <span class="form-label">Context Window</span>
+                <input
+                  type="number" min="1000" step="1000"
+                  :value="editing.contextWindowTokens ?? ''"
+                  class="form-input"
+                  :placeholder="String(defaults.contextWindowTokens)"
+                  @input="editing.contextWindowTokens = parseInt(($event.target as HTMLInputElement).value) || null"
+                />
+              </label>
+              <label class="form-row">
+                <span class="form-label">Max Tokens</span>
+                <input
+                  type="number" min="0" step="100"
+                  :value="editing.maxTokens ?? ''"
+                  class="form-input"
+                  :placeholder="String(defaults.maxTokens)"
+                  @input="editing.maxTokens = parseInt(($event.target as HTMLInputElement).value) || null"
+                />
+              </label>
+            </div>
+          </section>
 
-          <label class="form-row">
-            <span class="form-label">Main Model ID</span>
-            <input
-              :value="editing.mainModelId || editing.id || ''"
-              class="form-input"
-              placeholder="例：deepseek-chat / claude-opus-4-7 / gpt-5"
-              @input="editing.mainModelId = ($event.target as HTMLInputElement).value; editing.id = editing.mainModelId"
-            />
-          </label>
-          <label class="form-row">
-            <span class="form-label">Secondary Model ID</span>
-            <input
-              v-model="editing.secondaryModelId"
-              class="form-input"
-              placeholder="例：deepseek-chat / gpt-5-mini / qwen-plus"
-            />
-          </label>
+          <section class="model-form-section">
+            <div class="model-form-section-head">
+              <h4>模型</h4>
+              <span>Main 处理主任务，Secondary 处理轻量任务</span>
+            </div>
+            <div class="model-form-grid">
+              <label class="form-row">
+                <span class="form-label">Provider</span>
+                <select v-model="editing.provider" class="form-select" @change="onProviderChange">
+                  <optgroup v-for="group in groupedOptions" :key="group.region" :label="group.label">
+                    <option v-for="opt in group.items" :key="opt.name" :value="opt.name">
+                      {{ opt.displayName || opt.name }}
+                    </option>
+                  </optgroup>
+                </select>
+              </label>
+              <label class="form-row">
+                <span class="form-label">Main Model ID</span>
+                <input
+                  :value="editing.mainModelId || editing.id || ''"
+                  class="form-input"
+                  placeholder="例：deepseek-chat / claude-opus-4-7 / gpt-5"
+                  @input="editing.mainModelId = ($event.target as HTMLInputElement).value; editing.id = editing.mainModelId"
+                />
+              </label>
+              <label class="form-row span-2">
+                <span class="form-label">Secondary Model ID</span>
+                <input
+                  v-model="editing.secondaryModelId"
+                  class="form-input"
+                  placeholder="例：deepseek-chat / gpt-5-mini / qwen-plus"
+                />
+              </label>
+            </div>
+          </section>
 
-          <label v-if="!editingHidesApiKey" class="form-row">
-            <span class="form-label">API Key</span>
-            <input
-              v-model="editing.apiKey"
-              class="form-input"
-              type="password"
-              :placeholder="editingProviderSpec?.isLocal ? '(本地服务通常不需要)' : '保存为明文，仅本地，不回传明文'"
-            />
-          </label>
-          <div v-else class="empty-note compact">
-            <span v-if="editingProviderSpec?.isOauth">该 provider 走 OAuth 授权流程，无需 API Key。</span>
-            <span v-else-if="editingProviderSpec?.isLocal">本地服务通常不需要 API Key（除非你单独开了认证）。</span>
-          </div>
-
-          <details class="advanced-panel">
-            <summary class="advanced-toggle">
-              <span>▸ 高级（apiBase / 推理 / 上下文 / extras）</span>
-              <small>未填则用 provider 默认 / 全局兜底</small>
-            </summary>
-            <div class="advanced-grid">
+          <section class="model-form-section">
+            <div class="model-form-section-head">
+              <h4>连接</h4>
+              <span>凭证只保存在本地配置文件</span>
+            </div>
+            <div class="model-form-grid">
+              <label v-if="!editingHidesApiKey" class="form-row">
+                <span class="form-label">API Key</span>
+                <input
+                  v-model="editing.apiKey"
+                  class="form-input"
+                  type="password"
+                  :placeholder="editingProviderSpec?.isLocal ? '(本地服务通常不需要)' : '保存为明文，仅本地，不回传明文'"
+                />
+              </label>
+              <div v-else class="empty-note compact">
+                <span v-if="editingProviderSpec?.isOauth">该 provider 走 OAuth 授权流程，无需 API Key。</span>
+                <span v-else-if="editingProviderSpec?.isLocal">本地服务通常不需要 API Key（除非你单独开了认证）。</span>
+              </div>
               <label class="form-row">
                 <span class="form-label">API Base</span>
                 <input
@@ -517,16 +560,15 @@ async function runTest(kind: 'text' | 'vision', role: 'main' | 'secondary' = 'ma
                   @input="editing.apiBase = ($event.target as HTMLInputElement).value || null"
                 />
               </label>
-              <label class="form-row">
-                <span class="form-label">Max Tokens（覆写）</span>
-                <input
-                  type="number" min="0" step="100"
-                  :value="editing.maxTokens ?? ''"
-                  class="form-input"
-                  :placeholder="String(defaults.maxTokens)"
-                  @input="editing.maxTokens = parseInt(($event.target as HTMLInputElement).value) || null"
-                />
-              </label>
+            </div>
+          </section>
+
+          <details class="advanced-panel">
+            <summary class="advanced-toggle">
+              <span>高级</span>
+              <small>Temperature / 推理兼容 / extras</small>
+            </summary>
+            <div class="advanced-grid">
               <label class="form-row">
                 <span class="form-label">Temperature（覆写）</span>
                 <input
@@ -538,23 +580,13 @@ async function runTest(kind: 'text' | 'vision', role: 'main' | 'secondary' = 'ma
                 />
               </label>
               <label class="form-row">
-                <span class="form-label">Context Window（覆写）</span>
-                <input
-                  type="number" min="1000" step="1000"
-                  :value="editing.contextWindowTokens ?? ''"
-                  class="form-input"
-                  :placeholder="String(defaults.contextWindowTokens)"
-                  @input="editing.contextWindowTokens = parseInt(($event.target as HTMLInputElement).value) || null"
-                />
-              </label>
-              <label class="form-row">
-                <span class="form-label">Reasoning Effort</span>
+                <span class="form-label">Reasoning Effort（兼容）</span>
                 <select
                   :value="editing.reasoningEffort ?? ''"
                   class="form-select"
                   @change="editing.reasoningEffort = ($event.target as HTMLSelectElement).value || null"
                 >
-                  <option value="">默认（继承全局）</option>
+                  <option value="">默认（由 Composer 快捷切换）</option>
                   <option value="none">none</option>
                   <option value="low">low</option>
                   <option value="medium">medium</option>

@@ -5,6 +5,7 @@
 
 interface EmperorBridge {
   backendBaseUrl?: string
+  selectDirectory?: () => Promise<string | null>
 }
 
 function bridge(): EmperorBridge | undefined {
@@ -31,4 +32,9 @@ export function wsUrl(path: string): string {
   const { protocol, host } = loc()
   const wsProto = protocol === 'https:' ? 'wss:' : 'ws:'
   return `${wsProto}//${host}${path}`
+}
+
+export async function selectDirectory(): Promise<string | null> {
+  const picker = bridge()?.selectDirectory
+  return typeof picker === 'function' ? picker() : null
 }

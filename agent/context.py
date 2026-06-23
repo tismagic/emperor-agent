@@ -43,6 +43,10 @@ class ContextBuilder:
         self.memory = memory
         self.memory_budget_chars = memory_budget_chars
         self.subagent_registry = None
+        self.session_mode = "chat"
+        self.project_agents = ""
+        self.project_path = ""
+        self.project_index_summary = ""
         self._env = Environment(
             loader=FileSystemLoader(docs_dir / "agent"),
             autoescape=select_autoescape(enabled_extensions=("html",)),
@@ -50,6 +54,19 @@ class ContextBuilder:
 
     def set_subagent_registry(self, subagent_registry) -> None:
         self.subagent_registry = subagent_registry
+
+    def set_session_scope(
+        self,
+        *,
+        mode: str = "chat",
+        project_agents: str = "",
+        project_path: str = "",
+        project_index_summary: str = "",
+    ) -> None:
+        self.session_mode = "build" if mode == "build" else "chat"
+        self.project_agents = str(project_agents or "").strip()
+        self.project_path = str(project_path or "").strip()
+        self.project_index_summary = str(project_index_summary or "").strip()
 
     def render_template(self, name: str, **kwargs) -> str:
         try:
@@ -85,9 +102,14 @@ class ContextBuilder:
                 version=", ".join(versions) or None,
             ))
 
+        workspace = (
+            self.project_path
+            if self.session_mode == "build" and self.project_path
+            else str(self.docs_dir.parent)
+        )
         identity = self.render_template(
             "identity.md",
-            workspace=str(self.docs_dir.parent),
+            workspace=workspace,
             subagents_summary=self._subagents_summary(),
         )
         if identity:
@@ -99,7 +121,20 @@ class ContextBuilder:
                 version=_prompt_version(identity),
             ))
 
-        if self.memory:
+        if self.session_mode == "build":
+            if self.project_agents:
+                sections.append(ContextSection(
+                    name="project_agents",
+                    content=(
+                        "# Project AGENTS.md\n\n"
+                        f"Project path: {self.project_path or '(unknown)'}\n\n"
+                        f"{_clip_text(self.project_agents, self.memory_budget_chars, label='Project AGENTS.md')}"
+                    ),
+                    source=str(Path(self.project_path) / "AGENTS.md") if self.project_path else "Project AGENTS.md",
+                    priority=85,
+                    budget_chars=self.memory_budget_chars,
+                ))
+        elif self.memory:
             memory = self.memory.read_memory().strip()
             if memory:
                 budgeted = _clip_text(memory, self.memory_budget_chars, label="Long-term Memory")
@@ -109,6 +144,14 @@ class ContextBuilder:
                     source=str(getattr(self.memory, "memory_file", "memory")),
                     priority=80,
                     budget_chars=self.memory_budget_chars,
+                ))
+            if self.project_index_summary:
+                sections.append(ContextSection(
+                    name="project_index_summary",
+                    content=f"# Project Index Summary\n\n{self.project_index_summary}",
+                    source="memory/projects/index.json",
+                    priority=75,
+                    budget_chars=None,
                 ))
 
         always_skills = self.skills.get_always_skills()

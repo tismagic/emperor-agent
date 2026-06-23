@@ -29,6 +29,9 @@ class ChatService:
         ws = web.WebSocketResponse(heartbeat=30)
         await ws.prepare(request)
         last_seq = self.state.safe_int(request.query.get("last_seq"), 0)
+        session_id = str(request.query.get("session") or "").strip()
+        if session_id and not session_id.startswith("draft:") and hasattr(self.state, "activate_session"):
+            self.state.activate_session(session_id)
         await self._attach_client(ws, last_seq)
 
         try:
@@ -78,6 +81,8 @@ class ChatService:
             attachment_ids = [str(a) for a in attachment_ids if isinstance(a, (str, int))]
             if not text and not attachment_ids:
                 raise ValueError("Message is empty")
+            session_id = str(payload.get("session_id") or "").strip() or None
+            draft_session = payload.get("draft_session") if isinstance(payload.get("draft_session"), dict) else None
 
             requested_skill_names = parse_requested_skills(
                 payload.get("requested_skills"),
@@ -119,6 +124,8 @@ class ChatService:
                 memory_extra=extra,
                 turn_id=turn_id,
                 label="Chat turn",
+                session_id=session_id,
+                draft_session=draft_session,
             )
         except TurnPaused:
             self.state.active_turn = False
@@ -226,7 +233,8 @@ class ChatService:
             return
         async with self.state.lock:
             self.state.history.append({"role": "user", "content": message, "turn_id": turn_id})
-            self.state.loop.memory.append_history(
+            memory_store = getattr(self.state.loop, "active_memory_store", self.state.loop.memory)
+            memory_store.append_history(
                 "user",
                 message,
                 extra={"type": "control_response", "displayContent": display, "turn_id": turn_id},
@@ -239,7 +247,7 @@ class ChatService:
                 ),
                 turn_id=turn_id,
             )
-            self.state.loop.memory.clear_checkpoint()
+            memory_store.clear_checkpoint()
 
     async def _resume_control_turn(
         self,
@@ -251,7 +259,8 @@ class ChatService:
     ) -> None:
         async with self.state.lock:
             self.state.history.append({"role": "user", "content": message, "turn_id": turn_id})
-            self.state.loop.memory.append_history(
+            memory_store = getattr(self.state.loop, "active_memory_store", self.state.loop.memory)
+            memory_store.append_history(
                 "user",
                 message,
                 extra={"type": "control_response", "displayContent": display, "turn_id": turn_id},

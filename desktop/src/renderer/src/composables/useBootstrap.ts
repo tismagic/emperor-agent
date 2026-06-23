@@ -12,11 +12,12 @@ export function useBootstrap(showToast: (message: string) => void) {
   const configContent = ref('')
   const mcpContent = ref('')
 
-  async function loadBootstrap(showLoading = true) {
+  async function loadBootstrap(showLoading = true, sessionId = '') {
     try {
       if (showLoading) loading.value = true
       error.value = ''
-      boot.value = await api<BootstrapPayload>('/api/bootstrap')
+      const suffix = sessionId ? `?session=${encodeURIComponent(sessionId)}` : ''
+      boot.value = await api<BootstrapPayload>(`/api/bootstrap${suffix}`)
       modelDraftProvider.value = boot.value.modelConfig?.config?.agents?.defaults?.provider || null
     } catch (err) {
       error.value = err instanceof Error ? err.message : String(err)

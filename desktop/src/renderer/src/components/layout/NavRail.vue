@@ -3,8 +3,9 @@ import { computed } from 'vue'
 import { useRoute } from 'vue-router'
 import { useAppContext } from '../../composables/useAppContext'
 import { navOrder } from '../../router'
-import { actionIcons, brandIcon, navIcon as resolveNavIcon } from '../../icons'
+import { actionIcons, navIcon as resolveNavIcon } from '../../icons'
 import { useTheme } from '../../composables/useTheme'
+import logoMarkUrl from '../../../../../../assets/generated/emperor-agent-logo-mark.png'
 
 const ctx = useAppContext()
 const route = useRoute()
@@ -34,7 +35,7 @@ const modelLabel = computed(
 <template>
   <aside class="nav-rail" aria-label="Primary navigation">
     <div class="rail-brand" :title="modelLabel">
-      <component :is="brandIcon" :size="18" />
+      <img :src="logoMarkUrl" class="rail-brand-img" alt="" draggable="false" />
     </div>
 
     <div class="rail-status" :title="ctx.runtimeText()">

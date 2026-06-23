@@ -12,6 +12,8 @@ desktop-pet/node_modules/
 desktop/node_modules/
 desktop/out/
 desktop/dist/
+desktop/screenshots/
+desktop/test-results/
 desktop/.uiplan-progress.json
 templates/USER.local.md
 templates/*.local.md
@@ -19,6 +21,7 @@ logs/
 
 # 运行期产生的私人数据（长期记忆 / 会话历史 / token 用量）
 memory/
+/sessions/
 
 # Agent Team 运行期状态（队友配置 / inbox / 独立 thread）
 .team/

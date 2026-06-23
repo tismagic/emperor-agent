@@ -61,7 +61,8 @@ class SchedulerJobExecutor:
         async with self.state.lock:
             if deliver:
                 self.state.history.append({"role": "user", "content": model_content, "turn_id": turn_id})
-            self.state.loop.memory.append_history(
+            memory_store = getattr(self.state.loop, "active_memory_store", self.state.loop.memory)
+            memory_store.append_history(
                 "user",
                 model_content,
                 extra={
@@ -103,18 +104,22 @@ class SchedulerJobExecutor:
     async def _run_team_wake(self, job: SchedulerJob) -> str:
         target = str(job.payload.target or "").strip()
         message = job.payload.message.strip()
+        project_id = str(job.payload.project_id or "").strip()
         if not target:
             raise ValueError("team_wake scheduler job requires payload.target")
         if not message:
             raise ValueError("team_wake scheduler job requires payload.message")
+        if not project_id:
+            raise ValueError("team_wake scheduler job requires payload.project_id")
 
         async def emit(event: dict) -> None:
             if job.payload.deliver:
                 await self.state._broadcast_event(event)
 
         loop = asyncio.get_running_loop()
+        manager = self.state.loop.team_manager_for_project(project_id)
         return await asyncio.to_thread(
-            self.state.loop.team_manager.send_message,
+            manager.send_message,
             to=target,
             content=message,
             wake=True,
@@ -140,13 +145,17 @@ class SchedulerJobExecutor:
                 f"archives={stats.get('archiveFiles', 0)}, latestSeq={stats.get('latestSeq', 0)}"
             )
         if event_name == "team-stale-recovery":
-            before = [
-                member.name
-                for member in self.state.loop.team_manager.store.list_members()
-                if member.status == "working"
-            ]
-            self.state.loop.team_manager.store.mark_stale_working_offline()
-            return f"team-stale-recovery checked: recovered={len(before)}"
+            managers = list(getattr(self.state.loop, "_team_managers", {}).values())
+            recovered = 0
+            for manager in managers:
+                before = [
+                    member.name
+                    for member in manager.store.list_members()
+                    if member.status == "working"
+                ]
+                manager.store.mark_stale_working_offline()
+                recovered += len(before)
+            return f"team-stale-recovery checked: recovered={recovered}"
         if event_name == "token-ledger-maintenance":
             totals = self.state.loop.token_tracker.totals()
             return (

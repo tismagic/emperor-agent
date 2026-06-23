@@ -20,6 +20,8 @@ from ..loop import AgentLoop
 from ..runtime import RuntimeEventStore
 from ..runtime import events as runtime_events
 from ..runtime.active import ActiveTaskInfo, ActiveTaskRegistry
+from ..sessions.title import SessionTitleService
+from ..sidebar_state import SidebarStateStore
 from ..watchlist import WatchlistService
 from .mutation_guard import assert_web_mutation_allowed
 from .services import (
@@ -55,6 +57,8 @@ class WebUIState:
         self.loop = AgentLoop(root=self.root, verbose=False, startup_compaction=False)
         self.loop.init_mcp()
         self.mainline_turn_service = MainlineTurnService(self)
+        self.session_title_service = SessionTitleService(self.loop.model_router)
+        self.sidebar_state = SidebarStateStore(self.root)
         self.external_bridge = ExternalBridgeService(
             submit_turn=self.mainline_turn_service.submit,
             can_accept_turn=self._external_can_accept_turn,
@@ -75,7 +79,7 @@ class WebUIState:
         self.attachments = AttachmentStore(self.root)
         self.lock = asyncio.Lock()
         self.clients: set[web.WebSocketResponse] = set()
-        self.runtime_events = RuntimeEventStore(self.root)
+        self.runtime_events = self._runtime_store_for_session(self.loop.active_session_id)
         self.watchlist_service = WatchlistService(
             self.root,
             model_router=self.loop.model_router,
@@ -91,6 +95,9 @@ class WebUIState:
         self.loop.scheduler_service.event_sink = self._broadcast_scheduler_event
 
     async def bootstrap(self, request: web.Request) -> web.Response:
+        requested_session = str(request.query.get("session") or "").strip()
+        if requested_session and not requested_session.startswith("draft:"):
+            self.activate_session(requested_session)
         return self._json({
             "app": "Emperor Agent",
             "model": self.loop.model,
@@ -107,6 +114,7 @@ class WebUIState:
             "context_used": self.loop.token_tracker.last_input_tokens(),
             "unarchivedHistory": self.memory_service.unarchived_history(),
             "runtime": self.memory_service.runtime(),
+            "projects": self.loop.project_store.list(),
             "diagnostics": self.diagnostics_service.payload(),
         })
 
@@ -173,7 +181,7 @@ class WebUIState:
         return not self.active_turn and not bool(self.control().get("pending"))
 
     def compact_runtime_events(self) -> dict[str, Any]:
-        stats = self.runtime_events.compact(self.loop.memory.load_unarchived_turn_ids())
+        stats = self.runtime_events.compact(self.loop.active_memory_store.load_unarchived_turn_ids())
         self.event_log = self.runtime_events.recent(self.max_event_log)
         self.event_seq = self.runtime_events.latest_seq
         return stats
@@ -285,7 +293,8 @@ class WebUIState:
 
     async def post_compact(self, request: web.Request) -> web.Response:
         async with self.lock:
-            unarchived = self.loop.memory.load_unarchived_history()
+            memory_store = self.loop.active_memory_store
+            unarchived = memory_store.load_unarchived_history()
             count = len(unarchived)
             if count < 2:
                 return self._json({
@@ -316,6 +325,95 @@ class WebUIState:
 
     def control(self) -> dict[str, Any]:
         return self.loop.control_manager.payload()
+
+    def activate_session(self, session_id: str) -> dict[str, Any]:
+        entry = self.loop.session_store.get(session_id)
+        if entry is None:
+            raise web.HTTPNotFound(reason=f"Session not found: {session_id}")
+        self.loop.activate_session(session_id)
+        self.history = self.loop.history
+        self.runtime_events = self._runtime_store_for_session(session_id)
+        self.event_log = self.runtime_events.recent(self.max_event_log)
+        self.event_seq = self.runtime_events.latest_seq
+        return entry
+
+    async def prepare_session_for_turn(
+        self,
+        *,
+        session_id: str | None,
+        draft_session: dict[str, Any] | None,
+        preview: str,
+    ) -> dict[str, Any]:
+        resolved = str(session_id or "").strip()
+        created = False
+        client_draft_id = ""
+        if resolved and self.loop.session_store.get(resolved) is None:
+            raise web.HTTPNotFound(reason=f"Session not found: {resolved}")
+        if not resolved and not draft_session:
+            resolved = self.loop.active_session_id or ""
+            if not resolved:
+                first = self.loop.session_store.list()[:1]
+                resolved = str(first[0]["id"]) if first else ""
+            if not resolved:
+                entry = self.loop.session_store.create("Default", title_status="manual")
+                resolved = str(entry["id"])
+        if not resolved:
+            title = str((draft_session or {}).get("title") or "新会话").strip() or "新会话"
+            mode = str((draft_session or {}).get("mode") or "chat").strip().lower()
+            project = self._project_from_draft(draft_session) if mode == "build" else None
+            entry = self.loop.session_store.create(
+                title,
+                title_status="pending",
+                mode=mode,
+                project=project,
+            )
+            resolved = str(entry["id"])
+            created = True
+            client_draft_id = str((draft_session or {}).get("client_draft_id") or "")
+        entry = self.activate_session(resolved)
+        touched = self.loop.session_store.touch(resolved, preview, increment_messages=True)
+        if touched:
+            entry = touched
+        return {
+            "session": entry,
+            "created": created,
+            "client_draft_id": client_draft_id,
+        }
+
+    def _project_from_draft(self, draft_session: dict[str, Any] | None) -> dict[str, Any] | None:
+        draft_session = draft_session or {}
+        project_id = str(draft_session.get("project_id") or "").strip()
+        if project_id:
+            project = self.loop.project_store.get(project_id)
+            if project is not None:
+                return project
+        project_path = str(draft_session.get("project_path") or "").strip()
+        if not project_path:
+            raise web.HTTPBadRequest(reason="Build session requires project_path")
+        try:
+            return self.loop.project_store.resolve(project_path)
+        except ValueError as exc:
+            raise web.HTTPBadRequest(reason=str(exc)) from exc
+
+    def schedule_session_title(self, session_id: str, first_message: str) -> None:
+        async def run() -> None:
+            try:
+                title = await self.session_title_service.generate(first_message)
+                entry = self.loop.session_store.set_generated_title(session_id, title)
+                if entry is not None:
+                    await self._broadcast_event(runtime_events.session_title_updated(entry))
+            except Exception as exc:
+                logger.warning("session title task failed for {}: {}", session_id, exc)
+
+        asyncio.create_task(run())
+
+    def _runtime_store_for_session(self, session_id: str | None) -> RuntimeEventStore:
+        if session_id:
+            return RuntimeEventStore(
+                self.loop.session_store.session_dir(session_id),
+                session_dir_override=True,
+            )
+        return RuntimeEventStore(self.root)
 
     def new_turn_id(self) -> str:
         return f"turn_{uuid.uuid4().hex[:16]}"

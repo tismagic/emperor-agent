@@ -1,8 +1,10 @@
 <script setup lang="ts">
-import { computed, nextTick, ref } from 'vue'
+import { computed, nextTick, onBeforeUnmount, ref } from 'vue'
+import type { CSSProperties } from 'vue'
 import type { SlashPaletteItem } from '../../commands'
-import type { AttachmentRef } from '../../types'
-import { actionIcons } from '../../icons'
+import type { AttachmentRef, CurrentModelConfig, ModelEntry } from '../../types'
+import { actionIcons, modelIcons, toolIcon } from '../../icons'
+import type { IconComponent } from '../../icons'
 import { uploadAttachment } from '../../api/attachments'
 import AttachmentChip from './AttachmentChip.vue'
 
@@ -12,6 +14,8 @@ const props = defineProps<{
   contextUsed: number
   contextMax: number
   controlMode?: string
+  currentModel?: CurrentModelConfig | null
+  modelEntries: ModelEntry[]
   supportsVision?: boolean
 }>()
 const emit = defineEmits<{
@@ -19,15 +23,42 @@ const emit = defineEmits<{
   stop: []
   error: [message: string]
   'set-mode': [mode: 'ask_before_edit' | 'auto' | 'plan']
+  'switch-model': [entryName: string]
+  'set-reasoning-effort': [level: string | null]
 }>()
 const value = ref('')
+const shell = ref<HTMLElement | null>(null)
 const input = ref<HTMLTextAreaElement | null>(null)
 const highlightLayer = ref<HTMLElement | null>(null)
 const fileInput = ref<HTMLInputElement | null>(null)
+const modelButton = ref<HTMLButtonElement | null>(null)
+const modelMenu = ref<HTMLElement | null>(null)
+const modeButton = ref<HTMLButtonElement | null>(null)
+const modeMenu = ref<HTMLElement | null>(null)
 const drafts = ref<AttachmentRef[]>([])
 const uploading = ref<Set<string>>(new Set())
 const dragActive = ref(false)
+const addMenuOpen = ref(false)
+const modelMenuOpen = ref(false)
+const modelMenuStyle = ref<CSSProperties>({})
+const modelMenuPlacement = ref<'top' | 'bottom'>('top')
 const modeMenuOpen = ref(false)
+const modeMenuStyle = ref<CSSProperties>({})
+const modeMenuPlacement = ref<'top' | 'bottom'>('top')
+let modelMenuRaf = 0
+let modeMenuRaf = 0
+
+type ComposerPaletteAction = 'files' | 'insert_command' | 'insert_skill'
+type ComposerPaletteItem = {
+  id: string
+  group: string
+  action: ComposerPaletteAction
+  label: string
+  description: string
+  meta?: string
+  completion?: string
+  icon: IconComponent
+}
 
 const ACCEPT_LIST =
   'image/png,image/jpeg,image/webp,image/gif,application/pdf,application/json,text/csv,text/plain,text/markdown'
@@ -53,6 +84,54 @@ const suggestions = computed(() => {
 })
 const commandSuggestions = computed(() => suggestions.value.filter((item) => item.kind === 'command'))
 const skillSuggestions = computed(() => suggestions.value.filter((item) => item.kind === 'skill'))
+const slashPaletteItems = computed(() => [
+  ...commandSuggestions.value.map((item) => paletteItemFromSlash(item, '命令')),
+  ...skillSuggestions.value.map((item) => paletteItemFromSlash(item, '插件')),
+])
+const addPaletteItems = computed(() => {
+  const priority = ['/plan', '/tools', '/skills', '/mode', '/status']
+  const commandItems = priority
+    .map((name) => props.commands.find((item) => item.kind === 'command' && item.name === name))
+    .filter((item): item is SlashPaletteItem => Boolean(item))
+    .map((item) => paletteItemFromSlash(item, '命令'))
+  const skillItems = props.commands
+    .filter((item) => item.kind === 'skill')
+    .slice(0, 8)
+    .map((item) => paletteItemFromSlash(item, '插件'))
+  return [
+    {
+      id: 'files',
+      group: 'Add',
+      action: 'files' as const,
+      label: 'Files and folders',
+      description: '上传图片、文档或数据文件',
+      meta: '附件',
+      icon: actionIcons.attach,
+    },
+    ...commandItems,
+    ...skillItems,
+  ]
+})
+const paletteMode = computed<'add' | 'slash' | null>(() => {
+  if (addMenuOpen.value) return 'add'
+  if (slashPaletteItems.value.length) return 'slash'
+  return null
+})
+const paletteGroups = computed(() => {
+  const items = paletteMode.value === 'add' ? addPaletteItems.value : slashPaletteItems.value
+  const groups: { label: string; items: ComposerPaletteItem[] }[] = []
+  for (const item of items) {
+    let group = groups.find((candidate) => candidate.label === item.group)
+    if (!group) {
+      group = { label: item.group, items: [] }
+      groups.push(group)
+    }
+    group.items.push(item)
+  }
+  return groups
+})
+const paletteHeading = computed(() => paletteMode.value === 'add' ? 'Add' : '斜杠命令')
+const paletteHint = computed(() => paletteMode.value === 'add' ? '添加文件或插入命令' : 'Tab 补全第一项')
 const composerSlashParts = computed((): { token: string; rest: string } | null => {
   const text = value.value
   if (!text.startsWith('/')) return null
@@ -66,39 +145,89 @@ const composerSlashParts = computed((): { token: string; rest: string } | null =
   return { token, rest: text.slice(token.length) }
 })
 
-const attachTitle = computed(() => {
-  if (props.busy) return 'AI 正在执行，等待结束后再添加附件'
-  const cap = props.supportsVision ? '当前模型 ✓ 视觉，可发图' : '当前模型未标记视觉，图片会被忽略；文档仍会抽取文本'
-  return `添加附件（最多 ${MAX_DRAFTS} 个）· ${cap}`
-})
+const attachTitle = computed(() => props.busy ? '等待当前任务结束后再添加' : 'Add files and more')
 
 const modeOptions = [
   {
     value: 'ask_before_edit',
-    label: 'Ask Before Edit',
-    short: 'Ask',
-    description: 'Ask before risky or uncertain actions',
+    label: '询问确认',
+    short: '询问',
+    description: '高风险或不确定操作前先确认',
     icon: actionIcons.modeAskBeforeEdit,
   },
   {
     value: 'auto',
-    label: 'Auto',
-    short: 'Auto',
-    description: 'Run with maximum automatic permission',
+    label: '自动执行',
+    short: '自动',
+    description: '在当前权限下直接推进任务',
     icon: actionIcons.modeAuto,
   },
   {
     value: 'plan',
-    label: 'Plan',
-    short: 'Plan',
-    description: 'Explore read-only, then present a plan',
+    label: '计划预览',
+    short: '计划',
+    description: '先只读探索，再提交计划审批',
     icon: actionIcons.modePlan,
   },
 ] as const
 
 const normalizedControlMode = computed(() => props.controlMode === 'normal' ? 'ask_before_edit' : props.controlMode)
 const currentMode = computed(() => modeOptions.find((item) => item.value === normalizedControlMode.value) || modeOptions[0])
-const modeTitle = computed(() => props.busy ? 'Wait until the current run finishes' : 'Switch mode')
+const modeTitle = computed(() => props.busy ? '等待当前任务结束后再切换' : '切换执行方式')
+const availableModelEntries = computed(() => props.modelEntries.filter((entry) => entry.name))
+const activeModelName = computed(() =>
+  props.currentModel?.entryName || props.modelEntries[0]?.name || '',
+)
+const currentModelEntry = computed(() =>
+  availableModelEntries.value.find((entry) => entry.name === activeModelName.value) ||
+  availableModelEntries.value[0] ||
+  null,
+)
+const showModelSwitcher = computed(() => availableModelEntries.value.length > 0)
+const currentModelLabel = computed(() => {
+  const entry = currentModelEntry.value
+  if (entry) return entry.label || entry.name
+  return props.currentModel?.entryLabel || props.currentModel?.entryName || props.currentModel?.model || '模型'
+})
+const currentReasoningLabel = computed(() =>
+  reasoningLabel(props.currentModel?.reasoningEffort ?? currentModelEntry.value?.reasoningEffort ?? null),
+)
+const currentReasoningValue = computed(() =>
+  normalizeReasoningValue(props.currentModel?.reasoningEffort ?? currentModelEntry.value?.reasoningEffort ?? null),
+)
+const modelTitle = computed(() => {
+  if (props.busy) return '等待当前任务结束后再切换模型'
+  return `${currentModelLabel.value} · 思考 ${currentReasoningLabel.value}`
+})
+const reasoningOptions = [
+  { value: null, label: 'Default' },
+  { value: 'low', label: 'Low' },
+  { value: 'medium', label: 'Medium' },
+  { value: 'high', label: 'High' },
+  { value: 'max', label: 'Max' },
+] as const
+
+function paletteItemFromSlash(item: SlashPaletteItem, group: string): ComposerPaletteItem {
+  return {
+    id: item.id,
+    group,
+    action: item.kind === 'skill' ? 'insert_skill' : 'insert_command',
+    label: item.name,
+    description: item.description,
+    meta: item.kind === 'skill' ? (item.tags || 'Skill') : item.usage,
+    completion: item.completion,
+    icon: item.kind === 'skill' ? toolIcon('skill') : commandIcon(item.name),
+  }
+}
+
+function commandIcon(name: string): IconComponent {
+  if (name === '/plan') return actionIcons.modePlan
+  if (name === '/mode') return actionIcons.modeAskBeforeEdit
+  if (name === '/tools') return toolIcon('default')
+  if (name === '/skills') return toolIcon('skill')
+  if (name === '/status') return actionIcons.statusOnline
+  return toolIcon('shell')
+}
 
 function resize() {
   const el = input.value
@@ -123,14 +252,16 @@ function submit() {
   })
   value.value = ''
   drafts.value = []
-  modeMenuOpen.value = false
+  closeAddMenu()
+  closeModelMenu()
+  closeModeMenu()
   void nextTick(resize)
 }
 
 function handleKeydown(event: KeyboardEvent) {
   if (event.key === 'Tab' && suggestions.value.length) {
     event.preventDefault()
-    applySuggestion(suggestions.value[0])
+    applyPaletteItem(slashPaletteItems.value[0])
     return
   }
   if (event.key !== 'Enter' || event.shiftKey || event.isComposing) return
@@ -138,41 +269,262 @@ function handleKeydown(event: KeyboardEvent) {
   submit()
 }
 
-function applySuggestion(command: SlashPaletteItem) {
-  value.value = command.completion
-  modeMenuOpen.value = false
+function applyPaletteItem(item: ComposerPaletteItem | undefined) {
+  if (!item) return
+  if (item.action === 'files') {
+    closeAddMenu()
+    pickFiles()
+    return
+  }
+  if (!item.completion) return
+  value.value = item.completion
+  closeAddMenu()
+  closeModelMenu()
+  closeModeMenu()
   input.value?.focus()
   void nextTick(resize)
 }
 
-function showSlashCommands() {
+async function toggleModeMenu() {
   if (props.busy) return
-  if (!value.value.trim()) value.value = '/'
-  modeMenuOpen.value = false
-  input.value?.focus()
-  void nextTick(resize)
-}
-
-function toggleModeMenu() {
-  if (props.busy) return
-  modeMenuOpen.value = !modeMenuOpen.value
+  closeAddMenu()
+  closeModelMenu()
+  if (modeMenuOpen.value) {
+    closeModeMenu()
+    return
+  }
+  modeMenuOpen.value = true
+  addModeMenuListeners()
+  await nextTick()
+  positionModeMenu()
 }
 
 function selectMode(mode: 'ask_before_edit' | 'auto' | 'plan') {
   if (props.busy) return
-  modeMenuOpen.value = false
+  closeModeMenu()
   if (mode !== props.controlMode) emit('set-mode', mode)
   input.value?.focus()
 }
 
-function scheduleModeMenuClose() {
-  window.setTimeout(() => {
-    modeMenuOpen.value = false
-  }, 140)
+async function toggleModelMenu() {
+  if (props.busy || !showModelSwitcher.value) return
+  closeAddMenu()
+  closeModeMenu()
+  if (modelMenuOpen.value) {
+    closeModelMenu()
+    return
+  }
+  modelMenuOpen.value = true
+  addModelMenuListeners()
+  await nextTick()
+  positionModelMenu()
+}
+
+function selectModel(entryName: string) {
+  if (props.busy) return
+  closeModelMenu()
+  if (entryName !== activeModelName.value) emit('switch-model', entryName)
+  input.value?.focus()
+}
+
+function selectReasoning(value: string | null) {
+  if (props.busy) return
+  const next = normalizeReasoningValue(value) || null
+  if ((currentReasoningValue.value || '') === (next || '')) return
+  emit('set-reasoning-effort', next)
+}
+
+function toggleAddMenu() {
+  if (props.busy) return
+  closeModelMenu()
+  closeModeMenu()
+  if (addMenuOpen.value) {
+    closeAddMenu()
+    return
+  }
+  addMenuOpen.value = true
+  document.addEventListener('pointerdown', onAddMenuPointerDown, true)
+}
+
+function closeAddMenu() {
+  if (!addMenuOpen.value) return
+  addMenuOpen.value = false
+  document.removeEventListener('pointerdown', onAddMenuPointerDown, true)
+}
+
+function closeComposerMenus() {
+  closeAddMenu()
+  closeModelMenu()
+  closeModeMenu()
+}
+
+function onAddMenuPointerDown(event: PointerEvent) {
+  const target = event.target
+  if (!(target instanceof Node)) return
+  if (shell.value?.contains(target)) return
+  closeAddMenu()
+}
+
+function closeModeMenu() {
+  if (!modeMenuOpen.value) return
+  modeMenuOpen.value = false
+  removeModeMenuListeners()
+  if (modeMenuRaf) {
+    cancelAnimationFrame(modeMenuRaf)
+    modeMenuRaf = 0
+  }
+}
+
+function closeModelMenu() {
+  if (!modelMenuOpen.value) return
+  modelMenuOpen.value = false
+  removeModelMenuListeners()
+  if (modelMenuRaf) {
+    cancelAnimationFrame(modelMenuRaf)
+    modelMenuRaf = 0
+  }
+}
+
+function scheduleModelMenuPosition() {
+  if (!modelMenuOpen.value) return
+  if (modelMenuRaf) cancelAnimationFrame(modelMenuRaf)
+  modelMenuRaf = requestAnimationFrame(() => {
+    modelMenuRaf = 0
+    positionModelMenu()
+  })
+}
+
+function scheduleModeMenuPosition() {
+  if (!modeMenuOpen.value) return
+  if (modeMenuRaf) cancelAnimationFrame(modeMenuRaf)
+  modeMenuRaf = requestAnimationFrame(() => {
+    modeMenuRaf = 0
+    positionModeMenu()
+  })
+}
+
+function positionModeMenu() {
+  const button = modeButton.value
+  const menu = modeMenu.value
+  if (!button || !menu) return
+  const margin = 12
+  const gap = 8
+  const buttonRect = button.getBoundingClientRect()
+  const viewportWidth = window.innerWidth
+  const viewportHeight = window.innerHeight
+  const menuWidth = Math.min(menu.offsetWidth || 320, viewportWidth - margin * 2)
+  const menuHeight = Math.min(menu.offsetHeight || 220, viewportHeight - margin * 2)
+  const spaceAbove = buttonRect.top - margin - gap
+  const spaceBelow = viewportHeight - buttonRect.bottom - margin - gap
+  const placeBelow = spaceAbove < menuHeight && spaceBelow > spaceAbove
+  const availableHeight = Math.max(180, placeBelow ? spaceBelow : spaceAbove)
+  const left = clamp(buttonRect.right - menuWidth, margin, viewportWidth - menuWidth - margin)
+  const top = placeBelow
+    ? clamp(buttonRect.bottom + gap, margin, viewportHeight - menuHeight - margin)
+    : clamp(buttonRect.top - gap - menuHeight, margin, viewportHeight - menuHeight - margin)
+
+  modeMenuPlacement.value = placeBelow ? 'bottom' : 'top'
+  modeMenuStyle.value = {
+    left: `${Math.round(left)}px`,
+    top: `${Math.round(top)}px`,
+    width: `${Math.round(menuWidth)}px`,
+    maxHeight: `${Math.round(availableHeight)}px`,
+  }
+}
+
+function positionModelMenu() {
+  const button = modelButton.value
+  const menu = modelMenu.value
+  if (!button || !menu) return
+  const margin = 12
+  const gap = 8
+  const buttonRect = button.getBoundingClientRect()
+  const viewportWidth = window.innerWidth
+  const viewportHeight = window.innerHeight
+  const menuWidth = Math.min(menu.offsetWidth || 390, viewportWidth - margin * 2)
+  const menuHeight = Math.min(menu.offsetHeight || 260, viewportHeight - margin * 2)
+  const spaceAbove = buttonRect.top - margin - gap
+  const spaceBelow = viewportHeight - buttonRect.bottom - margin - gap
+  const placeBelow = spaceAbove < menuHeight && spaceBelow > spaceAbove
+  const availableHeight = Math.max(180, placeBelow ? spaceBelow : spaceAbove)
+  const left = clamp(buttonRect.right - menuWidth, margin, viewportWidth - menuWidth - margin)
+  const top = placeBelow
+    ? clamp(buttonRect.bottom + gap, margin, viewportHeight - menuHeight - margin)
+    : clamp(buttonRect.top - gap - menuHeight, margin, viewportHeight - menuHeight - margin)
+
+  modelMenuPlacement.value = placeBelow ? 'bottom' : 'top'
+  modelMenuStyle.value = {
+    left: `${Math.round(left)}px`,
+    top: `${Math.round(top)}px`,
+    width: `${Math.round(menuWidth)}px`,
+    maxHeight: `${Math.round(availableHeight)}px`,
+  }
+}
+
+function clamp(value: number, min: number, max: number) {
+  if (max < min) return min
+  return Math.min(Math.max(value, min), max)
+}
+
+function addModelMenuListeners() {
+  window.addEventListener('resize', scheduleModelMenuPosition)
+  window.addEventListener('scroll', scheduleModelMenuPosition, true)
+  document.addEventListener('pointerdown', onModelDocumentPointerDown, true)
+  document.addEventListener('focusin', onModelDocumentFocusIn, true)
+}
+
+function removeModelMenuListeners() {
+  window.removeEventListener('resize', scheduleModelMenuPosition)
+  window.removeEventListener('scroll', scheduleModelMenuPosition, true)
+  document.removeEventListener('pointerdown', onModelDocumentPointerDown, true)
+  document.removeEventListener('focusin', onModelDocumentFocusIn, true)
+}
+
+function addModeMenuListeners() {
+  window.addEventListener('resize', scheduleModeMenuPosition)
+  window.addEventListener('scroll', scheduleModeMenuPosition, true)
+  document.addEventListener('pointerdown', onDocumentPointerDown, true)
+  document.addEventListener('focusin', onDocumentFocusIn, true)
+}
+
+function removeModeMenuListeners() {
+  window.removeEventListener('resize', scheduleModeMenuPosition)
+  window.removeEventListener('scroll', scheduleModeMenuPosition, true)
+  document.removeEventListener('pointerdown', onDocumentPointerDown, true)
+  document.removeEventListener('focusin', onDocumentFocusIn, true)
+}
+
+function onModelDocumentPointerDown(event: PointerEvent) {
+  const target = event.target
+  if (!(target instanceof Node)) return
+  if (modelButton.value?.contains(target) || modelMenu.value?.contains(target)) return
+  closeModelMenu()
+}
+
+function onModelDocumentFocusIn(event: FocusEvent) {
+  const target = event.target
+  if (!(target instanceof Node)) return
+  if (modelButton.value?.contains(target) || modelMenu.value?.contains(target)) return
+  closeModelMenu()
+}
+
+function onDocumentPointerDown(event: PointerEvent) {
+  const target = event.target
+  if (!(target instanceof Node)) return
+  if (modeButton.value?.contains(target) || modeMenu.value?.contains(target)) return
+  closeModeMenu()
+}
+
+function onDocumentFocusIn(event: FocusEvent) {
+  const target = event.target
+  if (!(target instanceof Node)) return
+  if (modeButton.value?.contains(target) || modeMenu.value?.contains(target)) return
+  closeModeMenu()
 }
 
 function pickFiles() {
   if (props.busy) return
+  closeAddMenu()
   fileInput.value?.click()
 }
 
@@ -239,9 +591,7 @@ function removeDraft(idx: number) {
 const pct = computed(() => (props.contextMax > 0 ? props.contextUsed / props.contextMax : 0))
 const arcLength = computed(() => Math.min(Math.round(pct.value * 100), 100))
 const arcColor = computed(() => {
-  if (pct.value <= 0.5) return 'rgb(var(--jade))'
-  if (pct.value <= 0.8) return 'rgb(var(--amber))'
-  return 'rgb(var(--seal))'
+  return 'currentColor'
 })
 const percentLabel = computed(() => `${Math.min(Math.round(pct.value * 100), 100)}%`)
 const contextLabel = computed(() => `上下文长度 ${fmt(props.contextUsed)} / ${fmt(props.contextMax)}，已用 ${percentLabel.value}`)
@@ -252,11 +602,49 @@ function fmt(n: number) {
   return String(n)
 }
 
+function modelEntryLabel(entry: ModelEntry) {
+  return entry.label || entry.name
+}
+
+function entryMainModelId(entry: ModelEntry) {
+  return entry.mainModelId || entry.id || '未配置'
+}
+
+function entrySecondaryModelId(entry: ModelEntry) {
+  return entry.secondaryModelId || '未配置'
+}
+
+function normalizeReasoningValue(value?: string | null) {
+  const normalized = String(value || '').trim().toLowerCase()
+  if (!normalized) return ''
+  if (normalized === 'xhigh' || normalized === 'max') return 'max'
+  if (['high', 'medium', 'low', 'none'].includes(normalized)) return normalized
+  return normalized
+}
+
+function reasoningLabel(value?: string | null) {
+  const normalized = normalizeReasoningValue(value)
+  if (!normalized) return 'Default'
+  if (normalized === 'max') return 'Max'
+  if (normalized === 'high') return 'High'
+  if (normalized === 'medium') return 'Medium'
+  if (normalized === 'low') return 'Low'
+  if (normalized === 'none') return 'None'
+  return normalized
+}
+
 const sendDisabled = computed(() => !props.busy && !value.value.trim() && drafts.value.length === 0)
+
+onBeforeUnmount(() => {
+  closeAddMenu()
+  closeModelMenu()
+  closeModeMenu()
+})
 </script>
 
 <template>
   <div
+    ref="shell"
     class="composer-shell"
     :class="{ 'composer-drag-active': dragActive }"
     @dragenter="onDragEnter"
@@ -264,43 +652,30 @@ const sendDisabled = computed(() => !props.busy && !value.value.trim() && drafts
     @dragleave="onDragLeave"
     @drop="onDrop"
   >
-    <div v-if="suggestions.length" class="slash-menu">
-      <div class="slash-menu-head">
-        <span>斜杠命令</span>
-        <em>Tab 补全第一项</em>
+    <div v-if="paletteMode" class="composer-palette" :data-mode="paletteMode">
+      <div class="composer-palette-head">
+        <span>{{ paletteHeading }}</span>
+        <em>{{ paletteHint }}</em>
       </div>
 
-      <div v-if="commandSuggestions.length" class="slash-menu-group">
-        <div class="slash-menu-label">命令</div>
+      <section v-for="group in paletteGroups" :key="group.label" class="composer-palette-group">
+        <div class="composer-palette-label">{{ group.label }}</div>
         <button
-          v-for="command in commandSuggestions"
-          :key="command.id"
+          v-for="item in group.items"
+          :key="item.id"
           type="button"
-          class="slash-menu-item"
-          :data-kind="command.kind"
-          @click="applySuggestion(command)"
+          class="composer-palette-item"
+          :data-action="item.action"
+          @click="applyPaletteItem(item)"
         >
-          <strong>{{ command.name }}</strong>
-          <span>{{ command.description }}</span>
-          <b>{{ command.usage }}</b>
+          <span class="composer-palette-item-icon">
+            <component :is="item.icon" :size="15" />
+          </span>
+          <strong>{{ item.label }}</strong>
+          <span>{{ item.description }}</span>
+          <b v-if="item.meta">{{ item.meta }}</b>
         </button>
-      </div>
-
-      <div v-if="skillSuggestions.length" class="slash-menu-group">
-        <div class="slash-menu-label">Skills</div>
-        <button
-          v-for="skill in skillSuggestions"
-          :key="skill.id"
-          type="button"
-          class="slash-menu-item"
-          :data-kind="skill.kind"
-          @click="applySuggestion(skill)"
-        >
-          <strong>{{ skill.name }}</strong>
-          <span>{{ skill.description }}</span>
-          <b>{{ skill.tags || 'Skill' }}</b>
-        </button>
-      </div>
+      </section>
     </div>
 
     <div v-if="drafts.length || uploading.size" class="composer-drafts">
@@ -312,7 +687,9 @@ const sendDisabled = computed(() => !props.busy && !value.value.trim() && drafts
         @remove="removeDraft(i)"
       />
       <div v-for="name in Array.from(uploading)" :key="name" class="attach-chip uploading" :title="name">
-        <span class="attach-doc-icon">⏳</span>
+        <span class="attach-doc-icon">
+          <component :is="actionIcons.statusBusy" class="animate-spin" :size="14" />
+        </span>
         <div class="attach-meta">
           <div class="attach-name">{{ name }}</div>
           <div class="attach-sub">上传中…</div>
@@ -320,7 +697,7 @@ const sendDisabled = computed(() => !props.busy && !value.value.trim() && drafts
       </div>
     </div>
 
-    <form class="composer" @submit.prevent="submit" @keydown.esc="modeMenuOpen = false">
+    <form class="composer" @submit.prevent="submit" @keydown.esc="closeComposerMenus">
       <input
         ref="fileInput"
         type="file"
@@ -340,8 +717,8 @@ const sendDisabled = computed(() => !props.busy && !value.value.trim() && drafts
             v-model="value"
             rows="2"
             :disabled="props.busy"
-            :placeholder="props.busy ? 'AI 正在执行...' : '向李公公交办一件差事... 输入 / 查看命令；可拖入图片或文档'"
-            @focus="modeMenuOpen = false"
+            :placeholder="props.busy ? '正在生成回复...' : '描述要推进的任务。可用 / 调用命令，拖入图片或文档'"
+            @focus="closeComposerMenus"
             @input="resize"
             @scroll="syncHighlightScroll"
             @keydown="handleKeydown"
@@ -357,63 +734,13 @@ const sendDisabled = computed(() => !props.busy && !value.value.trim() && drafts
             :title="attachTitle"
             :aria-label="attachTitle"
             :disabled="props.busy"
-            @click="pickFiles"
+            @click="toggleAddMenu"
           >
-            <component :is="actionIcons.attach" class="action-icon" :size="18" />
-          </button>
-
-          <button
-            type="button"
-            class="slash-hint-button"
-            title="显示斜杠命令"
-            :disabled="props.busy"
-            @click="showSlashCommands"
-          >
-            <span>/</span>
-            <em>命令</em>
+            <component :is="actionIcons.new" class="action-icon" :size="16" />
           </button>
         </div>
 
         <div class="composer-right-actions">
-          <div class="mode-picker" @focusout="scheduleModeMenuClose">
-            <button
-              type="button"
-              class="mode-button"
-              :data-active="currentMode.value === 'plan'"
-              :aria-expanded="modeMenuOpen"
-              :title="modeTitle"
-              :disabled="props.busy"
-              @click="toggleModeMenu"
-            >
-              <component :is="currentMode.icon" class="mode-icon" :size="16" />
-              <span>{{ currentMode.label }}</span>
-              <em>{{ currentMode.value === 'plan' ? 'Plan first' : currentMode.value === 'auto' ? 'Full auto' : 'Ask first' }}</em>
-              <component :is="actionIcons.caretDown" class="mode-caret" :size="12" />
-            </button>
-
-            <div v-if="modeMenuOpen" class="mode-menu">
-              <div class="mode-menu-head">
-                <span>Modes</span>
-                <em>Applies immediately</em>
-              </div>
-              <button
-                v-for="option in modeOptions"
-                :key="option.value"
-                type="button"
-                class="mode-option"
-                :data-active="currentMode.value === option.value"
-                @click="selectMode(option.value)"
-              >
-                <component :is="option.icon" class="mode-option-icon" :size="16" />
-                <span>
-                  <strong>{{ option.label }}</strong>
-                  <small>{{ option.description }}</small>
-                </span>
-                <b>{{ option.short }}</b>
-              </button>
-            </div>
-          </div>
-
           <div
             v-if="props.contextMax > 0"
             class="context-ring"
@@ -438,6 +765,42 @@ const sendDisabled = computed(() => !props.busy && !value.value.trim() && drafts
             </div>
           </div>
 
+          <div v-if="showModelSwitcher" class="model-picker">
+            <button
+              ref="modelButton"
+              type="button"
+              class="model-button"
+              :aria-expanded="modelMenuOpen"
+              :title="modelTitle"
+              :disabled="props.busy"
+              @click="toggleModelMenu"
+            >
+              <component :is="modelIcons.text" class="model-icon" :size="15" />
+              <span class="model-button-label">{{ currentModelLabel }}</span>
+              <span class="model-button-separator" aria-hidden="true">·</span>
+              <span class="model-button-meta">{{ currentReasoningLabel }}</span>
+              <component :is="actionIcons.caretDown" class="model-caret" :size="12" />
+            </button>
+          </div>
+
+          <div class="mode-picker">
+            <button
+              ref="modeButton"
+              type="button"
+              class="mode-button"
+              :data-active="currentMode.value === 'plan'"
+              :aria-expanded="modeMenuOpen"
+              :title="modeTitle"
+              :disabled="props.busy"
+              @click="toggleModeMenu"
+            >
+              <component :is="currentMode.icon" class="mode-icon" :size="16" />
+              <span>{{ currentMode.short }}</span>
+              <component :is="actionIcons.caretDown" class="mode-caret" :size="12" />
+            </button>
+
+          </div>
+
           <button
             class="send-button"
             :disabled="sendDisabled"
@@ -451,5 +814,91 @@ const sendDisabled = computed(() => !props.busy && !value.value.trim() && drafts
         </div>
       </div>
     </form>
+
+    <Teleport to="body">
+      <div
+        v-if="modeMenuOpen"
+        ref="modeMenu"
+        class="mode-menu mode-menu-floating"
+        :data-placement="modeMenuPlacement"
+        :style="modeMenuStyle"
+        @keydown.esc="closeModeMenu"
+      >
+        <div class="mode-menu-head">
+          <span>执行方式</span>
+          <em>立即应用到下一轮</em>
+        </div>
+        <button
+          v-for="option in modeOptions"
+          :key="option.value"
+          type="button"
+          class="mode-option"
+          :data-active="currentMode.value === option.value"
+          @click="selectMode(option.value)"
+        >
+          <component :is="option.icon" class="mode-option-icon" :size="16" />
+          <span>
+            <strong>{{ option.label }}</strong>
+            <small>{{ option.description }}</small>
+          </span>
+          <b>{{ option.short }}</b>
+        </button>
+      </div>
+    </Teleport>
+
+    <Teleport to="body">
+      <div
+        v-if="modelMenuOpen"
+        ref="modelMenu"
+        class="model-menu model-menu-floating"
+        :data-placement="modelMenuPlacement"
+        :style="modelMenuStyle"
+        @keydown.esc="closeModelMenu"
+      >
+        <div class="model-menu-head">
+          <span>模型与思考</span>
+          <em>下一轮生效</em>
+        </div>
+        <div class="reasoning-row">
+          <span>推理强度</span>
+          <div class="reasoning-control" role="group" aria-label="推理强度">
+            <button
+              v-for="option in reasoningOptions"
+              :key="option.label"
+              type="button"
+              class="reasoning-choice"
+              :data-active="(option.value || '') === currentReasoningValue"
+              :disabled="props.busy"
+              @click="selectReasoning(option.value)"
+            >
+              {{ option.label }}
+            </button>
+          </div>
+        </div>
+
+        <div class="model-menu-label">模型条目</div>
+        <button
+          v-for="entry in availableModelEntries"
+          :key="entry.name"
+          type="button"
+          class="model-option"
+          :data-active="entry.name === activeModelName"
+          @click="selectModel(entry.name)"
+        >
+          <component :is="modelIcons.text" class="model-option-icon" :size="15" />
+          <span class="model-option-copy">
+            <strong>{{ modelEntryLabel(entry) }}</strong>
+            <small>{{ entryMainModelId(entry) }}</small>
+            <span class="model-option-meta">
+              <em>{{ entry.provider || 'provider' }}</em>
+              <em>次 {{ entrySecondaryModelId(entry) }}</em>
+            </span>
+          </span>
+          <span class="model-option-badges">
+            <b>{{ entry.name === activeModelName ? '当前' : '切换' }}</b>
+          </span>
+        </button>
+      </div>
+    </Teleport>
   </div>
 </template>

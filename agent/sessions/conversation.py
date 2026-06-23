@@ -7,8 +7,12 @@ MemoryStore retains the global layers (memory, user, episodes, versions).
 from __future__ import annotations
 
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from agent.memory_history import HistoryLog
+
+if TYPE_CHECKING:
+    from agent.memory import MemoryStore
 
 
 class ConversationStore:
@@ -113,3 +117,70 @@ class ConversationStore:
 
     def clear_checkpoint(self) -> None:
         self.checkpoint_file.unlink(missing_ok=True)
+
+
+class SessionMemoryStore:
+    """Conversation-scoped history with shared long-term memory layers."""
+
+    def __init__(self, shared_memory: MemoryStore, conversation: ConversationStore) -> None:
+        self.shared_memory = shared_memory
+        self.conversation = conversation
+        self.history_file = conversation.history_file
+        self.checkpoint_file = conversation.checkpoint_file
+
+    def append_history(self, role: str, content: object, *, extra: dict | None = None) -> None:
+        self.conversation.append_history(role, content, extra=extra)
+
+    def load_unarchived_history(self) -> list[dict]:
+        return self.conversation.load_unarchived_history()
+
+    def load_unarchived_turn_ids(self) -> list[str]:
+        return self.conversation.load_unarchived_turn_ids()
+
+    def append_compact_marker(self, active_history: list[dict] | None = None) -> None:
+        self.conversation.append_compact_marker(active_history)
+
+    def history_stats(self) -> dict:
+        return self.conversation.stats()
+
+    def write_checkpoint(self, history: list[dict]) -> None:
+        self.conversation.write_checkpoint(history)
+
+    def read_checkpoint(self) -> list[dict] | None:
+        return self.conversation.read_checkpoint()
+
+    def clear_checkpoint(self) -> None:
+        self.conversation.clear_checkpoint()
+
+    def __getattr__(self, name: str):
+        return getattr(self.shared_memory, name)
+
+
+class ProjectSessionMemoryStore(SessionMemoryStore):
+    """Session history scoped to a project, with project AGENTS.md memory."""
+
+    def __init__(
+        self,
+        shared_memory: MemoryStore,
+        conversation: ConversationStore,
+        project_store,
+        project_id: str,
+    ) -> None:
+        super().__init__(shared_memory, conversation)
+        self.project_store = project_store
+        self.project_id = project_id
+
+    def read_memory(self) -> str:
+        return self.project_store.read_managed_memory(self.project_id)
+
+    def write_memory(self, content: str) -> None:
+        self.project_store.update_memory(self.project_id, content)
+
+    def read_today_episode(self) -> str:
+        return ""
+
+    def append_episode(self, content: str) -> None:
+        return None
+
+    def write_user(self, content: str) -> None:
+        return None

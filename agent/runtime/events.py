@@ -73,6 +73,18 @@ def model_route_fallback(
     )
 
 
+def session_created(session: dict[str, Any], *, client_draft_id: str | None = None) -> dict[str, Any]:
+    return runtime_event(
+        "session_created",
+        session=session,
+        client_draft_id=client_draft_id,
+    )
+
+
+def session_title_updated(session: dict[str, Any]) -> dict[str, Any]:
+    return runtime_event("session_title_updated", session=session)
+
+
 def external_inbound(message: dict[str, Any]) -> dict[str, Any]:
     return runtime_event("external_inbound", message=message)
 

@@ -2,9 +2,10 @@
 import { nextTick, ref, watch } from 'vue'
 import { slashCommands } from '../../commands'
 import type { ChatMessage, UserMessage } from '../../types'
-import { avatarIcons, brandIcon, emptyIcons } from '../../icons'
+import { avatarIcons } from '../../icons'
 import AssistantFlow from './AssistantFlow.vue'
 import AttachmentChip from './AttachmentChip.vue'
+import wordmarkUrl from '../../../../../../assets/generated/emperoragent-wordmark.png'
 
 const props = defineProps<{ messages: ChatMessage[] }>()
 const scroller = ref<HTMLElement | null>(null)
@@ -71,16 +72,14 @@ function schedulerTriggerPrefix(content: string) {
 <template>
   <section ref="scroller" class="messages-pane">
     <div v-if="!props.messages.length" class="welcome-card animate-rise-in">
-      <div class="mb-4 flex items-center gap-3 text-sm text-seal">
-        <component :is="brandIcon" class="brand-seal-sm" :size="18" />
-        <span>大内总管待命</span>
+      <div class="welcome-brand-lockup" aria-label="emperoragent">
+        <img :src="wordmarkUrl" class="welcome-wordmark" alt="emperoragent" draggable="false" />
       </div>
       <div class="welcome-layout">
         <div>
-          <h1>下旨即可开工。</h1>
-          <p>多会话工作台——左侧可新建、切换、删除会话。每个会话拥有独立的对话历史。</p>
+          <h1>把任务交给本地 Agent。</h1>
+          <p>从代码修改、资料整理到长期提醒，都在独立会话里推进；需要时会调用工具、队友和记忆，留下清晰的执行轨迹。</p>
         </div>
-        <component :is="emptyIcons.welcome" class="welcome-hero" :size="96" :stroke-width="1" />
       </div>
     </div>
 
@@ -105,7 +104,7 @@ function schedulerTriggerPrefix(content: string) {
             <component :is="avatarIcons.emperor" :size="16" />
           </div>
           <div class="message-cluster user">
-            <div class="message-meta user"><span>皇</span><small>圣旨</small></div>
+            <div class="message-meta user"><span>你</span><small>request</small></div>
             <div v-if="message.attachments?.length" class="user-attach-row">
               <AttachmentChip
                 v-for="attachment in message.attachments"

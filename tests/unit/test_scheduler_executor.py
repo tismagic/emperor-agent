@@ -48,8 +48,14 @@ class FakeTeamManager:
 class FakeLoop:
     def __init__(self) -> None:
         self.memory = FakeMemory()
+        self.active_memory_store = FakeMemory()
         self.runner = FakeRunner()
         self.team_manager = FakeTeamManager()
+        self.team_managers: dict[str, FakeTeamManager] = {}
+
+    def team_manager_for_project(self, project_id: str) -> FakeTeamManager:
+        self.team_managers.setdefault(project_id, FakeTeamManager())
+        return self.team_managers[project_id]
 
 
 class FakeState:
@@ -101,7 +107,8 @@ def test_scheduler_executor_runs_agent_turn() -> None:
     assert result == "agent_turn completed"
     assert state.history[0]["role"] == "user"
     assert "SCHEDULER_TRIGGER" in state.history[0]["content"]
-    assert state.loop.memory.rows[0][2]["type"] == "scheduler_agent_turn"
+    assert state.loop.active_memory_store.rows[0][2]["type"] == "scheduler_agent_turn"
+    assert state.loop.memory.rows == []
     user_event = next(event for event in state.events if event["event"] == "user_message")
     assert user_event["source"] == "scheduler"
     assert user_event["scheduler"] == {"jobId": job.id, "jobName": "scheduled"}
@@ -132,7 +139,8 @@ def test_scheduler_executor_hides_agent_turn_when_deliver_false() -> None:
     assert result == "agent_turn completed"
     assert state.history == []
     assert state.loop.runner.seen[0][0]["role"] == "user"
-    assert state.loop.memory.rows[0][2]["hidden"] is True
+    assert state.loop.active_memory_store.rows[0][2]["hidden"] is True
+    assert state.loop.memory.rows == []
     assert state.events == []
     assert state.compact_calls == 1
 
@@ -140,23 +148,36 @@ def test_scheduler_executor_hides_agent_turn_when_deliver_false() -> None:
 def test_scheduler_executor_wakes_team_member() -> None:
     state = FakeState()
     executor = SchedulerJobExecutor(state)
-    job = make_job(SchedulerPayload(kind="team_wake", message="Check inbox", target="alice"))
+    job = make_job(SchedulerPayload(kind="team_wake", message="Check inbox", target="alice", project_id="project_a"))
 
     result = asyncio.run(executor.run(job))
 
     assert result == "team woke"
-    assert state.loop.team_manager.calls[0]["to"] == "alice"
-    assert state.loop.team_manager.calls[0]["type"] == "task"
+    assert state.loop.team_managers["project_a"].calls[0]["to"] == "alice"
+    assert state.loop.team_managers["project_a"].calls[0]["type"] == "task"
     assert any(event["event"] == "team_message" for event in state.events)
+
+
+def test_scheduler_executor_rejects_team_wake_without_project_id() -> None:
+    state = FakeState()
+    executor = SchedulerJobExecutor(state)
+    job = make_job(SchedulerPayload(kind="team_wake", message="Check inbox", target="alice"))
+
+    try:
+        asyncio.run(executor.run(job))
+    except ValueError as exc:
+        assert "project_id" in str(exc)
+    else:
+        raise AssertionError("expected team_wake without project_id to be rejected")
 
 
 def test_scheduler_executor_hides_team_wake_events_when_deliver_false() -> None:
     state = FakeState()
     executor = SchedulerJobExecutor(state)
-    job = make_job(SchedulerPayload(kind="team_wake", message="Check inbox", target="alice", deliver=False))
+    job = make_job(SchedulerPayload(kind="team_wake", message="Check inbox", target="alice", project_id="project_a", deliver=False))
 
     result = asyncio.run(executor.run(job))
 
     assert result == "team woke"
-    assert state.loop.team_manager.calls[0]["to"] == "alice"
+    assert state.loop.team_managers["project_a"].calls[0]["to"] == "alice"
     assert state.events == []

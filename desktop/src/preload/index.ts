@@ -1,4 +1,4 @@
-import { contextBridge } from 'electron'
+import { contextBridge, ipcRenderer } from 'electron'
 import { parseBackendArg } from './backend-arg'
 
 // Expose a minimal, read-only surface to the renderer. backendBaseUrl is the
@@ -8,4 +8,5 @@ contextBridge.exposeInMainWorld('emperor', {
   backendBaseUrl: parseBackendArg(process.argv),
   version: '0.1.0',
   platform: process.platform,
+  selectDirectory: () => ipcRenderer.invoke('emperor:select-directory'),
 })

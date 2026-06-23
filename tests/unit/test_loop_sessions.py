@@ -56,3 +56,69 @@ def test_activate_session_restores_history(tmp_path: Path) -> None:
     loop.activate_session(default["id"])
     texts = [m.get("content") for m in loop.history if m.get("role") == "assistant"]
     assert "hello" in texts
+
+
+def test_chat_session_does_not_expose_persistent_team_tools(tmp_path: Path) -> None:
+    _write_old_history(tmp_path)
+    loop = AgentLoop(root=tmp_path, verbose=False, startup_compaction=False)
+    chat = loop.session_store.create("Chat", mode="chat")
+
+    loop.activate_session(chat["id"])
+
+    assert "spawn_teammate" not in loop.registry.names()
+    assert "send_message" not in loop.registry.names()
+    assert loop.team_manager is None
+
+
+def test_build_project_sessions_share_project_team_but_projects_are_isolated(tmp_path: Path) -> None:
+    _write_old_history(tmp_path)
+    loop = AgentLoop(root=tmp_path, verbose=False, startup_compaction=False)
+    project_a_dir = tmp_path / "project-a"
+    project_b_dir = tmp_path / "project-b"
+    project_a_dir.mkdir()
+    project_b_dir.mkdir()
+    project_a = loop.project_store.resolve(project_a_dir)
+    project_b = loop.project_store.resolve(project_b_dir)
+    a1 = loop.session_store.create("A1", mode="build", project=project_a)
+    a2 = loop.session_store.create("A2", mode="build", project=project_a)
+    b1 = loop.session_store.create("B1", mode="build", project=project_b)
+
+    loop.activate_session(a1["id"])
+    assert "spawn_teammate" in loop.registry.names()
+    loop.team_manager.spawn_teammate(name="alice", role="coder")
+
+    loop.activate_session(a2["id"])
+    assert loop.team_manager.store.get_member("alice").role == "coder"
+
+    loop.activate_session(b1["id"])
+    assert loop.team_manager.store.get_member("alice") is None
+    loop.team_manager.spawn_teammate(name="alice", role="reviewer")
+
+    team_a = tmp_path / "memory" / "projects" / project_a["project_id"] / "team"
+    team_b = tmp_path / "memory" / "projects" / project_b["project_id"] / "team"
+    assert (team_a / "config.json").exists()
+    assert (team_b / "config.json").exists()
+    assert (tmp_path / ".team").exists() is False
+
+
+def test_project_team_uses_fixed_project_workspace_after_session_switch(tmp_path: Path) -> None:
+    _write_old_history(tmp_path)
+    loop = AgentLoop(root=tmp_path, verbose=False, startup_compaction=False)
+    project_a_dir = tmp_path / "project-a"
+    project_b_dir = tmp_path / "project-b"
+    project_a_dir.mkdir()
+    project_b_dir.mkdir()
+    (project_a_dir / "marker.txt").write_text("from project a", encoding="utf-8")
+    (project_b_dir / "marker.txt").write_text("from project b", encoding="utf-8")
+    project_a = loop.project_store.resolve(project_a_dir)
+    project_b = loop.project_store.resolve(project_b_dir)
+    session_a = loop.session_store.create("A", mode="build", project=project_a)
+    session_b = loop.session_store.create("B", mode="build", project=project_b)
+
+    loop.activate_session(session_a["id"])
+    manager_a = loop.team_manager
+    loop.activate_session(session_b["id"])
+
+    read_file = manager_a.parent_registry.get("read_file")
+    assert read_file is not None
+    assert "from project a" in read_file.execute("marker.txt")

@@ -18,6 +18,11 @@ class ToolRegistry:
         self._tools[tool.name] = tool
         self._defs_cache = None
 
+    def unregister(self, name: str) -> None:
+        if name in self._tools:
+            del self._tools[name]
+            self._defs_cache = None
+
     def get(self, name: str) -> Tool | None:
         return self._tools.get(name)
 

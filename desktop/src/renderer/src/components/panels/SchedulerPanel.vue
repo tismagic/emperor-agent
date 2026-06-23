@@ -9,9 +9,7 @@ const ctx = useAppContext()
 const selectedId = ref('')
 const loading = ref(false)
 const createName = ref('')
-const createKind = ref<'agent_turn' | 'team_wake'>('agent_turn')
 const createMessage = ref('')
-const createTarget = ref('')
 const createDeliver = ref(true)
 const createDeleteAfterRun = ref(false)
 const scheduleKind = ref<'at' | 'every' | 'cron'>('every')
@@ -21,7 +19,6 @@ const cronExpr = ref('0 9 * * *')
 const cronTz = ref(Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC')
 const editName = ref('')
 const editMessage = ref('')
-const editTarget = ref('')
 const editDeliver = ref(true)
 
 const scheduler = computed<SchedulerPayload>(() => ctx.boot.value?.scheduler || {
@@ -48,7 +45,6 @@ watch(jobs, () => {
 watch(selected, (job) => {
   editName.value = job?.name || ''
   editMessage.value = job?.payload?.message || ''
-  editTarget.value = job?.payload?.target || ''
   editDeliver.value = job?.payload?.deliver !== false
 }, { immediate: true })
 
@@ -72,9 +68,9 @@ async function createJob() {
         name: createName.value.trim() || defaultJobName(),
         schedule: buildCreateSchedule(),
         payload: {
-          kind: createKind.value,
+          kind: 'agent_turn',
           message: createMessage.value.trim(),
-          target: createKind.value === 'team_wake' ? createTarget.value.trim() : null,
+          target: null,
           deliver: createDeliver.value,
         },
         deleteAfterRun: createDeleteAfterRun.value,
@@ -84,7 +80,6 @@ async function createJob() {
     selectedId.value = result.job.id
     createName.value = ''
     createMessage.value = ''
-    createTarget.value = ''
     ctx.showToast(`定时任务已创建：${result.job.name}`)
   } finally {
     loading.value = false
@@ -104,7 +99,6 @@ async function saveSelected() {
           payload: {
             ...selected.value.payload,
             message: editMessage.value.trim(),
-            target: selected.value.payload.kind === 'team_wake' ? editTarget.value.trim() : null,
             deliver: editDeliver.value,
           },
         }),
@@ -174,7 +168,7 @@ function buildCreateSchedule(): SchedulerSchedule {
 }
 
 function defaultJobName() {
-  return createKind.value === 'team_wake' ? '唤醒队友' : '主 Agent 任务'
+  return '主 Agent 任务'
 }
 
 function scheduleLabel(job: SchedulerJob) {
@@ -267,13 +261,8 @@ function formatMs(ms?: number | null) {
         <form class="scheduler-create" @submit.prevent="createJob">
           <div class="team-form-row">
             <input v-model="createName" placeholder="任务名称" autocomplete="off" />
-            <select v-model="createKind">
-              <option value="agent_turn">主 Agent 任务</option>
-              <option value="team_wake">唤醒队友</option>
-            </select>
           </div>
           <textarea v-model="createMessage" rows="3" placeholder="任务内容 / 提示词" />
-          <input v-if="createKind === 'team_wake'" v-model="createTarget" placeholder="队友名称" autocomplete="off" />
           <div class="team-form-row">
             <select v-model="scheduleKind">
               <option value="every">每隔</option>
@@ -349,7 +338,6 @@ function formatMs(ms?: number | null) {
 
           <input v-model="editName" autocomplete="off" />
           <textarea v-model="editMessage" rows="5" placeholder="任务内容" />
-          <input v-if="selected.payload.kind === 'team_wake'" v-model="editTarget" autocomplete="off" placeholder="队友名称" />
           <label class="scheduler-check"><input v-model="editDeliver" type="checkbox" /> 将运行结果显示到当前对话</label>
 
           <div class="team-tool-cloud">

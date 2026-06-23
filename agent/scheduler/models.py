@@ -87,6 +87,7 @@ class SchedulerPayload:
     kind: Literal["agent_turn", "team_wake", "system_event"] = "agent_turn"
     message: str = ""
     target: str | None = None
+    project_id: str | None = None
     deliver: bool = True
     meta: dict[str, Any] = field(default_factory=dict)
 
@@ -100,6 +101,7 @@ class SchedulerPayload:
             kind=kind,  # type: ignore[arg-type]
             message=str(raw.get("message") or ""),
             target=_str_or_none(raw.get("target")),
+            project_id=_str_or_none(raw.get("project_id", raw.get("projectId"))),
             deliver=bool(raw.get("deliver", True)),
             meta=meta,
         )
@@ -109,6 +111,7 @@ class SchedulerPayload:
             "kind": self.kind,
             "message": self.message,
             "target": self.target,
+            "projectId": self.project_id,
             "deliver": self.deliver,
             "meta": self.meta,
         }

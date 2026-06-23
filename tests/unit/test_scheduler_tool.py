@@ -135,6 +135,21 @@ def test_scheduler_tool_requires_team_target(tmp_path: Path) -> None:
     assert "target teammate" in result
 
 
+def test_scheduler_tool_requires_team_project_id(tmp_path: Path) -> None:
+    tool = make_tool(tmp_path)
+
+    result = tool.execute(
+        action="add",
+        payload_kind="team_wake",
+        message="Check inbox",
+        target="alice",
+        every_seconds=60,
+    )
+
+    assert result.startswith("Error:")
+    assert "project_id" in result
+
+
 def test_scheduler_tool_started_service_accepts_threaded_mutations(tmp_path: Path) -> None:
     async def scenario() -> None:
         service = SchedulerService(SchedulerStore(tmp_path), max_sleep_ms=60_000)

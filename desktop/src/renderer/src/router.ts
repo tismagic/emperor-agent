@@ -1,6 +1,6 @@
-import { createRouter, createWebHistory, type RouteRecordRaw } from 'vue-router'
+import { createMemoryHistory, createRouter, createWebHistory, type RouteRecordRaw } from 'vue-router'
 
-const routes: RouteRecordRaw[] = [
+export const routeRecords: RouteRecordRaw[] = [
   { path: '/', redirect: '/chat' },
   {
     path: '/chat',
@@ -21,6 +21,16 @@ const routes: RouteRecordRaw[] = [
     meta: { label: 'Tokens', hint: '用量账本' },
   },
   {
+    path: '/plugins',
+    redirect: '/plugins/skills',
+  },
+  {
+    path: '/plugins/:tab?',
+    name: 'plugins',
+    component: () => import('./views/PluginsView.vue'),
+    meta: { label: '插件', hint: 'Skills 与 Tools' },
+  },
+  {
     path: '/skills/:name?',
     name: 'skills',
     component: () => import('./views/SkillsView.vue'),
@@ -34,9 +44,7 @@ const routes: RouteRecordRaw[] = [
   },
   {
     path: '/team',
-    name: 'team',
-    component: () => import('./views/TeamView.vue'),
-    meta: { label: 'Team', hint: '队友协作' },
+    redirect: '/chat',
   },
   {
     path: '/scheduler',
@@ -57,6 +65,16 @@ const routes: RouteRecordRaw[] = [
     meta: { label: 'MCP', hint: '外部工具' },
   },
   {
+    path: '/settings',
+    redirect: '/settings/general',
+  },
+  {
+    path: '/settings/:section?',
+    name: 'settings',
+    component: () => import('./views/SettingsView.vue'),
+    meta: { label: '设置', hint: '应用设置', hideAppSidebar: true },
+  },
+  {
     path: '/memory',
     name: 'memory',
     component: () => import('./views/MemoryView.vue'),
@@ -66,9 +84,9 @@ const routes: RouteRecordRaw[] = [
 ]
 
 export const router = createRouter({
-  history: createWebHistory(),
-  routes,
+  history: typeof window === 'undefined' ? createMemoryHistory() : createWebHistory(),
+  routes: routeRecords,
 })
 
-export const navOrder = ['chat', 'model', 'tokens', 'skills', 'tools', 'team', 'scheduler', 'configs', 'mcp', 'memory'] as const
+export const navOrder = ['chat', 'plugins', 'scheduler', 'settings'] as const
 export type NavRouteName = (typeof navOrder)[number]

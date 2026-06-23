@@ -206,21 +206,23 @@
     flex-basis: 100%;
   }
 
+  .model-picker,
   .mode-picker {
     @apply min-w-0 flex-1;
   }
 
+  .model-button,
   .mode-button {
     @apply w-full max-w-none;
   }
 
+  .model-menu,
   .mode-menu {
     @apply left-0 right-auto w-[min(22rem,calc(100vw-4rem))];
   }
 
   .attach-button,
-  .send-button,
-  .slash-hint-button {
+  .send-button {
     width: 2.8rem;
     height: 2.8rem;
   }

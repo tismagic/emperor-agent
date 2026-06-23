@@ -136,6 +136,7 @@ class SchedulerWebService:
             "kind": raw.get("kind") or raw.get("payloadKind") or "agent_turn",
             "message": raw.get("message") or "",
             "target": raw.get("target"),
+            "project_id": raw.get("project_id", raw.get("projectId")),
             "deliver": raw.get("deliver", True),
             "meta": raw.get("meta") if isinstance(raw.get("meta"), dict) else {},
         })

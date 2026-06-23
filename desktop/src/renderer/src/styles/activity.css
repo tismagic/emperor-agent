@@ -897,8 +897,7 @@
   }
 
   .composer-action-row {
-    @apply mt-1.5 flex min-w-0 items-center justify-between gap-2 rounded border px-2 py-1.5;
-    border-color: rgb(var(--border));
+    @apply mt-1.5 flex min-w-0 items-center justify-between gap-2 px-2 py-1.5;
   }
 
   .composer-left-actions,
@@ -915,8 +914,7 @@
   }
 
   .attach-button,
-  .send-button,
-  .slash-hint-button {
+  .send-button {
     @apply grid shrink-0 place-items-center overflow-hidden border font-semibold transition disabled:opacity-50;
     width: 2rem;
     height: 2rem;
@@ -958,29 +956,13 @@
     @apply size-4;
   }
 
-  .slash-hint-button {
-    background: transparent;
-    border-color: rgb(var(--border));
-    color: rgb(var(--fg-muted));
-  }
-
-  .slash-hint-button:hover {
-    background: rgb(var(--bg-inset));
-  }
-
-  .slash-hint-button span {
-    @apply font-mono text-base leading-none;
-  }
-
-  .slash-hint-button em {
-    @apply sr-only;
-  }
-
-  /* ── Mode picker ─────────────────────────────────────────────────────────── */
+  /* ── Model and mode pickers ──────────────────────────────────────────────── */
+  .model-picker,
   .mode-picker {
     @apply relative shrink-0;
   }
 
+  .model-button,
   .mode-button {
     @apply inline-flex h-8 max-w-[13.75rem] items-center gap-2 rounded-md border px-2.5 text-left transition disabled:opacity-60;
     border-color: rgb(var(--border));
@@ -988,6 +970,7 @@
     color: rgb(var(--fg));
   }
 
+  .model-button:hover,
   .mode-button:hover {
     background: rgb(var(--bg-inset));
   }
@@ -997,10 +980,12 @@
     color: rgb(var(--ok));
   }
 
+  .model-icon,
   .mode-icon {
     @apply size-4 shrink-0;
   }
 
+  .model-button span,
   .mode-button span {
     @apply min-w-0 truncate font-mono text-xs font-semibold;
   }
@@ -1010,66 +995,80 @@
     color: rgb(var(--fg-subtle));
   }
 
+  .model-caret,
   .mode-caret {
     @apply size-3.5 shrink-0 opacity-70;
   }
 
+  .model-button[aria-expanded='true'] .model-caret,
   .mode-button[aria-expanded='true'] .mode-caret {
     transform: rotate(180deg);
   }
 
+  .model-menu,
   .mode-menu {
     @apply absolute bottom-[calc(100%+0.5rem)] right-0 z-30 w-[22rem] overflow-hidden rounded-md border p-1.5;
     border-color: rgb(var(--border-strong));
     background: rgb(var(--bg-elevated));
   }
 
+  .model-menu-head,
   .mode-menu-head {
     @apply flex items-center justify-between gap-3 px-2 pb-2 pt-1;
   }
 
+  .model-menu-head span,
   .mode-menu-head span {
     @apply font-mono text-[10px] uppercase tracking-wider;
     color: rgb(var(--fg-subtle));
   }
 
+  .model-menu-head em,
   .mode-menu-head em {
     @apply text-[11px] not-italic;
     color: rgb(var(--fg-subtle));
   }
 
+  .model-option,
   .mode-option {
     @apply relative z-10 grid w-full items-center gap-3 rounded-md px-3 py-2 text-left transition;
     grid-template-columns: auto minmax(0, 1fr) auto;
     color: rgb(var(--fg));
   }
 
+  .model-option:hover,
   .mode-option:hover {
     background: rgb(var(--bg-inset));
   }
 
+  .model-option[data-active='true'],
   .mode-option[data-active='true'] {
     color: rgb(var(--ok));
   }
 
+  .model-option-icon,
   .mode-option-icon {
     @apply size-4;
   }
 
+  .model-option strong,
   .mode-option strong {
     @apply block text-sm font-semibold leading-tight;
     color: rgb(var(--fg));
   }
 
+  .model-option[data-active='true'] strong,
   .mode-option[data-active='true'] strong {
     color: rgb(var(--ok));
   }
 
+  .model-option small,
   .mode-option small {
     @apply mt-1 block text-[11px] leading-5;
     color: rgb(var(--fg-subtle));
   }
 
+  .model-option b,
   .mode-option b {
     @apply rounded border px-2 py-0.5 font-mono text-[10px];
     border-color: rgb(var(--border));
@@ -1079,9 +1078,10 @@
   /* ── Context ring ────────────────────────────────────────────────────────── */
   .context-ring {
     @apply relative grid shrink-0 place-items-center self-center rounded-full border outline-none transition;
-    width: 2rem;
-    height: 2rem;
+    width: 1.25rem;
+    height: 1.25rem;
     border-color: rgb(var(--border));
+    color: rgb(var(--fg));
   }
 
   .context-ring:hover {
@@ -1095,11 +1095,12 @@
   .ring-track {
     fill: none;
     stroke: rgb(var(--border));
-    stroke-width: 3.5;
+    stroke-width: 3;
   }
 
   .ring-arc {
     fill: none;
+    stroke-width: 3;
     stroke-linecap: round;
     transition: stroke-dasharray 400ms ease;
   }

@@ -116,3 +116,20 @@ def test_external_runtime_event_payloads() -> None:
     error = runtime_events.external_outbound_error(message, error="boom")
     assert error["event"] == "external_outbound_error"
     assert error["error"] == "boom"
+
+
+def test_session_runtime_event_payloads() -> None:
+    session = {"id": "s1", "title": "新会话"}
+
+    created = runtime_events.session_created(session, client_draft_id="draft-1")
+    assert created == {
+        "event": "session_created",
+        "session": session,
+        "client_draft_id": "draft-1",
+    }
+
+    updated = runtime_events.session_title_updated(session)
+    assert updated == {
+        "event": "session_title_updated",
+        "session": session,
+    }

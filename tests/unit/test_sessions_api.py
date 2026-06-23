@@ -124,6 +124,43 @@ def test_delete_session(tmp_path: Path) -> None:
     asyncio.run(run())
 
 
+def test_archive_session_is_hidden_from_default_api_list(tmp_path: Path) -> None:
+    _ensure_templates(tmp_path)
+    loop = AgentLoop(root=tmp_path, verbose=False, startup_compaction=False)
+    visible = loop.session_store.create("Visible")
+    archived = loop.session_store.create("Archived")
+
+    import asyncio
+
+    async def run() -> None:
+        app = _make_app(loop)
+        client = TestClient(TestServer(app))
+        await client.start_server()
+        try:
+            patch_resp = await client.patch(
+                f"/api/sessions/{archived['id']}",
+                data=json.dumps({"archived": True}),
+            )
+            assert patch_resp.status == 200
+            patch_data = await patch_resp.json()
+            assert patch_data["archived_at"]
+
+            list_resp = await client.get("/api/sessions")
+            assert list_resp.status == 200
+            ids = [item["id"] for item in await list_resp.json()]
+            assert visible["id"] in ids
+            assert archived["id"] not in ids
+
+            archived_resp = await client.get("/api/sessions?archived=1")
+            assert archived_resp.status == 200
+            archived_ids = {item["id"] for item in await archived_resp.json()}
+            assert archived["id"] in archived_ids
+        finally:
+            await client.close()
+
+    asyncio.run(run())
+
+
 def _ensure_templates(tmp_path: Path) -> None:
     """Create the minimal template files AgentLoop init expects."""
     for p in ["templates/TOOL.md", "templates/USER.local.md", "templates/SOUL.md",

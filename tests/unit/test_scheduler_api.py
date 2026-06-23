@@ -40,7 +40,7 @@ def test_scheduler_payload_lists_status_and_jobs(tmp_path: Path) -> None:
 def test_scheduler_body_parsing_supports_nested_schedule_and_payload() -> None:
     body = {
         "schedule": {"kind": "cron", "expr": "0 9 * * *", "tz": "Asia/Shanghai"},
-        "payload": {"kind": "team_wake", "target": "alice", "message": "check"},
+        "payload": {"kind": "team_wake", "target": "alice", "message": "check", "project_id": "project_a"},
     }
 
     schedule = SchedulerWebService._schedule_from_body(body)
@@ -51,6 +51,7 @@ def test_scheduler_body_parsing_supports_nested_schedule_and_payload() -> None:
     assert schedule.tz == "Asia/Shanghai"
     assert payload.kind == "team_wake"
     assert payload.target == "alice"
+    assert payload.project_id == "project_a"
 
 
 def test_scheduler_api_rejects_system_event_payload() -> None:

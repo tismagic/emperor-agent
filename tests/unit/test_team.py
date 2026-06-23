@@ -129,6 +129,43 @@ def test_store_initializes_private_team_tree(tmp_path: Path) -> None:
     assert (tmp_path / ".team" / "threads").is_dir()
 
 
+def test_project_team_store_uses_explicit_team_dir_and_isolates_same_names(tmp_path: Path) -> None:
+    team_a = tmp_path / "memory" / "projects" / "project_a" / "team"
+    team_b = tmp_path / "memory" / "projects" / "project_b" / "team"
+    store_a = TeamStore(tmp_path, team_dir=team_a)
+    store_b = TeamStore(tmp_path, team_dir=team_b)
+
+    store_a.upsert_member(TeamMember(name="alice", role="coder", agent_type="neiguan_yingzao"))
+    store_b.upsert_member(TeamMember(name="alice", role="reviewer", agent_type="shangbao_dianbu"))
+
+    assert (team_a / "config.json").exists()
+    assert (team_b / "config.json").exists()
+    assert not (tmp_path / ".team").exists()
+    assert store_a.get_member("alice").role == "coder"
+    assert store_b.get_member("alice").role == "reviewer"
+
+
+def test_team_events_include_project_id(tmp_path: Path) -> None:
+    emitted: list[dict[str, Any]] = []
+
+    async def capture(event: dict[str, Any]) -> None:
+        emitted.append(event)
+
+    manager = TeamManager(
+        root=tmp_path,
+        team_dir=tmp_path / "memory" / "projects" / "project_a" / "team",
+        project_id="project_a",
+        parent_registry=ToolRegistry(),
+        subagent_registry=FakeSubagentRegistry(),
+        runner_factory=lambda **kwargs: FakeRunner("ok"),
+    )
+
+    manager.spawn_teammate(name="alice", role="coder", emit=capture)
+
+    assert emitted
+    assert all(event.get("project_id") == "project_a" for event in emitted)
+
+
 @pytest.mark.parametrize("name", ["../alice", "lead", "inbox", "", "bad/name"])
 def test_member_name_validation_rejects_unsafe_names(name: str) -> None:
     with pytest.raises(ValueError):

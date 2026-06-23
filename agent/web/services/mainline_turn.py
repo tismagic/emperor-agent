@@ -29,14 +29,28 @@ class MainlineTurnService:
         memory_extra: dict[str, Any] | None = None,
         turn_id: str | None = None,
         label: str = "Chat turn",
+        session_id: str | None = None,
+        draft_session: dict[str, Any] | None = None,
     ) -> str:
-        """Append a turn to the one main history and run the agent.
-
-        This intentionally has no session parameter. WebUI, scheduler-like
-        triggers, and future external bridges all feed the same durable mainline.
-        """
+        """Append a turn to the selected session history and run the agent."""
 
         resolved_turn_id = turn_id or self.state.new_turn_id()
+        session_info: dict[str, Any] | None = None
+        if hasattr(self.state, "prepare_session_for_turn"):
+            session_info = await self.state.prepare_session_for_turn(
+                session_id=session_id,
+                draft_session=draft_session,
+                preview=display_content,
+            )
+            session_entry = session_info.get("session") if isinstance(session_info, dict) else None
+            if session_info.get("created") and isinstance(session_entry, dict):
+                await self.state._broadcast_event(
+                    runtime_events.session_created(
+                        session_entry,
+                        client_draft_id=str(session_info.get("client_draft_id") or "") or None,
+                    )
+                )
+
         user_msg: dict[str, Any] = {
             "role": "user",
             "content": content,
@@ -51,7 +65,8 @@ class MainlineTurnService:
             extra["turn_id"] = resolved_turn_id
             if attachment_ids:
                 extra["attachments"] = list(attachment_ids)
-            self.state.loop.memory.append_history("user", content, extra=extra)
+            memory_store = getattr(self.state.loop, "active_memory_store", self.state.loop.memory)
+            memory_store.append_history("user", content, extra=extra)
 
             await self.state._broadcast_event(
                 runtime_events.user_message(
@@ -62,6 +77,10 @@ class MainlineTurnService:
                 turn_id=resolved_turn_id,
             )
             self.state.active_turn = True
+            if session_info and session_info.get("created") and hasattr(self.state, "schedule_session_title"):
+                session_entry = session_info.get("session") if isinstance(session_info, dict) else None
+                if isinstance(session_entry, dict) and session_entry.get("id"):
+                    self.state.schedule_session_title(str(session_entry["id"]), display_content)
 
             async def emit(event: dict[str, Any]) -> None:
                 await self.state._broadcast_event(event, turn_id=resolved_turn_id)

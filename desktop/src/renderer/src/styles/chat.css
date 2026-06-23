@@ -20,9 +20,13 @@
     @apply flex flex-col gap-4;
   }
 
-  .welcome-hero {
-    @apply mb-2;
-    color: rgb(var(--fg-subtle));
+  .welcome-brand-lockup {
+    @apply mb-6 flex min-w-0 items-center;
+  }
+
+  .welcome-wordmark {
+    @apply block h-auto min-w-0 max-w-full object-contain;
+    width: min(420px, calc(100vw - 9rem));
   }
 
   .welcome-card h1 {

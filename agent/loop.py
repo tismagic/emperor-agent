@@ -23,10 +23,11 @@ from .logger import configure as configure_logging
 from .mcp import MCPClient
 from .memory import MemoryStore
 from .model_router import ModelRouter
+from .projects import ProjectStore
 from .runner import AgentRunner
 from .runner_factory import build_routed_runner
 from .scheduler import SchedulerService, SchedulerStore, SchedulerTool
-from .sessions.conversation import ConversationStore
+from .sessions.conversation import ConversationStore, ProjectSessionMemoryStore, SessionMemoryStore
 from .sessions.store import SessionStore
 from .skills import SkillsLoader
 from .subagents import SubagentRegistry
@@ -54,6 +55,16 @@ from .tools import (
     WebFetch,
     WriteFileTool,
 )
+from .workspace import WorkspaceContext
+
+_TEAM_TOOL_NAMES = {
+    "spawn_teammate",
+    "list_teammates",
+    "send_message",
+    "read_inbox",
+    "broadcast",
+    "shutdown_teammate",
+}
 
 
 class AgentLoop:
@@ -81,6 +92,7 @@ class AgentLoop:
         self.token_tracker = TokenTracker(self.root / "memory" / "tokens.jsonl")
         self.scheduler_store = SchedulerStore(self.root)
         self.scheduler_service = SchedulerService(self.scheduler_store)
+        self.project_store = ProjectStore(self.root)
 
         self.skills = SkillsLoader(self.root / "skills")
         self.context_builder = ContextBuilder(
@@ -88,17 +100,21 @@ class AgentLoop:
             self.skills,
             memory=self.memory,
         )
+        self.context_builder.set_session_scope(
+            mode="chat",
+            project_index_summary=self.project_store.summary_for_chat(),
+        )
 
-        workspace = self.root
+        self.workspace_context = WorkspaceContext(self.root)
         self.registry = ToolRegistry()
-        self.registry.register(RunCommand(workspace))
+        self.registry.register(RunCommand(self.workspace_context))
         self.registry.register(WebFetch())
         self.registry.register(LoadSkill(self.skills))
-        self.registry.register(ReadFileTool(workspace))
-        self.registry.register(WriteFileTool(workspace))
-        self.registry.register(EditFileTool(workspace))
-        self.registry.register(GlobTool(workspace))
-        self.registry.register(GrepTool(workspace))
+        self.registry.register(ReadFileTool(self.workspace_context))
+        self.registry.register(WriteFileTool(self.workspace_context))
+        self.registry.register(EditFileTool(self.workspace_context))
+        self.registry.register(GlobTool(self.workspace_context))
+        self.registry.register(GrepTool(self.workspace_context))
         self.registry.register(SchedulerTool(self.scheduler_service))
 
         self.control_manager = ControlManager(self.root)
@@ -114,13 +130,21 @@ class AgentLoop:
         )
         self.context_builder.set_subagent_registry(self.subagent_registry)
         self._install_subagent_tool()
-        self._install_team_tools()
+        self._team_managers: dict[str, TeamManager] = {}
+        self.team_manager: TeamManager | None = None
+        self._active_project_id: str | None = None
+        self._active_project_path: str | None = None
 
         self.mcp_client: MCPClient | None = None
         try:
             self.mcp_client = MCPClient(self.root)
         except Exception as exc:
             logger.warning(f"MCP client init failed: {exc}")
+
+        self.session_store = SessionStore(self.root)
+        self._active_session_id: str | None = None
+        self._active_conversation: ConversationStore | None = None
+        self._active_session_memory: SessionMemoryStore | None = None
 
         self.refresh_model_config(initial=True)
 
@@ -146,10 +170,6 @@ class AgentLoop:
             self.history: list = list(unarchived)
 
         # ── Multi-session initialisation ────────────────────────────
-        self.session_store = SessionStore(self.root)
-        self._active_session_id: str | None = None
-        self._active_conversation: ConversationStore | None = None
-
         self._migrate_if_needed_and_activate()
         # ─────────────────────────────────────────────────────────────
 
@@ -186,15 +206,59 @@ class AgentLoop:
             self.activate_session(sessions[0]["id"])
 
     def activate_session(self, session_id: str) -> None:
-        conv = ConversationStore(self.session_store._dir(session_id))
+        entry = self.session_store.get(session_id)
+        if entry is None:
+            raise KeyError(f"unknown session: {session_id}")
+        conv = ConversationStore(self.session_store.session_dir(session_id))
         self._active_session_id = session_id
         self._active_conversation = conv
+        session_mode = str(entry.get("mode") or "chat")
+        project_id = str(entry.get("project_id") or "")
+        project_path = str(entry.get("project_path") or "")
+        self._active_project_id = project_id or None
+        self._active_project_path = project_path or None
+        project_agents = ""
+        if session_mode == "build" and project_id:
+            self._active_session_memory = ProjectSessionMemoryStore(
+                self.memory,
+                conv,
+                self.project_store,
+                project_id,
+            )
+            project_agents = self.project_store.read_agents(project_id)
+            if project_path and Path(project_path).expanduser().exists():
+                self.workspace_context.set(project_path)
+            else:
+                self.workspace_context.reset()
+        else:
+            self._active_session_memory = SessionMemoryStore(self.memory, conv)
+            self.workspace_context.reset()
+        self.context_builder.set_session_scope(
+            mode=session_mode,
+            project_agents=project_agents,
+            project_path=project_path,
+            project_index_summary=self.project_store.summary_for_chat(),
+        )
+        self._activate_team_scope(session_mode, project_id)
         cp = conv.read_checkpoint()
         if cp:
             logger.info(f"Session {session_id[:8]}: restored checkpoint ({len(cp)} msgs)")
             self.history = list(cp)
         else:
             self.history = conv.load_unarchived_history()
+        if hasattr(self, "runner"):
+            self.runner.memory_store = self._active_session_memory
+            self.runner.system_prompt = self.context_builder.build_system_prompt()
+        if hasattr(self, "compactor"):
+            self.compactor.memory = self._active_session_memory
+
+    @property
+    def active_session_id(self) -> str | None:
+        return self._active_session_id
+
+    @property
+    def active_memory_store(self):
+        return self._active_session_memory or self.memory
 
     def _ensure_local_user_file(self) -> Path:
         template = self.root / "templates" / "init" / "USER.md"
@@ -260,7 +324,7 @@ class AgentLoop:
                 route_reason=self.route_reason,
                 route_estimated_tokens=main_route.estimated_tokens,
                 usage_type="main_agent",
-                memory_store=self.memory,
+                memory_store=self.active_memory_store,
                 token_tracker=self.token_tracker,
                 compactor=self.compactor,
                 todo_store=self.todos,
@@ -286,6 +350,7 @@ class AgentLoop:
         self.runner.fallback_model_role = "main"
         self.runner.usage_type = "main_agent"
         self.runner.compactor = self.compactor
+        self.runner.memory_store = self.active_memory_store
         self.runner.control_manager = self.control_manager
         self.runner.max_context = self.max_context
 
@@ -328,7 +393,7 @@ class AgentLoop:
             if self._handle_cli_command(user_input):
                 continue
             self.history.append({"role": "user", "content": user_input})
-            self.memory.append_history("user", user_input)
+            self.active_memory_store.append_history("user", user_input)
             try:
                 reply = self.runner.step(self.history)
             except TurnPaused:
@@ -440,8 +505,8 @@ class AgentLoop:
                         message = str(event.get("message") or "")
                         if message:
                             self.history.append({"role": "user", "content": message})
-                            self.memory.append_history("user", message, extra={"type": "control_response"})
-                        self.memory.clear_checkpoint()
+                            self.active_memory_store.append_history("user", message, extra={"type": "control_response"})
+                        self.active_memory_store.clear_checkpoint()
                         self.console.print(f"[yellow]已取消：{event.get('interaction', {}).get('id')}[/yellow]")
                         return
                     self.console.print("[yellow]请输入 approve、comment <内容> 或 cancel。[/yellow]")
@@ -449,7 +514,7 @@ class AgentLoop:
                 return
 
             self.history.append({"role": "user", "content": resume.message})
-            self.memory.append_history("user", resume.message, extra={"type": "control_response"})
+            self.active_memory_store.append_history("user", resume.message, extra={"type": "control_response"})
             try:
                 reply = self.runner.step(self.history)
             except TurnPaused:
@@ -556,13 +621,14 @@ class AgentLoop:
             runner_factory=_make_subagent_runner,
         ))
 
-    def _install_team_tools(self) -> None:
+    def _team_runner_factory(self, project_id: str):
         def _make_team_runner(*, member, spec, sub_registry):
             route = self.model_router.route("team", agent_type=spec.name)
             system_prompt = (
                 f"{spec.system_prompt}\n\n"
                 "## Agent Team 协作规则\n\n"
                 f"- 你的队友名是 `{member.name}`, role 是 `{member.role}`。\n"
+                f"- 当前项目 id 是 `{project_id}`。只处理这个项目的任务和文件。\n"
                 "- 你拥有自己的持久 thread 与 inbox, 不需要向用户直接发言。\n"
                 "- 收到任务后先理解 inbox 内容, 必要时调用工具完成差事。\n"
                 "- 完成后必须用 send_message(to=\"lead\", content=\"...\") 回禀关键结果。\n"
@@ -573,20 +639,64 @@ class AgentLoop:
                 registry=sub_registry,
                 system_prompt=system_prompt,
                 max_tokens_cap=4000,
-                usage_type=f"team:{member.name}",
+                usage_type=f"team:{project_id}:{member.name}",
                 token_tracker=self.token_tracker,
                 max_turns=spec.max_turns,
             )
 
-        self.team_manager = TeamManager(
-            root=self.root,
-            parent_registry=self.registry,
-            subagent_registry=self.subagent_registry,
-            runner_factory=_make_team_runner,
-        )
-        self.registry.register(TeamSpawnTool(self.team_manager))
-        self.registry.register(TeamListTool(self.team_manager))
-        self.registry.register(TeamSendMessageTool(self.team_manager))
-        self.registry.register(TeamReadInboxTool(self.team_manager))
-        self.registry.register(TeamBroadcastTool(self.team_manager))
-        self.registry.register(TeamShutdownTool(self.team_manager))
+        return _make_team_runner
+
+    def _team_registry_for_project(self, project_path: str) -> ToolRegistry:
+        workspace = WorkspaceContext(self.root)
+        if project_path and Path(project_path).expanduser().exists():
+            workspace.set(project_path)
+        registry = ToolRegistry()
+        registry.register(RunCommand(workspace))
+        registry.register(WebFetch())
+        registry.register(LoadSkill(self.skills))
+        registry.register(ReadFileTool(workspace))
+        registry.register(WriteFileTool(workspace))
+        registry.register(EditFileTool(workspace))
+        registry.register(GlobTool(workspace))
+        registry.register(GrepTool(workspace))
+        return registry
+
+    def team_manager_for_project(self, project_id: str) -> TeamManager:
+        safe_project_id = str(project_id or "").strip()
+        if not safe_project_id:
+            raise ValueError("project_id is required for project team")
+        project = self.project_store.get(safe_project_id)
+        if project is None:
+            raise ValueError(f"unknown project_id for team: {safe_project_id}")
+        if safe_project_id not in self._team_managers:
+            project_path = str(project.get("project_path") or "")
+            team_dir = self.root / "memory" / "projects" / safe_project_id / "team"
+            self._team_managers[safe_project_id] = TeamManager(
+                root=self.root,
+                team_dir=team_dir,
+                project_id=safe_project_id,
+                parent_registry=self._team_registry_for_project(project_path),
+                subagent_registry=self.subagent_registry,
+                runner_factory=self._team_runner_factory(safe_project_id),
+            )
+        return self._team_managers[safe_project_id]
+
+    def _activate_team_scope(self, mode: str, project_id: str) -> None:
+        self._uninstall_team_tools()
+        if mode == "build" and project_id:
+            self.team_manager = self.team_manager_for_project(project_id)
+            self._install_team_tools(self.team_manager)
+            return
+        self.team_manager = None
+
+    def _install_team_tools(self, manager: TeamManager) -> None:
+        self.registry.register(TeamSpawnTool(manager))
+        self.registry.register(TeamListTool(manager))
+        self.registry.register(TeamSendMessageTool(manager))
+        self.registry.register(TeamReadInboxTool(manager))
+        self.registry.register(TeamBroadcastTool(manager))
+        self.registry.register(TeamShutdownTool(manager))
+
+    def _uninstall_team_tools(self) -> None:
+        for name in _TEAM_TOOL_NAMES:
+            self.registry.unregister(name)

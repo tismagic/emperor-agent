@@ -6,9 +6,11 @@
   "main": "out/main/index.js",
   "scripts": {
     "dev": "electron-vite dev",
+    "dev:renderer": "vite --config vite.renderer.config.ts",
     "build": "electron-vite build",
     "start": "electron-vite preview",
     "test": "vitest run",
+    "screenshots": "playwright test -c playwright.config.ts",
     "typecheck": "vue-tsc --noEmit -p tsconfig.web.json && tsc --noEmit -p tsconfig.node.json",
     "dist": "electron-vite build && electron-builder"
   },
@@ -19,6 +21,7 @@
     "vue-router": "^4.6.4"
   },
   "devDependencies": {
+    "@playwright/test": "^1.61.0",
     "@types/markdown-it": "^14.1.2",
     "@types/node": "^22.10.2",
     "@vitejs/plugin-vue": "^5.2.1",

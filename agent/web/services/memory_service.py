@@ -148,20 +148,43 @@ class MemoryService:
                 for path in sorted(memory_dir.glob("*.md"))
                 if is_episode_file(path)
             ]
-        turn_ids = self.state.loop.memory.load_unarchived_turn_ids()
+        memory_store = self.state.loop.active_memory_store
+        turn_ids = memory_store.load_unarchived_turn_ids()
         return {
             "long_term": self.state.loop.memory.read_memory(),
             "today_episode": self.state.loop.memory.read_today_episode(),
             "episodes": episodes,
+            "context": self._context_payload(),
+            "projects": self.state.loop.project_store.list(),
             "tokens": self.state.loop.token_tracker.stats_by_date(),
             "tokensByModel": self.state.loop.token_tracker.stats_by_provider_model(),
             "tokensByUsageType": self.state.loop.token_tracker.stats_by_usage_type(),
             "tokenTotals": self.state.loop.token_tracker.totals(),
-            "history": self.state.loop.memory.history_stats(),
+            "history": memory_store.history_stats(),
             "runtime": self.state.runtime_events.stats(active_turn_ids=turn_ids),
             "schedulerMaintenance": self._scheduler_maintenance(),
             "watchlist": self.state.watchlist_service.payload(),
             "versions": self.state.loop.memory.versions.payload(limit=30),
+        }
+
+    def _context_payload(self) -> dict[str, Any]:
+        session_id = self.state.loop.active_session_id or ""
+        session = self.state.loop.session_store.get(session_id) if session_id else None
+        mode = str((session or {}).get("mode") or "chat")
+        project_id = str((session or {}).get("project_id") or "")
+        project = self.state.loop.project_store.get(project_id) if project_id else None
+        sources = ["templates/SOUL.md", "templates/TOOL.md", "templates/USER.local.md"]
+        if mode == "build":
+            sources.append("Project AGENTS.md")
+        else:
+            sources.extend(["memory/MEMORY.local.md", "memory/projects/index.json"])
+        return {
+            "mode": mode,
+            "session": session,
+            "sources": sources,
+            "project": project,
+            "projectIndexSummary": self.state.loop.project_store.summary_for_chat(),
+            "projectMemory": self.state.loop.project_store.read_managed_memory(project_id) if project_id else "",
         }
 
     def tokens(self) -> dict[str, Any]:
@@ -182,7 +205,7 @@ class MemoryService:
         }
 
     def runtime(self) -> dict[str, Any]:
-        turn_ids = self.state.loop.memory.load_unarchived_turn_ids()
+        turn_ids = self.state.loop.active_memory_store.load_unarchived_turn_ids()
         return {
             "latestSeq": self.state.event_seq,
             "scope": "unarchived",
@@ -212,7 +235,7 @@ class MemoryService:
 
     def unarchived_history(self) -> list[dict[str, Any]]:
         items: list[dict[str, Any]] = []
-        for item in self.state.loop.memory.load_unarchived_history():
+        for item in self.state.loop.active_memory_store.load_unarchived_history():
             role = item.get("role")
             content = item.get("content")
             if role not in {"user", "assistant"}:
@@ -236,7 +259,7 @@ class MemoryService:
         return items
 
     def _count_history_messages(self) -> int:
-        history_file = self.state.loop.memory.history_file
+        history_file = self.state.loop.active_memory_store.history_file
         if not history_file.exists():
             return 0
         count = 0

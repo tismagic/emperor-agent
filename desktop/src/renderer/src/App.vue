@@ -1,11 +1,11 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import NavRail from './components/layout/NavRail.vue'
 import SessionSidebar from './components/layout/SessionSidebar.vue'
 import { buildSlashPaletteItems, parseSkillSlashCommand, parseSlashCommand, slashCommands, type SlashCommand } from './commands'
 import { useBootstrap } from './composables/useBootstrap'
 import { useRuntime } from './composables/useRuntime'
+import { useSession } from './composables/useSession'
 import { useTokens } from './composables/useTokens'
 import { provideAppContext } from './composables/useAppContext'
 import type { ChatSendPayload, CompactResult, TokenStatsRow } from './types'
@@ -15,6 +15,7 @@ import { formatNumber, usageTypeLabel } from './utils/format'
 const router = useRouter()
 const toast = ref('')
 let toastTimer: number | undefined
+const hideAppSidebar = computed(() => router.currentRoute.value.meta?.hideAppSidebar === true)
 
 function showToast(message: string) {
   toast.value = message
@@ -23,6 +24,7 @@ function showToast(message: string) {
 }
 
 const bootstrap = useBootstrap(showToast)
+const sessionStore = useSession()
 const {
   boot,
   loading,
@@ -54,7 +56,14 @@ const {
   setDesktopPetEnabled,
 } = bootstrap
 
-const runtime = useRuntime({ boot, refreshMemory, showToast })
+const runtime = useRuntime({
+  boot,
+  refreshMemory,
+  showToast,
+  resolveDraftSession: sessionStore.getSession,
+  onSessionCreated: sessionStore.applySessionCreatedEvent,
+  onSessionTitleUpdated: sessionStore.applySessionTitleUpdatedEvent,
+})
 const {
   messages,
   busy,
@@ -74,9 +83,12 @@ const {
   restoreFromHistory,
 } = runtime
 
-function onSessionActivate(id: string) {
+async function onSessionActivate(id: string) {
+  await sessionStore.activate(id)
   switchSession(id)
-  bootstrap.loadBootstrap(false)
+  if (sessionStore.isDraftSessionId(id)) return
+  await bootstrap.loadBootstrap(false, sessionStore.backendSessionId())
+  restoreFromHistory(boot.value?.unarchivedHistory || [])
 }
 
 const tokensClient = useTokens(showToast)
@@ -84,15 +96,19 @@ const { data: tokensData, loading: tokensLoading, load: loadTokens } = tokensCli
 const slashPaletteItems = computed(() => buildSlashPaletteItems(boot.value?.skills || []))
 
 onMounted(async () => {
-  await loadBootstrap()
+  await sessionStore.load()
+  if (sessionStore.activeId.value) switchSession(sessionStore.activeId.value)
+  await loadBootstrap(true, sessionStore.backendSessionId())
   if (!error.value) {
-    restoreFromHistory(boot.value?.unarchivedHistory || [])
+    if (!sessionStore.isDraftSessionId(sessionStore.activeId.value)) {
+      restoreFromHistory(boot.value?.unarchivedHistory || [])
+    }
     connectSocket()
   }
 })
 
 async function refreshAll() {
-  await loadBootstrap(false)
+  await loadBootstrap(false, sessionStore.backendSessionId())
   if (!error.value) {
     connectSocket()
     showToast('工作台已刷新')
@@ -563,9 +579,8 @@ provideAppContext({
     </div>
   </div>
 
-  <div v-else class="app-shell">
-    <NavRail />
-    <SessionSidebar @activate="onSessionActivate" />
+  <div v-else class="app-shell" :class="{ 'settings-app-shell': hideAppSidebar }">
+    <SessionSidebar v-if="!hideAppSidebar" @activate="onSessionActivate" />
     <router-view v-slot="{ Component }">
       <keep-alive>
         <component :is="Component" />

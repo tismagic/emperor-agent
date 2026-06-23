@@ -1,11 +1,8 @@
 from __future__ import annotations
 
-import asyncio
 from typing import TYPE_CHECKING, Any
 
 from aiohttp import web
-
-from ..mutation_guard import assert_web_mutation_allowed
 
 if TYPE_CHECKING:
     from ..state import WebUIState
@@ -20,78 +17,41 @@ class TeamService:
 
     async def get_team_member(self, request: web.Request) -> web.Response:
         name = request.match_info.get("name", "")
+        manager = getattr(self.state.loop, "team_manager", None)
+        if manager is None:
+            return self.state._json({"error": "Team is only available inside Build project sessions"}, status=404)
         try:
-            return self.state._json(self.state.loop.team_manager.member_payload(name))
+            return self.state._json(manager.member_payload(name))
         except ValueError as exc:
             return self.state._json({"error": str(exc)}, status=404)
 
     async def post_team_member(self, request: web.Request) -> web.Response:
-        assert_web_mutation_allowed(self.state.control(), area="team", action="spawn teammate")
-        body = await self.state._body(request)
-        name = str(body.get("name") or "")
-        role = str(body.get("role") or "")
-        task = body.get("task")
-        agent_type = body.get("agent_type")
-        if not name or not role:
-            raise web.HTTPBadRequest(reason="'name' and 'role' are required")
-
-        result = await self._run_team_call(
-            self.state.loop.team_manager.spawn_teammate,
-            name=name,
-            role=role,
-            task=str(task) if task else None,
-            agent_type=str(agent_type) if agent_type else None,
-        )
-        return self.state._json({"result": result, "team": self.team()})
+        raise web.HTTPGone(reason="Team is managed automatically by Build project sessions")
 
     async def post_team_message(self, request: web.Request) -> web.Response:
-        assert_web_mutation_allowed(self.state.control(), area="team", action="send message")
-        body = await self.state._body(request)
-        to = str(body.get("to") or "")
-        content = str(body.get("content") or "")
-        wake = bool(body.get("wake", True))
-        if not to or not content:
-            raise web.HTTPBadRequest(reason="'to' and 'content' are required")
-
-        result = await self._run_team_call(
-            self.state.loop.team_manager.send_message,
-            to=to,
-            content=content,
-            wake=wake,
-        )
-        return self.state._json({"result": result, "team": self.team()})
+        raise web.HTTPGone(reason="Team is managed automatically by Build project sessions")
 
     async def post_team_wake(self, request: web.Request) -> web.Response:
-        assert_web_mutation_allowed(self.state.control(), area="team", action="wake teammate")
-        name = request.match_info.get("name", "")
-        result = await self._run_team_call(
-            self.state.loop.team_manager.wake_teammate,
-            name,
-            purpose="manual wake",
-        )
-        return self.state._json({"result": result, "team": self.team()})
+        raise web.HTTPGone(reason="Team is managed automatically by Build project sessions")
 
     async def post_team_shutdown(self, request: web.Request) -> web.Response:
-        assert_web_mutation_allowed(self.state.control(), area="team", action="shutdown teammate")
-        name = request.match_info.get("name", "")
-        result = await self._run_team_call(
-            self.state.loop.team_manager.shutdown_teammate,
-            name=name,
-        )
-        return self.state._json({"result": result, "team": self.team()})
+        raise web.HTTPGone(reason="Team is managed automatically by Build project sessions")
 
     def team(self) -> dict[str, Any]:
-        return self.state.loop.team_manager.payload()
-
-    async def _run_team_call(self, fn, *args, **kwargs):
-        async def emit(event: dict[str, Any]) -> None:
-            await self.state._broadcast_event(event)
-
-        loop = asyncio.get_running_loop()
-        return await asyncio.to_thread(
-            fn,
-            *args,
-            emit=emit,
-            loop=loop,
-            **kwargs,
-        )
+        manager = getattr(self.state.loop, "team_manager", None)
+        project_id = getattr(self.state.loop, "_active_project_id", None)
+        if manager is None:
+            return {
+                "managed": True,
+                "scope": "chat",
+                "project_id": None,
+                "config": {"team_name": "none", "members": []},
+                "members": [],
+                "leadUnread": 0,
+                "leadInbox": [],
+            }
+        payload = manager.payload()
+        payload["managed"] = True
+        payload["scope"] = "project"
+        payload["project_id"] = project_id
+        return payload

@@ -17,8 +17,10 @@ from .routes import (
     external,
     memory,
     model,
+    projects,
     scheduler,
     sessions,
+    sidebar,
     skills,
     team,
 )
@@ -61,9 +63,11 @@ def create_app(
     app["state"] = state
     for register in (
         sessions.register,
+        sidebar.register,
         skills.register,
         assets.register,
         memory.register,
+        projects.register,
         control.register,
         diagnostics.register,
         desktop_pet.register,

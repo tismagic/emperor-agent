@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 from collections.abc import Awaitable, Callable
+from pathlib import Path
 from threading import Lock
 from typing import Any
 
@@ -45,11 +46,14 @@ class TeamManager:
         self,
         *,
         root,
+        team_dir: str | Path | None = None,
+        project_id: str | None = None,
         parent_registry: ToolRegistry,
         subagent_registry,
         runner_factory,
     ):
-        self.store = TeamStore(root)
+        self.project_id = str(project_id or "").strip() or None
+        self.store = TeamStore(root, team_dir=Path(team_dir) if team_dir is not None else None)
         self.bus = MessageBus(self.store)
         self.parent_registry = parent_registry
         self.subagent_registry = subagent_registry
@@ -487,14 +491,16 @@ class TeamManager:
             return events.run_done(parent_id=parent_call_id, member=member, summary=str(evt.get("content") or ""))
         return None
 
-    @staticmethod
     def _emit(
+        self,
         event: dict[str, Any],
         emit: StreamEmitter | None,
         loop: asyncio.AbstractEventLoop | None,
     ) -> None:
         if emit is None:
             return
+        if self.project_id and str(event.get("event") or "").startswith("team_"):
+            event = {**event, "project_id": self.project_id}
         if loop is not None:
             asyncio.run_coroutine_threadsafe(emit(event), loop)
             return

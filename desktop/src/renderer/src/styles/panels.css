@@ -381,6 +381,30 @@
     @apply flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto pr-1;
   }
 
+  .model-form-section {
+    @apply grid gap-3 rounded-[1.1rem] border border-line/70 bg-paper2/35 p-3;
+  }
+
+  .model-form-section-head {
+    @apply flex items-baseline justify-between gap-3;
+  }
+
+  .model-form-section-head h4 {
+    @apply font-display text-sm font-bold text-ink;
+  }
+
+  .model-form-section-head span {
+    @apply text-xs text-muted;
+  }
+
+  .model-form-grid {
+    @apply grid grid-cols-2 gap-3;
+  }
+
+  .capacity-grid {
+    @apply grid-cols-2;
+  }
+
   .model-form-v2 .form-row {
     @apply flex flex-col gap-1.5;
   }
@@ -1750,6 +1774,23 @@
 
   .memory-stat-card strong {
     @apply block truncate font-mono text-base font-black text-ink;
+  }
+
+  .memory-context-strip {
+    @apply grid shrink-0 grid-cols-3 gap-3 rounded-lg border border-line/65 bg-paper/70 p-3;
+  }
+
+  .memory-context-strip div {
+    @apply min-w-0;
+  }
+
+  .memory-context-strip span,
+  .memory-context-strip small {
+    @apply block truncate text-[11px] font-semibold text-muted;
+  }
+
+  .memory-context-strip strong {
+    @apply block truncate text-sm font-bold text-ink;
   }
 
   .episode-card {

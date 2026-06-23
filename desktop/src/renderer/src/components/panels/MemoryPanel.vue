@@ -25,7 +25,13 @@ const longTermDraft = ref('')
 const longTermPreview = ref(false)
 const watchlistDraft = ref('')
 
-watch(() => props.memory?.long_term, (val) => {
+const memoryContext = computed(() => props.memory?.context || null)
+const isBuildContext = computed(() => memoryContext.value?.mode === 'build')
+const displayedMemoryContent = computed(() =>
+  isBuildContext.value ? memoryContext.value?.projectMemory || '' : props.memory?.long_term || '',
+)
+
+watch(displayedMemoryContent, (val) => {
   longTermDraft.value = val || ''
 }, { immediate: true })
 
@@ -55,6 +61,7 @@ async function selectEpisode(path: string) {
 }
 
 function saveLongTerm() {
+  if (isBuildContext.value) return
   emit('saveLongTerm', longTermDraft.value)
 }
 
@@ -152,6 +159,28 @@ function formatNumber(value?: number) {
       </div>
     </div>
 
+    <div v-if="memoryContext" class="memory-context-strip">
+      <div>
+        <span>当前上下文</span>
+        <strong>{{ memoryContext.mode === 'build' ? 'Build · 项目记忆' : 'Chat · 全局记忆' }}</strong>
+      </div>
+      <div v-if="memoryContext.mode === 'build'">
+        <span>项目</span>
+        <strong>{{ memoryContext.project?.project_name || memoryContext.session?.project_name || '未绑定项目' }}</strong>
+        <small>{{ memoryContext.project?.project_path || memoryContext.session?.project_path || '项目路径不可用' }}</small>
+      </div>
+      <div v-else>
+        <span>项目索引</span>
+        <strong>{{ memoryContext.projectIndexSummary ? '已注入短摘要' : '暂无项目摘要' }}</strong>
+        <small>Chat 不读取项目 AGENTS.md 细节</small>
+      </div>
+      <div>
+        <span>来源</span>
+        <strong>{{ (memoryContext.sources || []).length }} 个</strong>
+        <small>{{ (memoryContext.sources || []).join(' · ') }}</small>
+      </div>
+    </div>
+
     <div v-if="runtimeStats" class="memory-stats-grid">
       <div class="memory-stat-card">
         <span>Runtime 热记录</span>
@@ -190,7 +219,7 @@ function formatNumber(value?: number) {
 
     <div v-else-if="tab === 'long_term'" class="editor flex-1">
       <div class="editor-title">
-        <span>MEMORY.local.md</span>
+        <span>{{ isBuildContext ? 'Project AGENTS.md · 托管记忆区块' : 'MEMORY.local.md' }}</span>
         <button class="badge preview-toggle" :class="{ active: longTermPreview }" @click="longTermPreview = !longTermPreview">
           {{ longTermPreview ? '编辑' : '预览' }}
         </button>
@@ -198,12 +227,12 @@ function formatNumber(value?: number) {
       <div v-if="longTermPreview" class="skill-preview">
         <MarkdownBlock :content="longTermDraft" />
       </div>
-      <textarea v-else v-model="longTermDraft" />
+      <textarea v-else v-model="longTermDraft" :readonly="isBuildContext" />
       <div class="editor-actions">
-        <span class="status-pill">保存后刷新 Agent 上下文</span>
-        <button class="tool-button ink asset-button primary-action" @click="saveLongTerm">
+        <span class="status-pill">{{ isBuildContext ? 'Build 压缩会更新项目托管区块' : '保存后刷新 Agent 上下文' }}</span>
+        <button class="tool-button ink asset-button primary-action" :disabled="isBuildContext" @click="saveLongTerm">
           <component :is="actionIcons.save" class="action-icon" :size="16" />
-          <span>保存</span>
+          <span>{{ isBuildContext ? '只读' : '保存' }}</span>
         </button>
       </div>
     </div>

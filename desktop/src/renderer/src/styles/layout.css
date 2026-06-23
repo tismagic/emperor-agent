@@ -15,6 +15,10 @@
     color: rgb(var(--fg));
   }
 
+  .rail-brand-img {
+    @apply block size-6 object-contain;
+  }
+
   .rail-status {
     @apply mb-2 grid size-9 shrink-0 place-items-center rounded-md;
     color: rgb(var(--fg-subtle));

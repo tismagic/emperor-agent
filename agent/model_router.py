@@ -54,7 +54,7 @@ class ModelRouter:
         key = str(use_case or "main_agent")
         if key == "main_agent":
             return self._main("main_agent")
-        if key in {"memory_compaction", "watchlist_check"}:
+        if key in {"memory_compaction", "watchlist_check", "session_title"}:
             return self._secondary(key)
         if key in {"subagent", "team"}:
             normalized_agent = str(agent_type or "").strip()

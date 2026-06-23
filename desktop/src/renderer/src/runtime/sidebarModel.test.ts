@@ -1,0 +1,76 @@
+import { describe, expect, it } from 'vitest'
+import type { SessionInfo, SidebarState } from '../types'
+
+function session(overrides: Partial<SessionInfo>): SessionInfo {
+  return {
+    id: overrides.id || 's',
+    title: overrides.title || 'Untitled',
+    created_at: overrides.created_at || '2026-01-01T00:00:00+0800',
+    updated_at: overrides.updated_at || '2026-01-01T00:00:00+0800',
+    preview: overrides.preview || '',
+    mode: overrides.mode || 'chat',
+    version: 1,
+    ...overrides,
+  }
+}
+
+function state(overrides: Partial<SidebarState> = {}): SidebarState {
+  return {
+    section_order: ['projects', 'chats'],
+    project_sort: 'updated_at',
+    chat_sort: 'updated_at',
+    project_order: [],
+    chat_order: [],
+    project_session_order: {},
+    collapsed_project_ids: [],
+    ...overrides,
+  }
+}
+
+describe('sidebar model', () => {
+  it('groups build sessions by project and excludes archived sessions', async () => {
+    const { buildSidebarGroups } = await import('./sidebarModel')
+    const grouped = buildSidebarGroups([
+      session({ id: 'chat-1', title: 'Chat A', mode: 'chat' }),
+      session({ id: 'archived', title: 'Old', archived_at: '2026-01-02T00:00:00+0800' }),
+      session({ id: 'build-1', title: 'Build A', mode: 'build', project_id: 'p1', project_name: 'Alpha', project_path: '/tmp/alpha' }),
+      session({ id: 'build-2', title: 'Build B', mode: 'build', project_id: 'p1', project_name: 'Alpha', project_path: '/tmp/alpha' }),
+    ], state())
+
+    expect(grouped.chats.map((item) => item.id)).toEqual(['chat-1'])
+    expect(grouped.projects).toHaveLength(1)
+    expect(grouped.projects[0].id).toBe('p1')
+    expect(grouped.projects[0].sessions.map((item) => item.id)).toEqual(['build-1', 'build-2'])
+  })
+
+  it('uses manual order before falling back to updated time', async () => {
+    const { buildSidebarGroups } = await import('./sidebarModel')
+    const grouped = buildSidebarGroups([
+      session({ id: 'chat-old', updated_at: '2026-01-01T00:00:00+0800' }),
+      session({ id: 'chat-new', updated_at: '2026-01-03T00:00:00+0800' }),
+      session({ id: 'build-a', mode: 'build', project_id: 'project-a', project_name: 'A', updated_at: '2026-01-04T00:00:00+0800' }),
+      session({ id: 'build-b', mode: 'build', project_id: 'project-b', project_name: 'B', updated_at: '2026-01-05T00:00:00+0800' }),
+    ], state({
+      chat_sort: 'manual',
+      project_sort: 'manual',
+      chat_order: ['chat-old'],
+      project_order: ['project-a'],
+    }))
+
+    expect(grouped.chats.map((item) => item.id)).toEqual(['chat-old', 'chat-new'])
+    expect(grouped.projects.map((item) => item.id)).toEqual(['project-a', 'project-b'])
+  })
+
+  it('searches only session and project identity fields', async () => {
+    const { searchSidebarSessions } = await import('./sidebarModel')
+    const results = searchSidebarSessions([
+      session({ id: 'chat-1', title: '分析文件夹内容', preview: 'mentions scheduler but should not match' }),
+      session({ id: 'build-1', title: '启动', mode: 'build', project_id: 'p1', project_name: 'emperor-agent', project_path: '/Users/me/emperor-agent' }),
+    ], 'emperor')
+
+    expect(results.map((item) => item.id)).toEqual(['build-1'])
+    expect(searchSidebarSessions([
+      session({ id: 'chat-1', title: '普通对话', preview: 'emperor only in preview' }),
+    ], 'emperor')).toEqual([])
+  })
+})

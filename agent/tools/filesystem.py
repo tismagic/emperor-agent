@@ -18,16 +18,25 @@ class _FsTool(Tool):
         "dist", "build", ".tox", ".mypy_cache", ".pytest_cache",
     }
 
-    def __init__(self, workspace: Path | None = None):
+    def __init__(self, workspace: Path | object | None = None):
         self._workspace = workspace
+
+    def _workspace_root(self) -> Path | None:
+        if self._workspace is None:
+            return None
+        path = getattr(self._workspace, "path", None)
+        if path is not None:
+            return Path(path).resolve()
+        return Path(self._workspace).resolve()  # type: ignore[arg-type]
 
     def _resolve(self, path: str) -> Path:
         p = Path(path).expanduser()
-        if not p.is_absolute() and self._workspace:
-            p = self._workspace / p
+        workspace = self._workspace_root()
+        if not p.is_absolute() and workspace:
+            p = workspace / p
         p = p.resolve()
-        if self._workspace is not None:
-            ws = self._workspace.resolve()
+        if workspace is not None:
+            ws = workspace.resolve()
             try:
                 p.relative_to(ws)
             except ValueError as exc:

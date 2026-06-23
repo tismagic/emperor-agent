@@ -59,8 +59,16 @@ class RunCommand(Tool):
     description = "在终端执行一条 shell 命令并返回输出"
     exclusive = True
 
-    def __init__(self, workspace: Path | None = None):
+    def __init__(self, workspace: Path | object | None = None):
         self._workspace = workspace
+
+    def _workspace_root(self) -> Path | None:
+        if self._workspace is None:
+            return None
+        path = getattr(self._workspace, "path", None)
+        if path is not None:
+            return Path(path).resolve()
+        return Path(self._workspace).resolve()  # type: ignore[arg-type]
 
     def execute(self, command: str) -> str:
         logger.info(f"[执行命令]: {command}")
@@ -77,7 +85,7 @@ class RunCommand(Tool):
                 capture_output=True,
                 text=True,
                 timeout=120,
-                cwd=str(self._workspace) if self._workspace else None,
+                cwd=str(self._workspace_root()) if self._workspace_root() else None,
                 env=_minimal_env(),
             )
             stdout = (result.stdout or "").strip()

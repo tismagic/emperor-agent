@@ -1,5 +1,5 @@
 import { computed, reactive, ref, watch, type Ref } from 'vue'
-import type { AssistantMessage, AttachmentRef, BootstrapPayload, ChatMessage, ChatSendPayload, ControlInteraction, PendingState, RuntimeEventEnvelope, RuntimeHistoryItem, RuntimeStatus, SubagentState, TeamMessage, ThoughtSegment, ToolSegment, ToolStatus, WsEvent } from '../types'
+import type { AssistantMessage, AttachmentRef, BootstrapPayload, ChatMessage, ChatSendPayload, ControlInteraction, PendingState, RuntimeEventEnvelope, RuntimeHistoryItem, RuntimeStatus, SessionInfo, SubagentState, TeamMessage, ThoughtSegment, ToolSegment, ToolStatus, WsEvent } from '../types'
 import {
   clearRuntimeSnapshotRaw,
   writeRuntimeSnapshotRaw,
@@ -11,6 +11,7 @@ import { apiUrl, wsUrl } from '../api/backend'
 import { applyTeamEventToBootstrap } from '../runtime/handlers/team'
 import { SCHEDULER_CLIENT_ID_PREFIX, schedulerMessageMeta } from '../runtime/schedulerMeta'
 import { loadRuntimeSnapshot, transcriptFromMessages, type RuntimeSnapshot } from '../runtime/snapshot'
+import { isDraftSessionId } from '../runtime/sessionDrafts'
 
 function nextId(prefix: string) {
   const random = typeof crypto !== 'undefined' && 'randomUUID' in crypto ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(16).slice(2)}`
@@ -29,6 +30,9 @@ export function useRuntime(options: {
   boot: Ref<BootstrapPayload | null>
   refreshMemory: (shouldToast?: boolean) => Promise<void>
   showToast: (message: string) => void
+  resolveDraftSession?: (id: string) => SessionInfo | undefined
+  onSessionCreated?: (event: Extract<WsEvent, { event: 'session_created' }>) => void
+  onSessionTitleUpdated?: (event: Extract<WsEvent, { event: 'session_title_updated' }>) => void
 }) {
   const messages = ref<ChatMessage[]>([])
   const busy = ref(false)
@@ -43,6 +47,7 @@ export function useRuntime(options: {
   let pendingClearTimer: number | undefined
   let pendingVersion = 0
   let rehydrating = false
+  let intentionalSocketClose = false
   const turnClock = new Map<string, number>()
 
   const currentAssistant = computed(() => messages.value.find((message) => message.id === currentAssistantId.value && message.role === 'assistant') as AssistantMessage | undefined)
@@ -93,6 +98,10 @@ export function useRuntime(options: {
     })
     ws.addEventListener('message', (event) => handleSocketEvent(event.data))
     ws.addEventListener('close', () => {
+      if (intentionalSocketClose) {
+        intentionalSocketClose = false
+        return
+      }
       status.value = 'error'
       if (currentAssistant.value?.streaming) {
         busy.value = true
@@ -154,6 +163,10 @@ export function useRuntime(options: {
     status.value = 'ready'
 
     try {
+      const activeSessionId = sessionId.value
+      const draft = activeSessionId && isDraftSessionId(activeSessionId)
+        ? options.resolveDraftSession?.(activeSessionId)
+        : undefined
       socket.value.send(JSON.stringify({
         type: 'message',
         content: text,
@@ -161,6 +174,17 @@ export function useRuntime(options: {
         requested_skills: normalized.requestedSkills,
         display_content: displayText !== text ? displayText : undefined,
         client_message_id: userMsg.id,
+        session_id: activeSessionId && !isDraftSessionId(activeSessionId) ? activeSessionId : undefined,
+        draft_session: draft
+          ? {
+              client_draft_id: activeSessionId,
+              title: draft.title || '新会话',
+              mode: draft.mode || 'chat',
+              project_id: draft.project_id || undefined,
+              project_path: draft.project_path || undefined,
+              project_name: draft.project_name || undefined,
+            }
+          : undefined,
       }))
       return true
     } catch (err) {
@@ -365,6 +389,19 @@ export function useRuntime(options: {
 
     if (data.event === 'user_message') {
       handleUserMessageEvent(data)
+      return
+    }
+
+    if (data.event === 'session_created') {
+      if (data.client_draft_id && data.client_draft_id === sessionId.value && data.session?.id) {
+        sessionId.value = data.session.id
+      }
+      options.onSessionCreated?.(data)
+      return
+    }
+
+    if (data.event === 'session_title_updated') {
+      options.onSessionTitleUpdated?.(data)
       return
     }
 
@@ -1073,7 +1110,22 @@ export function useRuntime(options: {
     sessionId,
     pending,
     runtimeText,
-    switchSession(id: string) { sessionId.value = id; messages.value = []; lastSeq.value = 0; connectSocket() },
+    switchSession(id: string) {
+      sessionId.value = id
+      messages.value = []
+      currentAssistantId.value = null
+      busy.value = false
+      lastSeq.value = 0
+      turnClock.clear()
+      updatePending()
+      clearRuntimeSnapshot()
+      if (socket.value) {
+        intentionalSocketClose = true
+        socket.value.close()
+        socket.value = null
+      }
+      connectSocket()
+    },
     connectSocket,
     sendMessage,
     sendInteractionAnswer,

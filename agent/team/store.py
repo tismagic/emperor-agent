@@ -16,9 +16,9 @@ from .models import (
 
 
 class TeamStore:
-    def __init__(self, root: Path):
+    def __init__(self, root: Path, *, team_dir: Path | None = None):
         self.root = Path(root).resolve()
-        self.team_dir = self.root / ".team"
+        self.team_dir = Path(team_dir).expanduser().resolve() if team_dir is not None else self.root / ".team"
         self.config_file = self.team_dir / "config.json"
         self.inbox_dir = self.team_dir / "inbox"
         self.threads_dir = self.team_dir / "threads"

@@ -76,6 +76,10 @@ class SchedulerTool(Tool):
                     "type": "string",
                     "description": "Teammate name for team_wake jobs.",
                 },
+                "project_id": {
+                    "type": "string",
+                    "description": "Build project id for team_wake jobs.",
+                },
                 "deliver": {
                     "type": "boolean",
                     "description": "Whether resulting output should be visible in the local runtime UI.",
@@ -115,6 +119,7 @@ class SchedulerTool(Tool):
         payload_kind: str | None = None,
         message: str | None = None,
         target: str | None = None,
+        project_id: str | None = None,
         deliver: bool | None = None,
         at: str | None = None,
         every_seconds: int | None = None,
@@ -137,6 +142,7 @@ class SchedulerTool(Tool):
                 payload_kind=payload_kind,
                 message=message,
                 target=target,
+                project_id=project_id,
                 deliver=deliver,
                 at=at,
                 every_seconds=every_seconds,
@@ -153,6 +159,7 @@ class SchedulerTool(Tool):
                 payload_kind=payload_kind,
                 message=message,
                 target=target,
+                project_id=project_id,
                 deliver=deliver,
                 at=at,
                 every_seconds=every_seconds,
@@ -179,6 +186,7 @@ class SchedulerTool(Tool):
         payload_kind: str | None,
         message: str | None,
         target: str | None,
+        project_id: str | None,
         deliver: bool | None,
         at: str | None,
         every_seconds: int | None,
@@ -188,7 +196,13 @@ class SchedulerTool(Tool):
     ) -> str:
         try:
             schedule = self._schedule_from_fields(at=at, every_seconds=every_seconds, cron_expr=cron_expr, tz=tz)
-            payload = self._payload_from_fields(payload_kind=payload_kind, message=message, target=target, deliver=deliver)
+            payload = self._payload_from_fields(
+                payload_kind=payload_kind,
+                message=message,
+                target=target,
+                project_id=project_id,
+                deliver=deliver,
+            )
             job = self.service.add_job(
                 name=name or self._default_name(payload),
                 schedule=schedule,
@@ -207,6 +221,7 @@ class SchedulerTool(Tool):
         payload_kind: str | None,
         message: str | None,
         target: str | None,
+        project_id: str | None,
         deliver: bool | None,
         at: str | None,
         every_seconds: int | None,
@@ -219,7 +234,7 @@ class SchedulerTool(Tool):
             if at or every_seconds is not None or cron_expr:
                 schedule = self._schedule_from_fields(at=at, every_seconds=every_seconds, cron_expr=cron_expr, tz=tz)
             payload = None
-            if payload_kind or message is not None or target is not None:
+            if payload_kind or message is not None or target is not None or project_id is not None:
                 current = self.service.get_job(job_id)
                 if current is None:
                     return f"Error: scheduler job not found: {job_id}"
@@ -227,6 +242,7 @@ class SchedulerTool(Tool):
                     payload_kind=payload_kind or current.payload.kind,
                     message=message if message is not None else current.payload.message,
                     target=target if target is not None else current.payload.target,
+                    project_id=project_id if project_id is not None else current.payload.project_id,
                     deliver=deliver if deliver is not None else current.payload.deliver,
                 )
             result = self.service.update_job(
@@ -286,7 +302,11 @@ class SchedulerTool(Tool):
                 f"last={job.state.last_status or '-'}"
             )
             if job.payload.kind == "team_wake":
-                lines.append(f"  payload: team_wake target={job.payload.target or '-'} message={_trim(job.payload.message)}")
+                lines.append(
+                    "  payload: "
+                    f"team_wake project={job.payload.project_id or '-'} "
+                    f"target={job.payload.target or '-'} message={_trim(job.payload.message)}"
+                )
             else:
                 lines.append(f"  payload: {job.payload.kind} message={_trim(job.payload.message)}")
             if job.state.last_error:
@@ -318,6 +338,7 @@ class SchedulerTool(Tool):
         payload_kind: str | None,
         message: str | None,
         target: str | None,
+        project_id: str | None,
         deliver: bool | None,
     ) -> SchedulerPayload:
         kind = str(payload_kind or "agent_turn").strip()
@@ -330,10 +351,13 @@ class SchedulerTool(Tool):
             raise ValueError("message is required.")
         if kind == "team_wake" and not str(target or "").strip():
             raise ValueError("target teammate is required for team_wake jobs.")
+        if kind == "team_wake" and not str(project_id or "").strip():
+            raise ValueError("project_id is required for team_wake jobs.")
         return SchedulerPayload(
             kind=kind,
             message=body,
             target=str(target or "").strip() or None,
+            project_id=str(project_id or "").strip() or None,
             deliver=True if deliver is None else bool(deliver),
         )
 
