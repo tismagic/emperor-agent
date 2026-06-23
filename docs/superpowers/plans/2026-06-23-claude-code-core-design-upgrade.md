@@ -26,6 +26,8 @@
   剖析 `TaskState`、LocalAgentTask、LocalMainSessionTask、sidechain transcript、background notification、AgentTool/runAgent，并映射到 `subagents/`、`team/`、`runtime/active.py`。
 - Create `docs/claude-code-core-design/06-emperor-upgrade-roadmap.md`
   输出升级 Epics：Runner 状态机拆分、Tool Protocol v2、Streaming Tool Executor、Permission Pipeline v2、Task Framework、Context Budget Pipeline、Runtime Replay 收敛。
+- Create `docs/claude-code-core-design/07-project-execution-plan-runtime.md`
+  专门分析真实项目执行能力：Plan Mode、只读探索、计划批准、TodoWrite、验证证据、失败恢复、最终答复门禁，以及 Emperor Agent 下一阶段任务点。
 
 ## Tasks
 
@@ -83,6 +85,7 @@ Expected: files include `agent/runner.py`, tool registry/base files, control man
 - Create: `docs/claude-code-core-design/04-context-memory-compaction.md`
 - Create: `docs/claude-code-core-design/05-task-subagent-runtime.md`
 - Create: `docs/claude-code-core-design/06-emperor-upgrade-roadmap.md`
+- Create: `docs/claude-code-core-design/07-project-execution-plan-runtime.md`
 
 - [ ] **Step 1: Create documentation directory**
 
@@ -96,7 +99,7 @@ Expected: directory exists.
 
 - [ ] **Step 2: Write analysis docs**
 
-Create the seven Markdown files listed above. Each document must include:
+Create the eight Markdown files listed above. Each document must include:
 
 - Claude Code source references by path.
 - Emperor Agent comparison points.
@@ -112,7 +115,7 @@ Run:
 ls docs/claude-code-core-design
 ```
 
-Expected: `README.md` and files `01` through `06` are present.
+Expected: `README.md` and files `01` through `07` are present.
 
 ### Task 3: Write Upgrade Implementation Plan
 

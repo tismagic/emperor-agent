@@ -286,6 +286,8 @@ ControlManager.set_mode("plan")
 - PlanCard 已消费 runtime plan projection，能在计划卡上展示 step 状态、相关文件/命令、最新验证 evidence、失败 stderr/stdout 摘要；刷新后由 `plan_runtime_update`、`plan_step_update`、`plan_verification_done` 重建。
 - 批准计划后的恢复消息和稳定模板已经写入 Prompt Contract：必须维护 `active todo` / `active PlanStep`，每步完成前记录 `verification evidence`，验证 `failed` 时先修复重跑，`blocked` 时调用 `ask_user`，未完成前不得最终答复。
 
+更细的 Plan Mode / TodoWrite / ExitPlanMode / 验证门禁设计见 `07-project-execution-plan-runtime.md`。本分册只保留它在 `query()` 主状态机中的位置：Plan Runtime 是 completion policy 的一部分，不是 UI 附属能力；当计划未完成、验证失败或仍有 blocked step 时，状态机必须继续、暂停或提问，不能进入最终完成分支。
+
 ## Emperor Runner 拆分建议
 
 `AgentRunner.step_async()` 当前同时承担：

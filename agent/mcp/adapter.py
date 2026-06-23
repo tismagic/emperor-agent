@@ -22,6 +22,7 @@ class MCPToolAdapter(Tool):
         connection: MCPConnection,
         read_only: bool = False,
         exclusive: bool = False,
+        max_result_chars: int | None = None,
     ) -> None:
         self._server_name = server_name
         self._tool_name = tool_name
@@ -30,6 +31,7 @@ class MCPToolAdapter(Tool):
         self._connection = connection
         self._read_only = read_only
         self._exclusive = exclusive
+        self.max_result_chars = max_result_chars
 
     @property
     def name(self) -> str:

@@ -306,7 +306,19 @@ Plan 模式只读探索
 - PlanCard 已接入 `planProjection`，会展示 step 状态、文件/命令、验证 evidence 和失败原因；刷新后由 backend runtime replay 重建。
 - 批准计划后的系统恢复消息和 `templates/TOOL.md` / `templates/SOUL.md` 已写入 Project Execution Prompt Contract：保持一个 active todo 对齐 active PlanStep，完成前记录 verification evidence，failed 先修复重跑，blocked 调用 ask_user，未完成前不最终答复。
 
-后续任务点转入 Epic 6 及后续上下文预算治理：把计划执行、任务运行、工具结果和上下文压缩接成统一的长期可恢复执行面。
+后续任务点不要直接跳到通用 Task Framework。应先完成 `07-project-execution-plan-runtime.md` 中的 PE-1 至 PE-9：
+
+- `PE-1 PlanDecisionPolicy`：判断何时必须进入计划、何时建议计划、何时直接执行。
+- `PE-2 PlanDraftState`：把探索发现、相关文件、未决问题、候选方案、推荐方案和验证策略结构化保存。
+- `PE-3 只读探索扇出`：Plan 模式允许只读探索子代理，并把结果写入 plan draft。
+- `PE-4 结构化计划质量门禁`：拒绝泛泛计划，强制 step 可执行、可验证。
+- `PE-5 批准后权限与命令白名单`：批准计划只降低计划内动作摩擦，不绕过危险操作审批。
+- `PE-6 Step Evidence 强制一致性`：无验证证据不能完成 required step。
+- `PE-7 独立验证子代理`：非平凡项目改动最终答复前必须有复核结果或用户豁免。
+- `PE-8 Plan Runtime 恢复附件`：压缩、刷新、重启后继续 active step。
+- `PE-9 WebUI Project Execution 面板`：把计划执行状态从后端 runtime event 投影到用户可见界面。
+
+完成这条链路后，再把计划执行、任务运行、工具结果和上下文压缩接入 Epic 6 的统一长期任务框架。
 
 ## Epic 6：Task Framework
 
@@ -414,7 +426,7 @@ class TaskRecord:
 
 第四阶段：高级上下文恢复
 
-1. ToolResultStore、ContextPipeline replacement、AgentRunner 默认 store-backed 投影、工具级 `max_result_chars` 预算链路、首批内置工具预算，以及 `ToolResult` 在 registry/execution engine/runner/runtime 类型中的结构化贯通已落地：大工具结果可稳定落盘，模型可见消息只保留 preview 与 artifact path，runtime summary 使用 `display_summary`，artifact metadata 可随事件 replay 保留。`read_file`、`grep`、`run_command`、`write_file`、`edit_file` 已提供原生 summary/metadata mapping，Chat 工具卡片已展示 artifact/diff 证据。
+1. ToolResultStore、ContextPipeline replacement、AgentRunner 默认 store-backed 投影、工具级 `max_result_chars` 预算链路、首批内置工具预算、MCP defaults/tool override 预算，以及 `ToolResult` 在 registry/execution engine/runner/runtime 类型中的结构化贯通已落地：大工具结果可稳定落盘，模型可见消息只保留 preview 与 artifact path，runtime summary 使用 `display_summary`，artifact metadata 可随事件 replay 保留。`read_file`、`grep`、`run_command`、`write_file`、`edit_file` 已提供原生 summary/metadata mapping，Chat 工具卡片已展示 artifact/diff 证据。
 2. Microcompact。
 3. Reactive compact。
 4. 主会话后台化。

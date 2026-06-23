@@ -16,6 +16,8 @@
    分析 Task Framework、后台任务、子代理、sidechain transcript、队友式运行时。
 6. `06-emperor-upgrade-roadmap.md`
    把前面设计归纳成 Emperor Agent 的升级 Epics、目标文件、接口草案、迁移顺序、风险和验收。
+7. `07-project-execution-plan-runtime.md`
+   专门分析 Claude Code 的真实项目执行链路：Plan Mode、只读探索、计划批准、TodoWrite、验证证据、失败恢复和最终答复门禁，并给出 Emperor Agent 下一阶段任务点。
 
 对应的可执行实施计划：
 
@@ -49,6 +51,7 @@ Emperor Agent 目前已经具备多 provider、工具、MCP、Ask/Plan、Schedul
 | 权限模式 | default、plan、acceptEdits、bypassPermissions、dontAsk、auto、bubble 等，统一进入 `hasPermissionsToUseTool` | ask_before_edit、auto、plan，`PermissionPolicy` 规则较集中但较粗 | 建立 `PermissionDecisionPipeline`：tool-specific -> rules -> mode -> hooks/classifier -> interaction |
 | 上下文治理 | tool result budget、snip、microcompact、context collapse、autocompact、reactive compact 多层组合 | `_cap_tool_result`、`_shrink_old_tool_results`、`Compactor.K=10` 和 token 阈值压缩 | 引入 `ContextPipeline`，让预算和压缩成为可测试、可观测的阶段 |
 | 子代理与任务 | AgentTool 包装 `query()`；TaskState 统一 background task、sidechain transcript、输出文件和通知 | `dispatch_subagent` 同步回填结果；Team 有持久队友、inbox、thread、checkpoint | 新增 Task Framework，把 subagent/team/scheduler/background shell 统一纳入 TaskState |
+| 项目执行 / Plan Runtime | Plan Mode 切权限，只读探索，计划文件持久化，ExitPlanMode 审批，TodoWrite 推进，验证失败继续 | 已有 `PlanStore`、`PlanStep`、`plan_runtime_update`、验证 evidence、Final Answer Gate | 补 `PlanDecisionPolicy`、`PlanDraftState`、Plan Runtime 恢复附件、Evidence Gate 和独立验证子代理 |
 | UI/runtime | 自研 Ink TUI + AppState store + task panel；消息即 UI 数据 | Vue WebUI + WebSocket runtime event store + localStorage fallback | 不移植 Ink；吸收 AppState selector、event-sourced runtime、task panel 的状态建模 |
 
 ## 源码范围

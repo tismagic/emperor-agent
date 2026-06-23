@@ -144,7 +144,7 @@ Emperor 当前：
 
 升级方向：
 
-- MCP/外部工具先通过 adapter 包装，后续支持 server/tool 级预算、artifact override 和 provider-specific metadata。
+- MCP 工具已通过 `defaults.max_result_chars` / `tool_overrides.<tool>.max_result_chars` 接入工具级预算；后续还需补 MCP artifact override、外部工具预算和 provider-specific metadata。
 - Runtime UI 已能保留并展示 artifacts/metadata：Chat 工具卡片展示 artifact 路径、类型、大小和 diff preview；计划验证证据继续由 PlanCard 展示。
 
 ### 7. UI 元数据
@@ -273,7 +273,7 @@ class ToolV2(Protocol):
     async def execute(self, args: dict, context: ToolContext) -> ToolResult: ...
 ```
 
-当前 Emperor 已向这个协议推进了一步：`Tool.max_result_chars` 作为兼容 trait 进入基类，`ToolRegistry.tool_result_limits()` 会导出正整数预算，`AgentRunner` 默认 store-backed `ContextPipeline` 会按工具名应用预算。这意味着大结果替换不再只有全局阈值；首批已给 `read_file=24000`、`grep=16000`、`glob=12000`、`run_command=12000`、`web_fetch=10000` 配置模型上下文预算，MCP 工具后续可通过协议或 overrides 补齐。
+当前 Emperor 已向这个协议推进了一步：`Tool.max_result_chars` 作为兼容 trait 进入基类，`ToolRegistry.tool_result_limits()` 会导出正整数预算，`AgentRunner` 默认 store-backed `ContextPipeline` 会按工具名应用预算。这意味着大结果替换不再只有全局阈值；首批已给 `read_file=24000`、`grep=16000`、`glob=12000`、`run_command=12000`、`web_fetch=10000` 配置模型上下文预算，MCP 工具也已支持 `mcp_config.json` 的 defaults/tool override 预算。
 
 兼容策略：
 

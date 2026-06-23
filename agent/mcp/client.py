@@ -62,6 +62,9 @@ class MCPClient:
                     connection=conn,
                     read_only=overrides.get("read_only", defaults.get("read_only", False)),
                     exclusive=overrides.get("exclusive", defaults.get("exclusive", False)),
+                    max_result_chars=_positive_int(
+                        overrides.get("max_result_chars", defaults.get("max_result_chars"))
+                    ),
                 )
                 self._tools.append(adapter)
 
@@ -92,3 +95,11 @@ class MCPClient:
         self._connections.clear()
         self._tools.clear()
         self._initialized = False
+
+
+def _positive_int(value) -> int | None:
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int) and value > 0:
+        return value
+    return None

@@ -5,12 +5,15 @@ from pathlib import Path
 
 import pytest
 
+from agent.mcp.client import MCPClient
 from agent.mcp.config import (
     DEFAULT_MCP_CONFIG,
     MCPConfig,
+    ServerConfig,
     load_mcp_config,
     save_mcp_config,
 )
+from agent.tools.registry import ToolRegistry
 
 
 class TestLoadMcpConfig:
@@ -30,7 +33,7 @@ class TestLoadMcpConfig:
                     "command": "uvx",
                     "args": ["mcp-server-fetch"],
                     "enabled": True,
-                    "tool_overrides": {"fetch": {"read_only": True}},
+                    "tool_overrides": {"fetch": {"read_only": True, "max_result_chars": 4096}},
                 }
             },
             "defaults": {"read_only": False, "exclusive": False},
@@ -43,7 +46,7 @@ class TestLoadMcpConfig:
         assert server.command == "uvx"
         assert server.args == ("mcp-server-fetch",)
         assert server.enabled is True
-        assert server.tool_overrides == {"fetch": {"read_only": True}}
+        assert server.tool_overrides == {"fetch": {"read_only": True, "max_result_chars": 4096}}
 
     def test_load_sse_server(self, tmp_path: Path) -> None:
         raw = {
@@ -137,3 +140,79 @@ class TestDefaults:
         (tmp_path / "mcp_config.json").write_text(json.dumps(raw))
         config = load_mcp_config(tmp_path)
         assert config.servers["test"].transport == "stdio"
+
+
+class FakeConnection:
+    connected = True
+
+    async def connect(self) -> bool:
+        return True
+
+    async def list_tools(self) -> list[dict]:
+        return [
+            {
+                "name": "search",
+                "description": "Search",
+                "inputSchema": {"type": "object", "properties": {}},
+            },
+            {
+                "name": "summarize",
+                "description": "Summarize",
+                "inputSchema": {"type": "object", "properties": {}},
+            },
+        ]
+
+    async def disconnect(self) -> None:
+        self.connected = False
+
+    async def call_tool(self, tool_name: str, arguments: dict) -> str:
+        return f"{tool_name}:{arguments}"
+
+
+class FakeMCPClient(MCPClient):
+    def _create_connection(self, cfg: ServerConfig):  # type: ignore[override]
+        return FakeConnection()
+
+
+@pytest.mark.anyio
+async def test_mcp_tool_result_budget_overrides_flow_to_registry(tmp_path: Path) -> None:
+    raw = {
+        "servers": {
+            "alpha": {
+                "transport": "stdio",
+                "command": "fake",
+                "enabled": True,
+                "tool_overrides": {
+                    "search": {
+                        "read_only": True,
+                        "max_result_chars": 1234,
+                    }
+                },
+            }
+        },
+        "defaults": {
+            "read_only": False,
+            "exclusive": False,
+            "max_result_chars": 9000,
+        },
+    }
+    (tmp_path / "mcp_config.json").write_text(json.dumps(raw), encoding="utf-8")
+    client = FakeMCPClient(tmp_path)
+    registry = ToolRegistry()
+
+    await client.initialize()
+    for tool in client.get_tools():
+        registry.register(tool)
+
+    search = registry.get("mcp_alpha_search")
+    summarize = registry.get("mcp_alpha_summarize")
+
+    assert search is not None
+    assert summarize is not None
+    assert search.read_only is True
+    assert search.max_result_chars == 1234
+    assert summarize.max_result_chars == 9000
+    assert registry.tool_result_limits() == {
+        "mcp_alpha_search": 1234,
+        "mcp_alpha_summarize": 9000,
+    }

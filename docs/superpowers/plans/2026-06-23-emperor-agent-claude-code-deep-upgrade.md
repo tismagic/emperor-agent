@@ -22,7 +22,7 @@ Use these source files as design references during implementation. They are rese
 | Tool execution pipeline | `src/services/tools/toolExecution.ts` | new `agent/tools/execution.py`, updates to `agent/tools/registry.py` |
 | Streaming tool executor | `src/services/tools/StreamingToolExecutor.ts` | new `agent/tools/execution.py`, `agent/runtime/events.py` |
 | Permission pipeline | `src/utils/permissions/*`, `src/hooks/useCanUseTool.tsx` | `agent/permissions/*`, `agent/control/*` |
-| Plan mode and project execution | `src/tools/EnterPlanModeTool/EnterPlanModeTool.ts`, `src/tools/ExitPlanModeTool/ExitPlanModeV2Tool.ts`, `src/tools/TodoWriteTool/TodoWriteTool.ts`, `src/commands/plan/plan.tsx` | new `agent/plans/*`, `agent/control/*`, `agent/tools/todo.py`, frontend plan projection |
+| Plan mode and project execution | `src/tools/EnterPlanModeTool/EnterPlanModeTool.ts`, `src/tools/ExitPlanModeTool/ExitPlanModeV2Tool.ts`, `src/tools/TodoWriteTool/TodoWriteTool.ts`, `src/commands/plan/plan.tsx`, `src/utils/messages.ts`, `src/utils/plans.ts`, `src/utils/attachments.ts` | `agent/plans/*`, `agent/control/*`, `agent/tools/todo.py`, `agent/context_pipeline/*`, frontend plan projection |
 | Context budgets | `src/utils/toolResultStorage.ts`, `src/services/compact/*`, `src/services/contextCollapse/*` | new `agent/context_pipeline/*`, `agent/compactor.py`, `agent/memory.py` |
 | Task state | `src/Task.ts`, `src/tasks/LocalAgentTask/*`, `src/tasks/LocalMainSessionTask.ts` | new `agent/tasks/*`, `agent/runtime/active.py` |
 | Subagent sidechain | `src/tools/AgentTool/runAgent.ts`, `src/utils/sessionStorage.ts` | `agent/tools/dispatch.py`, `agent/team/manager.py`, new `agent/tasks/sidechain.py` |
@@ -39,9 +39,10 @@ This upgrade spans independent subsystems. Execute in this sequence so every sta
 5. Add Permission Pipeline v2.
 6. Add Query State transition helpers.
 7. Add Project Execution and Plan Runtime v2.
-8. Add Task Framework and sidechain transcript.
-9. Add runtime replay and Vue task projection.
-10. Add advanced context budgets and reactive compact.
+8. Strengthen Project Execution and Plan Runtime v3.
+9. Add Task Framework and sidechain transcript.
+10. Add runtime replay and Vue task projection.
+11. Add advanced context budgets and reactive compact.
 
 Do not start Phase 6 before Phase 3 and Phase 4 are merged, because sidechain transcript relies on structured tool results and execution lifecycle events.
 
@@ -52,11 +53,12 @@ Do not start Phase 6 before Phase 3 and Phase 4 are merged, because sidechain tr
 - Project Execution Prompt Contract is now explicit in approved-plan follow-up messages and stable prompt templates: active todo maintenance, verification evidence, failure repair, blocked-state escalation, and no-final-answer-before-complete are covered by tests.
 - Advanced context budget work has started: `ToolResultStore` is available, `ContextPipeline(tool_result_store=...)` can replace large tool messages with stable artifact-backed model content, `AgentRunner` uses store-backed projection when a memory store is present, and tool-level `max_result_chars` budgets flow from `ToolRegistry` into that projection.
 - First built-in result budgets are now configured: `read_file=24000`, `grep=16000`, `glob=12000`, `run_command=12000`, `web_fetch=10000`.
+- MCP result budgets now flow from `mcp_config.json` `defaults.max_result_chars` and `tool_overrides.<tool>.max_result_chars` into `MCPToolAdapter.max_result_chars`, `ToolRegistry.tool_result_limits()`, and the default `ContextPipeline`.
 - Structured `ToolResult` is now preserved across `ToolRegistry.execute_result()`, `ToolExecutionEngine`, `AgentRunner` tool messages/runtime summaries, and WebUI replay types. Legacy `execute()` remains string-compatible.
 - First native high-value tool mappings are now in place: `read_file` emits source-file artifact metadata and line ranges, `grep` emits match/search metadata, and `run_command` emits command/exit/timeout/truncation metadata while keeping legacy `execute()` string-compatible.
 - Write/edit result mapping is now in place: `write_file` and `edit_file` emit file artifacts, concise summaries, unified diff previews, and change metadata while keeping legacy `execute()` string-compatible.
 - Tool-card evidence display is now in place: Chat tool cards render artifact paths, artifact kind/size, and diff previews from replayed runtime metadata.
-- The next upgrade lane is continuing the later Epics: MCP/external-tool budget overrides, microcompact/reactive compact, task framework consolidation, and sidechain/runtime replay hardening.
+- The next upgrade lane is Project Execution and Plan Runtime v3: plan trigger policy, plan draft phases, evidence gate, plan recovery attachments, independent verification, then external-tool budget overrides, MCP/external artifact mapping, microcompact/reactive compact, task framework consolidation, and sidechain/runtime replay hardening.
 
 ## File Structure
 
@@ -2864,6 +2866,303 @@ git commit -m "feat: expose plan runtime projection"
 ```
 
 Expected: commit succeeds.
+
+## Phase 5.6: Project Execution and Plan Runtime v3
+
+Phase 5.5 made plans durable and executable. Phase 5.6 makes them reliable for real project work. The design reference is `docs/claude-code-core-design/07-project-execution-plan-runtime.md`.
+
+Claude Code behaviors to absorb:
+
+- `EnterPlanMode` is a permission-mode transition, not a prose response.
+- Plan mode repeatedly injects full/sparse/re-entry/exit reminders so compaction and resume do not erase the plan boundary.
+- The plan artifact is the only writable object during planning.
+- `ExitPlanMode` is the approval boundary and restores the previous permission mode.
+- `TodoWrite` keeps one active task and refuses to treat blocked or failed work as completed.
+- Verification output is part of the completion contract, not a final-response afterthought.
+
+### Task 6F: Plan Decision Policy
+
+**Files:**
+- Create: `agent/control/plan_policy.py`
+- Modify: `agent/control/manager.py`
+- Modify: `agent/runner.py`
+- Create: `tests/unit/test_plan_decision_policy.py`
+
+- [ ] **Step 1: Write policy tests**
+
+Create `tests/unit/test_plan_decision_policy.py` with these cases:
+
+- A request mentioning architecture, refactor, multiple modules, deployment, deletion, permissions, data migration, or unclear acceptance returns `required`.
+- A request likely touching 3+ steps or adding a feature returns `recommended`.
+- A typo fix, single-file obvious bug, pure question, or user-provided approved implementation plan returns `proceed`.
+- A request inside existing Plan mode returns `proceed` because Plan mode is already active.
+
+Run:
+
+```bash
+.venv/bin/python -m pytest tests/unit/test_plan_decision_policy.py -q
+```
+
+Expected before implementation: import failure for `agent.control.plan_policy`.
+
+- [ ] **Step 2: Add `PlanDecisionPolicy`**
+
+Add a dataclass result:
+
+```python
+@dataclass(frozen=True)
+class PlanDecision:
+    behavior: Literal["required", "recommended", "proceed"]
+    reason: str
+    signals: list[str]
+```
+
+Add `PlanDecisionPolicy.assess(user_message, *, mode, has_pending)` with deterministic rules first. Do not call an LLM in this phase.
+
+- [ ] **Step 3: Wire policy as a pre-write guard**
+
+In `AgentRunner`, before non-read-only tools execute under `ask_before_edit` or `auto`, ask `ControlManager` whether the latest user request requires planning. If `required`, return a control tool result that asks the model to enter Plan mode or triggers `ask_user` with a clear reason. Keep simple work unblocked.
+
+- [ ] **Step 4: Verify**
+
+Run:
+
+```bash
+.venv/bin/python -m pytest tests/unit/test_plan_decision_policy.py tests/unit/test_control.py tests/unit/test_runner_state.py -q
+```
+
+Expected: all tests pass.
+
+### Task 6G: Plan Draft State and Phases
+
+**Files:**
+- Modify: `agent/plans/models.py`
+- Modify: `agent/plans/store.py`
+- Modify: `agent/control/manager.py`
+- Create: `tests/unit/test_plan_draft_state.py`
+
+- [ ] **Step 1: Write draft-state tests**
+
+Test that a draft can record:
+
+- `phase`: `exploring`, `questioning`, `designing`, `reviewing`, `ready_for_approval`, `approved`, `executing`.
+- `discoveries`: file path, line reference, summary, source tool or subagent.
+- `open_questions` and `resolved_questions`.
+- `alternatives_considered`.
+- `recommended_approach`.
+- `verification_strategy`.
+
+Run:
+
+```bash
+.venv/bin/python -m pytest tests/unit/test_plan_draft_state.py -q
+```
+
+Expected before implementation: model fields missing.
+
+- [ ] **Step 2: Extend plan models compatibly**
+
+Add optional fields to `PlanRecord.metadata` first, or add frozen dataclasses with backward-compatible `from_dict()`. Existing `memory/plans/index.json` files must still load.
+
+- [ ] **Step 3: Capture Ask answers into draft state**
+
+When Plan mode uses `ask_user`, store questions in `open_questions`. When the user answers, move them into `resolved_questions` and preserve the freeform note.
+
+- [ ] **Step 4: Verify**
+
+Run:
+
+```bash
+.venv/bin/python -m pytest tests/unit/test_plan_draft_state.py tests/unit/test_plan_runtime.py tests/unit/test_control.py -q
+```
+
+Expected: all tests pass.
+
+### Task 6H: Plan Quality Gate
+
+**Files:**
+- Modify: `agent/control/tools.py`
+- Modify: `agent/control/manager.py`
+- Modify: `agent/plans/models.py`
+- Create: `tests/unit/test_plan_quality_gate.py`
+
+- [ ] **Step 1: Add failing tests for weak plans**
+
+Reject `propose_plan` when:
+
+- No step has files, discoveries, or clear scope.
+- No verification command or manual verification rule exists.
+- A step title is generic, such as "fix issue" or "improve code", without concrete acceptance.
+- A high-risk step has no risk note or rollback path.
+
+Accept a plan with concrete steps, target files, acceptance checks, and verification.
+
+- [ ] **Step 2: Implement `PlanQualityGate`**
+
+Return a structured tool error that the model can repair:
+
+```text
+Error: plan quality gate failed
+- step_2 has no verification command or manual check
+- step_3 is high risk but has no rollback note
+```
+
+Do not create a pending PlanCard for a rejected plan.
+
+- [ ] **Step 3: Verify**
+
+Run:
+
+```bash
+.venv/bin/python -m pytest tests/unit/test_plan_quality_gate.py tests/unit/test_plan_runtime.py -q
+```
+
+Expected: all tests pass.
+
+### Task 6I: Evidence Gate for Step Completion
+
+**Files:**
+- Modify: `agent/tools/todo.py`
+- Modify: `agent/control/manager.py`
+- Modify: `agent/runner.py`
+- Create: `tests/unit/test_plan_evidence_gate.py`
+
+- [ ] **Step 1: Add failing evidence tests**
+
+Cases:
+
+- Marking an active step completed without verification evidence returns an error when the step declares commands.
+- A failed verification result prevents completion.
+- A passing verification result allows completion.
+- A blocked step requires `blocked_reason` or an `ask_user` interaction.
+
+- [ ] **Step 2: Add explicit step identity**
+
+Extend todo items with optional `plan_step_id`; stop relying only on list index. Keep index compatibility for old history and tests.
+
+- [ ] **Step 3: Enforce completion**
+
+`ControlManager.sync_plan_from_todos()` should reject a completion transition if required evidence is missing. The tool result should be model-readable and should not corrupt `PlanRecord`.
+
+- [ ] **Step 4: Verify**
+
+Run:
+
+```bash
+.venv/bin/python -m pytest tests/unit/test_plan_evidence_gate.py tests/unit/test_plan_runtime.py tests/unit/test_plan_verification.py -q
+```
+
+Expected: all tests pass.
+
+### Task 6J: Plan Runtime Recovery Attachments
+
+**Files:**
+- Create: `agent/plans/context.py`
+- Modify: `agent/context_pipeline/pipeline.py`
+- Modify: `agent/compactor.py`
+- Create: `tests/unit/test_plan_context_attachment.py`
+
+- [ ] **Step 1: Add attachment tests**
+
+Projecting context with an executing plan should inject a compact meta message containing:
+
+- plan id, title, status.
+- active step id/title/status.
+- failed steps with latest evidence summary.
+- pending steps count.
+- open questions or blocked reason.
+- relevant file/artifact references.
+
+Completed plans should not be injected unless the current user message explicitly asks about past plan history.
+
+- [ ] **Step 2: Implement `PlanContextBuilder`**
+
+Build small model-visible text from `PlanStore.latest()` with strict size limits. Keep full evidence in runtime/artifacts; the model sees summaries and refs.
+
+- [ ] **Step 3: Wire into context projection**
+
+Add an optional `plan_context_provider` to `ContextPipeline`. `AgentRunner` supplies it when `control_manager` exists.
+
+- [ ] **Step 4: Verify**
+
+Run:
+
+```bash
+.venv/bin/python -m pytest tests/unit/test_plan_context_attachment.py tests/unit/test_context_pipeline.py tests/unit/test_plan_runtime.py -q
+```
+
+Expected: all tests pass.
+
+### Task 6K: Independent Verification Gate
+
+**Files:**
+- Modify: `agent/control/manager.py`
+- Modify: `agent/runner.py`
+- Modify: `agent/subagents/registry.py`
+- Create: `tests/unit/test_plan_independent_verification.py`
+
+- [ ] **Step 1: Add gate tests**
+
+Trigger independent verification when a plan or turn has:
+
+- 3+ changed files.
+- backend/API/permission/scheduler/runtime changes.
+- deletion, deployment, external send, or security-sensitive operations.
+
+The final answer gate should require either:
+
+- a verification subagent PASS with command evidence, or
+- an explicit user-approved waiver stored in the plan evidence.
+
+- [ ] **Step 2: Add verification request model**
+
+Add a small `VerificationReviewRequest` metadata record with changed files, plan id, commands run, and risk signals.
+
+- [ ] **Step 3: Wire reviewer dispatch conservatively**
+
+Use existing subagent dispatch only outside Plan mode and only when no Ask/Plan pending exists. If dispatch is unavailable, block final completion with an `ask_user` question rather than silently skipping.
+
+- [ ] **Step 4: Verify**
+
+Run:
+
+```bash
+.venv/bin/python -m pytest tests/unit/test_plan_independent_verification.py tests/unit/test_plan_runtime.py tests/unit/test_runner_state.py -q
+```
+
+Expected: all tests pass.
+
+### Task 6L: Project Execution Web Projection
+
+**Files:**
+- Modify: `desktop/src/renderer/src/runtime/handlers/plans.ts`
+- Modify: `desktop/src/renderer/src/components/chat/PlanCard.vue`
+- Create or modify: `desktop/src/renderer/src/runtime/planProjection.test.ts`
+
+- [ ] **Step 1: Add projection tests**
+
+Test that replayed events show:
+
+- active step.
+- failed verification summary.
+- blocked reason.
+- open questions count.
+- independent verification status.
+
+- [ ] **Step 2: Render execution-focused state**
+
+`PlanCard` should show the current execution state first. Long plan markdown remains secondary; users need to see what is active, what failed, and what evidence exists.
+
+- [ ] **Step 3: Verify**
+
+Run:
+
+```bash
+npm --prefix desktop run test -- planProjection
+npm --prefix desktop run build
+```
+
+Expected: tests and build pass.
 
 ## Phase 6: Task Framework and Sidechain Transcript
 
