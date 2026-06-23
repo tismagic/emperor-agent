@@ -167,3 +167,35 @@ def test_task_runtime_event_payloads() -> None:
         "task": task,
         "reason": "stop",
     }
+
+
+def test_tool_run_runtime_event_payloads() -> None:
+    assert runtime_events.tool_run_queued(id="call_1", name="grep", arguments={"q": "x"}) == {
+        "event": "tool_run_queued",
+        "id": "call_1",
+        "name": "grep",
+        "arguments": {"q": "x"},
+    }
+    assert runtime_events.tool_run_started(id="call_1", name="grep") == {
+        "event": "tool_run_started",
+        "id": "call_1",
+        "name": "grep",
+    }
+    assert runtime_events.tool_run_completed(id="call_1", name="grep", summary="ok") == {
+        "event": "tool_run_completed",
+        "id": "call_1",
+        "name": "grep",
+        "summary": "ok",
+    }
+    assert runtime_events.tool_run_failed(id="call_1", name="grep", message="boom") == {
+        "event": "tool_run_failed",
+        "id": "call_1",
+        "name": "grep",
+        "message": "boom",
+    }
+    assert runtime_events.tool_run_cancelled(id="call_1", name="grep", reason="stop") == {
+        "event": "tool_run_cancelled",
+        "id": "call_1",
+        "name": "grep",
+        "reason": "stop",
+    }

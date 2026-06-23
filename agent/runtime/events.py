@@ -129,6 +129,26 @@ def runtime_task_cancelled(task: dict[str, Any], *, reason: str = "cancelled") -
     return runtime_event("runtime_task_cancelled", task=task, reason=reason)
 
 
+def tool_run_queued(*, id: str, name: str, arguments: dict[str, Any] | None = None) -> dict[str, Any]:
+    return runtime_event("tool_run_queued", id=id, name=name, arguments=arguments or {})
+
+
+def tool_run_started(*, id: str, name: str) -> dict[str, Any]:
+    return runtime_event("tool_run_started", id=id, name=name)
+
+
+def tool_run_completed(*, id: str, name: str, summary: str) -> dict[str, Any]:
+    return runtime_event("tool_run_completed", id=id, name=name, summary=summary)
+
+
+def tool_run_failed(*, id: str, name: str, message: str) -> dict[str, Any]:
+    return runtime_event("tool_run_failed", id=id, name=name, message=message)
+
+
+def tool_run_cancelled(*, id: str, name: str, reason: str) -> dict[str, Any]:
+    return runtime_event("tool_run_cancelled", id=id, name=name, reason=reason)
+
+
 def plan_verification_start(*, plan_id: str, step_id: str, command: str) -> dict[str, Any]:
     return runtime_event("plan_verification_start", plan_id=plan_id, step_id=step_id, command=command)
 
