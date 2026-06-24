@@ -554,6 +554,7 @@ export interface RuntimePlanRecord {
   title: string
   summary?: string
   status: string
+  updated_at?: number
   steps: RuntimePlanStep[]
   plan_markdown?: string
   planMarkdown?: string
