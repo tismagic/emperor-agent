@@ -48,11 +48,6 @@ StreamEmitter = Callable[[dict[str, Any]], Awaitable[None]]
 
 
 # —— 上下文治理 / 错误恢复参数 ——
-_SHRINK_KEEP_RECENT = 10              # 最近 N 条工具消息保留原文
-_SHRINK_MIN_BYTES = 1500              # 小于此字节的工具结果不动
-_TOOL_RESULT_BUDGET = 8000            # 单条工具结果硬上限
-_TOOL_RESULT_HEAD = _TOOL_RESULT_BUDGET - 200
-_TOOL_RESULT_TAIL = 200
 _MAX_EMPTY_RETRIES = 2
 _MAX_LENGTH_RECOVERIES = 3
 _ASK_GUARD_BLOCK = (
@@ -525,102 +520,6 @@ class AgentRunner:
             tools=tool_definitions,
             emit=emit,
         )
-
-    @staticmethod
-    def _pair_tool_calls(history: list[dict[str, Any]]) -> list[dict[str, Any]]:
-        """Ensure assistant tool_calls are 1:1 paired with following tool messages.
-
-        Drops orphan tool messages and fills missing tool replies with a placeholder,
-        so a half-completed turn (interrupted execution, bad compaction cut) cannot
-        poison subsequent API calls with an "insufficient tool messages" error.
-        """
-        cleaned: list[dict[str, Any]] = []
-        expected: list[tuple[str, str]] = []
-
-        def flush_expected() -> None:
-            for tid, tname in expected:
-                cleaned.append({
-                    "role": "tool",
-                    "tool_call_id": tid,
-                    "name": tname,
-                    "content": "(tool execution interrupted)",
-                })
-            expected.clear()
-
-        for msg in history:
-            role = msg.get("role")
-            if role == "tool":
-                tid = msg.get("tool_call_id")
-                idx = next((i for i, (eid, _) in enumerate(expected) if eid == tid), None)
-                if idx is None:
-                    continue
-                cleaned.append(msg)
-                expected.pop(idx)
-                continue
-            flush_expected()
-            cleaned.append(msg)
-            if role == "assistant":
-                for tc in msg.get("tool_calls") or []:
-                    fn = tc.get("function") or {}
-                    expected.append((tc.get("id") or "", fn.get("name", "")))
-        flush_expected()
-        return cleaned
-
-    @staticmethod
-    def _content_text_size(content: Any) -> int:
-        """按 text 实际长度估算消息体积；list 形式只算 text block，跳过 base64 image_url。"""
-        if isinstance(content, str):
-            return len(content)
-        if isinstance(content, list):
-            return sum(
-                len(str(b.get("text", "")))
-                for b in content
-                if isinstance(b, dict) and b.get("type") == "text"
-            )
-        return len(str(content or ""))
-
-    @staticmethod
-    def _cap_tool_result(
-        history: list[dict[str, Any]],
-        per_call_limit: int = _TOOL_RESULT_BUDGET,
-    ) -> list[dict[str, Any]]:
-        """单条工具结果硬截断，留头尾。仅作用于 role=tool；user 多模态原样保留。"""
-        out: list[dict[str, Any]] = []
-        for msg in history:
-            if msg.get("role") == "tool":
-                text = str(msg.get("content", ""))
-                if len(text) > per_call_limit:
-                    head = text[:_TOOL_RESULT_HEAD]
-                    tail = text[-_TOOL_RESULT_TAIL:]
-                    msg = {
-                        **msg,
-                        "content": (
-                            f"{head}\n...[truncated, total {len(text)} chars]...\n{tail}"
-                        ),
-                    }
-            out.append(msg)
-        return out
-
-    @staticmethod
-    def _shrink_old_tool_results(
-        history: list[dict[str, Any]],
-        keep_recent: int = _SHRINK_KEEP_RECENT,
-    ) -> list[dict[str, Any]]:
-        """把 keep_recent 之外的大体积工具消息替换为一行摘要。仅 role=tool；user 多模态不动。"""
-        cutoff = max(0, len(history) - keep_recent)
-        out: list[dict[str, Any]] = []
-        for i, msg in enumerate(history):
-            if (
-                msg.get("role") == "tool"
-                and i < cutoff
-                and AgentRunner._content_text_size(msg.get("content")) > _SHRINK_MIN_BYTES
-            ):
-                name = msg.get("name") or msg.get("tool_call_id") or "tool"
-                size = AgentRunner._content_text_size(msg.get("content"))
-                out.append({**msg, "content": f"[shrunk] {name} → {size} chars omitted"})
-            else:
-                out.append(msg)
-        return out
 
     async def _execute_tool_calls(
         self,

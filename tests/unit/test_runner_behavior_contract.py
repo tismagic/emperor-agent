@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from agent.runner import AgentRunner
+from agent.context_pipeline.pairing import pair_tool_calls
+from agent.context_pipeline.tool_results import cap_tool_results, shrink_old_tool_results
 
 
 def test_pair_tool_calls_fills_missing_tool_result() -> None:
@@ -19,7 +20,7 @@ def test_pair_tool_calls_fills_missing_tool_result() -> None:
         },
     ]
 
-    cleaned = AgentRunner._pair_tool_calls(history)
+    cleaned, _filled, _dropped = pair_tool_calls(history)
 
     assert cleaned[-1] == {
         "role": "tool",
@@ -35,7 +36,7 @@ def test_pair_tool_calls_drops_orphan_tool_message() -> None:
         {"role": "user", "content": "hello"},
     ]
 
-    cleaned = AgentRunner._pair_tool_calls(history)
+    cleaned, _filled, _dropped = pair_tool_calls(history)
 
     assert cleaned == [{"role": "user", "content": "hello"}]
 
@@ -44,7 +45,7 @@ def test_cap_tool_result_keeps_head_and_tail() -> None:
     text = "a" * 9000 + "tail"
     history = [{"role": "tool", "tool_call_id": "call_1", "name": "grep", "content": text}]
 
-    capped = AgentRunner._cap_tool_result(history, per_call_limit=8000)
+    capped, _ = cap_tool_results(history, per_call_limit=8000)
 
     content = capped[0]["content"]
     assert content.startswith("a" * 100)
@@ -57,7 +58,7 @@ def test_shrink_old_tool_results_keeps_recent_tool_messages() -> None:
     recent_large = {"role": "tool", "tool_call_id": "recent", "name": "grep", "content": "y" * 2000}
     history = [old_large, {"role": "user", "content": "middle"}, recent_large]
 
-    shrunk = AgentRunner._shrink_old_tool_results(history, keep_recent=2)
+    shrunk, _ = shrink_old_tool_results(history, keep_recent=2)
 
     assert shrunk[0]["content"] == "[shrunk] grep → 2000 chars omitted"
     assert shrunk[2]["content"] == "y" * 2000
