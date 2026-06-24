@@ -344,6 +344,116 @@ class TaskRecord:
 - 后端重启后 Chat 未压缩 turn 能恢复工具、任务、Ask/Plan 状态。
 - localStorage 清空后仍可从 backend replay 重建当前活跃 timeline。
 
+## Epic 8：任务执行流程与可视化运行时
+
+目标：在既有 runner、ToolExecutionEngine、Task Framework 和 Runtime replay 之上，新增一层执行叙事模型，让复杂代码任务呈现为可计划、可推进、可恢复、可视化的 `ExecutionRun`。
+
+这个 Epic 的设计依据见 `07-task-execution-flow-visual-runtime.md`。它不重写前面 Epics，而是把它们串成用户可见的任务执行体验。
+
+目标文件：
+
+- 新增 `agent/execution_flow/models.py`
+- 新增 `agent/execution_flow/manager.py`
+- 新增 `agent/execution_flow/store.py`
+- `agent/runner.py`
+- `agent/tools/todo.py`
+- `agent/tools/execution.py`
+- `agent/tools/shell.py`
+- `agent/tools/dispatch.py`
+- `agent/tasks/sidechain.py`
+- `agent/runtime/events.py`
+- `desktop/src/renderer/src/types.ts`
+- `desktop/src/renderer/src/runtime/handlers/executionFlow.ts`
+- `desktop/src/renderer/src/composables/useRuntime.ts`
+- `desktop/src/renderer/src/components/chat/AssistantFlow.vue`
+- `desktop/src/renderer/src/components/chat/ToolEvent.vue`
+- `desktop/src/renderer/src/components/chat/SubagentTrail.vue`
+- 新增 `desktop/src/renderer/src/components/chat/ExecutionPlanStrip.vue`
+- 新增 `desktop/src/renderer/src/components/panels/ExecutionFlowPanel.vue`
+
+接口草案：
+
+```python
+@dataclass
+class ExecutionRun:
+    id: str
+    turn_id: str | None
+    session_id: str | None
+    source: str
+    status: str
+    title: str
+    started_at: float
+    ended_at: float | None = None
+    current_step_id: str | None = None
+    summary: str = ""
+
+@dataclass
+class ExecutionStep:
+    id: str
+    run_id: str
+    title: str
+    description: str
+    active_form: str
+    status: str
+    owner: str | None = None
+    blocked_by: list[str] = field(default_factory=list)
+    evidence: list[str] = field(default_factory=list)
+    related_tool_call_ids: list[str] = field(default_factory=list)
+
+@dataclass
+class ExecutionActivity:
+    id: str
+    run_id: str
+    step_id: str | None
+    kind: str
+    status: str
+    title: str
+    tool_call_id: str | None = None
+    task_id: str | None = None
+    parent_activity_id: str | None = None
+    output_ref: dict[str, Any] | None = None
+```
+
+runtime event 草案：
+
+- `execution_run_started`
+- `execution_run_updated`
+- `execution_run_completed`
+- `execution_step_updated`
+- `execution_activity_started`
+- `execution_activity_progress`
+- `execution_activity_completed`
+- `execution_activity_failed`
+- `tool_run_progress`
+- `tool_output_delta`
+
+迁移顺序：
+
+1. 新增纯模型和事件构造函数，不改变 runner 行为。
+2. Chat turn 开始时创建 `ExecutionRun`，完成、暂停、失败、取消时写终态。
+3. 扩展 `update_todos` 为 Task Step v2，兼容旧 `{id, content, status}` 输入。
+4. `ToolExecutionEngine` 绑定 activity id，增加 progress、duration、output ref。
+5. `RunCommand` 改为异步进程和 output file，模型只收截断摘要，UI 收 tail。
+6. `dispatch_subagent` 和 Team wake 映射为 `ExecutionActivity`，中间事件进入 sidechain。
+7. 前端新增 execution flow reducer，通过 runtime replay 重建 run、step、activity。
+8. Chat 内显示紧凑步骤条，侧栏显示完整执行面板。
+9. 更新 `templates/agent/identity.md`，约束复杂代码任务先建步骤、完成前验证。
+
+风险：
+
+- 不能把 execution flow 做成第二套 history；模型事实仍以 history/checkpoint 为准，可视事实以后端 runtime event 为准。
+- 不能把长 output delta 全部塞进前端 reactive 状态，必须只保留 tail 和引用。
+- `blocked`/`failed` 步骤不能触发无限继续执行。
+- Team 长期身份仍属于 `.team`，execution activity 只表示某次 wake/run。
+
+验收：
+
+- 一个多步骤代码任务能在 Chat 中显示当前步骤、工具运行、验证结果。
+- 页面刷新后，从 runtime event replay 恢复执行流投影。
+- 长命令运行中能显示 progress，最终模型上下文不包含完整日志。
+- 子代理过程在父工具下可见，完整细节可从 sidechain 懒加载。
+- 简单问答不被强制显示执行步骤。
+
 ## 优先级建议
 
 第一阶段：低风险结构化
@@ -355,14 +465,16 @@ class TaskRecord:
 第二阶段：用户可见能力增强
 
 1. Tool progress event。
-2. Permission Pipeline v2。
-3. Runtime replay event schema 扩展。
+2. ExecutionRun 和 ExecutionStep 基础事件。
+3. Permission Pipeline v2。
+4. Runtime replay event schema 扩展。
 
 第三阶段：长期任务与子代理升级
 
 1. Task Framework。
 2. Subagent sidechain transcript。
 3. Team wake task 化。
+4. 子代理和 Team activity 投影。
 
 第四阶段：高级上下文恢复
 
@@ -370,6 +482,12 @@ class TaskRecord:
 2. Microcompact。
 3. Reactive compact。
 4. 主会话后台化。
+
+第五阶段：执行流体验打磨
+
+1. Chat 内 `ExecutionPlanStrip`。
+2. 侧栏 `ExecutionFlowPanel`。
+3. Prompt 行为约束与验证闭环。
 
 ## 不立即做的事
 
@@ -379,3 +497,4 @@ class TaskRecord:
 - 不引入无法解释的自动权限 classifier。
 - 不让 Scheduler、Team、External 绕过 control/permission。
 - 不把长期记忆更新和上下文压缩继续强绑定。
+- 不在第一版执行流中实现 remote agent 或主会话后台化。

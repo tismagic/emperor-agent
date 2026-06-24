@@ -16,10 +16,13 @@
    分析 Task Framework、后台任务、子代理、sidechain transcript、队友式运行时。
 6. `06-emperor-upgrade-roadmap.md`  
    把前面设计归纳成 Emperor Agent 的升级 Epics、目标文件、接口草案、迁移顺序、风险和验收。
+7. `07-task-execution-flow-visual-runtime.md`
+   专门分析 Claude Code 执行真实项目时的计划步骤、工具进度、长输出治理、子代理轨迹和 UI 投影，并映射到 Emperor Agent 的执行流可视化升级。
 
 对应的可执行实施计划：
 
 - 深度任务级升级计划：`docs/superpowers/plans/2026-06-23-emperor-agent-claude-code-deep-upgrade.md`
+- 任务执行流程与可视化升级计划：`docs/superpowers/plans/2026-06-24-claude-code-task-flow-visual-upgrade.md`
 - 早期分析版计划：`docs/superpowers/plans/2026-06-23-claude-code-core-design-upgrade.md`
 
 ## 核心结论
@@ -36,6 +39,7 @@ Emperor Agent 目前已经具备多 provider、工具、MCP、Ask/Plan、Schedul
 - 上下文预算流水线：工具结果预算、历史裁剪、轻量压缩、完整压缩、溢出恢复应成为请求前的可组合 pipeline。
 - Task Framework：后台 shell、子代理、主会话后台化、远程任务和队友都可通过统一 TaskState 管理生命周期、进度、输出和通知。
 - Runtime replay 收敛：前端只做投影和交互，后端事件日志成为刷新、重启、恢复的事实来源。
+- 执行叙事层：复杂代码任务需要把计划步骤、工具活动、长输出、子代理轨迹和验证结果统一为可回放的 `ExecutionRun`，让 Agent 能持续推进，用户也能理解当前进度。
 
 ## Claude Code 与 Emperor Agent 架构差异地图
 
