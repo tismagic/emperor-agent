@@ -49,9 +49,10 @@ export function finalizedSnapshot(snapshot: RuntimeSnapshot): RuntimeSnapshot {
   const messages = snapshot.messages.map((message) => {
     if (message.role !== 'assistant' || message.id !== snapshot.currentAssistantId) return message
     const fallback = '（上次回复已超时中断，请重新发送。）'
+    const startedAt = assistantStartedAt(message)
+    const endedAt = snapshot.savedAt
     const baseSegments = message.segments.map((segment) => {
       if (segment.type !== 'thought' || segment.status !== 'running') return segment
-      const endedAt = snapshot.savedAt
       return {
         ...segment,
         status: 'error_aborted' as const,
@@ -64,9 +65,25 @@ export function finalizedSnapshot(snapshot: RuntimeSnapshot): RuntimeSnapshot {
       ? baseSegments
       : [...baseSegments, { id: nextSnapshotId('segment'), type: 'text' as const, content: fallback }]
     const content = message.content || fallback
-    return { ...message, content, segments, streaming: false } satisfies AssistantMessage
+    return {
+      ...message,
+      content,
+      segments,
+      streaming: false,
+      startedAt,
+      endedAt,
+      durationMs: startedAt ? Math.max(0, endedAt - startedAt) : message.durationMs,
+    } satisfies AssistantMessage
   })
   return { ...snapshot, messages, currentAssistantId: null, lastSeq: 0 }
+}
+
+function assistantStartedAt(message: AssistantMessage) {
+  if (typeof message.startedAt === 'number') return message.startedAt
+  const timedSegment = message.segments.find((segment) =>
+    'startedAt' in segment && typeof segment.startedAt === 'number'
+  )
+  return timedSegment && 'startedAt' in timedSegment ? timedSegment.startedAt : undefined
 }
 
 export function matchesInFlightBackendHistory(snapshot: RuntimeSnapshot, history: RuntimeHistoryItem[]) {

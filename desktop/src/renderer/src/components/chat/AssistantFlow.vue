@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import type { AssistantMessage, ControlInteraction, RuntimePlanRecord, ThoughtSegment } from '../../types'
 import { actionIcons, avatarIcons } from '../../icons'
 import { latestPlanForInteraction } from '../../runtime/handlers/plans'
@@ -13,6 +13,8 @@ import { projectAssistantFlow } from './assistantFlowProjection'
 
 const props = defineProps<{ message: AssistantMessage; plans?: RuntimePlanRecord[] }>()
 const copied = ref(false)
+const flowClock = ref(Date.now())
+let flowClockTimer: number | undefined
 
 const messageText = computed(() => {
   return props.message.segments
@@ -22,7 +24,7 @@ const messageText = computed(() => {
     .trim()
 })
 
-const flowBlocks = computed(() => projectAssistantFlow(props.message))
+const flowBlocks = computed(() => projectAssistantFlow(props.message, { now: flowClock.value }))
 
 const fallbackThought = computed<ThoughtSegment>(() => ({
   id: 'fallback-thought',
@@ -43,6 +45,30 @@ async function copyMessage() {
   copied.value = true
   window.setTimeout(() => { copied.value = false }, 1400)
 }
+
+function stopFlowClock() {
+  if (!flowClockTimer) return
+  window.clearInterval(flowClockTimer)
+  flowClockTimer = undefined
+}
+
+watch(
+  () => props.message.streaming,
+  (streaming) => {
+    if (!streaming) {
+      stopFlowClock()
+      return
+    }
+    flowClock.value = Date.now()
+    stopFlowClock()
+    flowClockTimer = window.setInterval(() => {
+      flowClock.value = Date.now()
+    }, 500)
+  },
+  { immediate: true },
+)
+
+onBeforeUnmount(stopFlowClock)
 </script>
 
 <template>
@@ -72,7 +98,11 @@ async function copyMessage() {
       <div class="assistant-timeline-shell" :class="{ streaming: props.message.streaming }">
         <ThoughtEvent v-if="!flowBlocks.length && props.message.streaming" :segment="fallbackThought" />
         <template v-for="block in flowBlocks" :key="block.id">
-          <ThoughtEvent v-if="block.kind === 'thought'" :segment="block.segment" />
+          <ThoughtEvent
+            v-if="block.kind === 'thought'"
+            :segment="block.segment"
+            :execution-duration-ms="block.executionDurationMs"
+          />
           <div
             v-else-if="block.kind === 'text'"
             class="timeline-node text-node"

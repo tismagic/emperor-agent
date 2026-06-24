@@ -670,6 +670,9 @@ export interface AssistantMessage {
   streaming: boolean
   turn_id?: string
   local?: boolean
+  startedAt?: number
+  endedAt?: number
+  durationMs?: number
 }
 
 export type ChatMessage = UserMessage | AssistantMessage

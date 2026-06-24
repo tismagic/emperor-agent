@@ -2,12 +2,16 @@
 import { computed } from 'vue'
 import type { ThoughtSegment } from '../../types'
 
-const props = defineProps<{ segment: ThoughtSegment }>()
+const props = defineProps<{ segment: ThoughtSegment; executionDurationMs?: number }>()
 
 const label = computed(() => {
   const phase = props.segment.label || '思考'
+  if (props.segment.status === 'error' || props.segment.status === 'error_aborted') {
+    if (typeof props.executionDurationMs === 'number') return `执行已中断 · ${durationLabel(props.executionDurationMs)}`
+    return `${phase}已中断`
+  }
+  if (typeof props.executionDurationMs === 'number') return `执行 ${durationLabel(props.executionDurationMs)}`
   if (props.segment.status === 'running') return phase
-  if (props.segment.status === 'error' || props.segment.status === 'error_aborted') return `${phase}已中断`
   return `${phase} · ${durationLabel(props.segment.durationMs)}`
 })
 

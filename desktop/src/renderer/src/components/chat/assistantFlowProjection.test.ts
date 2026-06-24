@@ -2,7 +2,12 @@ import { describe, expect, it } from 'vitest'
 import type { AssistantMessage, AssistantSegment, ToolSegment } from '../../types'
 import { projectAssistantFlow } from './assistantFlowProjection'
 
-function message(segments: AssistantSegment[], streaming = false, todos = null): AssistantMessage {
+function message(
+  segments: AssistantSegment[],
+  streaming = false,
+  todos = null,
+  extra: Partial<AssistantMessage> = {},
+): AssistantMessage {
   return {
     id: 'assistant-1',
     role: 'assistant',
@@ -10,6 +15,7 @@ function message(segments: AssistantSegment[], streaming = false, todos = null):
     segments,
     todos,
     streaming,
+    ...extra,
   }
 }
 
@@ -105,7 +111,62 @@ describe('assistant flow projection', () => {
     expect(blocks[0]).toMatchObject({ kind: 'thought', id: 'thought-running' })
   })
 
-  it('adds fallback todos only when no tool already carries todos', () => {
+  it('uses assistant total duration for the first completed thought execution summary', () => {
+    const blocks = projectAssistantFlow(message([
+      { id: 'thought-wait', type: 'thought', status: 'done', durationMs: 400 },
+      tool('bash-1', 'run_command', 'done', { durationMs: 1200 }),
+      { id: 'thought-followup', type: 'thought', status: 'done', durationMs: 300 },
+    ], false, null, { startedAt: 1_000, endedAt: 6_000, durationMs: 5_000 }))
+
+    expect(blocks[0]).toMatchObject({
+      kind: 'thought',
+      id: 'thought-wait',
+      executionDurationMs: 5_000,
+    })
+    expect(blocks[2]).toMatchObject({
+      kind: 'thought',
+      id: 'thought-followup',
+      executionDurationMs: undefined,
+    })
+  })
+
+  it('derives execution duration from timed segments when message duration is missing', () => {
+    const blocks = projectAssistantFlow(message([
+      { id: 'thought-wait', type: 'thought', status: 'done', startedAt: 1_000, endedAt: 1_400, durationMs: 400 },
+      tool('bash-1', 'run_command', 'done', { startedAt: 1_500, endedAt: 4_200, durationMs: 2_700 }),
+      { id: 'thought-followup', type: 'thought', status: 'done', startedAt: 4_200, endedAt: 5_000, durationMs: 800 },
+    ]))
+
+    expect(blocks[0]).toMatchObject({
+      kind: 'thought',
+      id: 'thought-wait',
+      executionDurationMs: 4_000,
+    })
+  })
+
+  it('uses total assistant elapsed time for the running execution summary', () => {
+    const blocks = projectAssistantFlow(message([
+      { id: 'thought-wait', type: 'thought', status: 'running', startedAt: 1_000, durationMs: 300 },
+    ], true, null, { startedAt: 1_000 }), { now: 5_900 })
+
+    expect(blocks[0]).toMatchObject({
+      kind: 'thought',
+      id: 'thought-wait',
+      executionDurationMs: 4_900,
+    })
+  })
+
+  it('promotes tool todos into a task step strip after the tool group', () => {
+    const todos = [{ id: 1, content: '检查结果', status: 'pending' }]
+    const blocks = projectAssistantFlow(message([
+      tool('todo-tool', 'update_todos', 'done', { todos }),
+    ], false, todos))
+
+    expect(blocks.map((block) => block.kind)).toEqual(['tool_group', 'todos'])
+    expect(blocks[1]).toEqual({ kind: 'todos', id: 'todos-todo-tool', todos })
+  })
+
+  it('adds fallback todos only when no tool already promoted todos', () => {
     const todos = [{ id: 1, content: '检查结果', status: 'pending' }]
     const withoutToolTodos = projectAssistantFlow(message([
       { id: 't1', type: 'text', content: '开始' },
@@ -115,6 +176,6 @@ describe('assistant flow projection', () => {
     ], false, todos))
 
     expect(withoutToolTodos.at(-1)).toEqual({ kind: 'todos', id: 'todos-fallback', todos })
-    expect(withToolTodos.some((block) => block.kind === 'todos')).toBe(false)
+    expect(withToolTodos.filter((block) => block.kind === 'todos')).toHaveLength(1)
   })
 })

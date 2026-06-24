@@ -500,7 +500,9 @@ export function useRuntime(options: {
     if (data.event === 'assistant_done') {
       const assistant = assistantForEvent(data, false) || currentAssistant.value
       if (assistant) {
+        const endedAt = eventTimeMs(data)
         finishActiveThought(assistant, data)
+        finishTimedState(assistant, endedAt)
         assistant.content = data.content || assistant.content
         syncAssistantDoneContent(assistant, data.content || '')
         assistant.streaming = false
@@ -548,7 +550,9 @@ export function useRuntime(options: {
     if (data.event === 'turn_paused') {
       const assistant = assistantForEvent(data, false) || currentAssistant.value
       if (assistant) {
+        const endedAt = eventTimeMs(data)
         finishActiveThought(assistant, data)
+        finishTimedState(assistant, endedAt)
         assistant.streaming = false
         if (assistant.turn_id) turnClock.delete(assistant.turn_id)
       }
@@ -665,6 +669,12 @@ export function useRuntime(options: {
       const current = currentAssistant.value
       if (current && !current.turn_id) {
         current.turn_id = turnId
+        const startedAt = turnClock.get(turnId)
+        if (startedAt && (!current.startedAt || current.startedAt > startedAt)) {
+          current.startedAt = startedAt
+          const first = current.segments[0]
+          if (first?.type === 'thought' && first.status === 'running') first.startedAt = startedAt
+        }
         return current
       }
       if (!create) return undefined
@@ -743,6 +753,7 @@ export function useRuntime(options: {
       segments: [createThoughtSegment(startedAt, '等待模型首字')],
       todos: null,
       streaming: true,
+      startedAt,
     }
   }
 
@@ -1057,6 +1068,7 @@ export function useRuntime(options: {
 
   function markRunningAsAborted(assistant?: AssistantMessage) {
     if (!assistant) return
+    if (!assistant.endedAt) finishTimedState(assistant)
     assistant.streaming = false
     for (const seg of assistant.segments) {
       if (seg.type === 'thought' && seg.status === 'running') {

@@ -11,13 +11,21 @@ const props = defineProps<{ block: ToolGroupBlock }>()
 
 const defaultOpen = computed(() =>
   props.block.status !== 'done' ||
-  props.block.tools.some((tool) => Boolean(tool.todos?.length || tool.subagents?.length)),
+  props.block.tools.some((tool) => Boolean(tool.subagents?.length)),
 )
 
 const primaryTool = computed(() => props.block.tools[0])
 const runningTools = computed(() => props.block.tools.filter((tool) => tool.status === 'running'))
 const errorTools = computed(() => props.block.tools.filter((tool) => tool.status === 'error' || tool.status === 'error_aborted'))
 const completedCount = computed(() => props.block.tools.filter((tool) => tool.status === 'done').length)
+const latestTodos = computed(() => {
+  for (let index = props.block.tools.length - 1; index >= 0; index -= 1) {
+    const tool = props.block.tools[index]
+    if (tool?.todos?.length) return tool.todos
+  }
+  return []
+})
+const isTodoOnlyGroup = computed(() => props.block.tools.every((tool) => tool.name === 'update_todos'))
 const agentCount = computed(() =>
   props.block.tools.reduce((count, tool) => {
     const ownAgent = tool.name === 'dispatch_subagent' ? 1 : 0
@@ -29,6 +37,8 @@ const statusText = computed(() => statusLabel(props.block.status))
 const detailText = computed(() => {
   if (runningTools.value.length) return `正在执行 ${toolNames(runningTools.value)}`
   if (errorTools.value.length) return `${errorTools.value.length} 个工具需要处理`
+  if (isTodoOnlyGroup.value && latestTodos.value.length) return `已更新 ${latestTodos.value.length} 个任务步骤`
+  if (latestTodos.value.length) return `已同步 ${latestTodos.value.length} 个任务步骤`
   return `已完成 ${completedCount.value}/${props.block.tools.length} 个工具`
 })
 
@@ -51,6 +61,10 @@ function durationLabel(ms?: number) {
   if (ms < 1000) return `${ms}ms`
   return `${(ms / 1000).toFixed(ms < 10_000 ? 1 : 0)}s`
 }
+
+function isTodoTool(tool: ToolSegment) {
+  return tool.name === 'update_todos' && Boolean(tool.todos?.length)
+}
 </script>
 
 <template>
@@ -71,11 +85,16 @@ function durationLabel(ms?: number) {
     </summary>
 
     <div class="tool-group-body">
-      <ToolEvent
-        v-for="tool in props.block.tools"
-        :key="tool.id"
-        :segment="tool"
-      />
+      <template v-for="tool in props.block.tools" :key="tool.id">
+        <details v-if="isTodoTool(tool)" class="tool-raw-details">
+          <summary>查看原始工具详情</summary>
+          <ToolEvent :segment="tool" />
+        </details>
+        <ToolEvent
+          v-else
+          :segment="tool"
+        />
+      </template>
     </div>
   </details>
 </template>

@@ -325,6 +325,42 @@
     background: rgb(var(--bg-elevated) / 0.72);
   }
 
+  .tool-raw-details {
+    @apply rounded-md border;
+    border-color: rgb(var(--border) / 0.72);
+    background: rgb(var(--bg) / 0.22);
+  }
+
+  .tool-raw-details > summary {
+    @apply cursor-pointer px-3 py-2 font-mono text-[11px];
+    color: rgb(var(--fg-subtle));
+    list-style: none;
+  }
+
+  .tool-raw-details > summary::-webkit-details-marker {
+    display: none;
+  }
+
+  .tool-raw-details > summary::after {
+    content: '›';
+    margin-left: 6px;
+    color: rgb(var(--fg-subtle));
+  }
+
+  .tool-raw-details[open] > summary {
+    border-bottom: 1px solid rgb(var(--border));
+  }
+
+  .tool-raw-details[open] > summary::after {
+    content: '⌄';
+  }
+
+  .tool-raw-details .activity-card {
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+  }
+
   /* ── Control cards (Ask / Plan) ──────────────────────────────────────────── */
   .control-card {
     @apply w-full max-w-full overflow-hidden rounded-md border p-4 text-sm;
@@ -997,15 +1033,44 @@
 
   /* ── Todo panel ──────────────────────────────────────────────────────────── */
   .todo-panel {
-    @apply max-w-[720px] rounded-md border p-3;
-    border-color: rgb(var(--warn) / 0.35);
-    background: rgb(var(--warn) / 0.06);
+    @apply max-w-[720px] rounded-md border p-2.5;
+    border-color: rgb(var(--border));
+    background: rgb(var(--bg-elevated) / 0.44);
+  }
+
+  .todo-panel-head {
+    @apply mb-2 flex items-center justify-between gap-3 px-0.5;
+  }
+
+  .todo-panel-head h3 {
+    @apply font-mono text-xs font-semibold;
+    color: rgb(var(--fg));
+  }
+
+  .todo-panel-head span {
+    @apply shrink-0 font-mono text-[11px];
+    color: rgb(var(--fg-subtle));
+  }
+
+  .todo-items {
+    @apply grid gap-1.5;
   }
 
   .todo-item {
-    @apply flex items-center gap-2 rounded-md border px-3 py-1.5 text-sm;
-    border-color: rgb(var(--border));
+    @apply grid items-center gap-2 rounded-md border px-2.5 py-1.5 text-sm;
+    grid-template-columns: auto auto minmax(0, 1fr);
+    border-color: rgb(var(--border) / 0.72);
     color: rgb(var(--fg));
+    background: rgb(var(--bg) / 0.22);
+  }
+
+  .todo-item em {
+    @apply font-mono text-[11px] not-italic;
+    color: rgb(var(--fg-subtle));
+  }
+
+  .todo-item p {
+    @apply min-w-0 truncate;
   }
 
   .todo-item.completed {
@@ -1015,13 +1080,21 @@
 
   .todo-item.in_progress {
     border-color: rgb(var(--warn) / 0.4);
-    background: rgb(var(--warn) / 0.08);
+    background: rgb(var(--warn) / 0.06);
   }
 
   .todo-mark {
-    @apply grid size-5 shrink-0 place-items-center rounded text-xs font-semibold;
+    @apply grid size-5 shrink-0 place-items-center rounded font-mono text-xs font-semibold;
     background: rgb(var(--bg-inset));
-    color: rgb(var(--accent));
+    color: rgb(var(--fg-subtle));
+  }
+
+  .todo-item.completed .todo-mark {
+    color: rgb(var(--ok));
+  }
+
+  .todo-item.in_progress .todo-mark {
+    color: rgb(var(--warn));
   }
 
   /* ── Pending bar ─────────────────────────────────────────────────────────── */

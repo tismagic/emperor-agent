@@ -36,6 +36,38 @@ body {
     rgb(var(--bg));
 }
 
+html,
+body,
+#app {
+  scrollbar-width: thin;
+  scrollbar-color: rgb(var(--border-strong) / 0.72) transparent;
+}
+
+*::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+*::-webkit-scrollbar-thumb {
+  border: 3px solid transparent;
+  border-radius: 999px;
+  background: rgb(var(--border-strong) / 0.72);
+  background-clip: content-box;
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background: rgb(var(--fg-subtle) / 0.78);
+  background-clip: content-box;
+}
+
+*::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
 button:focus-visible,
 a:focus-visible,
 textarea:focus-visible,
@@ -487,19 +519,53 @@ select:focus-visible {
   background: rgb(var(--bg) / 0.38) !important;
 }
 
-.assistant-timeline-shell {
-  gap: 8px;
-  padding-left: 0;
+.tool-raw-details {
+  border-color: rgb(var(--border) / 0.72) !important;
+  background: rgb(var(--bg) / 0.24) !important;
 }
 
-.assistant-timeline-shell::before,
+.tool-raw-details .tool-event,
+.tool-raw-details .activity-card {
+  border: 0 !important;
+  background: transparent !important;
+}
+
+.assistant-timeline-shell {
+  gap: 8px;
+  padding-left: 20px;
+}
+
+.assistant-timeline-shell::before {
+  display: block;
+  left: 7px;
+  top: 4px;
+  bottom: 4px;
+  background: rgb(var(--border) / 0.72);
+}
+
 .timeline-node::before {
-  display: none;
+  display: block;
+  left: -17px;
+  top: 18px;
+  width: 7px;
+  height: 7px;
+  border: 2px solid rgb(var(--bg));
+  background: rgb(var(--border-strong));
+  box-sizing: content-box;
+}
+
+.timeline-node.text-node::before {
+  top: 14px;
+  background: rgb(var(--fg-subtle));
 }
 
 .thought-node {
   border-radius: 7px;
   background: rgb(var(--bg-elevated));
+}
+
+.thought-node::before {
+  top: 7px;
 }
 
 .tool-event,
@@ -509,8 +575,18 @@ select:focus-visible {
 .todo-panel {
   border-radius: 8px !important;
   border-color: rgb(var(--border)) !important;
-  background: rgb(var(--bg-elevated)) !important;
   box-shadow: none !important;
+}
+
+.tool-event,
+.activity-card,
+.agent-node,
+.control-card {
+  background: rgb(var(--bg-elevated)) !important;
+}
+
+.todo-panel {
+  background: rgb(var(--bg-elevated) / 0.42) !important;
 }
 
 .control-card {
@@ -665,6 +741,19 @@ select:focus-visible {
   padding: 13px 16px 10px;
   font-size: 13px;
   line-height: 1.6;
+  scrollbar-width: thin;
+  scrollbar-color: rgb(var(--border-strong) / 0.72) transparent;
+}
+
+.composer textarea::-webkit-scrollbar {
+  width: 8px;
+}
+
+.composer textarea::-webkit-scrollbar-thumb {
+  border: 2px solid transparent;
+  border-radius: 999px;
+  background: rgb(var(--border-strong) / 0.74);
+  background-clip: content-box;
 }
 
 .composer textarea:focus,
@@ -757,7 +846,7 @@ select:focus-visible {
   box-shadow: 0 16px 46px rgb(0 0 0 / 0.28);
   backdrop-filter: blur(16px);
   scrollbar-width: thin;
-  scrollbar-color: rgb(var(--border-strong)) transparent;
+  scrollbar-color: rgb(var(--border-strong) / 0.72) transparent;
 }
 
 .composer-palette::-webkit-scrollbar {
@@ -765,8 +854,9 @@ select:focus-visible {
 }
 
 .composer-palette::-webkit-scrollbar-thumb {
+  border: 0;
   border-radius: 999px;
-  background: rgb(var(--border-strong));
+  background: rgb(var(--border-strong) / 0.78);
 }
 
 .composer-palette-head {
@@ -1372,6 +1462,20 @@ select:focus-visible {
   .message-cluster,
   .flow-body {
     max-width: calc(100vw - 58px);
+  }
+
+  .assistant-timeline-shell {
+    padding-left: 16px;
+  }
+
+  .assistant-timeline-shell::before {
+    left: 5px;
+  }
+
+  .timeline-node::before {
+    left: -14px;
+    width: 6px;
+    height: 6px;
   }
 
   .avatar {

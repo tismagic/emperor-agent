@@ -28,8 +28,7 @@ const title = computed(() => props.segment.displayName || displayName(props.segm
 const purpose = computed(() => toolPurpose(props.segment.name))
 const defaultOpen = computed(() =>
   props.segment.status === 'running' ||
-  Boolean(props.segment.subagents?.length) ||
-  Boolean(props.segment.todos?.length),
+  Boolean(props.segment.subagents?.length),
 )
 
 function statusLabel(status: ToolStatus) {

@@ -10,17 +10,23 @@ import type {
 } from '../../types'
 
 export type AssistantFlowBlock =
-  | { kind: 'thought'; id: string; segment: ThoughtSegment }
+  | { kind: 'thought'; id: string; segment: ThoughtSegment; executionDurationMs?: number }
   | { kind: 'text'; id: string; content: string; streaming: boolean }
   | { kind: 'tool_group'; id: string; title: string; status: ToolStatus; tools: ToolSegment[]; durationMs?: number }
   | { kind: 'control'; id: string; segment: AskSegment | PlanSegment }
   | { kind: 'todos'; id: string; todos: TodoItem[] }
 
+export interface ProjectAssistantFlowOptions {
+  now?: number
+}
+
 const THOUGHT_MIN_DURATION_MS = 120
 
-export function projectAssistantFlow(message: AssistantMessage): AssistantFlowBlock[] {
+export function projectAssistantFlow(message: AssistantMessage, options: ProjectAssistantFlowOptions = {}): AssistantFlowBlock[] {
   const visible = message.segments.filter(visibleSegment)
   const blocks: AssistantFlowBlock[] = []
+  const executionDurationMs = assistantExecutionDuration(message, options.now ?? Date.now())
+  let executionSummaryAssigned = false
 
   for (let index = 0; index < visible.length;) {
     const segment = visible[index]
@@ -30,7 +36,14 @@ export function projectAssistantFlow(message: AssistantMessage): AssistantFlowBl
     }
 
     if (segment.type === 'thought') {
-      blocks.push({ kind: 'thought', id: segment.id, segment })
+      const useExecutionSummary = !executionSummaryAssigned && executionDurationMs !== undefined
+      blocks.push({
+        kind: 'thought',
+        id: segment.id,
+        segment,
+        executionDurationMs: useExecutionSummary ? executionDurationMs : undefined,
+      })
+      if (useExecutionSummary) executionSummaryAssigned = true
       index += 1
       continue
     }
@@ -67,6 +80,14 @@ export function projectAssistantFlow(message: AssistantMessage): AssistantFlowBl
         tools: group,
         durationMs: toolGroupDuration(group),
       })
+      const todos = latestToolTodos(group)
+      if (todos?.todos.length) {
+        blocks.push({
+          kind: 'todos',
+          id: `todos-${todos.id}`,
+          todos: todos.todos,
+        })
+      }
       index = cursor
       continue
     }
@@ -80,11 +101,42 @@ export function projectAssistantFlow(message: AssistantMessage): AssistantFlowBl
     index += 1
   }
 
-  if (message.todos?.length && !visible.some((segment) => segment.type === 'tool' && Boolean(segment.todos?.length))) {
+  if (message.todos?.length && !blocks.some((block) => block.kind === 'todos')) {
     blocks.push({ kind: 'todos', id: 'todos-fallback', todos: message.todos })
   }
 
   return blocks
+}
+
+function latestToolTodos(tools: ToolSegment[]) {
+  for (let index = tools.length - 1; index >= 0; index -= 1) {
+    const tool = tools[index]
+    if (tool?.todos?.length) return { id: tool.toolId || tool.id, todos: tool.todos }
+  }
+  return undefined
+}
+
+function assistantExecutionDuration(message: AssistantMessage, now: number) {
+  if (typeof message.durationMs === 'number') return Math.max(0, message.durationMs)
+  if (typeof message.startedAt === 'number' && typeof message.endedAt === 'number') {
+    return Math.max(0, message.endedAt - message.startedAt)
+  }
+  if (message.streaming && typeof message.startedAt === 'number') {
+    return Math.max(0, now - message.startedAt)
+  }
+  const started: number[] = []
+  const ended: number[] = []
+  for (const segment of message.segments) {
+    if ((segment.type === 'thought' || segment.type === 'tool') && typeof segment.startedAt === 'number') {
+      started.push(segment.startedAt)
+    }
+    if ((segment.type === 'thought' || segment.type === 'tool') && typeof segment.endedAt === 'number') {
+      ended.push(segment.endedAt)
+    }
+  }
+  if (message.streaming && started.length) return Math.max(0, now - Math.min(...started))
+  if (started.length && ended.length) return Math.max(0, Math.max(...ended) - Math.min(...started))
+  return undefined
 }
 
 function visibleSegment(segment: AssistantSegment) {
