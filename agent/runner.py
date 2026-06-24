@@ -652,6 +652,7 @@ class AgentRunner:
                 followup = self._plan_verification_followup(verification_update)
                 if followup is not None:
                     plan_followups.append(followup)
+            plan_update = None
             if not result.is_error:
                 try:
                     plan_update = self._sync_plan_from_todo_tool(call, content)
@@ -659,11 +660,9 @@ class AgentRunner:
                     self._restore_todos_from_plan()
                     result = ToolResult.from_text(str(exc), is_error=True)
                     results_by_id[call.id] = result
-                    await self._emit_tool_result(call, result, emit)
-                    return result
-                await self._emit_tool_result(call, result, emit)
-                if plan_update is not None and emit:
-                    await emit(runtime_events.plan_runtime_update(plan_update.to_dict()))
+            await self._emit_tool_result(call, result, emit)
+            if plan_update is not None and emit:
+                await emit(runtime_events.plan_runtime_update(plan_update.to_dict()))
             return result
 
         tool_messages = await self.tool_execution_engine.run_batch(tool_calls, emit=emit, run_one=run_one)
@@ -1009,6 +1008,8 @@ class AgentRunner:
                 "name": call.name,
                 "summary": _summarize_tool_result(result.summary),
             }
+            if result.is_error:
+                payload["is_error"] = True
             artifacts = result.artifact_payloads()
             if artifacts:
                 payload["artifacts"] = artifacts

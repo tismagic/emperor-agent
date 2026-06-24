@@ -3,7 +3,7 @@ import { computed } from 'vue'
 import type { ToolSegment, ToolStatus } from '../../types'
 import { toolIcon } from '../../icons'
 import type { AssistantFlowBlock } from './assistantFlowProjection'
-import ToolEvent from './ToolEvent.vue'
+import ToolDetailBody from './ToolDetailBody.vue'
 
 type ToolGroupBlock = Extract<AssistantFlowBlock, { kind: 'tool_group' }>
 
@@ -34,6 +34,7 @@ const agentCount = computed(() =>
 )
 
 const statusText = computed(() => statusLabel(props.block.status))
+const singleTool = computed(() => props.block.tools.length === 1)
 const detailText = computed(() => {
   if (runningTools.value.length) return `正在执行 ${toolNames(runningTools.value)}`
   if (errorTools.value.length) return `${errorTools.value.length} 个工具需要处理`
@@ -56,6 +57,10 @@ function statusLabel(status: ToolStatus) {
   return '出错'
 }
 
+function toolStatusLabel(tool: ToolSegment) {
+  return statusLabel(tool.status)
+}
+
 function durationLabel(ms?: number) {
   if (!ms && ms !== 0) return ''
   if (ms < 1000) return `${ms}ms`
@@ -64,6 +69,27 @@ function durationLabel(ms?: number) {
 
 function isTodoTool(tool: ToolSegment) {
   return tool.name === 'update_todos' && Boolean(tool.todos?.length)
+}
+
+function toolTitle(tool: ToolSegment) {
+  return tool.displayName || tool.name
+}
+
+function toolPurpose(tool: ToolSegment) {
+  const purposes: Record<string, string> = {
+    dispatch_subagent: '派遣子代理',
+    edit_file: '修改文件',
+    glob: '匹配路径',
+    grep: '搜索文本',
+    load_skill: '加载 Skill',
+    read_file: '读取文件',
+    run_command: '执行命令',
+    scheduler: '调度任务',
+    update_todos: '更新任务',
+    web_fetch: '读取网页',
+    write_file: '写入文件',
+  }
+  return purposes[tool.name] || '工具执行'
 }
 </script>
 
@@ -88,12 +114,32 @@ function isTodoTool(tool: ToolSegment) {
       <template v-for="tool in props.block.tools" :key="tool.id">
         <details v-if="isTodoTool(tool)" class="tool-raw-details">
           <summary>查看原始工具详情</summary>
-          <ToolEvent :segment="tool" />
+          <ToolDetailBody :segment="tool" />
         </details>
-        <ToolEvent
-          v-else
+        <ToolDetailBody
+          v-else-if="singleTool"
           :segment="tool"
         />
+        <section
+          v-else
+          class="tool-group-tool-row"
+          :class="tool.status"
+        >
+          <header class="tool-group-tool-head">
+            <span class="tool-group-tool-icon" aria-hidden="true">
+              <component :is="toolIcon(tool.name)" :size="14" />
+            </span>
+            <span class="tool-group-tool-title">
+              <strong>{{ toolTitle(tool) }}</strong>
+              <small>{{ toolPurpose(tool) }}</small>
+            </span>
+            <span class="tool-group-tool-meta">
+              <em>{{ toolStatusLabel(tool) }}</em>
+              <time v-if="durationLabel(tool.durationMs)">{{ durationLabel(tool.durationMs) }}</time>
+            </span>
+          </header>
+          <ToolDetailBody :segment="tool" />
+        </section>
       </template>
     </div>
   </details>

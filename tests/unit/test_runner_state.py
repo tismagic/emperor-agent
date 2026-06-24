@@ -70,6 +70,16 @@ class StructuredEchoTool(Tool):
         )
 
 
+class ErrorResultTool(Tool):
+    name = "error_result"
+    description = "Return a structured tool error."
+    parameters = {"type": "object", "properties": {}, "required": []}
+    read_only = True
+
+    def execute(self, **kwargs) -> ToolResult:
+        return ToolResult.from_text("Error: blocked by policy", is_error=True)
+
+
 def test_turn_state_transitions_to_runtime_events() -> None:
     state = TurnState(turn_id="turn_1")
     state.start_iteration()
@@ -181,6 +191,39 @@ async def test_runner_uses_structured_tool_result_for_history_and_runtime_summar
     ]
     assert completed_event["summary"] == "summary:large"
     assert completed_event["metadata"] == {"source": "runner-test"}
+
+
+@pytest.mark.anyio
+async def test_runner_emits_error_tool_result_and_failed_run_event() -> None:
+    registry = ToolRegistry()
+    registry.register(ErrorResultTool())
+    runner = AgentRunner(
+        provider=FakeProvider([
+            LLMResponse(
+                content="",
+                tool_calls=[ToolCallRequest(id="call_1", name="error_result", arguments={})],
+                finish_reason="tool_calls",
+            ),
+            LLMResponse(content="handled"),
+        ]),
+        model="fake",
+        registry=registry,
+        system_prompt="system",
+    )
+    emitted: list[dict[str, Any]] = []
+
+    async def emit(event: dict[str, Any]) -> None:
+        emitted.append(event)
+
+    await runner.step_async([{"role": "user", "content": "hi"}], emit=emit)
+
+    tool_result_event = next(event for event in emitted if event.get("event") == "tool_result")
+    failed_event = next(event for event in emitted if event.get("event") == "tool_run_failed")
+    assert tool_result_event["id"] == "call_1"
+    assert tool_result_event["is_error"] is True
+    assert "blocked by policy" in tool_result_event["summary"]
+    assert failed_event["id"] == "call_1"
+    assert "blocked by policy" in failed_event["message"]
 
 
 @pytest.mark.anyio

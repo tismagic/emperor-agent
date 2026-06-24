@@ -815,7 +815,7 @@ export type WsEvent = ({ seq?: number; ts?: number; turn_id?: string; client_mes
   | { event: 'external_outbound_sent'; message?: Record<string, unknown>; delivery?: Record<string, unknown> }
   | { event: 'external_outbound_error'; message?: Record<string, unknown>; error?: string }
   | { event: 'tool_call'; id?: string; name: string; arguments?: Record<string, unknown> }
-  | { event: 'tool_result'; id?: string; name?: string; summary?: string; artifacts?: ToolArtifactRef[]; metadata?: Record<string, unknown>; todos?: TodoItem[] }
+  | { event: 'tool_result'; id?: string; name?: string; summary?: string; artifacts?: ToolArtifactRef[]; metadata?: Record<string, unknown>; todos?: TodoItem[]; is_error?: boolean }
   | { event: 'tool_error'; id?: string; name?: string; message?: string }
   | { event: 'tool_run_queued'; id?: string; name: string; arguments?: Record<string, unknown> }
   | { event: 'tool_run_started'; id?: string; name: string }

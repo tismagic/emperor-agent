@@ -519,14 +519,34 @@ select:focus-visible {
   background: rgb(var(--bg) / 0.38) !important;
 }
 
+.tool-detail-body {
+  border-radius: 8px !important;
+  border-color: rgb(var(--border) / 0.68) !important;
+  background: rgb(var(--bg) / 0.24) !important;
+}
+
+.tool-group-body > .tool-detail-body,
+.tool-group-tool-row > .tool-detail-body {
+  border-color: transparent !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+}
+
+.tool-group-tool-row {
+  border-radius: 8px !important;
+  border-color: rgb(var(--border) / 0.72) !important;
+  background: rgb(var(--bg) / 0.2) !important;
+  box-shadow: none !important;
+}
+
 .tool-raw-details {
   border-color: rgb(var(--border) / 0.72) !important;
   background: rgb(var(--bg) / 0.24) !important;
 }
 
-.tool-raw-details .tool-event,
-.tool-raw-details .activity-card {
+.tool-raw-details .tool-detail-body {
   border: 0 !important;
+  border-radius: 0 !important;
   background: transparent !important;
 }
 

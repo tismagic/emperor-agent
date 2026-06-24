@@ -131,14 +131,17 @@ class ToolExecutionEngine:
             return ToolResult.from_text(f"Error: {exc}", is_error=True)
         state.status = "failed" if result.is_error else "completed"
         state.result = result
-        if emit and not result.is_error:
-            await emit(runtime_events.tool_run_completed(
-                id=state.id,
-                name=state.name,
-                summary=result.summary,
-                artifacts=result.artifact_payloads() or None,
-                metadata=result.metadata or None,
-            ))
+        if emit:
+            if result.is_error:
+                await emit(runtime_events.tool_run_failed(id=state.id, name=state.name, message=result.summary))
+            else:
+                await emit(runtime_events.tool_run_completed(
+                    id=state.id,
+                    name=state.name,
+                    summary=result.summary,
+                    artifacts=result.artifact_payloads() or None,
+                    metadata=result.metadata or None,
+                ))
         return result
 
 

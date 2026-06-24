@@ -1,0 +1,104 @@
+<script setup lang="ts">
+import { computed } from 'vue'
+import type { ToolArtifactRef, ToolSegment } from '../../types'
+import { compactJson } from '../../utils/format'
+import ExpandableText from './ExpandableText.vue'
+import SubagentTrail from './SubagentTrail.vue'
+
+const props = defineProps<{ segment: ToolSegment }>()
+
+const inputText = computed(() => fullJson(props.segment.arguments))
+const outputText = computed(() => props.segment.summary || (props.segment.status === 'running' ? '等待结果...' : '已记录执行结果'))
+const artifacts = computed(() => props.segment.artifacts || [])
+const metadata = computed(() => props.segment.metadata || {})
+const diffText = computed(() => typeof metadata.value.diff === 'string' ? metadata.value.diff : '')
+const hasInput = computed(() => Boolean(inputText.value))
+const hasOutput = computed(() => Boolean(outputText.value))
+const hasArtifacts = computed(() => artifacts.value.length > 0)
+const hasDiff = computed(() => Boolean(diffText.value))
+const hasEvidence = computed(() => hasArtifacts.value || hasDiff.value)
+const hasBody = computed(() => Boolean(
+  hasInput.value ||
+  hasOutput.value ||
+  hasEvidence.value ||
+  props.segment.subagents?.length ||
+  props.segment.todos?.length,
+))
+
+function fullJson(value: unknown) {
+  if (!value || typeof value !== 'object') return ''
+  try {
+    return JSON.stringify(value, null, 2)
+  } catch {
+    return compactJson(value)
+  }
+}
+
+function todoMarker(status: string) {
+  if (status === 'completed') return '✓'
+  if (status === 'in_progress') return '●'
+  return '□'
+}
+
+function artifactKind(artifact: ToolArtifactRef) {
+  return artifact.kind || 'artifact'
+}
+
+function artifactSize(artifact: ToolArtifactRef) {
+  if (!artifact.bytes && artifact.bytes !== 0) return ''
+  if (artifact.bytes < 1024) return `${artifact.bytes} B`
+  if (artifact.bytes < 1024 * 1024) return `${(artifact.bytes / 1024).toFixed(1)} KB`
+  return `${(artifact.bytes / 1024 / 1024).toFixed(1)} MB`
+}
+</script>
+
+<template>
+  <div v-if="hasBody" class="activity-body tool-detail-body">
+    <div class="tool-io-grid">
+      <div v-if="hasInput" class="tool-io-panel">
+        <span>{{ props.segment.inputLabel || 'IN' }}</span>
+        <ExpandableText class="tool-summary tool-code" :text="inputText" :limit="360" />
+      </div>
+      <div v-if="hasOutput" class="tool-io-panel">
+        <span>{{ props.segment.outputLabel || 'OUT' }}</span>
+        <ExpandableText class="tool-summary" :text="outputText" :limit="360" />
+      </div>
+    </div>
+
+    <div v-if="hasEvidence" class="tool-evidence">
+      <div v-if="hasArtifacts" class="tool-artifacts">
+        <span>ARTIFACTS</span>
+        <div class="tool-artifact-list">
+          <div v-for="artifact in artifacts" :key="`${artifact.kind || 'artifact'}:${artifact.path}`" class="tool-artifact-item">
+            <strong>{{ artifact.path }}</strong>
+            <em>{{ artifactKind(artifact) }}</em>
+            <small v-if="artifactSize(artifact)">{{ artifactSize(artifact) }}</small>
+          </div>
+        </div>
+      </div>
+      <div v-if="hasDiff" class="tool-diff">
+        <span>DIFF</span>
+        <ExpandableText class="tool-summary tool-code" :text="diffText" :limit="900" />
+      </div>
+    </div>
+
+    <div v-if="props.segment.todos?.length" class="tool-todo-list">
+      <div class="tool-todo-head">
+        <strong>Update Todos</strong>
+        <span>{{ props.segment.todos.length }} 项</span>
+      </div>
+      <div class="tool-todo-items">
+        <div v-for="todo in props.segment.todos" :key="todo.id" class="tool-todo-item" :class="todo.status">
+          <span>{{ todoMarker(todo.status) }}</span>
+          <em>{{ todo.id }}</em>
+          <p>{{ todo.content }}</p>
+        </div>
+      </div>
+    </div>
+
+    <SubagentTrail
+      v-if="props.segment.subagents?.length"
+      :subagents="props.segment.subagents"
+    />
+  </div>
+</template>

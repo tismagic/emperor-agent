@@ -14,6 +14,7 @@ import { applyTeamEventToBootstrap } from '../runtime/handlers/team'
 import { SCHEDULER_CLIENT_ID_PREFIX, schedulerMessageMeta } from '../runtime/schedulerMeta'
 import { loadRuntimeSnapshot, transcriptFromMessages, type RuntimeSnapshot } from '../runtime/snapshot'
 import { isDraftSessionId } from '../runtime/sessionDrafts'
+import { applyToolResultToSegment, applyToolRunUpdateToSegment, settleRunningToolSegments } from '../runtime/toolStatus'
 
 function nextId(prefix: string) {
   const random = typeof crypto !== 'undefined' && 'randomUUID' in crypto ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(16).slice(2)}`
@@ -468,19 +469,40 @@ export function useRuntime(options: {
       const assistant = assistantForEvent(data, false)
       const seg = findToolSegment(assistant, data.id)
       if (seg) {
-        finishTimedState(seg, eventTimeMs(data))
-        seg.summary = data.summary || '已完成'
-        seg.status = 'done'
-        if (data.artifacts) seg.artifacts = data.artifacts
-        if (data.metadata) seg.metadata = data.metadata
+        applyToolResultToSegment(seg, {
+          summary: data.summary,
+          artifacts: data.artifacts,
+          metadata: data.metadata,
+          todos: data.todos,
+          isError: Boolean(data.is_error),
+          endedAt: eventTimeMs(data),
+        })
         if ((data.name === 'update_todos' || seg.name === 'update_todos') && data.todos) {
-          seg.todos = data.todos
           assistant!.todos = data.todos
         }
       }
       const running = (assistant?.segments || []).filter((seg): seg is ToolSegment => seg.type === 'tool' && seg.status === 'running')
       if (running.length) updatePending(`正在执行: ${running[0].name}`, `剩余 ${running.length} 个工具`)
       else if (assistant?.streaming) startThought(assistant, data, '整理工具结果')
+      return
+    }
+
+    if (
+      data.event === 'tool_run_completed' ||
+      data.event === 'tool_run_failed' ||
+      data.event === 'tool_run_cancelled'
+    ) {
+      const assistant = assistantForEvent(data, false)
+      const seg = findToolSegment(assistant, data.id)
+      if (seg) {
+        applyToolRunUpdateToSegment(seg, {
+          status: data.event === 'tool_run_completed' ? 'done' : data.event === 'tool_run_failed' ? 'error' : 'error_aborted',
+          summary: data.event === 'tool_run_completed' ? data.summary : data.event === 'tool_run_failed' ? data.message : data.reason,
+          artifacts: data.event === 'tool_run_completed' ? data.artifacts : undefined,
+          metadata: data.event === 'tool_run_completed' ? data.metadata : undefined,
+          endedAt: eventTimeMs(data),
+        })
+      }
       return
     }
 
@@ -503,6 +525,7 @@ export function useRuntime(options: {
         const endedAt = eventTimeMs(data)
         finishActiveThought(assistant, data)
         finishTimedState(assistant, endedAt)
+        settleRunningToolSegments(assistant, { endedAt, summary: '工具未返回结束事件' })
         assistant.content = data.content || assistant.content
         syncAssistantDoneContent(assistant, data.content || '')
         assistant.streaming = false
@@ -553,6 +576,7 @@ export function useRuntime(options: {
         const endedAt = eventTimeMs(data)
         finishActiveThought(assistant, data)
         finishTimedState(assistant, endedAt)
+        settleRunningToolSegments(assistant, { endedAt, summary: '回合已暂停' })
         assistant.streaming = false
         if (assistant.turn_id) turnClock.delete(assistant.turn_id)
       }

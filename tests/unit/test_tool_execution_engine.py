@@ -55,6 +55,16 @@ class ArtifactEcho(Tool):
         )
 
 
+@tool_parameters({"type": "object", "properties": {"value": {"type": "string"}}, "required": ["value"]})
+class ErrorEcho(Tool):
+    name = "error_echo"
+    description = "error echo"
+    read_only = True
+
+    def execute(self, value: str) -> ToolResult:
+        return ToolResult.from_text(f"Error: {value}", is_error=True)
+
+
 async def collect(event: dict[str, Any]) -> None:
     EVENTS.append(event)
 
@@ -118,3 +128,24 @@ async def test_engine_uses_model_content_for_tool_message_and_summary_for_runtim
         }
     ]
     assert completed["metadata"] == {"category": "artifact"}
+
+
+@pytest.mark.anyio
+async def test_engine_emits_failed_event_for_error_tool_result() -> None:
+    EVENTS.clear()
+    registry = ToolRegistry()
+    registry.register(ErrorEcho())
+    engine = ToolExecutionEngine(registry)
+    calls = [ToolCallRequest(id="1", name="error_echo", arguments={"value": "blocked"})]
+
+    messages = await engine.run_batch(calls, emit=collect)
+
+    assert "Error: blocked" in messages[0]["content"]
+    assert [event["event"] for event in EVENTS if event["event"].startswith("tool_run_")] == [
+        "tool_run_queued",
+        "tool_run_started",
+        "tool_run_failed",
+    ]
+    failed = [event for event in EVENTS if event["event"] == "tool_run_failed"][0]
+    assert failed["id"] == "1"
+    assert failed["message"] == "Error: blocked"

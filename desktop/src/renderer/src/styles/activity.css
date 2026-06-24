@@ -321,8 +321,76 @@
     background: rgb(var(--bg) / 0.34);
   }
 
-  .tool-group-body .activity-card {
-    background: rgb(var(--bg-elevated) / 0.72);
+  .tool-detail-body {
+    @apply rounded-md border p-2.5;
+    border-color: rgb(var(--border) / 0.68);
+    background: rgb(var(--bg) / 0.24);
+  }
+
+  .tool-group-body > .tool-detail-body {
+    border-color: transparent;
+    background: transparent;
+    padding: 0;
+  }
+
+  .tool-group-tool-row {
+    @apply rounded-md border;
+    border-color: rgb(var(--border) / 0.72);
+    background: rgb(var(--bg) / 0.2);
+    overflow: hidden;
+  }
+
+  .tool-group-tool-row.running {
+    border-color: rgb(var(--warn) / 0.34);
+  }
+
+  .tool-group-tool-row.error,
+  .tool-group-tool-row.error_aborted {
+    border-color: rgb(var(--danger) / 0.36);
+  }
+
+  .tool-group-tool-head {
+    @apply grid items-center gap-2 px-3 py-2;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    border-bottom: 1px solid rgb(var(--border) / 0.7);
+  }
+
+  .tool-group-tool-icon {
+    @apply grid size-6 shrink-0 place-items-center rounded border;
+    border-color: rgb(var(--border));
+    color: rgb(var(--fg-muted));
+    background: rgb(var(--bg-inset));
+  }
+
+  .tool-group-tool-title {
+    @apply flex min-w-0 flex-col gap-0.5;
+  }
+
+  .tool-group-tool-title strong {
+    @apply truncate font-mono text-xs font-semibold;
+    color: rgb(var(--fg));
+  }
+
+  .tool-group-tool-title small {
+    @apply truncate text-[11px];
+    color: rgb(var(--fg-muted));
+  }
+
+  .tool-group-tool-meta {
+    @apply flex shrink-0 items-center gap-1.5;
+  }
+
+  .tool-group-tool-meta em,
+  .tool-group-tool-meta time {
+    @apply rounded border px-1.5 py-0.5 font-mono text-[10px] not-italic;
+    border-color: rgb(var(--border));
+    color: rgb(var(--fg-subtle));
+  }
+
+  .tool-group-tool-row > .tool-detail-body {
+    border: 0;
+    border-radius: 0;
+    background: transparent;
   }
 
   .tool-raw-details {
@@ -355,7 +423,7 @@
     content: '⌄';
   }
 
-  .tool-raw-details .activity-card {
+  .tool-raw-details .tool-detail-body {
     border: 0;
     border-radius: 0;
     background: transparent;
