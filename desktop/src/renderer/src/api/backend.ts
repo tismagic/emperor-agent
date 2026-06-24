@@ -5,6 +5,7 @@
 
 interface EmperorBridge {
   backendBaseUrl?: string
+  backendToken?: string
   selectDirectory?: () => Promise<string | null>
 }
 
@@ -22,16 +23,26 @@ export function backendBase(): string {
   return typeof injected === 'string' ? injected : ''
 }
 
+// Per-launch token injected by the packaged Electron app (empty in dev). Sent as a
+// header on fetch and as a query param on the WebSocket (browsers cannot set ws headers).
+export function getBackendToken(): string {
+  const injected = bridge()?.backendToken
+  return typeof injected === 'string' ? injected : ''
+}
+
 export function apiUrl(path: string): string {
   return backendBase() + path
 }
 
 export function wsUrl(path: string): string {
   const base = backendBase()
-  if (base) return base.replace(/^http/, 'ws') + path
-  const { protocol, host } = loc()
-  const wsProto = protocol === 'https:' ? 'wss:' : 'ws:'
-  return `${wsProto}//${host}${path}`
+  const { protocol, host } = base ? { protocol: '', host: '' } : loc()
+  const raw = base
+    ? base.replace(/^http/, 'ws') + path
+    : `${protocol === 'https:' ? 'wss:' : 'ws:'}//${host}${path}`
+  const token = getBackendToken()
+  if (!token) return raw
+  return `${raw}${raw.includes('?') ? '&' : '?'}token=${encodeURIComponent(token)}`
 }
 
 export async function selectDirectory(): Promise<string | null> {

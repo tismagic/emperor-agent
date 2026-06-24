@@ -1,8 +1,13 @@
-import { apiUrl } from './backend'
+import { apiUrl, getBackendToken } from './backend'
 
 export async function api<T>(path: string, options: RequestInit = {}): Promise<T> {
+  const token = getBackendToken()
   const response = await fetch(apiUrl(path), {
-    headers: { 'content-type': 'application/json', ...(options.headers || {}) },
+    headers: {
+      'content-type': 'application/json',
+      ...(token ? { 'X-Emperor-Auth-Token': token } : {}),
+      ...(options.headers || {}),
+    },
     ...options,
   })
   const data = await response.json().catch(() => ({}))
