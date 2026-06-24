@@ -225,7 +225,7 @@ class AgentLoop:
         valid_project_path = project_path if project is not None else ""
         if session_mode == "build" and project_id and project is None:
             logger.warning(
-                "Build session %s references unknown project_id %s; falling back to chat scope",
+                "Build session {} references unknown project_id {}; falling back to chat scope",
                 session_id[:8],
                 project_id,
             )
