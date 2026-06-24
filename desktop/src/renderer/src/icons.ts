@@ -63,6 +63,7 @@ export const navIconMap: Record<string, IconComponent> = {
   skills: Sparkles,
   tools: Wrench,
   team: Users,
+  project: ClipboardList,
   scheduler: Clock,
   configs: Settings,
   mcp: Plug,
