@@ -689,7 +689,7 @@
   }
 
   .badge {
-    @apply rounded-full border border-line/70 bg-paper2 px-2 py-0.5 font-mono text-[10px] uppercase tracking-wide text-muted;
+    @apply inline-flex items-center rounded-full border border-line/70 bg-paper2 px-2 py-0.5 font-mono text-[10px] uppercase tracking-wide text-muted;
   }
 
   .badge.green {
@@ -1795,4 +1795,385 @@
 
   .episode-card {
     @apply cursor-pointer;
+  }
+
+  .view-head-actions {
+    @apply flex items-center gap-2;
+  }
+
+  .capability-panel {
+    @apply relative overflow-hidden;
+  }
+
+  .capability-panel.has-detail {
+    @apply grid min-h-0;
+    grid-template-columns: minmax(0, 1fr) minmax(320px, 380px);
+    grid-template-rows: auto minmax(0, 1fr);
+  }
+
+  .capability-panel.has-detail .panel-toolbar {
+    grid-column: 1 / -1;
+  }
+
+  .capability-card-grid {
+    @apply grid content-start gap-3;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 21rem), 1fr));
+  }
+
+  .capability-card {
+    @apply flex min-h-[10.75rem] cursor-pointer flex-col gap-0 rounded-[1.1rem] border border-line/60 bg-paper/75 p-4 shadow-sm transition-all duration-200;
+  }
+
+  .capability-card:hover,
+  .capability-card.active {
+    @apply border-jade/35 bg-paper shadow-md;
+  }
+
+  .capability-card:focus-visible {
+    @apply outline-none ring-2 ring-jade/30;
+  }
+
+  .capability-card-head {
+    @apply flex items-start gap-3;
+  }
+
+  .capability-card-icon {
+    @apply grid h-8 w-8 shrink-0 place-items-center rounded-[0.8rem] border border-line/60 bg-paper2/60 text-muted;
+  }
+
+  .capability-card[data-tone='cyan'] .capability-card-icon {
+    @apply border-cyan-500/30 bg-cyan-500/10 text-cyan-300;
+  }
+
+  .capability-card[data-tone='violet'] .capability-card-icon {
+    @apply border-violet-500/30 bg-violet-500/10 text-violet-300;
+  }
+
+  .capability-card[data-tone='slate'] .capability-card-icon {
+    @apply border-line/70 bg-paper2 text-muted;
+  }
+
+  .capability-card-name {
+    @apply truncate text-sm font-bold text-ink;
+  }
+
+  .capability-card-desc {
+    @apply mt-1 overflow-hidden text-xs leading-5 text-muted;
+    display: -webkit-box;
+    height: 5rem;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 4;
+  }
+
+  .capability-card-footer {
+    @apply mt-3 flex min-h-10 shrink-0 flex-wrap items-center gap-1.5 overflow-visible border-t border-line/35 py-2;
+    align-content: center;
+  }
+
+  .capability-card-path {
+    @apply mt-2 truncate font-mono text-[10px] text-muted/70;
+  }
+
+  .capability-detail-drawer {
+    @apply relative flex min-h-0 w-auto flex-col overflow-hidden rounded-[1.25rem] border border-line/70 bg-paper shadow-insetPaper;
+  }
+
+  .capability-tag.blue {
+    @apply border-blue-500/35 bg-blue-500/10 text-blue-300;
+  }
+
+  .capability-tag.green {
+    @apply border-jade/35 bg-jade/10 text-jade;
+  }
+
+  .capability-tag.gold {
+    @apply border-amber/40 bg-amber/10 text-amber;
+  }
+
+  .capability-tag.red {
+    @apply border-seal/35 bg-seal/10 text-seal;
+  }
+
+  .capability-tag.violet {
+    @apply border-violet-500/35 bg-violet-500/10 text-violet-300;
+  }
+
+  .capability-tag.cyan {
+    @apply border-cyan-500/35 bg-cyan-500/10 text-cyan-300;
+  }
+
+  .capability-drawer-head,
+  .scheduler-drawer-head {
+    @apply flex shrink-0 items-start justify-between gap-3 border-b border-line/60 bg-paper2/50 px-4 py-3;
+  }
+
+  .capability-drawer-head h2,
+  .scheduler-drawer-head h2 {
+    @apply truncate font-display text-lg font-black text-ink;
+  }
+
+  .capability-drawer-head p,
+  .scheduler-drawer-head p {
+    @apply mt-1 truncate font-mono text-[11px] text-muted;
+  }
+
+  .capability-drawer-badges {
+    @apply flex shrink-0 flex-wrap gap-1.5 border-b border-line/50 px-4 py-3;
+  }
+
+  .capability-editor-textarea {
+    @apply min-h-0 flex-1 resize-none rounded-none border-0 bg-paper px-4 py-3 font-mono text-xs leading-6 outline-none;
+  }
+
+  .capability-drawer-actions {
+    @apply flex shrink-0 justify-between gap-2 border-t border-line/60 bg-paper2/45 p-3;
+  }
+
+  .capability-detail-copy {
+    @apply shrink-0 whitespace-pre-wrap border-b border-line/50 px-4 py-3 text-sm leading-6 text-ink;
+  }
+
+  .capability-param-section {
+    @apply shrink-0 border-b border-line/50 p-4;
+  }
+
+  .capability-schema {
+    @apply min-h-0 flex-1 overflow-auto whitespace-pre-wrap break-words bg-paper2/35 p-4 font-mono text-[11px] leading-6 text-muted;
+  }
+
+  .tool-param-list.expanded {
+    @apply mt-3;
+  }
+
+  .mcp-panel {
+    @apply overflow-hidden;
+  }
+
+  .mcp-toolbar {
+    @apply flex-wrap;
+  }
+
+  .mcp-directory {
+    @apply grid min-h-0 flex-1 gap-4 overflow-hidden;
+    grid-template-columns: minmax(260px, 0.42fr) minmax(0, 1fr);
+  }
+
+  .mcp-directory-section,
+  .mcp-advanced-config {
+    @apply flex min-h-0 flex-col overflow-hidden rounded-[1.2rem] border border-line/70 bg-paper/80 shadow-insetPaper;
+  }
+
+  .mcp-directory-section .editor-title {
+    @apply shrink-0;
+  }
+
+  .mcp-server-grid,
+  .mcp-tool-list {
+    @apply min-h-0 flex-1 overflow-y-auto p-3;
+  }
+
+  .mcp-server-grid {
+    @apply grid content-start gap-3;
+    grid-template-columns: 1fr;
+  }
+
+  .mcp-advanced-config {
+    @apply shrink-0;
+  }
+
+  .mcp-advanced-config summary {
+    @apply flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-3 text-sm font-semibold text-ink;
+  }
+
+  .mcp-advanced-config summary::-webkit-details-marker {
+    display: none;
+  }
+
+  .mcp-advanced-config summary em {
+    @apply not-italic text-xs font-normal text-muted;
+  }
+
+  .mcp-layout {
+    @apply grid min-h-0 flex-1 gap-4;
+    grid-template-columns: minmax(0, 1fr) minmax(280px, 420px);
+  }
+
+  .mcp-editor,
+  .mcp-tools {
+    @apply flex min-h-0 flex-col overflow-hidden rounded-[1.2rem] border border-line/70 bg-paper/80 shadow-insetPaper;
+  }
+
+  .mcp-editor textarea {
+    @apply min-h-56 resize-y rounded-none border-0 bg-paper px-4 py-3 font-mono text-xs leading-6 outline-none;
+  }
+
+  .mcp-editor textarea.has-error {
+    @apply bg-seal/10;
+  }
+
+  .mcp-tool-list {
+    @apply grid min-h-0 flex-1 content-start gap-3 overflow-y-auto p-3;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 21rem), 1fr));
+  }
+
+  .mcp-tool-card {
+    @apply h-auto min-h-[9.5rem];
+  }
+
+  .mcp-editor-actions {
+    @apply flex shrink-0 justify-end gap-2 border-t border-line/50 p-3;
+  }
+
+  .scheduler-panel-v2 {
+    @apply overflow-hidden;
+  }
+
+  .scheduler-overview {
+    @apply flex shrink-0 flex-wrap items-center gap-2 rounded-[1.1rem] border border-line/60 bg-paper2/35 px-3 py-2;
+  }
+
+  .scheduler-overview span {
+    @apply inline-flex min-h-9 items-center gap-2 rounded-[0.85rem] border border-line/50 bg-paper/65 px-3 text-xs text-muted;
+  }
+
+  .scheduler-overview b {
+    @apply max-w-[12rem] truncate font-mono text-sm text-ink;
+  }
+
+  .scheduler-overview .tool-button {
+    @apply ml-auto min-h-9 rounded-[0.85rem] px-3 text-xs;
+  }
+
+  .scheduler-workspace {
+    @apply grid min-h-0 flex-1 gap-4;
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .scheduler-list-shell,
+  .scheduler-detail-drawer {
+    @apply flex min-h-0 flex-col overflow-hidden rounded-[1.25rem] border border-line/70 bg-paper/80 shadow-insetPaper;
+  }
+
+  .scheduler-detail-page {
+    @apply flex min-h-0 flex-1 flex-col overflow-hidden rounded-[1.25rem] border border-line/70 bg-paper/80 shadow-insetPaper;
+  }
+
+  .scheduler-detail-page-head {
+    @apply items-center justify-start;
+  }
+
+  .scheduler-detail-page-head .tool-button {
+    @apply shrink-0;
+  }
+
+  .scheduler-detail-drawer {
+    @apply relative inset-auto right-auto z-auto w-auto shadow-insetPaper;
+  }
+
+  .scheduler-table-head,
+  .scheduler-table-row {
+    @apply grid items-center gap-3 px-4;
+    grid-template-columns: minmax(12rem, 1.4fr) minmax(10rem, 1.15fr) minmax(8rem, 0.8fr) minmax(9rem, 0.9fr) minmax(6rem, 0.65fr) minmax(7rem, 0.7fr);
+  }
+
+  .scheduler-table-head {
+    @apply shrink-0 border-b border-line/60 bg-paper2/50 py-2 font-mono text-[10px] uppercase tracking-[0.14em] text-muted;
+  }
+
+  .scheduler-table-scroll {
+    @apply min-h-0 flex-1 overflow-y-auto;
+  }
+
+  .scheduler-table-row {
+    @apply min-h-[4.4rem] w-full border-b border-line/45 bg-transparent py-2 text-left text-xs text-muted transition hover:bg-paper2/65;
+  }
+
+  .scheduler-table-row.active {
+    @apply bg-jade/10 text-ink;
+  }
+
+  .scheduler-table-row.paused {
+    @apply opacity-70;
+  }
+
+  .scheduler-table-row.error {
+    @apply bg-seal/10;
+  }
+
+  .scheduler-table-row > span {
+    @apply min-w-0 truncate;
+  }
+
+  .scheduler-cell-main {
+    @apply flex items-center gap-3;
+  }
+
+  .scheduler-cell-main strong {
+    @apply block truncate text-sm font-bold text-ink;
+  }
+
+  .scheduler-cell-main small {
+    @apply mt-0.5 block truncate font-mono text-[10px] text-muted;
+  }
+
+  .scheduler-inline-icon {
+    @apply shrink-0 text-muted;
+  }
+
+  .scheduler-status-wrap {
+    @apply flex flex-wrap gap-1;
+  }
+
+  .scheduler-status-wrap em {
+    @apply rounded-full border border-line/55 bg-paper px-2 py-1 text-[10px] not-italic text-muted;
+  }
+
+  .scheduler-field {
+    @apply flex flex-col gap-1.5 text-xs font-semibold text-muted;
+  }
+
+  .scheduler-field input,
+  .scheduler-field select,
+  .scheduler-field textarea {
+    @apply rounded-[0.9rem] px-3 py-2 text-xs;
+  }
+
+  .scheduler-form-grid {
+    @apply grid grid-cols-2 gap-2;
+  }
+
+  .scheduler-history-block {
+    @apply mt-1 flex min-h-0 flex-col gap-2 rounded-[1rem] border border-line/60 bg-paper2/30 p-3;
+  }
+
+  .scheduler-history-head {
+    @apply flex items-center justify-between gap-2 text-xs;
+  }
+
+  .scheduler-history-head strong {
+    @apply text-ink;
+  }
+
+  .scheduler-history-head span {
+    @apply font-mono text-[10px] text-muted;
+  }
+
+  .compact-run {
+    @apply px-3 py-2 shadow-none;
+  }
+
+  .modal-backdrop {
+    @apply fixed inset-0 z-50 grid place-items-center bg-black/45 p-4 backdrop-blur-sm;
+  }
+
+  .scheduler-modal {
+    @apply flex max-h-[min(48rem,calc(100vh-2rem))] w-[min(34rem,calc(100vw-2rem))] flex-col gap-3 overflow-y-auto rounded-[1.25rem] border border-line/70 bg-paper p-4 shadow-2xl;
+  }
+
+  .scheduler-modal .scheduler-drawer-head {
+    @apply -mx-4 -mt-4 mb-1;
+  }
+
+  .scheduler-modal-actions {
+    @apply mt-1 grid grid-cols-2 gap-2;
   }

@@ -3,6 +3,7 @@ import { computed, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import SkillsPanel from '../components/panels/SkillsPanel.vue'
 import ToolsPanel from '../components/panels/ToolsPanel.vue'
+import McpPanel from '../components/panels/McpPanel.vue'
 import { useAppContext } from '../composables/useAppContext'
 import { actionIcons } from '../icons'
 
@@ -10,7 +11,13 @@ const ctx = useAppContext()
 const route = useRoute()
 const router = useRouter()
 
-const activeTab = computed(() => route.params.tab === 'tools' ? 'tools' : 'skills')
+type PluginTab = 'skills' | 'tools' | 'mcp'
+
+const activeTab = computed<PluginTab>(() => {
+  const raw = Array.isArray(route.params.tab) ? route.params.tab[0] : route.params.tab
+  if (raw === 'tools' || raw === 'mcp') return raw
+  return 'skills'
+})
 
 watch(
   () => route.query.skill,
@@ -23,7 +30,13 @@ watch(
   { immediate: true },
 )
 
-function switchTab(tab: 'skills' | 'tools') {
+watch(activeTab, (tab) => {
+  if (tab === 'mcp' && !ctx.mcpContent.value) {
+    void ctx.runSafely(() => ctx.loadMcpConfig())
+  }
+}, { immediate: true })
+
+function switchTab(tab: PluginTab) {
   void router.push({ name: 'plugins', params: { tab } })
 }
 
@@ -54,12 +67,13 @@ async function onImport(formData: FormData) {
     <header class="view-head">
       <div class="min-w-0">
         <h1>插件</h1>
-        <p>Skill 与 Tool 是对话中可调用能力的两个入口</p>
+        <p>技能、工具与 MCP 是对话中可调用能力的入口</p>
       </div>
       <div class="plugins-head-actions">
         <div class="segmented-control">
-          <button :class="{ active: activeTab === 'skills' }" @click="switchTab('skills')">Skills</button>
-          <button :class="{ active: activeTab === 'tools' }" @click="switchTab('tools')">Tools</button>
+          <button :class="{ active: activeTab === 'skills' }" @click="switchTab('skills')">技能</button>
+          <button :class="{ active: activeTab === 'tools' }" @click="switchTab('tools')">工具</button>
+          <button :class="{ active: activeTab === 'mcp' }" @click="switchTab('mcp')">MCP</button>
         </div>
         <button class="tool-button asset-button refresh-action" title="刷新" @click="ctx.refreshAll()">
           <component :is="actionIcons.refresh" class="action-icon" :size="16" />
@@ -79,7 +93,8 @@ async function onImport(formData: FormData) {
         @delete="onDelete"
         @import="onImport"
       />
-      <ToolsPanel v-else :tools="ctx.boot.value?.tools || []" />
+      <ToolsPanel v-else-if="activeTab === 'tools'" :tools="ctx.boot.value?.tools || []" />
+      <McpPanel v-else />
     </div>
   </section>
 </template>

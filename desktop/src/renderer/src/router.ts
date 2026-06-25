@@ -47,12 +47,6 @@ export const routeRecords: RouteRecordRaw[] = [
     redirect: '/chat',
   },
   {
-    path: '/project',
-    name: 'project',
-    component: () => import('./views/ProjectExecutionView.vue'),
-    meta: { label: '项目执行', hint: '计划执行与复核' },
-  },
-  {
     path: '/scheduler',
     name: 'scheduler',
     component: () => import('./views/SchedulerView.vue'),
@@ -66,13 +60,15 @@ export const routeRecords: RouteRecordRaw[] = [
   },
   {
     path: '/mcp',
-    name: 'mcp',
-    component: () => import('./views/McpView.vue'),
-    meta: { label: 'MCP', hint: '外部工具' },
+    redirect: '/plugins/mcp',
   },
   {
     path: '/settings',
     redirect: '/settings/general',
+  },
+  {
+    path: '/settings/integrations',
+    redirect: '/plugins/mcp',
   },
   {
     path: '/settings/:section?',
@@ -94,5 +90,5 @@ export const router = createRouter({
   routes: routeRecords,
 })
 
-export const navOrder = ['chat', 'plugins', 'project', 'scheduler', 'settings'] as const
+export const navOrder = ['chat', 'plugins', 'scheduler', 'settings'] as const
 export type NavRouteName = (typeof navOrder)[number]

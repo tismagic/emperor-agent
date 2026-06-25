@@ -9,12 +9,10 @@ import {
   Cpu,
   Database,
   Palette,
-  Plug,
   Settings,
   SlidersHorizontal,
 } from 'lucide-vue-next'
 import ConfigsView from './ConfigsView.vue'
-import McpView from './McpView.vue'
 import MemoryView from './MemoryView.vue'
 import ModelView from './ModelView.vue'
 import TokensView from './TokensView.vue'
@@ -36,7 +34,6 @@ const sections = [
   { key: 'model', label: '模型', group: '个人', icon: Cpu },
   { key: 'memory', label: '记忆', group: '个人', icon: Brain },
   { key: 'tokens', label: 'Token', group: '个人', icon: Coins },
-  { key: 'integrations', label: 'MCP / 集成', group: '集成', icon: Plug },
   { key: 'configs', label: '配置', group: '编码', icon: SlidersHorizontal },
   { key: 'appearance', label: '外观', group: '编码', icon: Palette },
   { key: 'archived', label: '已归档对话', group: '已归档', icon: ArchiveRestore },
@@ -62,7 +59,6 @@ const sectionViews: Partial<Record<SettingsSection, Component>> = {
   model: ModelView,
   memory: MemoryView,
   tokens: TokensView,
-  integrations: McpView,
   configs: ConfigsView,
 }
 
