@@ -21,7 +21,10 @@ def _render(todos: list[dict]) -> str:
     lines = []
     for t in todos:
         icon = _STATUS_ICON.get(t.get("status", "pending"), "[?]")
-        lines.append(f"  {icon} {t.get('id')}. {t.get('content', '')}")
+        label = t.get("content", "")
+        if t.get("status") == "in_progress" and t.get("active_form"):
+            label = t.get("active_form", "")
+        lines.append(f"  {icon} {t.get('id')}. {label}")
     return "\n".join(lines)
 
 
@@ -48,6 +51,9 @@ class TodoStore:
             plan_step_id = str(t.get("plan_step_id") or "").strip()
             if plan_step_id:
                 item["plan_step_id"] = plan_step_id[:64]
+            active_form = str(t.get("active_form") or "").strip()
+            if active_form:
+                item["active_form"] = active_form[:240]
             blocked_reason = str(t.get("blocked_reason") or "").strip()
             if blocked_reason:
                 item["blocked_reason"] = blocked_reason[:1000]
@@ -102,10 +108,11 @@ class TodoStore:
 class UpdateTodosTool(Tool):
     name = "update_todos"
     description = (
-        "创建或更新当前差事的 todolist。"
-        "传入完整的 todos 数组（每次都是全量覆盖，而非增量）。"
-        "用于：拆解多步骤任务、推进任务状态（pending → in_progress → completed）。"
-        "约束：同一时间至多一个任务为 in_progress。"
+        "创建或更新当前任务清单。"
+        "每次传入完整 todos 数组并全量覆盖，用于拆解多步骤任务和推进状态；"
+        "同一时间最多只能有一个 in_progress 项。"
+        "复杂任务开始前先建清单，开始步骤前标记 in_progress 并可填写 active_form，完成后立即标记 completed；"
+        "验证失败或阻塞时不要标 completed。"
     )
 
     def __init__(self, store: TodoStore):
@@ -126,6 +133,11 @@ class UpdateTodosTool(Tool):
                             nullable=True,
                         ),
                         "content": StringSchema("这一步要做什么"),
+                        "active_form": StringSchema(
+                            "可选正在执行态文案，例如 '正在运行测试'；status=in_progress 时用于展示当前动作",
+                            max_length=240,
+                            nullable=True,
+                        ),
                         "status": StringSchema(
                             "状态",
                             enum=list(_VALID_STATUS),

@@ -25,7 +25,7 @@ def reset_scheduler_run(token) -> None:
 
 
 class SchedulerTool(Tool):
-    """Manage local durable scheduler jobs through the shared scheduler service."""
+    """通过共享调度服务管理本地持久定时任务。"""
 
     requires_runtime_context = True
 
@@ -39,10 +39,9 @@ class SchedulerTool(Tool):
     @property
     def description(self) -> str:
         return (
-            "Create, inspect, update, pause, resume, remove, or manually run local scheduled jobs. "
-            "Use list for read-only inspection. Use add/update/remove/run only when the user has clearly asked "
-            "for a durable future task. If this tool fails, report the Scheduler error instead of falling back "
-            "to OS-level cron or crontab."
+            "管理本地持久定时任务：查看、创建、更新、暂停、恢复、删除或手动运行。"
+            "只读检查使用 list；只有用户明确要求长期、未来或周期性自动执行时，才使用 add/update/remove/run。"
+            "不要把一次性普通任务伪装成定时任务；调度器失败时报告调度器错误，不要改用系统 cron 或 crontab。"
         )
 
     @property
@@ -53,57 +52,57 @@ class SchedulerTool(Tool):
                 "action": {
                     "type": "string",
                     "enum": ["add", "list", "update", "remove", "pause", "resume", "run"],
-                    "description": "Scheduler action to perform.",
+                    "description": "要执行的调度动作。",
                 },
                 "job_id": {
                     "type": "string",
-                    "description": "Existing scheduler job id for update/remove/pause/resume/run.",
+                    "description": "已有定时任务 id，用于 update/remove/pause/resume/run。",
                 },
                 "name": {
                     "type": "string",
-                    "description": "Human-readable job name for add/update.",
+                    "description": "创建或更新时使用的任务名称。",
                 },
                 "payload_kind": {
                     "type": "string",
                     "enum": ["agent_turn", "team_wake"],
-                    "description": "What the scheduler should do when the job runs. system_event is internal only.",
+                    "description": "任务触发后要执行的载荷类型；system_event 仅供系统内部使用。",
                 },
                 "message": {
                     "type": "string",
-                    "description": "Prompt/message for agent_turn, or message sent to a teammate for team_wake.",
+                    "description": "agent_turn 的提示词，或 team_wake 发送给队友的消息。",
                 },
                 "target": {
                     "type": "string",
-                    "description": "Teammate name for team_wake jobs.",
+                    "description": "team_wake 任务的目标队友名称。",
                 },
                 "project_id": {
                     "type": "string",
-                    "description": "Build project id for team_wake jobs.",
+                    "description": "team_wake 任务关联的项目 id。",
                 },
                 "deliver": {
                     "type": "boolean",
-                    "description": "Whether resulting output should be visible in the local runtime UI.",
+                    "description": "执行结果是否显示到本地运行界面。",
                 },
                 "at": {
                     "type": "string",
-                    "description": "ISO datetime for a one-time job, for example 2026-05-20T09:30:00+08:00.",
+                    "description": "一次性任务的 ISO 时间，例如 2026-05-20T09:30:00+08:00。",
                 },
                 "every_seconds": {
                     "type": "integer",
                     "minimum": 1,
-                    "description": "Interval in seconds for a recurring job.",
+                    "description": "循环任务的间隔秒数。",
                 },
                 "cron_expr": {
                     "type": "string",
-                    "description": "Cron expression for a recurring job.",
+                    "description": "循环任务使用的 cron 表达式。",
                 },
                 "tz": {
                     "type": "string",
-                    "description": "IANA timezone for cron schedules, for example Asia/Shanghai.",
+                    "description": "cron 任务使用的 IANA 时区，例如 Asia/Shanghai。",
                 },
                 "delete_after_run": {
                     "type": "boolean",
-                    "description": "Delete a one-time job after it runs.",
+                    "description": "一次性任务运行后是否自动删除。",
                 },
             },
             "required": ["action"],

@@ -139,7 +139,7 @@ class _SearchTool(_FsTool):
 
 
 class GlobTool(_SearchTool):
-    """Find files matching a glob pattern."""
+    """按 glob 模式查找文件或目录。"""
     max_result_chars = 12_000
 
     @property
@@ -149,9 +149,9 @@ class GlobTool(_SearchTool):
     @property
     def description(self) -> str:
         return (
-            "Find files matching a glob pattern (e.g. '*.py', 'tests/**/test_*.py'). "
-            "Results are sorted by modification time (newest first). "
-            "Skips .git, node_modules, __pycache__, and other noise directories."
+            "按 glob 模式查找文件或目录，结果按修改时间从新到旧排序；"
+            "默认跳过 .git、node_modules、__pycache__ 等噪声目录。"
+            "查找文件名或目录结构时优先使用它，不要用 run_command/find/ls 代替；开放式多轮探索可考虑 dispatch_subagent。"
         )
 
     @property
@@ -165,35 +165,35 @@ class GlobTool(_SearchTool):
             "properties": {
                 "pattern": {
                     "type": "string",
-                    "description": "Glob pattern to match, e.g. '*.py' or 'tests/**/test_*.py'",
+                    "description": "要匹配的 glob 模式，例如 '*.py' 或 'tests/**/test_*.py'",
                     "minLength": 1,
                 },
                 "path": {
                     "type": "string",
-                    "description": "Directory to search from (default '.')",
+                    "description": "搜索起点目录，默认当前工作区",
                 },
                 "max_results": {
                     "type": "integer",
-                    "description": "Legacy alias for head_limit",
+                    "description": "兼容旧参数，等同于 head_limit",
                     "minimum": 1,
                     "maximum": 1000,
                 },
                 "head_limit": {
                     "type": "integer",
-                    "description": "Maximum number of matches to return (default 250)",
+                    "description": "最多返回多少条匹配结果，默认 250；0 表示不限制",
                     "minimum": 0,
                     "maximum": 1000,
                 },
                 "offset": {
                     "type": "integer",
-                    "description": "Skip the first N matching entries before returning results",
+                    "description": "跳过前 N 条匹配结果后再返回",
                     "minimum": 0,
                     "maximum": 100000,
                 },
                 "entry_type": {
                     "type": "string",
                     "enum": ["files", "dirs", "both"],
-                    "description": "Whether to match files, directories, or both (default files)",
+                    "description": "匹配文件、目录或两者，默认 files",
                 },
             },
             "required": ["pattern"],
@@ -259,7 +259,7 @@ class GlobTool(_SearchTool):
 
 
 class GrepTool(_SearchTool):
-    """Search file contents using a regex-like pattern."""
+    """在文件内容中搜索正则或纯文本模式。"""
     max_result_chars = 16_000
     _MAX_RESULT_CHARS = 128_000
     _MAX_FILE_BYTES = 2_000_000
@@ -271,10 +271,10 @@ class GrepTool(_SearchTool):
     @property
     def description(self) -> str:
         return (
-            "Search file contents with a regex pattern. "
-            "Default output_mode is files_with_matches (file paths only); "
-            "use content mode for matching lines with context. "
-            "Skips binary and files >2 MB. Supports glob/type filtering."
+            "在文件内容中搜索正则或纯文本模式。"
+            "默认只返回匹配文件路径；需要查看命中行时使用 content 模式；"
+            "会跳过二进制文件和超过 2MB 的文件。"
+            "内容搜索专用工具优先，不要用 run_command/grep/rg 代替；结果过宽时收窄 glob、type 或 pattern。"
         )
 
     @property
@@ -288,55 +288,55 @@ class GrepTool(_SearchTool):
             "properties": {
                 "pattern": {
                     "type": "string",
-                    "description": "Regex or plain text pattern to search for",
+                    "description": "要搜索的正则或纯文本模式",
                     "minLength": 1,
                 },
                 "path": {
                     "type": "string",
-                    "description": "File or directory to search in (default '.')",
+                    "description": "搜索目标文件或目录，默认当前工作区",
                 },
                 "glob": {
                     "type": "string",
-                    "description": "Optional file filter, e.g. '*.py' or 'tests/**/test_*.py'",
+                    "description": "可选文件过滤模式，例如 '*.py' 或 'tests/**/test_*.py'",
                 },
                 "type": {
                     "type": "string",
-                    "description": "Optional file type shorthand, e.g. 'py', 'ts', 'md', 'json'",
+                    "description": "可选文件类型简写，例如 py、ts、md、json",
                 },
                 "case_insensitive": {
                     "type": "boolean",
-                    "description": "Case-insensitive search (default false)",
+                    "description": "是否忽略大小写，默认 false",
                 },
                 "fixed_strings": {
                     "type": "boolean",
-                    "description": "Treat pattern as plain text instead of regex (default false)",
+                    "description": "是否把 pattern 当作纯文本而不是正则，默认 false",
                 },
                 "output_mode": {
                     "type": "string",
                     "enum": ["content", "files_with_matches", "count"],
                     "description": (
-                        "content: matching lines with optional context; "
-                        "files_with_matches: only matching file paths; "
-                        "count: matching line counts per file. "
-                        "Default: files_with_matches"
+                        "content：返回命中行及可选上下文；"
+                        "files_with_matches：只返回匹配文件路径；"
+                        "count：返回每个文件的命中行数。"
+                        "默认 files_with_matches"
                     ),
                 },
                 "context_before": {
                     "type": "integer",
-                    "description": "Number of lines of context before each match",
+                    "description": "每个命中项之前返回的上下文行数",
                     "minimum": 0,
                     "maximum": 20,
                 },
                 "context_after": {
                     "type": "integer",
-                    "description": "Number of lines of context after each match",
+                    "description": "每个命中项之后返回的上下文行数",
                     "minimum": 0,
                     "maximum": 20,
                 },
                 "max_matches": {
                     "type": "integer",
                     "description": (
-                        "Legacy alias for head_limit in content mode"
+                        "兼容旧参数，在 content 模式下等同于 head_limit"
                     ),
                     "minimum": 1,
                     "maximum": 1000,
@@ -344,7 +344,7 @@ class GrepTool(_SearchTool):
                 "max_results": {
                     "type": "integer",
                     "description": (
-                        "Legacy alias for head_limit in files_with_matches or count mode"
+                        "兼容旧参数，在 files_with_matches 或 count 模式下等同于 head_limit"
                     ),
                     "minimum": 1,
                     "maximum": 1000,
@@ -352,16 +352,15 @@ class GrepTool(_SearchTool):
                 "head_limit": {
                     "type": "integer",
                     "description": (
-                        "Maximum number of results to return. In content mode this limits "
-                        "matching line blocks; in other modes it limits file entries. "
-                        "Default 250"
+                        "最多返回多少条结果。content 模式限制命中行块数量，"
+                        "其他模式限制文件条目数量，默认 250；0 表示不限制"
                     ),
                     "minimum": 0,
                     "maximum": 1000,
                 },
                 "offset": {
                     "type": "integer",
-                    "description": "Skip the first N results before applying head_limit",
+                    "description": "跳过前 N 条结果后再应用 head_limit",
                     "minimum": 0,
                     "maximum": 100000,
                 },

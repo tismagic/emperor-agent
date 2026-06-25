@@ -21,8 +21,8 @@ class _TeamTool(Tool):
 class TeamSpawnTool(_TeamTool):
     name = "spawn_teammate"
     description = (
-        "召入或唤回一个持久队友。队友会写入 .team/config.json，拥有独立 inbox 和 thread。"
-        "可选 task 会立即写入队友 inbox 并唤醒执行一次。"
+        "创建或唤回一个持久队友。队友会写入 .team/config.json，并拥有独立收件箱和会话；"
+        "仅当用户需要长期协作角色时使用，短期探索优先 dispatch_subagent。"
     )
     exclusive = True
 
@@ -56,7 +56,7 @@ class TeamSpawnTool(_TeamTool):
 
 class TeamListTool(_TeamTool):
     name = "list_teammates"
-    description = "列出当前 Agent Team 成员、状态、未读消息与最近回禀。"
+    description = "列出当前队友成员、运行状态、未读消息与最近回禀。只用于查看持久队友状态，不会唤醒或修改队友。"
     read_only = True
     requires_runtime_context = False
 
@@ -71,8 +71,8 @@ class TeamListTool(_TeamTool):
 class TeamSendMessageTool(_TeamTool):
     name = "send_message"
     description = (
-        "向 lead 或队友发送一条 Agent Team inbox 消息。Lead 调用时可 wake=true 立即唤醒目标队友；"
-        "队友调用时只投递消息，不会递归唤醒其他队友。"
+        "向主控或队友发送一条收件箱消息。主控可设置 wake=true 立即唤醒目标队友；"
+        "队友发送消息时不会递归唤醒其他队友。仅用于持久 Team 协作，不要替代普通用户回复。"
     )
     exclusive = True
 
@@ -103,7 +103,7 @@ class TeamSendMessageTool(_TeamTool):
 
 class TeamReadInboxTool(_TeamTool):
     name = "read_inbox"
-    description = "读取当前 actor 的 Agent Team inbox。Lead 读 lead，队友读自己的 inbox。"
+    description = "读取当前角色的队友收件箱。主控读取主控收件箱，队友读取自己的收件箱；只读查看消息，不应代替 send_message 发送回复。"
     exclusive = True
     requires_runtime_context = False
 
@@ -132,7 +132,7 @@ class TeamReadInboxTool(_TeamTool):
 
 class TeamBroadcastTool(_TeamTool):
     name = "broadcast"
-    description = "向多个队友广播消息；默认发给所有未 shutdown 队友，并可逐个唤醒执行。"
+    description = "向多个队友广播消息；默认发送给所有未停用队友，并可逐个唤醒执行。仅用于需要多名持久队友同步上下文的任务，不要代替普通子代理派遣。"
     exclusive = True
 
     @property
@@ -165,7 +165,7 @@ class TeamBroadcastTool(_TeamTool):
 
 class TeamShutdownTool(_TeamTool):
     name = "shutdown_teammate"
-    description = "关闭一个队友。记录保留，但该队友不再接受任务。"
+    description = "停用一个队友。记录会保留，但该队友不再接收新任务；属于持久状态变更，除非用户明确要求或计划批准，不要随意调用。"
     exclusive = True
 
     @property

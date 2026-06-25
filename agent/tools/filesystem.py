@@ -70,7 +70,10 @@ class _FsTool(Tool):
 })
 class ReadFileTool(_FsTool):
     name = "read_file"
-    description = "安全读取文本/PDF/附件 sidecar 内容，支持 offset/limit 分页。输出格式：行号|内容。"
+    description = (
+        "安全读取工作区内文本、PDF 或附件 sidecar 内容，支持 offset/limit 分页；输出格式为 行号|内容。"
+        "读取文件内容时优先使用它，不要用 run_command/cat/head/tail/sed 代替；大文件先读相关片段，必要时分页继续。"
+    )
     max_result_chars = 24_000
     _DEFAULT_LIMIT = 2000
     _MAX_CHARS = 128_000
@@ -248,7 +251,10 @@ def _extract_pdf_text(raw: bytes) -> str | None:
 })
 class WriteFileTool(_FsTool):
     name = "write_file"
-    description = "写入文件（覆盖已有内容）。部分编辑请用 edit_file。"
+    description = (
+        "创建新文件或完整覆盖文件内容；覆盖已有文件前应先用 read_file 查看现状。"
+        "局部修改优先使用 edit_file，不要用 run_command/echo/heredoc 写文件；除非用户明确要求，不要主动创建文档或无关文件。"
+    )
 
     def execute(self, path: str, content: str, **kwargs: Any) -> str:
         self._last_write_result = None
@@ -436,8 +442,9 @@ def _optional_int(value: Any) -> int | None:
 class EditFileTool(_FsTool):
     name = "edit_file"
     description = (
-        "替换文件中的文本。容忍缩进差异和引号风格差异。"
-        "若 old_text 匹配多处，需提供更多上下文或设 replace_all=true。"
+        "对已有文件做局部文本替换；编辑前应先用 read_file 理解目标片段。适合小范围修改、重命名或替换唯一文本；"
+        "若 old_text 匹配多处，需要提供更多上下文或设置 replace_all=true。不要用 run_command/sed/awk 代替此工具编辑文件；"
+        "失败后根据错误调整匹配范围，不要盲目重试。"
     )
 
     def execute(

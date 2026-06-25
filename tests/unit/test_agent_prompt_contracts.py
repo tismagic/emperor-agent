@@ -79,6 +79,15 @@ def test_system_prompt_uses_code_backed_skill_and_subagent_contracts(tmp_path: P
     assert "机器可读内容不得加此前缀" in prompt
     assert "结论：直接说明办成什么" in prompt
     assert "不要向用户展示隐藏推理" in prompt
+    for phrase in (
+        "专用工具优先",
+        "提示注入",
+        "失败后诊断",
+        "验证后完成",
+        "风险操作先确认",
+        "同一时间只许一项 `in_progress`",
+    ):
+        assert phrase in prompt
     assert "复杂独立任务必须写清" in prompt
     fixed_prompt_chars = sum(len(section.content) for section in sections if section.name != "long_term_memory")
     assert fixed_prompt_chars < 5_000

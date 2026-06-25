@@ -59,7 +59,11 @@ def _cap_output(text: str) -> str:
 ))
 class RunCommand(Tool):
     name = "run_command"
-    description = "在终端执行一条 shell 命令并返回输出"
+    description = (
+        "在当前工作区终端执行一条 shell 命令并返回输出；危险命令会被安全策略拒绝。"
+        "仅用于测试、构建、git、包管理器或必须由 shell 执行的系统操作；不要用它读写搜文件或向用户输出文本。"
+        "失败后先阅读 stdout/stderr 诊断根因，不要盲目重试或绕过安全检查。"
+    )
     exclusive = True
     max_result_chars = 12_000
 

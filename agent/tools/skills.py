@@ -8,7 +8,10 @@ from .schema import StringSchema, tool_parameters_schema
 
 class LoadSkill(Tool):
     name = "load_skill"
-    description = "加载指定技能的详细知识内容，在回答相关问题前调用"
+    description = (
+        "按名称加载指定 Skill 的详细知识内容。用户显式选择 Skill 或任务明显匹配某个 Skill 时先调用；不要绕过本工具直接 read_file 读取 SKILL.md。"
+        "加载失败时报告缺失或名称不匹配，不要编造 Skill 内容。"
+    )
     read_only = True
 
     def __init__(self, skills_loader):

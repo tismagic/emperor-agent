@@ -21,7 +21,10 @@ def _render_todos(todos: list[dict]) -> str:
     lines = []
     for t in todos:
         icon = _TODO_ICON.get(t.get("status", "pending"), "[?]")
-        lines.append(f"  {icon} {t.get('id')}. {t.get('content', '')}")
+        label = t.get("content", "")
+        if t.get("status") == "in_progress" and t.get("active_form"):
+            label = t.get("active_form", "")
+        lines.append(f"  {icon} {t.get('id')}. {label}")
     return "\n".join(lines)
 
 
