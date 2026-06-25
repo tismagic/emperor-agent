@@ -19,6 +19,7 @@ from ..plans import (
     PlanRecord,
     PlanStatus,
 )
+from .clarification import _CONTROL_RESUME_RE
 from .models import ControlMode, Interaction, InteractionStatus, now_ts
 from .plan_helpers import (
     _dedupe_strings,
@@ -119,6 +120,15 @@ class PlanDraftingManager:
     def assess_plan_decision(self, user_message: str) -> PlanDecision:
         state = self._cm.store.load()
         has_pending = bool(state.pending and state.pending.status == InteractionStatus.WAITING.value)
+        # 已批准并在执行中的计划：其续跑控制消息（PLAN_APPROVED resume、执行期 ASK_ANSWERED 等）
+        # 携带完整计划正文/含权限安全等高影响词，不应再次触发 plan guard。仅对 CONTROL 续跑标记豁免，
+        # 执行期的全新自由文本高影响需求（无 CONTROL 前缀）仍照常评估。
+        if _CONTROL_RESUME_RE.match(str(user_message or "")) and self._cm._latest_executable_plan() is not None:
+            return PlanDecision(
+                "proceed",
+                "Approved plan is already executing; continuation control messages do not re-trigger the plan guard.",
+                ["executing_plan"],
+            )
         return self._cm.plan_decision_policy.assess(
             user_message,
             mode=state.mode,
