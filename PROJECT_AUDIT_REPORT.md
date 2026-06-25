@@ -46,7 +46,8 @@
 **结论**：审计时点名的全部修复经**当前代码实证仍成立**；最近提交未引入回归。
 
 ### ISSUE-007 · Bedrock provider 丢弃 system 提示且拒绝任何工具调用
-- **Severity: P3 Low** · **Confidence: High** · **Critical Path: No** · **状态: 新发现（此前未审计区）**
+- **Severity: P3 Low** · **Confidence: High** · **Critical Path: No** · **状态: 已修复（system 透传 + 清晰报错）**
+- **落地**：`bedrock_provider.py` 新增 `_system_text`/`_converse_request`，`converse` 现携带 `system=[{"text": ...}]`；工具拒绝改为指明「主回合需工具，请用 Anthropic/OpenAI」清晰 fail-fast。Bedrock 工具能力本身仍未实现（超出本轮）。由 `tests/unit/test_providers.py` 守护。
 - **FACT**
   - `[E1] agent/providers/bedrock_provider.py:55-61` | `_messages` 对 `role == "system"` 直接 `continue`，且 `converse(...)` 调用无 `system=` 入参 → **系统提示词整段丢弃**。
   - `[E1] agent/providers/bedrock_provider.py:35-36` | `chat` 一旦收到任意 `tools` 即 `raise RuntimeError("Bedrock tool calling is not implemented...")`。
@@ -55,7 +56,8 @@
 - **验证**：单测断言「带 tools 调 Bedrock」抛清晰错误；若启用纯文本路径，则 system 文本进入 `converse` 请求。
 
 ### ISSUE-008 · providers 无重试/退避，瞬时故障直接硬失败回合
-- **Severity: P3 Low** · **Confidence: High** · **Critical Path: No** · **状态: 新发现（此前未审计区）**
+- **Severity: P3 Low** · **Confidence: High** · **Critical Path: No** · **状态: 已修复（启用各 SDK 原生重试）**
+- **落地**：`base.DEFAULT_MAX_RETRIES = 2` 单一来源；Anthropic/OpenAI 客户端 `max_retries=0→2`（SDK 自带指数退避 + 尊重 Retry-After），Bedrock `boto3` `Config(retries={max_attempts=3, mode=standard})`。重试只作用于无副作用的 LLM 调用。
 - **FACT**
   - `[E1] agent/providers/anthropic_provider.py:21` | `AsyncAnthropic(max_retries=0)` —— 显式关闭 SDK 自带重试。
   - `[E1] agent/providers/openai_compat.py` | 未见 backoff/retry；`[E1] bedrock_provider.py:37-42` | `asyncio.to_thread(client.converse, ...)` 无显式超时，依赖 boto3 默认 socket 超时。
@@ -65,7 +67,8 @@
 - **验证**：注入一次 429/连接错误，断言触发有界重试或产生显式降级事件（而非静默终止）。
 
 ### ISSUE-009 · provider `system` 形状不对称，且无跨 provider 一致性测试
-- **Severity: P3 Low** · **Confidence: High** · **Critical Path: No** · **状态: 新发现**
+- **Severity: P3 Low** · **Confidence: High** · **Critical Path: No** · **状态: 已修复（补跨 provider 一致性测试）**
+- **落地**：`tests/unit/test_providers.py` 对 Anthropic/OpenAI-compat/Bedrock 用同一 system+messages 断言三者均携带 system 文本、不抛，把跨 provider 契约钉死。
 - **FACT**
   - `[E1] agent/providers/anthropic_provider.py:82-86` | 原生端点下 `system` 现为 `list[dict]`（带 `cache_control`）；`[E1] bedrock_provider.py` / `openai_compat.py` | 仍为 `str`。
   - `[E1] tests/unit/test_anthropic_prompt_caching.py` | 仅覆盖 Anthropic；无断言三 provider 接受同一 system+messages 契约的测试。
