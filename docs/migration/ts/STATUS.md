@@ -39,10 +39,10 @@
 | ID | 标题 | 状态 |
 |---|---|---|
 | MIG-CORE-001 | ModelCaller | ☐ |
-| MIG-CORE-002 | context: tool_call 配对 | ☐ |
-| MIG-CORE-003 | context: 截断/摘要 | ☐ |
-| MIG-CORE-004 | context: microcompact | ☐ |
-| MIG-CORE-005 | ContextPipeline.project | ☐ |
+| MIG-CORE-002 | context: tool_call 配对 | ☑ |
+| MIG-CORE-003 | context: 截断/摘要 | ☑ |
+| MIG-CORE-004 | context: microcompact | ☑ |
+| MIG-CORE-005 | ContextPipeline.project | ☑ |
 | MIG-CORE-006 | 系统提示词 ContextBuilder | ☐ |
 | MIG-CORE-007 | query_state 恢复 | ☐ |
 | MIG-CORE-008 | AgentRunner 回合状态机 | ☐ |
@@ -53,11 +53,11 @@
 ## W04 工具（TOOL） · 依赖 W00
 | ID | 标题 | 状态 |
 |---|---|---|
-| MIG-TOOL-001 | Tool 基类+schema | ☐ |
-| MIG-TOOL-002 | ToolResult/Artifact | ☐ |
-| MIG-TOOL-003 | ToolRegistry | ☐ |
-| MIG-TOOL-004 | 执行上下文+protocol/adapter | ☐ |
-| MIG-TOOL-005 | 命令判定 resolvers | ☐ |
+| MIG-TOOL-001 | Tool 基类+schema | ☑ |
+| MIG-TOOL-002 | ToolResult/Artifact | ☑ |
+| MIG-TOOL-003 | ToolRegistry | ☑ |
+| MIG-TOOL-004 | 执行上下文+protocol/adapter | ☑ |
+| MIG-TOOL-005 | 命令判定 resolvers | ☑ |
 | MIG-TOOL-006 | ReadFileTool | ☐ |
 | MIG-TOOL-007 | Write/EditFileTool | ☐ |
 | MIG-TOOL-008 | GlobTool | ☐ |
