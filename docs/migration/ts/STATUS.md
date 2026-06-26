@@ -21,15 +21,15 @@
 | ID | 标题 | 状态 |
 |---|---|---|
 | MIG-CFG-001 | local_config | ☐ |
-| MIG-CFG-002 | model_config 模型+解析/校验 | ☐ |
-| MIG-CFG-003 | model_config IO + 脱敏 | ☐ |
-| MIG-CFG-004 | ModelRouter | ☐ |
+| MIG-CFG-002 | model_config 模型+解析/校验 | ☑ |
+| MIG-CFG-003 | model_config IO（+脱敏留 W15 model-service） | ◐ IO 已迁，脱敏待 W15 |
+| MIG-CFG-004 | ModelRouter（待 W02 snapshot） | ☐ |
 
 ## W02 Providers（PROV） · 依赖 W01
 | ID | 标题 | 状态 |
 |---|---|---|
 | MIG-PROV-001 | LLMProvider 基类+转换 | ☐ |
-| MIG-PROV-002 | Provider Spec 注册表 | ☐ |
+| MIG-PROV-002 | Provider Spec 注册表 | ☑ |
 | MIG-PROV-003 | OpenAI-compat(+子类) | ☐ |
 | MIG-PROV-004 | Anthropic(缓存/重试) | ☐ |
 | MIG-PROV-005 | Bedrock(system/拒tools/重试) | ☐ |
