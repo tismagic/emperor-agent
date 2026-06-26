@@ -5,17 +5,17 @@
 
 图例：☐ todo ・ ◐ wip ・ ☑ done ・ ⛔ blocked
 
-## W00 基础（FND） · 依赖 —
+## W00 基础（FND） · 依赖 — · ✅ 全部完成（26 vitest 绿，tsc 0）
 | ID | 标题 | 状态 |
 |---|---|---|
-| MIG-FND-001 | monorepo/工具链骨架 | ☐ |
-| MIG-FND-002 | 原子 JSON store + 腐坏隔离 | ☐ |
-| MIG-FND-003 | 文件锁 | ☐ |
-| MIG-FND-004 | id/时间工具 | ☐ |
-| MIG-FND-005 | 类型化事件总线 | ☐ |
-| MIG-FND-006 | 结构化日志 | ☐ |
-| MIG-FND-007 | JSONL append + 归档 | ☐ |
-| MIG-FND-008 | 错误/结果基类型 | ☐ |
+| MIG-FND-001 | monorepo/工具链骨架（npm workspaces） | ☑ |
+| MIG-FND-002 | 原子 JSON store + 腐坏隔离 | ☑ |
+| MIG-FND-003 | 文件锁（O_EXCL，零依赖） | ☑ |
+| MIG-FND-004 | id/时间工具 | ☑ |
+| MIG-FND-005 | 类型化事件总线 | ☑ |
+| MIG-FND-006 | 结构化日志 | ☑ |
+| MIG-FND-007 | JSONL append + 归档 | ☑ |
+| MIG-FND-008 | 错误/结果基类型 | ☑ |
 
 ## W01 配置/模型路由（CFG） · 依赖 W00
 | ID | 标题 | 状态 |

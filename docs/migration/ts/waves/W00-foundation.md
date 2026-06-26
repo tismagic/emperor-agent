@@ -5,14 +5,14 @@
 
 ### MIG-FND-001 · monorepo / 工具链骨架
 
-- **功能点**：建 pnpm workspaces，`packages/core` + `apps/desktop`，TS strict、vitest、electron-vite 接线占位。
+- **功能点**：建 npm workspaces，`packages/core`（+ 后续 `apps/desktop`），TS strict、vitest。
 - **源(Python)**：无（新建）；参照 `pyproject.toml`/`requirements*.txt`/现 `desktop/` 构建。
-- **目标(TS)**：仓库根 `pnpm-workspace.yaml`、`packages/core/{package.json,tsconfig.json,vitest.config.ts}`、`apps/desktop`（现 `desktop/` 纳入 workspace）。
+- **目标(TS)**：仓库根 `package.json`(`workspaces:["packages/*"]`)、`packages/core/{package.json,tsconfig.json,vitest.config.ts,src/}`。desktop 暂留原处，W15/W16 纳入。
 - **依赖**：—
-- **设计**：core 为纯 TS 库（无 Electron 依赖），desktop 依赖 core。统一 tsconfig base + strict。vitest 在 core 内。electron-vite 沿用现有桌面构建，仅加 core 为本地依赖。
+- **设计**：core 为纯 TS 库（无 Electron 依赖），strict + `noUncheckedIndexedAccess`，moduleResolution=Bundler（vitest 友好）。
 - **风险/复杂度**：S。
-- **验证**：`pnpm -r build` 通过；core 空测试 `pnpm --filter core test` 绿。**验收**：两包可独立构建、core 可被 desktop import。
-- **状态**：todo · PR: —
+- **验证**：`tsc --noEmit` 0、`vitest run` 绿。**验收**：core 可独立构建/测试。
+- **状态**：☑ done（环境无 pnpm，改用 npm workspaces）
 
 ### MIG-FND-002 · 原子 JSON store + 腐坏隔离原语
 

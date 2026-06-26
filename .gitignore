@@ -8,6 +8,8 @@ __pycache__/
 model_config.json
 mcp_config.json
 emperor.local.json
+node_modules/
+packages/*/dist/
 desktop-pet/node_modules/
 desktop/node_modules/
 desktop/out/
@@ -20,6 +22,7 @@ build/
 templates/USER.local.md
 templates/*.local.md
 logs/
+.superpowers/
 
 # 运行期产生的私人数据（长期记忆 / 会话历史 / token 用量）
 memory/

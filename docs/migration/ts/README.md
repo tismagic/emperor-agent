@@ -7,7 +7,7 @@
 
 - **纯 TS 桌面 agent**：只有 Electron 桌面应用一个壳。**无终端 TUI、无 Python、无本地 HTTP/WS server。**
 - **进程内核心**：TS 核心（`packages/core`）跑在 Electron **主进程**内；渲染层（Vue，保留）通过 **Electron IPC** 调用核心，不再走 WebSocket/HTTP。
-- **monorepo（pnpm workspaces）**：
+- **monorepo（npm workspaces）**（环境未装 pnpm，改用 npm workspaces，等价；后续如装 pnpm 可平迁）：
   - `packages/core` —— 迁移后的 TS 核心库（agent runtime、providers、tools、control、memory、scheduler、team、mcp…）。
   - `apps/desktop` —— 现 `desktop/` Electron，改为进程内托管 `core` + 暴露 IPC + 现有 Vue 渲染层。
 - **安全面简化**：没有 server 就没有跨站/DNS-rebinding 面，原 `web/origin_guard`、`web/auth_guard` 随之退役；IPC 只在本机主/渲染进程间，天然受 Electron 进程隔离保护。
@@ -16,7 +16,7 @@
 
 | 关注点 | 选型 |
 |---|---|
-| 语言/构建 | TypeScript（strict）、pnpm workspaces、tsup/vite 构建、electron-vite（沿用现有桌面构建） |
+| 语言/构建 | TypeScript（strict）、npm workspaces、tsc/vite 构建、electron-vite（沿用现有桌面构建） |
 | 测试 | vitest（移植 Python 的 487 测试为对账契约） |
 | LLM SDK | 官方 `@anthropic-ai/sdk`、`openai`、`@aws-sdk/client-bedrock-runtime` |
 | MCP | 官方 `@modelcontextprotocol/sdk`（TS 一等公民，stdio/SSE 内置） |
