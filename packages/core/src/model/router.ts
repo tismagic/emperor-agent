@@ -8,12 +8,12 @@ import { resolve } from 'node:path'
 import { activeEntry, findEntry, type ModelConfig, type ModelEntry, resolveProviderName } from '../config/model-config'
 import { createProvider } from '../providers/factory'
 import { findByName, type ProviderSpec } from '../providers/registry'
-import { type GenerationSettings, defaultGenerationSettings } from '../providers/base'
+import { type GenerationSettings, type LLMProvider } from '../providers/base'
 
 export type ModelRole = 'main' | 'secondary'
 
 export interface ProviderSnapshot {
-  provider: ReturnType<typeof createProvider>
+  provider: LLMProvider
   providerName: string
   providerLabel: string
   model: string
@@ -197,7 +197,7 @@ function synthEntryFromLegacy(config: ModelConfig, modelId: string): ModelEntry 
   }
 }
 
-function fallbackSpec(providerName: string): ProviderSpec {
+function fallbackSpec(_providerName: string): ProviderSpec {
   const custom = findByName('custom')
   if (!custom) throw new Error('custom provider missing from registry')
   return custom

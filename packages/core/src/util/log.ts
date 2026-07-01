@@ -31,7 +31,7 @@ export function createLogger(opts: LoggerOptions = {}): Logger {
     opts.sink ??
     ((line) => {
       const payload = Object.keys(line.fields).length ? line.fields : undefined
-      // eslint-disable-next-line no-console
+
       const fn = line.level === 'debug' ? console.debug : line.level === 'warn' ? console.warn : line.level === 'error' ? console.error : console.info
       fn(`[${line.level}] ${line.msg}`, payload ?? '')
     })

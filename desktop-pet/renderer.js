@@ -1,7 +1,6 @@
 const cfg = window.emperorPet || {};
 const mapper = window.EmperorPetMapper;
 const idleScenes = window.EmperorPetIdleScenes;
-const runtimeUrls = window.EmperorPetUrls;
 const pet = document.getElementById("pet");
 const bubble = document.getElementById("speech-bubble");
 const bubbleText = document.getElementById("speech-text");
@@ -9,13 +8,11 @@ const badge = document.getElementById("subagent-badge");
 
 let currentAnimation = "";
 let resetTimer = null;
-let reconnectTimer = null;
+let pollTimer = null;
 let bubbleTimer = null;
 let idleSceneTimer = null;
 let idleSceneIndex = 0;
 let subagentCount = 0;
-let lastSeq = 0;
-let socket = null;
 let assistantDraft = "";
 let pendingInteractionActive = false;
 
@@ -112,7 +109,6 @@ function updateBadge(delta) {
 
 function applyRuntimeEvent(event, options = {}) {
   if (!event || typeof event !== "object") return;
-  if (Number.isFinite(event.seq)) lastSeq = Math.max(lastSeq, Number(event.seq));
   if (["ask_request", "plan_draft", "turn_paused"].includes(event.event)) {
     pendingInteractionActive = true;
   }
@@ -146,15 +142,12 @@ function applyRuntimeEvent(event, options = {}) {
   if (event.event === "assistant_done") assistantDraft = "";
 }
 
-function wsUrl() {
-  return runtimeUrls.wsUrl(cfg.webuiUrl, lastSeq, cfg.backendToken);
-}
-
 async function loadBootstrap() {
   try {
-    const response = await fetch(runtimeUrls.apiUrl(cfg.webuiUrl, "/api/bootstrap", cfg.backendToken));
-    const boot = await response.json();
-    lastSeq = Number(boot?.runtime?.latestSeq || 0);
+    const boot = await cfg.readBootstrap?.();
+    for (const event of boot?.runtime?.events || []) {
+      applyRuntimeEvent(event, { replay: true });
+    }
     const pending = boot?.control?.pending;
     if (pending) {
       pendingInteractionActive = true;
@@ -165,38 +158,30 @@ async function loadBootstrap() {
     }
   } catch {
     setAnimation("disconnected");
-    showBubble("连接断开，正在重连。", 4000);
+    showBubble("读取本地事件失败，等待重试。", 4000);
   }
 }
 
-function connectSocket() {
-  if (socket) socket.close();
-  socket = new WebSocket(wsUrl());
-  socket.addEventListener("open", () => {
-    if (currentAnimation === "disconnected") hideBubble();
-    setAnimation(currentAnimation === "disconnected" ? "idle" : currentAnimation || "idle");
-  });
-  socket.addEventListener("message", (event) => {
+function startPolling() {
+  if (pollTimer) clearInterval(pollTimer);
+  pollTimer = setInterval(async () => {
     try {
-      applyRuntimeEvent(JSON.parse(event.data));
+      const events = await cfg.readRuntimeEvents?.();
+      if (currentAnimation === "disconnected") {
+        hideBubble();
+        setAnimation("idle");
+      }
+      for (const event of events || []) applyRuntimeEvent(event);
     } catch {
-      // Ignore malformed events from a broken connection.
+      setAnimation("disconnected");
+      showBubble("读取本地事件失败，等待重试。", 4000);
     }
-  });
-  socket.addEventListener("close", scheduleReconnect);
-  socket.addEventListener("error", scheduleReconnect);
-}
-
-function scheduleReconnect() {
-  setAnimation("disconnected");
-  showBubble("连接断开，正在重连。", 4000);
-  if (reconnectTimer) return;
-  reconnectTimer = setTimeout(() => {
-    reconnectTimer = null;
-    connectSocket();
-  }, 1500);
+  }, 1000);
 }
 
 setAnimation("disconnected");
-showBubble("正在连接本地服务。", 2500);
-loadBootstrap().finally(connectSocket);
+showBubble("正在读取本地事件。", 2500);
+loadBootstrap().finally(() => {
+  if (currentAnimation === "disconnected") setAnimation("idle");
+  startPolling();
+});

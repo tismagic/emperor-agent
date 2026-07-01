@@ -82,6 +82,10 @@ select:focus-visible {
   background: rgb(var(--bg));
 }
 
+.app-shell:has(.codex-sidebar.collapsed) {
+  grid-template-columns: 52px minmax(0, 1fr);
+}
+
 .nav-rail,
 .session-sidebar {
   background: rgb(var(--bg-elevated));
@@ -552,12 +556,16 @@ select:focus-visible {
 
 .assistant-timeline-shell {
   gap: 8px;
-  padding-left: 20px;
+  --timeline-axis-x: 7px;
+  --timeline-content-inset: 20px;
+  --timeline-dot-size: 11px;
+  --timeline-dot-radius: 5.5px;
+  padding-left: var(--timeline-content-inset);
 }
 
 .assistant-timeline-shell::before {
   display: block;
-  left: 7px;
+  left: var(--timeline-axis-x);
   top: 4px;
   bottom: 4px;
   background: rgb(var(--border) / 0.72);
@@ -565,13 +573,13 @@ select:focus-visible {
 
 .timeline-node::before {
   display: block;
-  left: -17px;
+  left: calc(var(--timeline-axis-x) - var(--timeline-content-inset) - var(--timeline-dot-radius));
   top: 18px;
-  width: 7px;
-  height: 7px;
+  width: var(--timeline-dot-size);
+  height: var(--timeline-dot-size);
   border: 2px solid rgb(var(--bg));
   background: rgb(var(--border-strong));
-  box-sizing: content-box;
+  box-sizing: border-box;
 }
 
 .timeline-node.text-node::before {
@@ -1626,17 +1634,21 @@ select:focus-visible {
   }
 
   .assistant-timeline-shell {
-    padding-left: 16px;
+    --timeline-axis-x: 5px;
+    --timeline-content-inset: 16px;
+    --timeline-dot-size: 10px;
+    --timeline-dot-radius: 5px;
+    padding-left: var(--timeline-content-inset);
   }
 
   .assistant-timeline-shell::before {
-    left: 5px;
+    left: var(--timeline-axis-x);
   }
 
   .timeline-node::before {
-    left: -14px;
-    width: 6px;
-    height: 6px;
+    left: calc(var(--timeline-axis-x) - var(--timeline-content-inset) - var(--timeline-dot-radius));
+    width: var(--timeline-dot-size);
+    height: var(--timeline-dot-size);
   }
 
   .avatar {
@@ -1736,6 +1748,11 @@ select:focus-visible {
   background: rgb(var(--bg-elevated));
 }
 
+.codex-sidebar.collapsed {
+  width: 52px;
+  min-width: 52px;
+}
+
 .sidebar-window-controls {
   display: flex;
   align-items: center;
@@ -1757,6 +1774,11 @@ select:focus-visible {
 .sidebar-icon-button:hover {
   background: rgb(var(--bg-inset));
   color: rgb(var(--fg));
+}
+
+.codex-sidebar.collapsed .sidebar-window-controls {
+  justify-content: center;
+  padding-inline: 0;
 }
 
 .sidebar-top-actions {
@@ -1797,6 +1819,24 @@ select:focus-visible {
   text-align: center;
 }
 
+.codex-sidebar.collapsed .sidebar-top-actions {
+  padding-inline: 8px;
+}
+
+.codex-sidebar.collapsed .sidebar-top-actions button,
+.codex-sidebar.collapsed .sidebar-settings-button {
+  justify-content: center;
+  gap: 0;
+  padding-inline: 0;
+}
+
+.codex-sidebar.collapsed .sidebar-top-actions span,
+.codex-sidebar.collapsed .sidebar-top-actions em,
+.codex-sidebar.collapsed .sidebar-settings-button span,
+.codex-sidebar.collapsed .session-list {
+  display: none;
+}
+
 .codex-session-list {
   padding: 0 8px 8px;
 }
@@ -1822,6 +1862,14 @@ select:focus-visible {
   color: rgb(var(--fg-subtle));
   font-size: 12px;
   font-weight: 650;
+}
+
+.sidebar-section-title svg {
+  transition: transform 140ms ease;
+}
+
+.sidebar-section-title.collapsed svg {
+  transform: rotate(-90deg);
 }
 
 .sidebar-section-actions {
@@ -1938,6 +1986,11 @@ select:focus-visible {
 .sidebar-settings-button {
   margin: auto 8px 10px;
   min-height: 34px;
+}
+
+.codex-sidebar.collapsed .sidebar-settings-button {
+  margin-inline: 8px;
+  width: 36px;
 }
 
 .sidebar-search-backdrop {
@@ -2190,6 +2243,59 @@ select:focus-visible {
 .settings-row.selectable.active {
   border-color: rgb(var(--accent) / 0.45);
   background: rgb(var(--accent) / 0.1);
+}
+
+.diagnostics-list {
+  max-width: 920px;
+}
+
+.diagnostics-group {
+  display: grid;
+  gap: 8px;
+}
+
+.diagnostics-group-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 4px 2px 0;
+}
+
+.diagnostics-group-head strong {
+  color: rgb(var(--fg));
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.diagnostics-group-head span {
+  color: rgb(var(--fg-subtle));
+  font-size: 11px;
+}
+
+.diagnostics-group-rows {
+  display: grid;
+  gap: 8px;
+}
+
+.diagnostics-row.tone-ok > svg {
+  color: rgb(var(--success));
+}
+
+.diagnostics-row.tone-warn > svg {
+  color: rgb(var(--warning));
+}
+
+.diagnostics-row.tone-error {
+  border-color: rgb(var(--danger) / 0.42);
+}
+
+.diagnostics-row.tone-error > svg {
+  color: rgb(var(--danger));
+}
+
+.diagnostics-row.tone-muted > svg {
+  color: rgb(var(--fg-subtle));
 }
 
 .settings-card-grid {

@@ -9,6 +9,7 @@ import ToolGroup from './ToolGroup.vue'
 import AskCard from './AskCard.vue'
 import PlanCard from './PlanCard.vue'
 import ThoughtEvent from './ThoughtEvent.vue'
+import MediaBlock from './MediaBlock.vue'
 import { projectAssistantFlow } from './assistantFlowProjection'
 
 const props = defineProps<{ message: AssistantMessage; plans?: RuntimePlanRecord[] }>()
@@ -111,6 +112,7 @@ onBeforeUnmount(stopFlowClock)
             <MarkdownBlock :content="block.content" />
           </div>
           <ToolGroup v-else-if="block.kind === 'tool_group'" :block="block" />
+          <MediaBlock v-else-if="block.kind === 'media'" :items="block.items" />
           <div v-else-if="block.kind === 'control' && block.segment.type === 'ask'" class="timeline-node control-node">
             <AskCard :interaction="block.segment.interaction" />
           </div>

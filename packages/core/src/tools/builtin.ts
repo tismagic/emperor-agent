@@ -2,12 +2,9 @@
  * 搜索工具 (MIG-TOOL-008/009) + WebFetch (MIG-TOOL-010) + RunCommand scaffold (MIG-TOOL-011) + skills (MIG-TOOL-012)。
  */
 import { execSync } from 'node:child_process'
-import { existsSync } from 'node:fs'
-import { mkdir } from 'node:fs/promises'
-import { dirname, join } from 'node:path'
-import { Tool, okResult, errResult, type ToolResult, type ToolExecutionContext } from './base'
-import { B, S, type ParamSchema, toolParamsSchema } from './schema'
-import { isHighRiskCommand, isReadonlyCommand } from './resolvers'
+import { Tool, type ToolResult, type ToolExecutionContext } from './base'
+import { B, S, toolParamsSchema } from './schema'
+import { isReadonlyCommand } from './resolvers'
 
 // ── GlobTool ──
 
@@ -153,18 +150,92 @@ export interface TodoItem {
   planStepId?: string
 }
 
+const TODO_VALID_STATUS = ['pending', 'in_progress', 'completed', 'blocked']
+const TODO_STATUS_ICON: Record<string, string> = { pending: '[ ]', in_progress: '[~]', completed: '[x]', blocked: '[!]' }
+
+function renderTodos(todos: Array<Record<string, unknown>>): string {
+  if (!todos.length) return '(当前无待办事项)'
+  const lines: string[] = []
+  for (const t of todos) {
+    const icon = TODO_STATUS_ICON[String(t.status ?? 'pending')] ?? '[?]'
+    let label = String(t.content ?? '')
+    if (t.status === 'in_progress' && t.active_form) label = String(t.active_form ?? '')
+    lines.push(`  ${icon} ${t.id}. ${label}`)
+  }
+  return lines.join('\n')
+}
+
+/**
+ * 跨用户回合存活的待办列表。对齐 Python `agent/tools/todo.py:TodoStore`。
+ * todos 为公开 dict 列表（snake_case 键），update/syncFromPlanSteps/render 与 Python 一致。
+ */
 export class TodoStore {
-  #todos: TodoItem[] = []
+  todos: Array<Record<string, unknown>> = []
 
-  getAll(): TodoItem[] { return [...this.#todos] }
+  update(items: Array<Record<string, unknown>>): string {
+    const cleaned: Array<Record<string, unknown>> = []
+    items.forEach((t, idx) => {
+      const i = idx + 1
+      const content = String(t.content ?? '').trim()
+      if (!content) return
+      let status = String(t.status ?? 'pending')
+      if (!TODO_VALID_STATUS.includes(status)) status = 'pending'
+      const item: Record<string, unknown> = { id: t.id ?? i, content, status }
+      const planStepId = String(t.plan_step_id ?? t.planStepId ?? '').trim()
+      if (planStepId) item.plan_step_id = planStepId.slice(0, 64)
+      const activeForm = String(t.active_form ?? t.activeForm ?? '').trim()
+      if (activeForm) item.active_form = activeForm.slice(0, 240)
+      const blockedReason = String(t.blocked_reason ?? t.blockedReason ?? '').trim()
+      if (blockedReason) item.blocked_reason = blockedReason.slice(0, 1000)
+      cleaned.push(item)
+    })
 
-  replace(items: TodoItem[]): void {
-    const inProgress = items.filter((t) => t.status === 'in_progress')
-    if (inProgress.length > 1) throw new Error('Only one todo can be in_progress at a time')
-    this.#todos = items.map((t, i) => ({ ...t, id: t.id || i + 1 }))
+    const inProgressCount = cleaned.filter((t) => t.status === 'in_progress').length
+    if (inProgressCount > 1) return 'Error: 同一时间只能有一个 in_progress 任务，请重新规划。'
+
+    this.todos = cleaned
+    const completed = this.todos.filter((t) => t.status === 'completed').length
+    const pending = this.todos.filter((t) => t.status === 'pending').length
+    const summary = `todos updated: total=${this.todos.length}, completed=${completed}, in_progress=${inProgressCount}, pending=${pending}`
+    return summary + '\n\n当前列表：\n' + renderTodos(this.todos)
   }
 
-  clear(): void { this.#todos = [] }
+  syncFromPlanSteps(steps: Array<Record<string, unknown>>): string {
+    const statusMap: Record<string, string> = {
+      pending: 'pending',
+      active: 'in_progress',
+      done: 'completed',
+      failed: 'pending',
+      blocked: 'pending',
+      skipped: 'completed',
+    }
+    const todos: Array<Record<string, unknown>> = []
+    steps.forEach((step, idx) => {
+      const index = idx + 1
+      const title = String(step.title ?? '').trim()
+      if (!title) return
+      const item: Record<string, unknown> = {
+        id: index,
+        plan_step_id: String(step.id ?? '').trim() || null,
+        content: title,
+        status: statusMap[String(step.status ?? 'pending')] ?? 'pending',
+      }
+      if (step.blocked_reason) item.blocked_reason = String(step.blocked_reason ?? '').trim()
+      todos.push(item)
+    })
+    return this.update(todos)
+  }
+
+  render(): string {
+    return renderTodos(this.todos)
+  }
+
+  // ── backward-compat shims (W04 callers) ──
+  getAll(): TodoItem[] { return this.todos as unknown as TodoItem[] }
+  replace(items: TodoItem[]): void {
+    this.update(items as unknown as Array<Record<string, unknown>>)
+  }
+  clear(): void { this.todos = [] }
 }
 
 export class UpdateTodos extends Tool {
@@ -185,9 +256,8 @@ export class UpdateTodos extends Tool {
   constructor(store: TodoStore) { super(); this.store = store }
 
   async execute(args: Record<string, unknown>): Promise<string> {
-    const todos = args.todos as TodoItem[] ?? []
-    try { this.store.replace(todos) } catch (e: any) { return `[ERR] ${e.message}` }
-    return `Updated ${todos.length} todos`
+    const todos = (args.todos as Array<Record<string, unknown>>) ?? []
+    return this.store.update(todos)
   }
 }
 
@@ -205,6 +275,13 @@ const DENY_PATTERNS = [
   /\bpython3?\s+-c\b/,
   /\|.*\bsh\b/,
   /\|.*\bbash\b/,
+  // 审计 P1-1：ln -s 是符号链接工作区逃逸（P0-2）的前置步骤；其余解释器的 -e
+  // 直接执行任意代码，属于和 python -c 同一类的绕过。
+  /\bln\s+-[a-z]*s[a-z]*\b/,
+  /\bperl\s+-e\b/,
+  /\bruby\s+-e\b/,
+  /\bnode\s+-e\b/,
+  /\bosascript\s+-e\b/,
 ]
 
 const MAX_OUTPUT_CHARS = 20_000

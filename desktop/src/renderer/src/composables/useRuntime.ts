@@ -1,5 +1,5 @@
 import { computed, reactive, ref, watch, type Ref } from 'vue'
-import type { AssistantMessage, AttachmentRef, BootstrapPayload, ChatMessage, ChatSendPayload, ControlInteraction, PendingState, RuntimeEventEnvelope, RuntimeHistoryItem, RuntimeStatus, SessionInfo, SubagentState, TeamMessage, ThoughtSegment, ToolSegment, ToolStatus, WsEvent } from '../types'
+import type { AssistantMessage, AttachmentRef, BootstrapPayload, ChatMessage, ChatSendPayload, ControlInteraction, PendingState, RequestedSkill, RuntimeEventEnvelope, RuntimeHistoryItem, RuntimeStatus, SessionInfo, TeamMessage, ThoughtSegment, ToolSegment, WsEvent } from '../types'
 import {
   clearRuntimeSnapshotRaw,
   writeRuntimeSnapshotRaw,
@@ -9,22 +9,18 @@ import { findSubagent, findSubagentTool, findToolSegment } from '../runtime/sele
 import { applyPlanEvent, type PlanProjection } from '../runtime/handlers/plans'
 import { applySchedulerEventToBootstrap } from '../runtime/handlers/scheduler'
 import { applyTaskEvent, type TaskProjection } from '../runtime/handlers/tasks'
-import { apiUrl, wsUrl } from '../api/backend'
+import { hasCoreBridge, invokeCore, onCoreEvent, wsUrl } from '../api/backend'
 import { applyTeamEventToBootstrap } from '../runtime/handlers/team'
-import { SCHEDULER_CLIENT_ID_PREFIX, schedulerMessageMeta } from '../runtime/schedulerMeta'
+import { schedulerMessageMeta } from '../runtime/schedulerMeta'
 import { loadRuntimeSnapshot, transcriptFromMessages, type RuntimeSnapshot } from '../runtime/snapshot'
 import { isDraftSessionId } from '../runtime/sessionDrafts'
 import { applyToolResultToSegment, applyToolRunUpdateToSegment, settleRunningToolSegments } from '../runtime/toolStatus'
+import { compactJson } from '../utils/format'
+import { api } from '../api/http'
 
 function nextId(prefix: string) {
   const random = typeof crypto !== 'undefined' && 'randomUUID' in crypto ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(16).slice(2)}`
   return `${prefix}-${random}`
-}
-
-function compactJson(value: unknown, limit = 180) {
-  if (!value || typeof value !== 'object') return ''
-  const text = JSON.stringify(value)
-  return text.length > limit ? `${text.slice(0, limit)}...` : text
 }
 
 const SCHEDULER_DONE_PENDING_MS = 2500
@@ -50,6 +46,8 @@ export function useRuntime(options: {
   const lastSeq = ref(0)
   let reconnectTimer: number | undefined
   let pendingClearTimer: number | undefined
+  let persistTimer: number | undefined
+  let coreUnsubscribe: (() => void) | undefined
   let pendingVersion = 0
   let rehydrating = false
   let intentionalSocketClose = false
@@ -57,11 +55,45 @@ export function useRuntime(options: {
 
   const currentAssistant = computed(() => messages.value.find((message) => message.id === currentAssistantId.value && message.role === 'assistant') as AssistantMessage | undefined)
 
+  // 审计 P1-3：流式期间每个 token/segment 变化都会触发这个 deep watch；直接同步
+  // JSON.stringify + localStorage.setItem 全量快照，成本随会话历史线性增长且在
+  // 最高频路径上反复重付——debounce 掉中间态，只在安静下来后落一次盘。
+  const PERSIST_DEBOUNCE_MS = 400
   watch(
     [messages, currentAssistantId, busy, lastSeq],
-    persistRuntimeSnapshot,
+    schedulePersist,
     { deep: true },
   )
+  // turn 结束（busy: true -> false，对应 assistant_done/turn_paused 等终态）立即 flush，
+  // 不必等 debounce 窗口，避免用户在这之后立刻退出丢失最终状态。
+  watch(busy, (value, previous) => {
+    if (previous && !value) flushPersist()
+  })
+
+  function schedulePersist() {
+    if (!messages.value.length) {
+      cancelScheduledPersist()
+      clearRuntimeSnapshot()
+      return
+    }
+    cancelScheduledPersist()
+    persistTimer = window.setTimeout(() => {
+      persistTimer = undefined
+      persistRuntimeSnapshot()
+    }, PERSIST_DEBOUNCE_MS)
+  }
+
+  function flushPersist() {
+    cancelScheduledPersist()
+    persistRuntimeSnapshot()
+  }
+
+  function cancelScheduledPersist() {
+    if (persistTimer !== undefined) {
+      window.clearTimeout(persistTimer)
+      persistTimer = undefined
+    }
+  }
 
   function runtimeText() {
     if (busy.value) return '正在办差'
@@ -88,6 +120,10 @@ export function useRuntime(options: {
   }
 
   function connectSocket() {
+    if (hasCoreBridge()) {
+      connectCoreEvents()
+      return
+    }
     const active = socket.value
     if (active && (active.readyState === WebSocket.OPEN || active.readyState === WebSocket.CONNECTING)) return
     status.value = 'connecting'
@@ -123,6 +159,21 @@ export function useRuntime(options: {
     })
   }
 
+  function connectCoreEvents() {
+    if (coreUnsubscribe) {
+      status.value = 'ready'
+      return
+    }
+    status.value = 'connecting'
+    coreUnsubscribe = onCoreEvent((event) => {
+      if (!event || typeof event !== 'object') return
+      handleSocketEvent(JSON.stringify(event))
+    })
+    status.value = 'ready'
+    reconnectAttempts.value = 0
+    if (reconnectTimer) window.clearTimeout(reconnectTimer)
+  }
+
   function scheduleReconnect() {
     const delay = Math.min(1000 * Math.pow(1.5, reconnectAttempts.value), 30000)
     reconnectAttempts.value += 1
@@ -148,23 +199,17 @@ export function useRuntime(options: {
     const attachments = normalized.attachments
     if (busy.value) return false
     if (!text && attachments.length === 0) return false
+    if (hasCoreBridge()) {
+      connectCoreEvents()
+      return sendMessageViaCore({ text, displayText, attachments, requestedSkills: normalized.requestedSkills })
+    }
     if (!socket.value || socket.value.readyState !== WebSocket.OPEN) {
       connectSocket()
       options.showToast('WebSocket 还没连上，请稍后再发')
       return false
     }
 
-    const assistantId = nextId('assistant')
-    const userMsg: ChatMessage = {
-      id: nextId('user'),
-      role: 'user',
-      content: displayText || text,
-    }
-    if (attachments.length) userMsg.attachments = attachments
-    messages.value.push(userMsg)
-    messages.value.push(createStreamingAssistant(assistantId, Date.now()))
-    currentAssistantId.value = assistantId
-    busy.value = true
+    const userMsg = enqueueLocalTurn(displayText || text, attachments)
     status.value = 'ready'
 
     try {
@@ -196,6 +241,37 @@ export function useRuntime(options: {
       handleChatError(err instanceof Error ? err.message : String(err))
       return false
     }
+  }
+
+  function enqueueLocalTurn(content: string, attachments: AttachmentRef[]) {
+    const assistantId = nextId('assistant')
+    const userMsg: ChatMessage = {
+      id: nextId('user'),
+      role: 'user',
+      content,
+    }
+    if (attachments.length) userMsg.attachments = attachments
+    messages.value.push(userMsg)
+    messages.value.push(createStreamingAssistant(assistantId, Date.now()))
+    currentAssistantId.value = assistantId
+    busy.value = true
+    return userMsg
+  }
+
+  function sendMessageViaCore(opts: { text: string; displayText: string; attachments: AttachmentRef[]; requestedSkills: RequestedSkill[] }) {
+    const userMsg = enqueueLocalTurn(opts.displayText || opts.text, opts.attachments)
+    status.value = 'ready'
+    void invokeCore('chat.submit', {
+      content: opts.text,
+      displayContent: opts.displayText || opts.text,
+      attachments: opts.attachments.map((item) => item.id),
+      requestedSkills: opts.requestedSkills,
+      clientMessageId: userMsg.id,
+      sessionId: sessionId.value && !isDraftSessionId(sessionId.value) ? sessionId.value : undefined,
+    }).catch((err) => {
+      handleChatError(err instanceof Error ? err.message : String(err))
+    })
+    return true
   }
 
   function sendInteractionAnswer(interactionId: string, answers: Record<string, unknown>) {
@@ -235,33 +311,42 @@ export function useRuntime(options: {
   async function stopActive() {
     updatePending('正在停止当前任务...', '', 'running')
     try {
-      const res = await fetch(apiUrl('/api/runtime/stop'), {
+      const data = await api<Record<string, unknown>>('/api/runtime/stop', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({}),
       })
-      const data = await res.json().catch(() => ({}))
-      if (!res.ok) throw new Error(data?.error || '停止任务失败')
-      const count = Array.isArray(data.cancelled) ? data.cancelled.length : 0
-      if (!count) {
-        updatePending('没有正在运行的任务', '', 'done')
-        options.showToast('当前没有可停止的任务')
-        return false
-      }
-      const assistant = currentAssistant.value
-      if (assistant) finishInterruptedAssistant(assistant, '（已请求停止当前任务。）')
-      currentAssistantId.value = null
-      busy.value = false
-      updatePending('已请求停止', `已取消 ${count} 个任务`, 'done')
-      return true
+      return handleStopResult(data)
     } catch (err) {
       updatePending('停止任务失败', err instanceof Error ? err.message : String(err), 'error')
       return false
     }
   }
 
+  function handleStopResult(data: Record<string, unknown>) {
+    if (data.ok === false) {
+      const error = data.error && typeof data.error === 'object' ? data.error as Record<string, unknown> : null
+      throw new Error(String(error?.message || '停止任务失败'))
+    }
+    const count = Array.isArray(data.cancelled) ? data.cancelled.length : 0
+    if (!count) {
+      updatePending('没有正在运行的任务', '', 'done')
+      options.showToast('当前没有可停止的任务')
+      return false
+    }
+    const assistant = currentAssistant.value
+    if (assistant) finishInterruptedAssistant(assistant, '（已请求停止当前任务。）')
+    currentAssistantId.value = null
+    busy.value = false
+    updatePending('已请求停止', `已取消 ${count} 个任务`, 'done')
+    return true
+  }
+
   function sendControlPayload(payload: Record<string, unknown>, userLabel: string, expectAssistant: boolean) {
     if (busy.value) return false
+    if (hasCoreBridge()) {
+      connectCoreEvents()
+      return sendControlPayloadViaCore(payload, userLabel, expectAssistant)
+    }
     if (!socket.value || socket.value.readyState !== WebSocket.OPEN) {
       connectSocket()
       options.showToast('WebSocket 还没连上，请稍后再试')
@@ -283,6 +368,37 @@ export function useRuntime(options: {
       handleChatError(err instanceof Error ? err.message : String(err))
       return false
     }
+  }
+
+  function sendControlPayloadViaCore(payload: Record<string, unknown>, userLabel: string, expectAssistant: boolean) {
+    const userId = nextId('user')
+    messages.value.push({ id: userId, role: 'user', content: userLabel })
+    if (expectAssistant) {
+      const assistantId = nextId('assistant')
+      messages.value.push(createStreamingAssistant(assistantId, Date.now()))
+      currentAssistantId.value = assistantId
+      busy.value = true
+      updatePending('正在继续执行...', userLabel)
+    }
+    const interactionId = String(payload.interaction_id || '')
+    const resumeOpts = { clientMessageId: userId, displayContent: userLabel }
+    let call: Promise<unknown>
+    if (payload.type === 'interaction_answer') {
+      call = invokeCore('control.answerInteraction', interactionId, payload.answers || {}, resumeOpts)
+    } else if (payload.type === 'plan_comment') {
+      call = invokeCore('control.commentPlan', interactionId, String(payload.comment || ''), resumeOpts)
+    } else if (payload.type === 'plan_approve') {
+      call = invokeCore('control.approvePlan', interactionId, resumeOpts)
+    } else if (payload.type === 'interaction_cancel') {
+      call = invokeCore('control.cancelInteraction', interactionId)
+    } else {
+      handleChatError(`unsupported control payload: ${String(payload.type || '')}`)
+      return false
+    }
+    void call.catch((err) => {
+      handleChatError(err instanceof Error ? err.message : String(err))
+    })
+    return true
   }
 
   function clearChat() {
@@ -432,6 +548,11 @@ export function useRuntime(options: {
       return
     }
 
+    if (data.event === 'agent_thought') {
+      handleAgentThoughtEvent(data)
+      return
+    }
+
     if (data.event === 'context_usage') {
       if (!data.usage_type || data.usage_type === 'main_agent') {
         const used = Math.max(0, Number(data.used || 0))
@@ -466,7 +587,7 @@ export function useRuntime(options: {
           startedAt,
         })
       }
-      updatePending(`正在执行: ${data.name}`, compactJson(data.arguments))
+      updatePending(`正在执行: ${data.name}`, compactJson(data.arguments, 180))
       return
     }
 
@@ -763,6 +884,28 @@ export function useRuntime(options: {
       assistant.segments.push({ id: nextId(type), type, interaction: data.interaction })
     }
     updatePending(type === 'plan' ? '计划待预览' : '等待你回答', data.interaction.title || data.interaction.context || '', 'done')
+  }
+
+  function handleAgentThoughtEvent(data: Extract<WsEvent, { event: 'agent_thought' }>) {
+    const assistant = assistantForEvent(data)
+    if (!assistant) return
+    finishActiveThought(assistant, data)
+    const at = eventTimeMs(data)
+    assistant.segments.push({
+      id: nextId('thought'),
+      type: 'thought',
+      status: data.status === 'running' ? 'running' : 'done',
+      label: data.label || '思考参考',
+      stage: data.stage,
+      source: data.source || 'audit',
+      summary: data.summary || '',
+      toolIds: Array.isArray(data.tool_call_ids) ? data.tool_call_ids.map(String) : [],
+      toolNames: Array.isArray(data.tool_names) ? data.tool_names.map(String) : [],
+      startedAt: at,
+      endedAt: data.status === 'running' ? undefined : at,
+      durationMs: data.status === 'running' ? undefined : 0,
+    })
+    updatePending(data.label || '思考参考', data.summary || '')
   }
 
   function createAssistantForIncomingControl(turnId = '', startedAt = Date.now()) {
@@ -1209,6 +1352,10 @@ export function useRuntime(options: {
         intentionalSocketClose = true
         socket.value.close()
         socket.value = null
+      }
+      if (coreUnsubscribe) {
+        coreUnsubscribe()
+        coreUnsubscribe = undefined
       }
       connectSocket()
     },

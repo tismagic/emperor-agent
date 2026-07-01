@@ -9,11 +9,6 @@ export function runtimeDefaultsRoot(resourcesPath: string): string {
   return path.join(resourcesPath, 'runtime-defaults')
 }
 
-export function bundledBackendPath(resourcesPath: string, platform: NodeJS.Platform = process.platform): string {
-  const exe = platform === 'win32' ? 'emperor-agent.exe' : 'emperor-agent'
-  return path.join(resourcesPath, 'backend', exe)
-}
-
 export interface InitializeRuntimeOptions {
   root: string
   defaultsRoot: string

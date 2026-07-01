@@ -1,7 +1,15 @@
 import type { AttachmentRef } from '../types'
-import { apiUrl } from './backend'
+import { apiUrl, hasCoreBridge, invokeCore } from './backend'
 
 export async function uploadAttachment(file: File): Promise<AttachmentRef> {
+  if (hasCoreBridge()) {
+    const raw = new Uint8Array(await file.arrayBuffer())
+    return await invokeCore('attachments.save', {
+      raw,
+      name: file.name,
+      mime: file.type || 'application/octet-stream',
+    }) as AttachmentRef
+  }
   const fd = new FormData()
   fd.append('file', file)
   const r = await fetch(apiUrl('/api/attachments'), { method: 'POST', body: fd })
@@ -19,5 +27,6 @@ export async function uploadAttachment(file: File): Promise<AttachmentRef> {
 }
 
 export function attachmentRawUrl(id: string): string {
+  if (hasCoreBridge()) return `app://attachments/${encodeURIComponent(id)}/raw`
   return apiUrl(`/api/attachments/${encodeURIComponent(id)}/raw`)
 }

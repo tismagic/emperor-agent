@@ -244,12 +244,18 @@
   }
 
   .assistant-timeline-shell {
-    @apply relative flex w-full min-w-0 flex-col gap-2 pl-5;
+    --timeline-axis-x: 0.35rem;
+    --timeline-content-inset: 1.25rem;
+    --timeline-dot-size: 0.5rem;
+    --timeline-dot-radius: 0.25rem;
+    @apply relative flex w-full min-w-0 flex-col gap-2;
+    padding-left: var(--timeline-content-inset);
   }
 
   .assistant-timeline-shell::before {
     content: '';
-    @apply absolute bottom-2 left-[0.35rem] top-1 w-px;
+    @apply absolute bottom-2 top-1 w-px;
+    left: var(--timeline-axis-x);
     background: rgb(var(--border));
   }
 
@@ -259,8 +265,12 @@
 
   .timeline-node::before {
     content: '';
-    @apply absolute -left-[1.35rem] top-3 size-2 rounded-full;
+    @apply absolute top-3 rounded-full;
+    left: calc(var(--timeline-axis-x) - var(--timeline-content-inset) - var(--timeline-dot-radius));
+    width: var(--timeline-dot-size);
+    height: var(--timeline-dot-size);
     background: rgb(var(--fg-subtle));
+    box-sizing: border-box;
   }
 
   .timeline-node.text-node {
@@ -308,6 +318,16 @@
 
   .thought-label {
     color: rgb(var(--fg-subtle));
+  }
+
+  .thought-summary-node {
+    @apply w-full max-w-[780px] rounded-md px-3.5 py-2.5 text-[14px] leading-6;
+    color: rgb(var(--fg));
+  }
+
+  .thought-summary {
+    @apply m-0 whitespace-pre-wrap break-words;
+    color: rgb(var(--fg));
   }
 
   .thought-chevron {

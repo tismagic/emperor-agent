@@ -1,23 +1,19 @@
 import { app, BrowserWindow, dialog, ipcMain, protocol, net, type OpenDialogOptions, type Rectangle } from 'electron'
-import { spawn, type ChildProcess } from 'node:child_process'
-import { randomUUID } from 'node:crypto'
 import * as fs from 'node:fs'
 import * as path from 'node:path'
 import { pathToFileURL } from 'node:url'
 
 import { resolveConfig } from './config'
-import { buildBackendCommand } from './backend-command'
-import { probeBackend, waitForBackend } from './health'
 import { resolveAppIconPath } from './icon'
-import { planStartup, planShutdown } from './lifecycle'
 import {
-  bundledBackendPath as resolveBundledBackendPath,
   initializePackagedRuntime,
   packagedRuntimeRoot,
   runtimeDefaultsRoot,
 } from './runtime-root'
 import { readBounds, pickBounds } from './window-bounds'
-import { resolveAssetPath } from './protocol'
+import { resolveAssetPath, resolveAttachmentRawPath, resolveMediaRawPath } from './protocol'
+import { createCoreHost } from './core-host'
+import { CoreEventBridge } from './event-bridge'
 
 const mainArgv = process.argv.slice(2)
 const petWindowMode = mainArgv.includes('--pet-window')
@@ -29,13 +25,9 @@ const appIconPath = resolveAppIconPath({
   resourcesPath: process.resourcesPath,
 })
 
-// Packaged-only defense-in-depth: a per-launch token shared with the spawned backend
-// (env) and the renderer (preload arg). Empty in dev so electron-vite dev stays token-free.
-const authToken = app.isPackaged && !petWindowMode ? randomUUID() : ''
-
-let backendChild: ChildProcess | null = null
-let ownsBackend = false
-let backendReady = false
+let coreApi: { close(): Promise<void> } | null = null
+const coreEventBridge = new CoreEventBridge()
+let runtimeReady = false
 let mainWindow: BrowserWindow | null = null
 let didLoadRetry = false
 
@@ -80,68 +72,34 @@ function prepareMainRuntime(): void {
   }
 }
 
-function reclaimBackend(): void {
-  const { shouldKill } = planShutdown({ ownsBackend, child: backendChild })
-  if (!shouldKill || !backendChild) return
-  const child = backendChild
-  backendChild = null
-  try {
-    child.kill('SIGTERM')
-    // Hard-stop fallback if SIGTERM is ignored within the grace period.
-    setTimeout(() => {
-      try {
-        child.kill('SIGKILL')
-      } catch {
-        // Process already gone; nothing to reclaim.
-      }
-    }, 2000)
-  } catch {
-    // If killing fails the OS reaps the child when we exit anyway.
-  }
+function closeCoreHost(): void {
+  if (!coreApi) return
+  const current = coreApi
+  coreApi = null
+  void current.close().catch((err) => {
+    console.error(`failed to close CoreApi: ${errMessage(err)}`)
+  })
 }
 
 function fail(title: string, message: string): void {
   dialog.showErrorBox(title, message)
-  reclaimBackend()
   app.quit()
-}
-
-function spawnBackend(): ChildProcess {
-  const { command, args } = buildBackendCommand({
-    config,
-    env: process.env,
-    bundledBackendPath: app.isPackaged ? resolveBundledBackendPath(process.resourcesPath, process.platform) : '',
-  })
-  const env: NodeJS.ProcessEnv = { ...process.env }
-  if (authToken) env.EMPEROR_WEBUI_TOKEN = authToken
-  if (app.isPackaged) env.EMPEROR_DESKTOP_PET_CMD = JSON.stringify([process.execPath, '--pet-window'])
-  const child = spawn(command, args, { cwd: config.root, stdio: 'inherit', env })
-
-  child.on('error', (err: NodeJS.ErrnoException) => {
-    if (err && err.code === 'ENOENT') {
-      fail(
-        '无法启动后端',
-        '未找到 emperor-agent 命令。请在仓库根目录执行 `pip install -e .`，或设置环境变量 EMPEROR_BACKEND_CMD 指向可用的启动命令。',
-      )
-    } else {
-      fail('无法启动后端', `启动后端进程失败：${errMessage(err)}`)
-    }
-  })
-
-  child.on('exit', (code) => {
-    // Exit before readiness means startup failed; after readiness it means the
-    // user/OS stopped the backend and the app should follow.
-    if (!backendReady && code !== 0 && code !== null) {
-      fail('后端进程退出', `后端在就绪前以退出码 ${code} 结束。请检查 emperor-agent web 是否能在仓库根目录正常运行。`)
-    }
-  })
-
-  return child
 }
 
 function registerAppProtocol(): void {
   protocol.handle('app', async (request) => {
-    const { pathname } = new URL(request.url)
+    const url = new URL(request.url)
+    if (url.host === 'attachments') {
+      const attachmentPath = resolveAttachmentRawPath(request.url, config.root)
+      if (!attachmentPath) return new Response('attachment not found', { status: 404 })
+      return net.fetch(pathToFileURL(attachmentPath).toString())
+    }
+    if (url.host === 'media') {
+      const mediaPath = resolveMediaRawPath(request.url, config.root)
+      if (!mediaPath) return new Response('media not found', { status: 404 })
+      return net.fetch(pathToFileURL(mediaPath).toString())
+    }
+    const { pathname } = url
     const filePath = resolveAssetPath(pathname, rendererRoot)
     return net.fetch(pathToFileURL(filePath).toString())
   })
@@ -167,14 +125,10 @@ function createWindow(): void {
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: false,
-      // In dev mode (isPackaged==false) the Vite dev server proxies /api
-      // and /ws, so the renderer should use same-origin relative paths.
-      // In prod mode (app://) the preload injects the absolute backend URL.
-      additionalArguments: app.isPackaged
-        ? [`--backend-url=${config.backendBaseUrl}`, `--backend-token=${authToken}`]
-        : [],
+      additionalArguments: [],
     },
   })
+  coreEventBridge.attach(mainWindow.webContents)
 
   mainWindow.once('ready-to-show', () => mainWindow?.show())
 
@@ -197,6 +151,10 @@ function createWindow(): void {
     } catch {
       // Best-effort persistence; never block window close on disk errors.
     }
+  })
+  mainWindow.on('closed', () => {
+    if (mainWindow) coreEventBridge.detach(mainWindow.webContents)
+    mainWindow = null
   })
 
   loadRenderer()
@@ -242,9 +200,7 @@ function createPetWindow(): void {
     argValue(mainArgv, '--root') ||
     process.env.EMPEROR_AGENT_ROOT ||
     (app.isPackaged ? packagedRuntimeRoot(app.getPath('userData')) : path.resolve(__dirname, '..', '..', '..'))
-  const webuiUrl = argValue(mainArgv, '--webui-url') || process.env.EMPEROR_WEBUI_URL || 'http://127.0.0.1:8765'
   const assetBaseUrl = pathToFileURL(path.join(root, 'assets', 'desktop-pet', 'clawd-tank') + path.sep).href
-  const backendToken = argValue(mainArgv, '--backend-token') || process.env.EMPEROR_WEBUI_TOKEN || ''
   const boundsPath = path.join(petStateDir(root), 'window.json')
   const rootDir = petRendererRoot()
   const win = new BrowserWindow({
@@ -264,9 +220,7 @@ function createPetWindow(): void {
       nodeIntegration: false,
       additionalArguments: [
         `--emperor-root=${root}`,
-        `--emperor-webui-url=${webuiUrl}`,
         `--emperor-asset-base-url=${assetBaseUrl}`,
-        `--emperor-backend-token=${backendToken}`,
       ],
     },
   })
@@ -304,21 +258,17 @@ async function startup(): Promise<void> {
   prepareMainRuntime()
   registerAppProtocol()
 
-  const alreadyHealthy = await probeBackend(config.backendBaseUrl)
-  const plan = planStartup({ alreadyHealthy })
-  ownsBackend = plan.ownsBackend
-
-  if (plan.action === 'spawn') {
-    backendChild = spawnBackend()
-  }
-
   try {
-    await waitForBackend(config.backendBaseUrl)
+    coreApi = await createCoreHost({
+      root: config.root,
+      ipcMain,
+      eventBridge: coreEventBridge,
+    })
   } catch (err) {
-    fail('后端未就绪', errMessage(err))
+    fail('CoreApi 初始化失败', errMessage(err))
     return
   }
-  backendReady = true
+  runtimeReady = true
 
   createWindow()
 }
@@ -330,7 +280,7 @@ app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createPetWindow()
     return
   }
-  if (BrowserWindow.getAllWindows().length === 0 && backendReady) createWindow()
+  if (BrowserWindow.getAllWindows().length === 0 && runtimeReady) createWindow()
 })
 
 app.on('window-all-closed', () => {
@@ -338,8 +288,10 @@ app.on('window-all-closed', () => {
     app.quit()
     return
   }
-  reclaimBackend()
+  closeCoreHost()
   app.quit()
 })
 
-app.on('before-quit', reclaimBackend)
+app.on('before-quit', () => {
+  closeCoreHost()
+})

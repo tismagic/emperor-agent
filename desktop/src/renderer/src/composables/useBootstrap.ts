@@ -1,5 +1,6 @@
 import { ref } from 'vue'
 import { api, cloneJson } from '../api/http'
+import { hasCoreBridge, invokeCore } from '../api/backend'
 import type { BootstrapPayload, CompactResult, DesktopPetPayload, MemoryPayload, MemoryVersionDetail, ModelConfigPayload, ModelConfigRaw, McpConfigPayload, SkillInfo, WatchlistDecision, WatchlistPayload } from '../types'
 
 export function useBootstrap(showToast: (message: string) => void) {
@@ -109,6 +110,18 @@ export function useBootstrap(showToast: (message: string) => void) {
   }
 
   async function importSkill(formData: FormData) {
+    if (hasCoreBridge()) {
+      const file = formData.get('file')
+      if (!(file instanceof File)) throw new Error("Expected multipart field 'file'")
+      const data = await invokeCore('skills.importArchive', {
+        name: file.name,
+        mime: file.type || 'application/zip',
+        raw: new Uint8Array(await file.arrayBuffer()),
+      }) as { imported: string }
+      await loadBootstrap(false)
+      showToast(`Skill「${data.imported}」已导入`)
+      return data.imported
+    }
     const data = await api<{ imported: string }>('/api/skills/import', {
       method: 'POST',
       body: formData,

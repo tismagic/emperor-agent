@@ -1,0 +1,478 @@
+import { existsSync, mkdtempSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { describe, expect, it } from 'vitest'
+import type { ModelRoute, ProviderSnapshot } from '../model/router'
+import { LLMProvider, type ChatArgs, type LLMResponse } from '../providers/base'
+import { CoreApi, CORE_API_ROUTE_OPERATIONS } from './core-api'
+import { CoreMutationGuardError } from './mutation-guard'
+
+const TEMPLATES_DIR = join(__dirname, '..', '..', '..', '..', 'templates')
+
+const EXPECTED_OPERATIONS = [
+  'attachments.rawPath',
+  'attachments.save',
+  'bootstrap',
+  'chat.stopRuntime',
+  'chat.submit',
+  'config.get',
+  'config.save',
+  'control.answerInteraction',
+  'control.approvePlan',
+  'control.cancelInteraction',
+  'control.commentPlan',
+  'control.get',
+  'control.setMode',
+  'desktopPet.get',
+  'desktopPet.setEnabled',
+  'diagnostics.get',
+  'external.get',
+  'mcp.getConfig',
+  'mcp.saveConfig',
+  'memory.checkWatchlist',
+  'memory.compact',
+  'memory.get',
+  'memory.getEpisode',
+  'memory.getVersion',
+  'memory.getWatchlist',
+  'memory.listVersions',
+  'memory.restoreVersion',
+  'memory.save',
+  'memory.saveEpisode',
+  'memory.saveWatchlist',
+  'memory.tokens',
+  'model.getConfig',
+  'model.saveConfig',
+  'model.saveOnboardingConfig',
+  'model.test',
+  'plans.get',
+  'plans.list',
+  'projects.list',
+  'projects.resolve',
+  'scheduler.createJob',
+  'scheduler.deleteJob',
+  'scheduler.get',
+  'scheduler.pauseJob',
+  'scheduler.resumeJob',
+  'scheduler.runJob',
+  'scheduler.updateJob',
+  'sessions.activate',
+  'sessions.create',
+  'sessions.delete',
+  'sessions.list',
+  'sessions.rename',
+  'sidebar.get',
+  'sidebar.patch',
+  'skills.delete',
+  'skills.get',
+  'skills.importArchive',
+  'skills.list',
+  'skills.save',
+  'skills.tools',
+  'tasks.get',
+  'tasks.list',
+  'tasks.transcript',
+  'team.get',
+  'team.getMember',
+  'team.sendMessage',
+  'team.shutdownMember',
+  'team.spawnMember',
+  'team.wakeMember',
+]
+
+describe('CoreApi (MIG-IPC-001)', () => {
+  it('exposes a typed in-process method for every retired web route operation', async () => {
+    const api = await CoreApi.create({
+      root: tmp('emperor-core-api-'),
+      templatesDir: TEMPLATES_DIR,
+      modelRouter: fakeRouter(new FakeProvider()),
+    })
+
+    expect(CORE_API_ROUTE_OPERATIONS.map((op) => op.key).sort()).toEqual(EXPECTED_OPERATIONS)
+    for (const key of EXPECTED_OPERATIONS) {
+      expect(resolveMethod(api, key), key).toBeTypeOf('function')
+    }
+    await api.close()
+  })
+
+  it('boots, submits a chat turn, and persists session runtime state without HTTP', async () => {
+    const root = tmp('emperor-core-api-')
+    const provider = new FakeProvider()
+    const api = await CoreApi.create({ root, templatesDir: TEMPLATES_DIR, modelRouter: fakeRouter(provider) })
+    const events: Array<Record<string, unknown>> = []
+
+    const boot = await api.bootstrap()
+    const reply = await api.chat.submit({ content: 'ping', turnId: 'turn_api_1', emit: async (event) => { events.push(event) } })
+    const tools = boot.tools as Array<Record<string, unknown>>
+    const activeSessionId = String(api.loop.activeSessionId ?? '')
+
+    expect(boot.app).toBe('Emperor Agent')
+    expect(tools.some((tool) => tool.name === 'read_file')).toBe(true)
+    expect(reply.content).toBe('pong')
+    expect(events.map((event) => event.event)).toContain('assistant_done')
+    expect(activeSessionId).toBeTruthy()
+    expect(existsSync(join(root, 'sessions', activeSessionId, 'history.jsonl'))).toBe(true)
+
+    await api.close()
+  })
+
+  it('matches session route response shapes for IPC callers', async () => {
+    const api = await CoreApi.create({
+      root: tmp('emperor-core-api-'),
+      templatesDir: TEMPLATES_DIR,
+      modelRouter: fakeRouter(new FakeProvider()),
+    })
+
+    const created = api.sessions.create({ title: 'Work' })
+    const items = api.sessions.list()
+    const renamed = api.sessions.rename(String(created.id), { title: 'Renamed' })
+    const archived = api.sessions.rename(String(created.id), { archived: true })
+    const all = api.sessions.list({ includeArchived: true })
+    const activated = api.sessions.activate(String(api.loop.activeSessionId))
+
+    expect(Array.isArray(items)).toBe(true)
+    expect(items.some((item) => item.id === created.id)).toBe(true)
+    expect(renamed).toMatchObject({ id: created.id, title: 'Renamed' })
+    expect(archived).toMatchObject({ id: created.id })
+    expect(String(archived.archived_at || '')).toBeTruthy()
+    expect(all.some((item) => item.id === created.id)).toBe(true)
+    expect(activated).toMatchObject({ active: api.loop.activeSessionId, complete: true })
+
+    await api.close()
+  })
+
+  it('serves USER.local.md through the config route parity surface', async () => {
+    const root = tmp('emperor-core-api-config-')
+    const api = await CoreApi.create({ root, templatesDir: TEMPLATES_DIR, modelRouter: fakeRouter(new FakeProvider()) })
+
+    const initial = api.config.get()
+
+    expect(initial).toMatchObject({ path: 'templates/USER.local.md' })
+    expect(readFileSync(join(root, 'templates', 'USER.local.md'), 'utf8')).toBe((initial as any).content)
+    expect(existsSync(join(root, 'emperor.local.json'))).toBe(false)
+
+    const saved = api.config.save({ content: '偏好更新\n\n' })
+
+    expect(saved).toEqual({
+      path: 'templates/USER.local.md',
+      content: '偏好更新\n',
+    })
+    expect(readFileSync(join(root, 'templates', 'USER.local.md'), 'utf8')).toBe('偏好更新\n')
+    expect(existsSync(join(root, 'emperor.local.json'))).toBe(false)
+
+    await api.close()
+  })
+
+  it('applies mutation guard at CoreApi write boundaries', async () => {
+    const api = await CoreApi.create({
+      root: tmp('emperor-core-api-'),
+      templatesDir: TEMPLATES_DIR,
+      modelRouter: fakeRouter(new FakeProvider()),
+    })
+    api.control.setMode('plan')
+
+    expect(() => api.scheduler.createJob({})).toThrow(CoreMutationGuardError)
+    expect(() => api.team.wakeMember('alice')).toThrow(CoreMutationGuardError)
+
+    await api.close()
+  })
+
+  it('applies mutation guard to mcp/model config saves (audit P0-5)', async () => {
+    const api = await CoreApi.create({
+      root: tmp('emperor-core-api-mutation-guard-'),
+      templatesDir: TEMPLATES_DIR,
+      modelRouter: fakeRouter(new FakeProvider()),
+    })
+    api.control.setMode('plan')
+
+    // mcp.saveConfig 能触发 StdioClientTransport spawn 子进程 —— 审计 P0-5 点名的高危 pivot，
+    // 必须和 scheduler/team 一样受 mutation guard 约束，不能在 renderer 发一条 IPC 就无条件执行。
+    await expect(api.mcp.saveConfig({ servers: {} })).rejects.toThrow(CoreMutationGuardError)
+    await expect(api.model.saveConfig({})).rejects.toThrow(CoreMutationGuardError)
+    await expect(api.model.saveOnboardingConfig({})).rejects.toThrow(CoreMutationGuardError)
+    expect(() => api.config.save('x')).toThrow(CoreMutationGuardError)
+
+    await api.close()
+  })
+
+  it('normalizes missing and legacy sidebar state before returning it', async () => {
+    const root = tmp('emperor-core-api-sidebar-')
+    const api = await CoreApi.create({ root, templatesDir: TEMPLATES_DIR, modelRouter: fakeRouter(new FakeProvider()) })
+
+    expect(api.sidebar.get()).toEqual({
+      section_order: ['projects', 'chats'],
+      project_sort: 'updated_at',
+      chat_sort: 'updated_at',
+      project_order: [],
+      chat_order: [],
+      project_session_order: {},
+      collapsed_project_ids: [],
+    })
+
+    mkdirSync(join(root, 'memory'), { recursive: true })
+    writeFileSync(join(root, 'memory', 'sidebar_state.json'), JSON.stringify({
+      project_sort: 'manual',
+      section_order: ['chats'],
+      collapsed_project_ids: 'legacy-bad-value',
+      project_session_order: { p1: ['s1', 2] },
+    }), 'utf8')
+
+    expect(api.sidebar.get()).toEqual({
+      section_order: ['chats', 'projects'],
+      project_sort: 'manual',
+      chat_sort: 'updated_at',
+      project_order: [],
+      chat_order: [],
+      project_session_order: { p1: ['s1', '2'] },
+      collapsed_project_ids: [],
+    })
+
+    await api.close()
+  })
+
+  it('returns diagnostics summaries without mutating missing or corrupt config files', async () => {
+    const root = tmp('emperor-core-api-')
+    writeFileSync(join(root, 'emperor.local.json'), '{not valid json', 'utf8')
+    writeFileSync(join(root, 'emperor.local.json.corrupt-1'), '{old broken json', 'utf8')
+    const api = await CoreApi.create({
+      root,
+      templatesDir: TEMPLATES_DIR,
+      modelRouter: fakeRouter(new FakeProvider()),
+    })
+
+    const diagnostics = await api.diagnostics.get()
+
+    expect(existsSync(join(root, 'model_config.json'))).toBe(false)
+    expect(diagnostics.modelConfig).toMatchObject({
+      path: join(root, 'model_config.json'),
+      exists: false,
+      status: 'missing',
+      error: '',
+    })
+    expect(diagnostics.localConfig).toMatchObject({
+      path: join(root, 'emperor.local.json'),
+      exists: true,
+      status: 'corrupt',
+    })
+    expect((diagnostics.localConfig as any).corruptBackups).toEqual([
+      expect.objectContaining({ path: join(root, 'emperor.local.json.corrupt-1') }),
+    ])
+    expect(diagnostics).toHaveProperty('dependencies.desktopRenderer')
+    expect(diagnostics).toHaveProperty('dependencies.desktopPetNodeModules')
+
+    await api.close()
+  })
+
+  it('answers pending ask interactions and resumes through mainline chat', async () => {
+    const api = await CoreApi.create({
+      root: tmp('emperor-core-api-'),
+      templatesDir: TEMPLATES_DIR,
+      modelRouter: fakeRouter(new FakeProvider()),
+    })
+    const events: Array<Record<string, unknown>> = []
+    const interaction = api.loop.controlManager.createAsk({
+      questions: [{
+        id: 'scope',
+        header: '范围',
+        question: '本次范围怎么定',
+        options: [
+          { label: '完整', description: 'full' },
+          { label: '最小', description: 'small' },
+        ],
+      }],
+      context: 'need scope',
+    })
+
+    const result = await api.control.answerInteraction(
+      interaction.id,
+      { scope: { choice: '完整', freeform: '' } },
+      { clientMessageId: 'control-msg-1', emit: async (event) => { events.push(event) } },
+    )
+
+    expect(result).toMatchObject({ resume: true, result: { content: 'pong' } })
+    expect(events.map((event) => event.event)).toContain('ask_answered')
+    expect(events.map((event) => event.event)).toContain('assistant_done')
+    expect(JSON.stringify(api.loop.activeMemoryStore.loadUnarchivedHistory())).toContain('[CONTROL:ASK_ANSWERED]')
+
+    await api.close()
+  })
+
+  it('probes the active model entry through CoreApi model.test', async () => {
+    const provider = new FakeProvider()
+    const api = await CoreApi.create({
+      root: tmp('emperor-core-api-'),
+      templatesDir: TEMPLATES_DIR,
+      modelRouter: fakeRouter(provider),
+    })
+
+    await expect(api.model.test({ entryName: 'fake', kind: 'text', role: 'main' })).resolves.toMatchObject({
+      ok: true,
+      kind: 'text',
+      model: 'fake-main',
+      provider: 'fake',
+      modelRole: 'main',
+      sample: 'pong',
+    })
+    expect(provider.calls.at(-1)?.messages.at(-1)?.content).toBe('Reply with exactly one word: pong')
+
+    await api.close()
+  })
+
+  it('deletes skill directories through CoreApi skills.delete', async () => {
+    const root = tmp('emperor-core-api-')
+    mkdirSync(join(root, 'skills', 'demo'), { recursive: true })
+    writeFileSync(join(root, 'skills', 'demo', 'SKILL.md'), '# Demo\n', 'utf8')
+    const api = await CoreApi.create({
+      root,
+      templatesDir: TEMPLATES_DIR,
+      modelRouter: fakeRouter(new FakeProvider()),
+    })
+
+    expect(api.skills.delete('demo')).toEqual({ deleted: 'demo' })
+    expect(existsSync(join(root, 'skills', 'demo'))).toBe(false)
+
+    await api.close()
+  })
+
+  it('imports skill zip archives through CoreApi skills.importArchive', async () => {
+    const root = tmp('emperor-core-api-')
+    const api = await CoreApi.create({
+      root,
+      templatesDir: TEMPLATES_DIR,
+      modelRouter: fakeRouter(new FakeProvider()),
+    })
+    const archive = makeStoredZip({
+      'imported-skill/SKILL.md': '# Imported\n\nUse when testing import.\n',
+      'imported-skill/notes/readme.txt': 'extra file\n',
+    })
+
+    expect(api.skills.importArchive({ name: 'skill.zip', raw: archive })).toEqual({ imported: 'imported-skill' })
+    expect(readFileSync(join(root, 'skills', 'imported-skill', 'SKILL.md'), 'utf8')).toContain('Imported')
+
+    await api.close()
+  })
+
+  it('manages desktop pet preference and reports missing dependency', async () => {
+    const api = await CoreApi.create({
+      root: tmp('emperor-core-api-'),
+      templatesDir: TEMPLATES_DIR,
+      modelRouter: fakeRouter(new FakeProvider()),
+    })
+
+    const enabled = await api.desktopPet.setEnabled(true)
+    expect(enabled).toMatchObject({ enabled: true, running: false })
+    expect(String(enabled.lastError)).toContain('Electron dependency missing')
+    expect((await api.desktopPet.get()).enabled).toBe(true)
+
+    const disabled = await api.desktopPet.setEnabled(false)
+    expect(disabled).toMatchObject({ enabled: false, running: false, lastError: null })
+
+    await api.close()
+  })
+})
+
+function tmp(prefix: string): string {
+  return mkdtempSync(join(tmpdir(), prefix))
+}
+
+function resolveMethod(api: CoreApi, key: string): unknown {
+  let current: unknown = api
+  for (const part of key.split('.')) {
+    current = current && typeof current === 'object' ? (current as Record<string, unknown>)[part] : undefined
+  }
+  return current
+}
+
+class FakeProvider extends LLMProvider {
+  calls: ChatArgs[] = []
+  constructor() {
+    super({ defaultModel: 'fake-main' })
+  }
+  async chat(args: ChatArgs): Promise<LLMResponse> {
+    this.calls.push(args)
+    return response('pong')
+  }
+}
+
+function fakeRouter(provider: FakeProvider): { route: (useCase: string, agentType?: string | null, task?: string | null) => ModelRoute; payload: () => Record<string, unknown> } {
+  return {
+    route: (useCase: string, _agentType?: string | null, _task?: string | null) => ({
+      snapshot: snapshot(provider, useCase === 'main_agent' ? 'main' : 'secondary'),
+      fallback: null,
+      useCase,
+      reason: `${useCase}:fake`,
+      estimatedTokens: null,
+    }),
+    payload: () => ({ mainModel: 'fake-main', secondaryModel: 'fake-secondary' }),
+  }
+}
+
+function snapshot(provider: FakeProvider, role: 'main' | 'secondary'): ProviderSnapshot {
+  return {
+    provider,
+    providerName: 'fake',
+    providerLabel: 'Fake',
+    model: role === 'main' ? 'fake-main' : 'fake-secondary',
+    apiBase: null,
+    generation: { maxTokens: 2000, temperature: 0.1, reasoningEffort: null },
+    contextWindowTokens: 100_000,
+    config: {},
+    supportsVision: true,
+    entryName: 'fake',
+    entryLabel: 'Fake',
+    modelRole: role,
+    routeReason: `${role}_model`,
+  }
+}
+
+function response(content: string): LLMResponse {
+  return {
+    content,
+    toolCalls: [],
+    finishReason: 'stop',
+    usage: { input: 1, output: 1 },
+    reasoningContent: null,
+    thinkingBlocks: null,
+  }
+}
+
+function makeStoredZip(files: Record<string, string>): Uint8Array {
+  const localParts: Buffer[] = []
+  const centralParts: Buffer[] = []
+  let offset = 0
+  for (const [name, content] of Object.entries(files)) {
+    const nameBuf = Buffer.from(name)
+    const data = Buffer.from(content)
+    const local = Buffer.alloc(30)
+    local.writeUInt32LE(0x04034b50, 0)
+    local.writeUInt16LE(20, 4)
+    local.writeUInt16LE(0, 8)
+    local.writeUInt32LE(0, 14)
+    local.writeUInt32LE(data.length, 18)
+    local.writeUInt32LE(data.length, 22)
+    local.writeUInt16LE(nameBuf.length, 26)
+    localParts.push(local, nameBuf, data)
+
+    const central = Buffer.alloc(46)
+    central.writeUInt32LE(0x02014b50, 0)
+    central.writeUInt16LE(20, 6)
+    central.writeUInt16LE(0, 10)
+    central.writeUInt32LE(0, 16)
+    central.writeUInt32LE(data.length, 20)
+    central.writeUInt32LE(data.length, 24)
+    central.writeUInt16LE(nameBuf.length, 28)
+    central.writeUInt32LE(offset, 42)
+    centralParts.push(central, nameBuf)
+
+    offset += local.length + nameBuf.length + data.length
+  }
+  const centralStart = offset
+  const central = Buffer.concat(centralParts)
+  const eocd = Buffer.alloc(22)
+  eocd.writeUInt32LE(0x06054b50, 0)
+  eocd.writeUInt16LE(Object.keys(files).length, 8)
+  eocd.writeUInt16LE(Object.keys(files).length, 10)
+  eocd.writeUInt32LE(central.length, 12)
+  eocd.writeUInt32LE(centralStart, 16)
+  return new Uint8Array(Buffer.concat([...localParts, central, eocd]))
+}

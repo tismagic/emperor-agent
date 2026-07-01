@@ -9,11 +9,9 @@ const MIN_BOUNDS = { width: 300, height: 340 };
 function parseArgs(argv) {
   const out = {
     root: process.env.EMPEROR_AGENT_ROOT || path.resolve(__dirname, ".."),
-    webuiUrl: process.env.EMPEROR_WEBUI_URL || "http://127.0.0.1:8765",
   };
   for (let i = 0; i < argv.length; i += 1) {
     if (argv[i] === "--root" && argv[i + 1]) out.root = argv[i + 1];
-    if (argv[i] === "--webui-url" && argv[i + 1]) out.webuiUrl = argv[i + 1];
   }
   return out;
 }
@@ -68,7 +66,6 @@ function createWindow() {
       nodeIntegration: false,
       additionalArguments: [
         `--emperor-root=${runtime.root}`,
-        `--emperor-webui-url=${runtime.webuiUrl}`,
         `--emperor-asset-base-url=${assetBaseUrl}`,
       ],
     },

@@ -2,25 +2,37 @@
 import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import SessionSidebar from './components/layout/SessionSidebar.vue'
+import OnboardingWizard from './components/onboarding/OnboardingWizard.vue'
+import type { WizardModelSettings } from './components/onboarding/onboardingModel'
 import { buildSlashPaletteItems, parseSkillSlashCommand, parseSlashCommand, slashCommands, type SlashCommand } from './commands'
 import { useBootstrap } from './composables/useBootstrap'
 import { useRuntime } from './composables/useRuntime'
 import { useSession } from './composables/useSession'
 import { useTokens } from './composables/useTokens'
 import { provideAppContext } from './composables/useAppContext'
-import type { ChatSendPayload, CompactResult, TokenStatsRow } from './types'
-import { apiUrl } from './api/backend'
+import type { ChatSendPayload, CompactResult, ControlPayload, TokenStatsRow } from './types'
+import { api } from './api/http'
+import { saveOnboardingModelConfig } from './api/model'
 import { formatNumber, usageTypeLabel } from './utils/format'
 
 const router = useRouter()
 const toast = ref('')
 let toastTimer: number | undefined
 const hideAppSidebar = computed(() => router.currentRoute.value.meta?.hideAppSidebar === true)
+const onboardingOpen = ref(false)
 
 function showToast(message: string) {
   toast.value = message
   if (toastTimer) window.clearTimeout(toastTimer)
   toastTimer = window.setTimeout(() => { toast.value = '' }, 2600)
+}
+
+function openOnboarding() {
+  onboardingOpen.value = true
+}
+
+function closeOnboarding() {
+  onboardingOpen.value = false
 }
 
 const bootstrap = useBootstrap(showToast)
@@ -113,6 +125,22 @@ async function refreshAll() {
   if (!error.value) {
     connectSocket()
     showToast('工作台已刷新')
+  }
+}
+
+async function completeOnboarding(settings: WizardModelSettings) {
+  const data = await saveOnboardingModelConfig(settings as unknown as Record<string, unknown>)
+  if (boot.value) {
+    boot.value.modelConfig = data
+    boot.value.model = data.current?.model || boot.value.model
+    boot.value.provider = data.current?.provider || boot.value.provider
+    boot.value.providerLabel = data.current?.providerLabel || boot.value.providerLabel
+  }
+  await loadBootstrap(false, sessionStore.backendSessionId())
+  if (!error.value) {
+    onboardingOpen.value = false
+    connectSocket()
+    showToast('模型配置已保存')
   }
 }
 
@@ -346,13 +374,10 @@ function renderModeStatus() {
 
 async function setControlMode(mode: 'ask_before_edit' | 'auto' | 'plan'): Promise<{ ok: boolean; error?: string }> {
   try {
-    const res = await fetch(apiUrl('/api/control/mode'), {
+    const data = await api<ControlPayload>('/api/control/mode', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ mode }),
     })
-    const data = await res.json().catch(() => ({}))
-    if (!res.ok) throw new Error(data?.error || res.statusText || '切换权限模式失败')
     if (boot.value) boot.value.control = data
     const label = mode === 'plan' ? '计划模式' : mode === 'auto' ? '自动执行' : '编辑前询问'
     showToast(`已切换为${label}`)
@@ -566,6 +591,7 @@ provideAppContext({
   submitFromComposer,
   showToast,
   runSafely,
+  openOnboarding,
   tokens: tokensData,
   tokensLoading,
   loadTokens,
@@ -586,14 +612,17 @@ provideAppContext({
     </div>
   </div>
 
-  <div v-else class="app-shell" :class="{ 'settings-app-shell': hideAppSidebar }">
-    <SessionSidebar v-if="!hideAppSidebar" @activate="onSessionActivate" />
-    <router-view v-slot="{ Component }">
-      <keep-alive>
-        <component :is="Component" />
-      </keep-alive>
-    </router-view>
-  </div>
+  <template v-else>
+    <div class="app-shell" :class="{ 'settings-app-shell': hideAppSidebar }">
+      <SessionSidebar v-if="!hideAppSidebar" @activate="onSessionActivate" />
+      <router-view v-slot="{ Component }">
+        <keep-alive>
+          <component :is="Component" />
+        </keep-alive>
+      </router-view>
+    </div>
+    <OnboardingWizard :payload="boot" :open="onboardingOpen" :save="completeOnboarding" @close="closeOnboarding" />
+  </template>
 
   <div class="toast" :class="{ show: toast }" role="status">{{ toast }}</div>
 </template>

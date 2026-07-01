@@ -3,6 +3,7 @@ import { computed } from 'vue'
 import type { ToolArtifactRef, ToolSegment } from '../../types'
 import { compactJson } from '../../utils/format'
 import ExpandableText from './ExpandableText.vue'
+import MediaPreviewGrid from './MediaPreviewGrid.vue'
 import SubagentTrail from './SubagentTrail.vue'
 
 const props = defineProps<{ segment: ToolSegment }>()
@@ -10,13 +11,15 @@ const props = defineProps<{ segment: ToolSegment }>()
 const inputText = computed(() => fullJson(props.segment.arguments))
 const outputText = computed(() => props.segment.summary || (props.segment.status === 'running' ? '等待结果...' : '已记录执行结果'))
 const artifacts = computed(() => props.segment.artifacts || [])
+const mediaItems = computed(() => artifacts.value.map((artifact) => artifact.media).filter(isImageMedia))
 const metadata = computed(() => props.segment.metadata || {})
 const diffText = computed(() => typeof metadata.value.diff === 'string' ? metadata.value.diff : '')
 const hasInput = computed(() => Boolean(inputText.value))
 const hasOutput = computed(() => Boolean(outputText.value))
 const hasArtifacts = computed(() => artifacts.value.length > 0)
+const hasMedia = computed(() => mediaItems.value.length > 0)
 const hasDiff = computed(() => Boolean(diffText.value))
-const hasEvidence = computed(() => hasArtifacts.value || hasDiff.value)
+const hasEvidence = computed(() => hasMedia.value || hasArtifacts.value || hasDiff.value)
 const hasBody = computed(() => Boolean(
   hasInput.value ||
   hasOutput.value ||
@@ -50,6 +53,10 @@ function artifactSize(artifact: ToolArtifactRef) {
   if (artifact.bytes < 1024 * 1024) return `${(artifact.bytes / 1024).toFixed(1)} KB`
   return `${(artifact.bytes / 1024 / 1024).toFixed(1)} MB`
 }
+
+function isImageMedia(media: ToolArtifactRef['media']): media is NonNullable<ToolArtifactRef['media']> {
+  return Boolean(media && media.kind === 'image')
+}
 </script>
 
 <template>
@@ -66,6 +73,10 @@ function artifactSize(artifact: ToolArtifactRef) {
     </div>
 
     <div v-if="hasEvidence" class="tool-evidence">
+      <div v-if="hasMedia" class="tool-media">
+        <span>MEDIA</span>
+        <MediaPreviewGrid :items="mediaItems" />
+      </div>
       <div v-if="hasArtifacts" class="tool-artifacts">
         <span>ARTIFACTS</span>
         <div class="tool-artifact-list">

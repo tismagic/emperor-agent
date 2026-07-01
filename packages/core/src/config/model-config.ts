@@ -56,6 +56,20 @@ export interface ModelConfig {
   raw: RawConfig
 }
 
+export interface WizardModelSettings {
+  provider: string
+  name: string
+  label: string
+  apiKey: string
+  apiBase: string
+  mainModelId: string
+  secondaryModelId: string
+  maxTokens: number
+  temperature: number
+  contextWindowTokens: number
+  reasoningEffort?: string | null
+}
+
 type RawConfig = Record<string, any>
 
 function buildDefaultProviders(): RawConfig {
@@ -127,6 +141,88 @@ function deepMerge(target: RawConfig, source: RawConfig): RawConfig {
     }
   }
   return target
+}
+
+function isRawRecord(value: unknown): value is RawConfig {
+  return Boolean(value && typeof value === 'object' && !Array.isArray(value))
+}
+
+function findRawEntry(models: unknown[], name: string): RawConfig | undefined {
+  if (!name) return undefined
+  return models.find((item): item is RawConfig => isRawRecord(item) && String(item.name ?? '') === name)
+}
+
+export function maskSecret(value: string | null | undefined): string {
+  const text = String(value ?? '')
+  if (!text) return ''
+  if (text.length <= 4) return '***'
+  return `***${text.slice(-4)}`
+}
+
+export function buildWizardModelConfig(
+  existingRaw: Record<string, any> | null | undefined,
+  settings: WizardModelSettings,
+): Record<string, any> {
+  const raw = structuredClone(existingRaw || defaultModelConfig()) as RawConfig
+  ;(raw.agents ??= {}).defaults ??= {}
+  raw.providers ??= {}
+  let models = raw.models
+  if (!Array.isArray(models)) {
+    models = []
+    raw.models = models
+  }
+
+  const currentName = String(raw.agents.defaults.model ?? '')
+  const existingEntry = findRawEntry(models, currentName) ?? (isRawRecord(models[0]) ? models[0] : {})
+  const previousKey = isRawRecord(existingEntry) ? String(existingEntry.apiKey ?? '') : ''
+  const provider = findByName(settings.provider)
+  const apiBase = settings.apiBase || provider?.defaultApiBase || ''
+  const submittedKey = settings.apiKey.trim()
+  // 掩码占位符（getConfig() 回传的 '***xxxx'）和空字符串一样代表"未修改"，必须回退到
+  // 旧密钥，不能把占位符本身当成新密钥存盘（审计 P1-2）。
+  const apiKey = submittedKey && !submittedKey.startsWith('***') ? submittedKey : previousKey
+  const entry: RawConfig = {
+    name: settings.name.trim(),
+    label: settings.label.trim(),
+    provider: settings.provider,
+    apiKey,
+    apiBase,
+    mainModelId: settings.mainModelId.trim(),
+    secondaryModelId: settings.secondaryModelId.trim(),
+    maxTokens: Math.trunc(Number(settings.maxTokens)),
+    temperature: Number(settings.temperature),
+    contextWindowTokens: Math.trunc(Number(settings.contextWindowTokens)),
+    reasoningEffort: settings.reasoningEffort || null,
+  }
+  entry.id = entry.mainModelId
+
+  let replaced = false
+  const oldName = isRawRecord(existingEntry) ? String(existingEntry.name ?? '') : ''
+  for (const [index, item] of models.entries()) {
+    if (isRawRecord(item) && new Set([oldName, entry.name]).has(String(item.name ?? ''))) {
+      models[index] = entry
+      replaced = true
+      break
+    }
+  }
+  if (!replaced) models.push(entry)
+
+  raw.agents.defaults.model = entry.name
+  raw.agents.defaults.provider = settings.provider
+  raw.agents.defaults.maxTokens = Math.trunc(Number(settings.maxTokens))
+  raw.agents.defaults.temperature = Number(settings.temperature)
+  raw.agents.defaults.reasoningEffort = settings.reasoningEffort || null
+  raw.agents.defaults.contextWindowTokens = Math.trunc(Number(settings.contextWindowTokens))
+
+  const providerBlock = (raw.providers[settings.provider] ??= {})
+  if (isRawRecord(providerBlock)) {
+    providerBlock.apiKey ??= ''
+    providerBlock.apiBase = apiBase
+    providerBlock.extraHeaders ??= null
+    providerBlock.extraBody ??= null
+  }
+
+  return raw
 }
 
 // ── 解析 / 归一化 ──

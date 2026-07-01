@@ -1,0 +1,197 @@
+/**
+ * PlanContextBuilder (MIG-CTRL-013)。对齐 Python `agent/plans/context.py`。
+ * 为当前 plan runtime 生成紧凑的模型可见附件（durable runtime state）。
+ */
+import { PlanStatus, PlanStepStatus, type PlanRecord, type PlanStep } from './models'
+import type { PlanStore } from './store'
+
+const ACTIVE_STATUSES = new Set<string>([PlanStatus.APPROVED, PlanStatus.EXECUTING, PlanStatus.FAILED])
+const COMPLETED_HISTORY_MARKERS = [
+  'plan history',
+  'previous plan',
+  'completed plan',
+  '计划历史',
+  '历史计划',
+  '刚才的计划',
+  '之前的计划',
+  '回顾',
+]
+
+export class PlanContextBuilder {
+  private readonly planStore: PlanStore
+  private readonly maxChars: number
+
+  constructor(planStore: PlanStore, opts?: { maxChars?: number }) {
+    this.planStore = planStore
+    this.maxChars = opts?.maxChars ?? 4000
+  }
+
+  messageFor(history: Array<Record<string, unknown>>): { role: string; content: string } | null {
+    const record = this.planStore.latest()
+    if (record === null) return null
+    if (!ACTIVE_STATUSES.has(record.status)) {
+      if (record.status !== PlanStatus.COMPLETED || !asksAboutCompletedPlan(history)) return null
+    }
+    const content = this.buildText(record)
+    if (!content) return null
+    return { role: 'system', content }
+  }
+
+  buildText(record: PlanRecord): string {
+    const lines = [
+      '[PLAN_RUNTIME_CONTEXT]',
+      'This is durable runtime state. Use it to continue the approved plan; do not treat it as user input.',
+      `plan_id: ${record.id}`,
+      `title: ${record.title}`,
+      `status: ${record.status}`,
+    ]
+    const active = record.steps.filter((s) => s.status === PlanStepStatus.ACTIVE)
+    const failed = record.steps.filter((s) => s.status === PlanStepStatus.FAILED)
+    const blocked = record.steps.filter((s) => s.status === PlanStepStatus.BLOCKED)
+    const pending = record.steps.filter((s) => s.status === PlanStepStatus.PENDING || s.status === PlanStepStatus.BLOCKED)
+    for (const step of active.slice(0, 3)) {
+      lines.push(`active_step: ${step.id} [${step.status}] ${step.title}`)
+      lines.push(...stepFiles(step, '  file'))
+      lines.push(...stepCommands(step))
+    }
+    lines.push(`pending_steps: ${pending.length}`)
+    for (const step of failed.slice(0, 5)) {
+      lines.push(`failed_step: ${step.id} [${step.status}] ${step.title}`)
+      const evidence = latestEvidence(step)
+      if (Object.keys(evidence).length) {
+        const summary = evidenceSummary(evidence)
+        if (summary) lines.push(`  latest_evidence: ${summary}`)
+        const artifact = artifactRef(evidence)
+        if (artifact) lines.push(`  artifact: ${artifact}`)
+      }
+    }
+    for (const step of blocked.slice(0, 5)) {
+      lines.push(`blocked_step: ${step.id} [${step.status}] ${step.title}`)
+      const reason = blockedReason(step)
+      if (reason) lines.push(`  blocked_reason: ${reason}`)
+    }
+    for (const question of record.draft.openQuestions.slice(0, 5)) {
+      const qid = String(question.id ?? '').trim()
+      const text = String(question.question ?? '').trim()
+      if (qid || text) lines.push(`open_question: ${qid} ${text}`.replace(/\s+$/, ''))
+    }
+    for (const discovery of record.draft.discoveries.slice(-8)) {
+      const source = String(discovery.source ?? 'tool').trim()
+      const summary = truncateInline(String(discovery.summary ?? '').trim(), 500)
+      if (summary) lines.push(`discovery: ${source} ${summary}`)
+      for (const path of discoveryFiles(discovery).slice(0, 5)) lines.push(`  discovery_file: ${path}`)
+      for (const ref of discoveryEvidenceRefs(discovery).slice(0, 5)) lines.push(`  evidence_ref: ${ref}`)
+    }
+    for (const path of relevantFiles(record).slice(0, 20)) lines.push(`file: ${path}`)
+    return truncate(lines.join('\n'), this.maxChars)
+  }
+}
+
+function asksAboutCompletedPlan(history: Array<Record<string, unknown>>): boolean {
+  let latest = ''
+  for (let i = history.length - 1; i >= 0; i--) {
+    const message = history[i]!
+    if (message.role !== 'user') continue
+    latest = contentText(message.content).toLowerCase()
+    break
+  }
+  return COMPLETED_HISTORY_MARKERS.some((marker) => latest.includes(marker))
+}
+
+function contentText(content: unknown): string {
+  if (typeof content === 'string') return content
+  if (Array.isArray(content)) {
+    return content
+      .filter((item) => item && typeof item === 'object' && (item as Record<string, unknown>).type === 'text')
+      .map((item) => String((item as Record<string, unknown>).text ?? ''))
+      .join('\n')
+  }
+  return String(content ?? '')
+}
+
+function latestEvidence(step: PlanStep): Record<string, unknown> {
+  for (let i = step.evidence.length - 1; i >= 0; i--) {
+    const item = step.evidence[i]
+    if (item && typeof item === 'object') return item
+  }
+  return {}
+}
+
+function evidenceSummary(evidence: Record<string, unknown>): string {
+  const text = String(
+    evidence.summary ?? evidence.error ?? evidence.stderr_tail ?? evidence.stdout_tail ?? '',
+  ).trim()
+  return truncateInline(text, 500)
+}
+
+function artifactRef(evidence: Record<string, unknown>): string {
+  for (const key of ['artifact_path', 'path']) {
+    const value = String(evidence[key] ?? '').trim()
+    if (value) return value
+  }
+  const artifact = evidence.artifact
+  if (artifact && typeof artifact === 'object') return String((artifact as Record<string, unknown>).path ?? '').trim()
+  return ''
+}
+
+function blockedReason(step: PlanStep): string {
+  const evidence = latestEvidence(step)
+  return truncateInline(String(evidence.blocked_reason ?? '').trim(), 500)
+}
+
+function stepFiles(step: PlanStep, prefix: string): string[] {
+  return step.files.slice(0, 10).filter((path) => String(path).trim()).map((path) => `${prefix}: ${path}`)
+}
+
+function stepCommands(step: PlanStep): string[] {
+  return step.commands.slice(0, 5).filter((command) => String(command).trim()).map((command) => `  command: ${command}`)
+}
+
+function relevantFiles(record: PlanRecord): string[] {
+  const files: string[] = []
+  files.push(...record.draft.relevantFiles)
+  for (const discovery of record.draft.discoveries) {
+    if (discovery && typeof discovery === 'object') {
+      files.push(...discoveryFiles(discovery))
+      const path = String(discovery.path ?? discovery.file ?? '').trim()
+      if (path) files.push(path)
+    }
+  }
+  for (const step of record.steps) files.push(...step.files)
+  return dedupe(files)
+}
+
+function discoveryFiles(discovery: Record<string, unknown>): string[] {
+  const files = discovery.files
+  if (Array.isArray(files)) return files.map((item) => String(item).trim()).filter((item) => item)
+  return []
+}
+
+function discoveryEvidenceRefs(discovery: Record<string, unknown>): string[] {
+  const refs = discovery.evidence_refs ?? discovery.evidenceRefs
+  if (Array.isArray(refs)) return refs.map((item) => String(item).trim()).filter((item) => item)
+  return []
+}
+
+function dedupe(items: string[]): string[] {
+  const seen = new Set<string>()
+  const result: string[] = []
+  for (const item of items) {
+    const text = String(item ?? '').trim()
+    if (!text || seen.has(text)) continue
+    seen.add(text)
+    result.push(text)
+  }
+  return result
+}
+
+function truncate(text: string, limit: number): string {
+  if (text.length <= limit) return text
+  return text.slice(0, Math.max(0, limit - 80)).replace(/\s+$/, '') + '\n...[plan runtime context truncated]'
+}
+
+function truncateInline(text: string, limit: number): string {
+  const compact = String(text ?? '').split(/\s+/).filter((p) => p).join(' ')
+  if (compact.length <= limit) return compact
+  return compact.slice(0, limit).replace(/\s+$/, '') + '...'
+}

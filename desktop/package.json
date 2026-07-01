@@ -2,7 +2,8 @@
   "name": "emperor-agent-desktop",
   "version": "0.1.0",
   "private": true,
-  "description": "Emperor Agent desktop application (Electron + Vue) that hosts the full frontend and manages the local backend.",
+  "type": "module",
+  "description": "Emperor Agent desktop application (Electron + Vue) that hosts CoreApi in process.",
   "main": "out/main/index.js",
   "scripts": {
     "dev": "electron-vite dev",
@@ -10,13 +11,17 @@
     "build": "electron-vite build",
     "start": "electron-vite preview",
     "test": "vitest run",
+    "lint": "eslint src",
     "screenshots": "playwright test -c playwright.config.ts",
     "typecheck": "vue-tsc --noEmit -p tsconfig.web.json && tsc --noEmit -p tsconfig.node.json",
-    "backend:bundle": "cd .. && scripts/build_backend_bundle.sh",
+    "package:dir": "electron-builder --dir --publish never",
     "dist:mac": "cd .. && scripts/build_desktop_release.sh",
+    "dist:linux": "npm run build && electron-builder --linux AppImage --publish never",
+    "dist:win": "npm run build && electron-builder --win nsis --publish never",
     "dist": "npm run dist:mac"
   },
   "dependencies": {
+    "@emperor/core": "file:../packages/core",
     "lucide-vue-next": "^0.577.0",
     "markdown-it": "^14.1.1",
     "vue": "^3.5.13",
@@ -31,11 +36,15 @@
     "electron": "^42.2.0",
     "electron-builder": "^25.1.8",
     "electron-vite": "^3.1.0",
+    "eslint": "^9.39.4",
+    "eslint-plugin-vue": "^9.33.0",
     "postcss": "^8.4.49",
     "tailwindcss": "^3.4.17",
     "typescript": "^5.7.2",
+    "typescript-eslint": "^8.62.1",
     "vite": "^6.0.7",
     "vitest": "^2.1.8",
+    "vue-eslint-parser": "^9.4.3",
     "vue-tsc": "^2.2.0"
   }
 }

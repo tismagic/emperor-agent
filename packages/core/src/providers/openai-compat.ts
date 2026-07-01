@@ -4,7 +4,7 @@
  */
 import OpenAI from 'openai'
 import { logger } from '../util/log'
-import { findByName, type ProviderSpec } from './registry'
+import type { ProviderSpec } from './registry'
 import {
   DEFAULT_MAX_RETRIES,
   LLMProvider,

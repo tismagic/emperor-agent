@@ -1,16 +1,19 @@
 import { expect, test } from '@playwright/test'
-import type { APIRequestContext, Page } from '@playwright/test'
+import type { Page } from '@playwright/test'
 import { mkdirSync, writeFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 
 const screenshotDir = resolve(process.cwd(), 'screenshots', 'codex-v2')
 const visualProjectDir = resolve(process.cwd(), 'screenshots', 'fixtures', 'visual-build-project')
-const backendBase = 'http://127.0.0.1:8765'
 
 test.beforeAll(() => {
   mkdirSync(screenshotDir, { recursive: true })
   mkdirSync(visualProjectDir, { recursive: true })
   writeFileSync(resolve(visualProjectDir, 'README.md'), '# Visual Build Project\n', 'utf8')
+})
+
+test.beforeEach(async ({ page }) => {
+  await installVisualCoreBridge(page)
 })
 
 const scenarios = [
@@ -28,8 +31,7 @@ const scenarios = [
 ] as const
 
 for (const scenario of scenarios) {
-  test(`captures ${scenario.name}`, async ({ page, request }) => {
-    await ensureVisualBuildSessions(request)
+  test(`captures ${scenario.name}`, async ({ page }) => {
     await page.setViewportSize({ width: scenario.width, height: scenario.height })
     await page.goto(scenario.path)
     await expect(page.locator('.app-shell')).toBeVisible()
@@ -51,8 +53,7 @@ for (const scenario of scenarios) {
   })
 }
 
-test('captures sidebar search overlay', async ({ page, request }) => {
-  await ensureVisualBuildSessions(request)
+test('captures sidebar search overlay', async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 })
   await page.goto('/chat')
   await expect(page.locator('.app-shell')).toBeVisible()
@@ -65,8 +66,50 @@ test('captures sidebar search overlay', async ({ page, request }) => {
   })
 })
 
-test('captures composer mode menu on desktop', async ({ page, request }) => {
-  await ensureVisualBuildSessions(request)
+test('sidebar primary navigation buttons route to their panels', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 })
+  await page.goto('/chat')
+  await expect(page.locator('.app-shell')).toBeVisible()
+
+  await page.getByRole('button', { name: '插件' }).click()
+  await expect(page).toHaveURL(/\/plugins\/skills$/)
+  await expect(page.locator('.segmented-control')).toBeVisible()
+
+  await page.goto('/chat')
+  await page.getByRole('button', { name: '定时任务' }).click()
+  await expect(page).toHaveURL(/\/scheduler$/)
+  await expect(page.locator('.scheduler-panel')).toBeVisible()
+
+  await page.goto('/chat')
+  await page.getByRole('button', { name: '设置' }).click()
+  await expect(page).toHaveURL(/\/settings\/general$/)
+  await expect(page.locator('.settings-shell')).toBeVisible()
+})
+
+test('sidebar chrome buttons have visible effects', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 })
+  await page.goto('/chat')
+  await expect(page.locator('.app-shell')).toBeVisible()
+  await expect(page.locator('.project-row')).toHaveCount(2)
+  await expect(page.locator('.session-row:not(.build-row)')).toHaveCount(1)
+
+  await page.getByRole('button', { name: '侧边栏' }).click()
+  await expect(page.locator('.codex-sidebar')).toHaveClass(/collapsed/)
+  await page.getByRole('button', { name: '侧边栏' }).click()
+  await expect(page.locator('.codex-sidebar')).not.toHaveClass(/collapsed/)
+
+  await page.getByRole('button', { name: '项目', exact: true }).click()
+  await expect(page.locator('.project-row')).toHaveCount(0)
+  await page.getByRole('button', { name: '项目', exact: true }).click()
+  await expect(page.locator('.project-row')).toHaveCount(2)
+
+  await page.getByRole('button', { name: '对话', exact: true }).click()
+  await expect(page.locator('.session-row:not(.build-row)')).toHaveCount(0)
+  await page.getByRole('button', { name: '对话', exact: true }).click()
+  await expect(page.locator('.session-row:not(.build-row)')).toHaveCount(1)
+})
+
+test('captures composer mode menu on desktop', async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 })
   await page.goto('/chat')
   await expect(page.locator('.composer')).toBeVisible()
@@ -78,8 +121,7 @@ test('captures composer mode menu on desktop', async ({ page, request }) => {
   })
 })
 
-test('captures composer add menu on desktop', async ({ page, request }) => {
-  await ensureVisualBuildSessions(request)
+test('captures composer add menu on desktop', async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 })
   await page.goto('/chat')
   await expect(page.locator('.composer')).toBeVisible()
@@ -92,8 +134,7 @@ test('captures composer add menu on desktop', async ({ page, request }) => {
   })
 })
 
-test('captures composer add menu on mobile', async ({ page, request }) => {
-  await ensureVisualBuildSessions(request)
+test('captures composer add menu on mobile', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 })
   await page.goto('/chat')
   await expect(page.locator('.composer')).toBeVisible()
@@ -106,8 +147,7 @@ test('captures composer add menu on mobile', async ({ page, request }) => {
   })
 })
 
-test('captures composer mode menu on mobile', async ({ page, request }) => {
-  await ensureVisualBuildSessions(request)
+test('captures composer mode menu on mobile', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 })
   await page.goto('/chat')
   await expect(page.locator('.composer')).toBeVisible()
@@ -119,8 +159,7 @@ test('captures composer mode menu on mobile', async ({ page, request }) => {
   })
 })
 
-test('captures composer model menu on desktop', async ({ page, request }) => {
-  await ensureVisualBuildSessions(request)
+test('captures composer model menu on desktop', async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 })
   await page.goto('/chat')
   await expect(page.locator('.composer')).toBeVisible()
@@ -132,8 +171,7 @@ test('captures composer model menu on desktop', async ({ page, request }) => {
   })
 })
 
-test('captures composer model menu on mobile', async ({ page, request }) => {
-  await ensureVisualBuildSessions(request)
+test('captures composer model menu on mobile', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 })
   await page.goto('/chat')
   await expect(page.locator('.composer')).toBeVisible()
@@ -145,41 +183,253 @@ test('captures composer model menu on mobile', async ({ page, request }) => {
   })
 })
 
-async function ensureVisualBuildSessions(request: APIRequestContext) {
-  const projectRes = await request.post(`${backendBase}/api/projects/resolve`, {
-    data: { path: visualProjectDir },
-  })
-  expect(projectRes.ok()).toBeTruthy()
-  const project = await projectRes.json()
-  const sessionsRes = await request.get(`${backendBase}/api/sessions`)
-  expect(sessionsRes.ok()).toBeTruthy()
-  const sessions = await sessionsRes.json() as Array<Record<string, unknown>>
-  for (const title of ['构建 Visual UI', '构建 Visual API']) {
-    const exists = sessions.some((session) =>
-      session.title === title && session.project_id === project.project_id,
-    )
-    if (!exists) {
-      const created = await request.post(`${backendBase}/api/sessions`, {
-        data: { title, mode: 'build', project },
-      })
-      expect(created.ok()).toBeTruthy()
+async function installVisualCoreBridge(page: Page) {
+  await page.addInitScript(({ projectDir }) => {
+    const now = '2026-06-26T12:00:00.000Z'
+    const project = {
+      project_id: 'visual_project',
+      project_path: projectDir,
+      project_name: 'Visual Build Project',
+      summary: 'Fixture project for renderer visual tests.',
     }
-  }
-  const missingExists = sessions.some((session) => session.project_id === 'missing_visual_project')
-  if (!missingExists) {
-    const created = await request.post(`${backendBase}/api/sessions`, {
-      data: {
-        title: '缺失项目路径',
-        mode: 'build',
-        project: {
-          project_id: 'missing_visual_project',
-          project_path: resolve(visualProjectDir, 'missing'),
-          project_name: 'Missing visual project',
-        },
+    const sessions = [
+      session('build-ui', '构建 Visual UI', 'build', project),
+      session('build-api', '构建 Visual API', 'build', project),
+      session('missing-path', '缺失项目路径', 'build', {
+        project_id: 'missing_visual_project',
+        project_path: `${projectDir}/missing`,
+        project_name: 'Missing visual project',
+      }),
+      session('chat-main', '普通对话', 'chat'),
+    ]
+    const modelConfig = {
+      current: {
+        provider: 'visual',
+        providerLabel: 'Visual Provider',
+        model: 'visual-main',
+        mainModelId: 'visual-main',
+        secondaryModelId: 'visual-secondary',
+        entryName: 'visual',
+        entryLabel: 'Visual Local',
+        supportsVision: true,
+        contextWindowTokens: 128000,
+        maxTokens: 4096,
       },
-    })
-    expect(created.ok()).toBeTruthy()
-  }
+      secondary: {
+        provider: 'visual',
+        providerLabel: 'Visual Provider',
+        model: 'visual-secondary',
+        entryName: 'visual',
+        entryLabel: 'Visual Local',
+      },
+      routing: {
+        secondaryEnabled: true,
+        fallbackToMain: true,
+        mainEntry: 'visual',
+        mainModel: 'visual-main',
+        secondaryModel: 'visual-secondary',
+      },
+      config: {
+        agents: { defaults: { provider: 'visual', model: 'visual' } },
+        models: [
+          {
+            name: 'visual',
+            label: 'Visual Local',
+            provider: 'visual',
+            mainModelId: 'visual-main',
+            secondaryModelId: 'visual-secondary',
+            contextWindowTokens: 128000,
+            maxTokens: 4096,
+            supportsVision: true,
+          },
+        ],
+        providers: { visual: { apiKey: '' } },
+      },
+      providerOptions: [
+        { name: 'visual', displayName: 'Visual Provider', backend: 'openai-compatible', region: 'local', isLocal: true },
+      ],
+    }
+    const memory = {
+      long_term: '偏好：保持界面紧凑，优先展示可操作状态。',
+      today_episode: '今天完成 TypeScript 迁移视觉检查。',
+      episodes: ['2026-06-26'],
+      context: {
+        mode: 'build',
+        session: sessions[0],
+        project,
+        projectMemory: '项目记忆：视觉测试使用固定 Core bridge fixture。',
+        projectIndexSummary: 'README.md: Visual Build Project',
+        sources: ['MEMORY.local.md', 'project/index.json'],
+      },
+      history: { active_lines: 4, active_bytes: 2048, archive_files: 1, archive_bytes: 8192 },
+      runtime: { events: 0, latestSeq: 1, archiveFiles: 0 },
+      schedulerMaintenance: { jobs: 1, enabled: 1, nextRunAtMs: Date.now() + 3600000 },
+      watchlist: {
+        content: '- [ ] 检查发布产物',
+        lastDecision: { action: 'skip', reason: 'visual fixture', checkedAt: Date.now() },
+      },
+      versions: { versions: [], count: 0 },
+      tokenTotals: { input: 1200, output: 640, total: 1840, calls: 3 },
+      tokensByModel: { 'visual-main': { input: 1200, output: 640, total: 1840, calls: 3 } },
+      tokensByUsageType: { chat: { input: 1200, output: 640, total: 1840, calls: 3 } },
+    }
+    const scheduler = {
+      status: { running: true, jobs: 1, enabled: 1, nextRunAtMs: Date.now() + 3600000, lastError: null },
+      jobs: [
+        {
+          id: 'memory-maintenance',
+          name: 'Memory maintenance',
+          enabled: true,
+          protected: true,
+          schedule: { kind: 'every', everyMs: 3600000 },
+          payload: { kind: 'system_event', message: 'memory-maintenance' },
+          state: { nextRunAtMs: Date.now() + 3600000, lastStatus: 'ok', lastRunAtMs: Date.now() - 3600000 },
+          purpose: 'Visual fixture',
+        },
+      ],
+      diagnostics: {},
+    }
+    const team = {
+      members: [
+        { name: 'reviewer', role: 'reviewer', agent_type: 'reviewer', status: 'idle', unread: 0, tools: ['read_file'] },
+      ],
+      leadUnread: 0,
+      leadInbox: [],
+      config: { version: 1, team_name: 'Visual Team', members: [] },
+    }
+    const boot = {
+      app: 'Emperor Agent',
+      model: 'visual-main',
+      provider: 'visual',
+      providerLabel: 'Visual Provider',
+      tools: [
+        { name: 'read_file', description: 'Read a file', read_only: true, source: 'builtin' },
+        { name: 'run_command', description: 'Run a command', read_only: false, source: 'builtin' },
+      ],
+      skills: [{ name: 'visual-fixture', description: 'Fixture skill', path: 'skills/visual-fixture/SKILL.md' }],
+      memory,
+      modelConfig,
+      scheduler,
+      team,
+      control: { mode: 'ask_before_edit', pending: null },
+      desktopPet: { enabled: false, autoStartWithWebui: false, running: false, installCommand: 'npm install' },
+      diagnostics: {
+        root: projectDir,
+        modelConfig: { status: 'ok', exists: true, models: 1 },
+        localConfig: { status: 'ok', exists: true },
+        scheduler: { jobsFile: 'memory/scheduler/jobs.json' },
+        runtime: { events: 0, latestSeq: 1 },
+        desktopPet: { enabled: false, running: false, autoStartWithWebui: false, installCommand: 'npm install' },
+        dependencies: { nodeRuntime: true, desktopRenderer: true },
+      },
+      projects: [project],
+      runtime: { latestSeq: 1, scope: 'unarchived', events: [] },
+      unarchivedHistory: [],
+      context_used: 12000,
+    }
+
+    function session(id, title, mode, projectInfo) {
+      return {
+        id,
+        title,
+        created_at: now,
+        updated_at: now,
+        preview: mode === 'build' ? 'Visual build session' : 'Visual chat session',
+        mode,
+        project_id: projectInfo?.project_id ?? null,
+        project_path: projectInfo?.project_path ?? null,
+        project_name: projectInfo?.project_name ?? null,
+        message_count: 2,
+        title_status: 'ready',
+        archived_at: null,
+        version: 1,
+      }
+    }
+
+    window.emperor = {
+      version: '0.1.0-visual',
+      platform: 'visual',
+      selectDirectory: async () => projectDir,
+      onCoreEvent: (listener) => {
+        queueMicrotask(() => listener({ event: 'ready', seq: 1, latest_seq: 1, model: 'visual-main', provider: 'visual', control: boot.control }))
+        return () => {}
+      },
+      invokeCore: async (operationKey, ...args) => {
+        switch (operationKey) {
+          case 'bootstrap':
+            return boot
+          case 'sessions.list':
+            return sessions
+          case 'sessions.activate':
+            return { active: args[0], complete: true }
+          case 'sessions.create': {
+            const body = args[0] || {}
+            const created = session(`created-${sessions.length}`, body.title || '新会话', body.mode || 'chat', body.project)
+            sessions.unshift(created)
+            return created
+          }
+          case 'projects.resolve':
+            return project
+          case 'projects.list':
+            return [project]
+          case 'memory.get':
+            return memory
+          case 'memory.tokens':
+            return {
+              totals: { input: 1200, output: 640, total: 1840, calls: 3 },
+              byDate: {},
+              byModel: { 'visual-main': { input: 1200, output: 640, total: 1840, calls: 3 } },
+              byUsageType: { chat: { input: 1200, output: 640, total: 1840, calls: 3 } },
+              byDateModel: {},
+              byHour: {},
+              streak: { active_days: 1, current_streak: 1, longest_streak: 1 },
+              sessions: sessions.length,
+              messages: 8,
+              generatedAt: now,
+            }
+          case 'model.getConfig':
+            return modelConfig
+          case 'config.get':
+            return { path: 'emperor.local.json', content: '{\\n  "webui": {}\\n}\\n' }
+          case 'mcp.getConfig':
+            return { servers: {} }
+          case 'scheduler.get':
+            return scheduler
+          case 'team.get':
+            return team
+          case 'team.getMember':
+            return { member: team.members[0], inbox: [], leadInbox: [], thread: [] }
+          case 'sidebar.get':
+            return {
+              section_order: ['projects', 'chats'],
+              project_sort: 'updated_at',
+              chat_sort: 'updated_at',
+              project_order: [],
+              chat_order: [],
+              project_session_order: {},
+              collapsed_project_ids: [],
+            }
+          case 'desktopPet.get':
+            return boot.desktopPet
+          case 'diagnostics.get':
+            return boot.diagnostics
+          case 'skills.list':
+            return boot.skills
+          case 'skills.tools':
+            return boot.tools
+          case 'control.get':
+            return boot.control
+          case 'control.setMode':
+            boot.control = { mode: String(args[0] || 'ask_before_edit'), pending: null }
+            return boot.control
+          case 'chat.stopRuntime':
+            return { cancelled: false }
+          default:
+            return {}
+        }
+      },
+    }
+  }, { projectDir: visualProjectDir })
 }
 
 async function assertComposerShellTrimmed(page: Page) {
@@ -294,7 +544,7 @@ async function assertComposerAddMenu(page: Page) {
   const menu = page.locator('.composer-palette')
   const composer = page.locator('.composer')
   await expect(menu).toBeVisible()
-  await expect(menu.locator('.composer-palette-item').first()).toContainText('Files and folders')
+  await expect(menu.locator('.composer-palette-item').first()).toContainText('文件与图片')
   await expect(menu.locator('.composer-palette-item-icon').first()).toBeVisible()
 
   const menuBox = await menu.boundingBox()

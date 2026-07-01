@@ -99,7 +99,6 @@ export function useSession() {
     try {
       await api<SessionInfo>(`/api/sessions/${encodeURIComponent(id)}`, {
         method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ title }),
       })
       const hit = sessions.value.find((s) => s.id === id)
@@ -121,7 +120,6 @@ export function useSession() {
     try {
       const updated = await api<SessionInfo>(`/api/sessions/${encodeURIComponent(id)}`, {
         method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ archived }),
       })
       if (archived) {
@@ -144,6 +142,7 @@ export function useSession() {
     if (!isDraftSessionId(id)) {
       await api<{ active: string; complete: boolean }>(`/api/sessions/${encodeURIComponent(id)}/activate`, {
         method: 'POST',
+        body: JSON.stringify({}),
       }).catch(() => undefined)
     }
   }

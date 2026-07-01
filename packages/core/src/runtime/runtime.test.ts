@@ -1,0 +1,162 @@
+import { existsSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { describe, expect, it } from 'vitest'
+import { ActiveTaskRegistry, CancelledTaskError } from './active'
+import * as runtimeEvents from './events'
+import { RuntimeEventStore } from './store'
+
+function tmp(prefix: string): string {
+  return mkdtempSync(join(tmpdir(), prefix))
+}
+
+describe('runtime events (test_runtime_events.py)', () => {
+  it('builds scheduler, external, session, task, and tool event payloads', () => {
+    const job = { id: 'job-1', name: 'demo' }
+    expect(runtimeEvents.userMessage({
+      content: 'hello',
+      attachments: [],
+      clientMessageId: 'scheduler:job-1:turn-1',
+      source: 'scheduler',
+      scheduler: { jobId: 'job-1', jobName: 'demo' },
+    })).toEqual({
+      event: 'user_message',
+      content: 'hello',
+      attachments: [],
+      client_message_id: 'scheduler:job-1:turn-1',
+      source: 'scheduler',
+      scheduler: { jobId: 'job-1', jobName: 'demo' },
+    })
+    expect(runtimeEvents.schedulerJobUpdate(job, { action: 'created' })).toEqual({ event: 'scheduler_job_update', job, action: 'created' })
+    expect(runtimeEvents.schedulerRunStart(job).event).toBe('scheduler_run_start')
+    expect(runtimeEvents.schedulerRunDone(job).event).toBe('scheduler_run_done')
+    expect(runtimeEvents.schedulerRunCancelled(job).event).toBe('scheduler_run_cancelled')
+    expect(runtimeEvents.schedulerRunError(job, { error: 'boom' }).error).toBe('boom')
+    expect(runtimeEvents.runtimeTaskCancelled({ id: 'turn:1' }, { reason: 'stop' })).toEqual({
+      event: 'runtime_task_cancelled',
+      task: { id: 'turn:1' },
+      reason: 'stop',
+    })
+
+    const message = { platform: 'fake', external_message_id: 'm1' }
+    expect(runtimeEvents.externalInbound(message)).toEqual({ event: 'external_inbound', message })
+    expect(runtimeEvents.externalQueued(message, { reason: 'busy' }).reason).toBe('busy')
+    expect(runtimeEvents.externalOutboundSent(message, { delivery: { ok: true } }).delivery).toEqual({ ok: true })
+
+    const session = { id: 's1', title: '新会话' }
+    expect(runtimeEvents.sessionCreated(session, { clientDraftId: 'draft-1' })).toEqual({
+      event: 'session_created',
+      session,
+      client_draft_id: 'draft-1',
+    })
+    expect(runtimeEvents.sessionTitleUpdated(session)).toEqual({ event: 'session_title_updated', session })
+
+    const task = { id: 'task_1', kind: 'subagent', status: 'running' }
+    expect(runtimeEvents.taskStarted(task)).toEqual({ event: 'task_started', task })
+    expect(runtimeEvents.taskProgress(task, { progress: { pct: 50 } })).toEqual({ event: 'task_progress', task, progress: { pct: 50 } })
+    expect(runtimeEvents.taskOutput(task, { offset: 1, chunk: 'hello' })).toEqual({ event: 'task_output', task, offset: 1, chunk: 'hello' })
+    expect(runtimeEvents.taskError(task, { error: 'boom' })).toEqual({ event: 'task_error', task, error: 'boom' })
+
+    expect(runtimeEvents.contextProjection({ report: { paired_missing_tool_results: 1 }, messageCount: 3 })).toEqual({
+      event: 'context_projection',
+      report: { paired_missing_tool_results: 1 },
+      message_count: 3,
+    })
+    expect(runtimeEvents.toolRunQueued({ id: 'call_1', name: 'grep', arguments: { q: 'x' } })).toEqual({
+      event: 'tool_run_queued',
+      id: 'call_1',
+      name: 'grep',
+      arguments: { q: 'x' },
+    })
+    expect(runtimeEvents.recordDegraded({ kind: 'runtime', reason: 'x'.repeat(600), taskId: 'task_1' })).toEqual({
+      event: 'record_degraded',
+      kind: 'runtime',
+      reason: 'x'.repeat(500),
+      taskId: 'task_1',
+    })
+  })
+})
+
+describe('RuntimeEventStore (test_runtime_events.py)', () => {
+  it('appends, recovers latest seq, replays, and filters bad lines', () => {
+    const root = tmp('emperor-runtime-store-')
+    const store = new RuntimeEventStore(root)
+
+    const first = store.append({ event: 'user_message', content: 'hello' }, { turnId: 'turn_1' })
+    const second = store.append({ event: 'tool_call', name: 'read_file' }, { turnId: 'turn_1' })
+    expect(first.seq).toBe(1)
+    expect(second.seq).toBe(2)
+    expect(second.turn_id).toBe('turn_1')
+    expect(new RuntimeEventStore(root).latestSeq).toBe(2)
+    expect(store.replayAfter(1).map((event) => event.event)).toEqual(['tool_call'])
+
+    store.append({ event: 'user_message', content: 'b' }, { turnId: 'turn_b' })
+    const eventsFile = join(root, 'memory', 'runtime', 'events.jsonl')
+    const bad = readFileSync(eventsFile, 'utf8') + '{bad json\n' + JSON.stringify({ seq: 99, event: 'assistant_done', turn_id: 'turn_b' }) + '\n'
+    writeFileSync(eventsFile, bad, 'utf8')
+    expect(store.eventsForTurns(['turn_b']).map((event) => event.event)).toEqual(['user_message', 'assistant_done'])
+  })
+
+  it('stats and compacts inactive turns to archive while keeping latest seq', () => {
+    const root = tmp('emperor-runtime-compact-')
+    const store = new RuntimeEventStore(root)
+    store.append({ event: 'user_message', content: 'a', ts: 1_700_000_000 }, { turnId: 'turn_a' })
+    store.append({ event: 'tool_call', name: 'read_file', ts: 1_700_000_001 }, { turnId: 'turn_a' })
+    store.append({ event: 'user_message', content: 'b', ts: 1_700_000_002 }, { turnId: 'turn_b' })
+
+    expect(store.stats({ activeTurnIds: ['turn_a'] })).toMatchObject({
+      events: 3,
+      latestSeq: 3,
+      activeTurns: 1,
+      activeTurnEvents: 2,
+      path: 'memory/runtime/events.jsonl',
+    })
+    const stats = store.compact(['turn_b'])
+    expect(store.replayAfter(0).map((event) => event.turn_id)).toEqual(['turn_b'])
+    expect(stats.events).toBe(1)
+    expect(stats.archiveFiles).toBe(1)
+    expect(stats.archiveBytes).toBeGreaterThan(0)
+    expect(new RuntimeEventStore(root).latestSeq).toBe(3)
+    expect(existsSync(join(root, 'memory', 'runtime', 'archive'))).toBe(true)
+  })
+
+  it('supports session directory override', () => {
+    const sessionRoot = join(tmp('emperor-runtime-session-'), 'sessions', 'aaa')
+    const store = new RuntimeEventStore(sessionRoot, { sessionDirOverride: true })
+    store.append({ event: 'ready' })
+    expect(store.stats().path).toBe('runtime/events.jsonl')
+  })
+})
+
+describe('ActiveTaskRegistry (test_active_tasks.py)', () => {
+  it('cancels matching tasks and updates metadata', async () => {
+    const registry = new ActiveTaskRegistry()
+    let resolveWork: (value: string) => void = () => {}
+    const runPromise = registry.run({
+      taskId: 'scheduler:job_1',
+      kind: 'scheduler',
+      label: 'Scheduler job',
+      awaitable: new Promise<string>((resolve) => { resolveWork = resolve }),
+      jobId: 'job_1',
+    })
+
+    const info = registry.update('scheduler:job_1', { turnId: 'turn_scheduler' })
+    expect(info?.turn_id).toBe('turn_scheduler')
+    expect(registry.list()).toHaveLength(1)
+    resolveWork('done')
+    await expect(runPromise).resolves.toBe('done')
+    expect(registry.list()).toEqual([])
+
+    const never = registry.run({
+      taskId: 'watchlist:manual-check',
+      kind: 'watchlist',
+      label: 'Watchlist manual check',
+      awaitable: new Promise(() => {}),
+    })
+    const cancelled = registry.cancel({ kind: 'watchlist' })
+    expect(cancelled).toHaveLength(1)
+    expect(cancelled[0]!.cancelled).toBe(true)
+    await expect(never).rejects.toBeInstanceOf(CancelledTaskError)
+    expect(registry.list()).toEqual([])
+  })
+})

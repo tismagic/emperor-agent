@@ -2,6 +2,12 @@
   "name": "emperor-agent-monorepo",
   "version": "0.0.0",
   "private": true,
+  "scripts": {
+    "check": "scripts/check.sh",
+    "test": "npm test --workspace @emperor/core && npm --prefix desktop run test",
+    "typecheck": "npm run typecheck --workspace @emperor/core && npm --prefix desktop run typecheck",
+    "build": "npm --prefix desktop run build"
+  },
   "workspaces": [
     "packages/*"
   ],

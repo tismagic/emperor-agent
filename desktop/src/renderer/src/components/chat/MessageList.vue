@@ -6,6 +6,7 @@ import type { ChatMessage, RuntimePlanRecord, UserMessage } from '../../types'
 import { avatarIcons } from '../../icons'
 import AssistantFlow from './AssistantFlow.vue'
 import AttachmentChip from './AttachmentChip.vue'
+import { messageScrollSignature } from './messageListModel'
 import wordmarkUrl from '../../../../../../assets/generated/emperoragent-wordmark.png'
 
 const props = defineProps<{ messages: ChatMessage[]; plans?: RuntimePlanRecord[] }>()
@@ -19,9 +20,9 @@ function pinToBottom() {
 }
 
 watch(
-  () => props.messages,
+  () => messageScrollSignature(props.messages),
   () => nextTick(pinToBottom),
-  { deep: true, flush: 'post' },
+  { flush: 'post' },
 )
 
 function skillSlashParts(message: UserMessage): { token: string; rest: string } | null {

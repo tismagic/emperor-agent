@@ -1,0 +1,181 @@
+import type { ServerConfig } from './config'
+import { Client } from '@modelcontextprotocol/sdk/client/index.js'
+import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js'
+import { SSEClientTransport } from '@modelcontextprotocol/sdk/client/sse.js'
+
+export interface MCPToolDefinition {
+  name: string
+  description?: string
+  inputSchema: Record<string, unknown>
+}
+
+export interface MCPCallToolResult {
+  content: string
+  isError: boolean
+}
+
+export const SAFE_ENV_KEYS = new Set(['PATH', 'HOME', 'USER', 'SHELL', 'LANG', 'LC_ALL', 'TMPDIR', 'TERM', 'PWD'])
+
+export abstract class MCPConnection {
+  readonly serverName: string
+  connected = false
+
+  constructor(serverName: string) {
+    this.serverName = serverName
+  }
+
+  abstract connect(): Promise<boolean>
+  abstract disconnect(): Promise<void>
+  abstract listTools(): Promise<MCPToolDefinition[]>
+  abstract callTool(toolName: string, args: Record<string, unknown>): Promise<MCPCallToolResult>
+}
+
+export function buildStdioEnv(config: Pick<ServerConfig, 'env'> | { env?: Record<string, string> }, env: Record<string, string | undefined> = process.env): Record<string, string> {
+  const out: Record<string, string> = {}
+  for (const [key, value] of Object.entries(env)) {
+    if (value !== undefined && SAFE_ENV_KEYS.has(key)) out[key] = value
+  }
+  for (const [key, value] of Object.entries(config.env ?? {})) out[key] = value
+  return out
+}
+
+export class StdioConnection extends MCPConnection {
+  readonly config: ServerConfig
+  private client: Client | null = null
+
+  constructor(serverName: string, config: ServerConfig) {
+    super(serverName)
+    this.config = config
+  }
+
+  stdioParams(env: Record<string, string | undefined> = process.env): { command: string; args: string[]; env: Record<string, string> | undefined } {
+    const childEnv = buildStdioEnv(this.config, env)
+    return {
+      command: this.config.command ?? '',
+      args: this.config.args,
+      env: Object.keys(childEnv).length ? childEnv : undefined,
+    }
+  }
+
+  async connect(): Promise<boolean> {
+    try {
+      const transport = new StdioClientTransport({ ...this.stdioParams(), stderr: 'inherit' })
+      const client = new Client({ name: 'emperor-agent', version: '0.0.0' })
+      await client.connect(transport)
+      this.client = client
+      this.connected = true
+      return true
+    } catch {
+      this.client = null
+      this.connected = false
+      return false
+    }
+  }
+
+  async disconnect(): Promise<void> {
+    await this.client?.close().catch(() => {})
+    this.client = null
+    this.connected = false
+  }
+
+  async listTools(): Promise<MCPToolDefinition[]> {
+    if (!this.client || !this.connected) return []
+    try {
+      const result = await this.client.listTools()
+      return result.tools.map((tool) => ({
+        name: tool.name,
+        description: tool.description ?? '',
+        inputSchema: tool.inputSchema as Record<string, unknown>,
+      }))
+    } catch {
+      return []
+    }
+  }
+
+  async callTool(toolName: string, args: Record<string, unknown>): Promise<MCPCallToolResult> {
+    if (!this.client || !this.connected) throw new Error(`MCP server '${this.serverName}' not connected`)
+    return normalizeCallToolResult(await this.client.callTool({ name: toolName, arguments: args }))
+  }
+}
+
+export class SSEConnection extends MCPConnection {
+  readonly config: ServerConfig
+  private client: Client | null = null
+
+  constructor(serverName: string, config: ServerConfig) {
+    super(serverName)
+    this.config = config
+  }
+
+  async connect(): Promise<boolean> {
+    try {
+      if (!this.config.url) throw new Error('missing MCP SSE url')
+      const transport = new SSEClientTransport(new URL(this.config.url), {
+        eventSourceInit: this.config.headers && Object.keys(this.config.headers).length
+          ? { fetch: withHeaders(this.config.headers) } as never
+          : undefined,
+        requestInit: Object.keys(this.config.headers).length ? { headers: this.config.headers } : undefined,
+      })
+      const client = new Client({ name: 'emperor-agent', version: '0.0.0' })
+      await client.connect(transport)
+      this.client = client
+      this.connected = true
+      return true
+    } catch {
+      this.client = null
+      this.connected = false
+      return false
+    }
+  }
+
+  async disconnect(): Promise<void> {
+    await this.client?.close().catch(() => {})
+    this.client = null
+    this.connected = false
+  }
+
+  async listTools(): Promise<MCPToolDefinition[]> {
+    if (!this.client || !this.connected) return []
+    try {
+      const result = await this.client.listTools()
+      return result.tools.map((tool) => ({
+        name: tool.name,
+        description: tool.description ?? '',
+        inputSchema: tool.inputSchema as Record<string, unknown>,
+      }))
+    } catch {
+      return []
+    }
+  }
+
+  async callTool(toolName: string, args: Record<string, unknown>): Promise<MCPCallToolResult> {
+    if (!this.client || !this.connected) throw new Error(`MCP server '${this.serverName}' not connected`)
+    return normalizeCallToolResult(await this.client.callTool({ name: toolName, arguments: args }))
+  }
+}
+
+function normalizeCallToolResult(result: Awaited<ReturnType<Client['callTool']>>): MCPCallToolResult {
+  if ('toolResult' in result) return { content: stringifyUnknown(result.toolResult), isError: Boolean(result.isError) }
+  const content = 'content' in result && Array.isArray(result.content) ? result.content : []
+  const texts = content.map((item) => {
+    if (item.type === 'text') return item.text
+    if (item.type === 'resource' && 'resource' in item) return stringifyUnknown(item.resource)
+    return stringifyUnknown(item)
+  })
+  if (!texts.length && 'structuredContent' in result && result.structuredContent) texts.push(stringifyUnknown(result.structuredContent))
+  const output = texts.join('\n') || '(empty result)'
+  return { content: output, isError: Boolean(result.isError) }
+}
+
+function stringifyUnknown(value: unknown): string {
+  return typeof value === 'string' ? value : JSON.stringify(value)
+}
+
+function withHeaders(headers: Record<string, string>): typeof fetch {
+  return ((input: RequestInfo | URL, init?: RequestInit) => {
+    const existing = init?.headers instanceof Headers
+      ? Object.fromEntries(init.headers.entries())
+      : (init?.headers && typeof init.headers === 'object' && !Array.isArray(init.headers) ? init.headers as Record<string, string> : {})
+    return fetch(input, { ...init, headers: { ...existing, ...headers } })
+  }) as typeof fetch
+}

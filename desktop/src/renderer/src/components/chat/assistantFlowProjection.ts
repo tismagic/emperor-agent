@@ -2,17 +2,20 @@ import type {
   AskSegment,
   AssistantMessage,
   AssistantSegment,
+  MediaArtifactRef,
   PlanSegment,
   ThoughtSegment,
   TodoItem,
   ToolSegment,
   ToolStatus,
 } from '../../types'
+import { toolTitle } from './toolDisplay'
 
 export type AssistantFlowBlock =
   | { kind: 'thought'; id: string; segment: ThoughtSegment; executionDurationMs?: number }
   | { kind: 'text'; id: string; content: string; streaming: boolean }
   | { kind: 'tool_group'; id: string; title: string; status: ToolStatus; tools: ToolSegment[]; durationMs?: number }
+  | { kind: 'media'; id: string; items: MediaArtifactRef[] }
   | { kind: 'control'; id: string; segment: AskSegment | PlanSegment }
   | { kind: 'todos'; id: string; todos: TodoItem[] }
 
@@ -66,12 +69,7 @@ export function projectAssistantFlow(message: AssistantMessage, options: Project
     }
 
     if (segment.type === 'tool') {
-      const group: ToolSegment[] = []
-      let cursor = index
-      while (visible[cursor]?.type === 'tool') {
-        group.push(visible[cursor] as ToolSegment)
-        cursor += 1
-      }
+      const group = [segment]
       blocks.push({
         kind: 'tool_group',
         id: `tool-group-${group.map((item) => item.toolId || item.id).join('-')}`,
@@ -80,6 +78,14 @@ export function projectAssistantFlow(message: AssistantMessage, options: Project
         tools: group,
         durationMs: toolGroupDuration(group),
       })
+      const media = mediaArtifacts(group)
+      if (media.length) {
+        blocks.push({
+          kind: 'media',
+          id: `media-${group.map((item) => item.toolId || item.id).join('-')}`,
+          items: media,
+        })
+      }
       const todos = latestToolTodos(group)
       if (todos?.todos.length) {
         blocks.push({
@@ -88,7 +94,7 @@ export function projectAssistantFlow(message: AssistantMessage, options: Project
           todos: todos.todos,
         })
       }
-      index = cursor
+      index += 1
       continue
     }
 
@@ -106,6 +112,20 @@ export function projectAssistantFlow(message: AssistantMessage, options: Project
   }
 
   return blocks
+}
+
+function mediaArtifacts(tools: ToolSegment[]): MediaArtifactRef[] {
+  const out: MediaArtifactRef[] = []
+  const seen = new Set<string>()
+  for (const tool of tools) {
+    for (const artifact of tool.artifacts || []) {
+      const media = artifact.media
+      if (!media || media.kind !== 'image' || seen.has(media.id)) continue
+      seen.add(media.id)
+      out.push(media)
+    }
+  }
+  return out
 }
 
 function latestToolTodos(tools: ToolSegment[]) {
@@ -141,8 +161,16 @@ function assistantExecutionDuration(message: AssistantMessage, now: number) {
 
 function visibleSegment(segment: AssistantSegment) {
   if (segment.type !== 'thought') return true
+  if (visibleThoughtSummary(segment)) return true
   if (segment.status === 'running') return true
   return (segment.durationMs || 0) >= THOUGHT_MIN_DURATION_MS
+}
+
+function visibleThoughtSummary(segment: ThoughtSegment) {
+  const summary = segment.summary?.trim()
+  if (!summary) return false
+  if (segment.stage !== 'tool_result_summary') return true
+  return /失败|出错|中断|未返回|识别到|图片|media|artifact/i.test(summary)
 }
 
 function toolGroupStatus(tools: ToolSegment[]): ToolStatus {
@@ -153,18 +181,7 @@ function toolGroupStatus(tools: ToolSegment[]): ToolStatus {
 }
 
 function toolGroupTitle(tools: ToolSegment[]) {
-  if (tools.length === 1) {
-    const tool = tools[0]
-    return `${toolLabel(tool)} · ${toolPurpose(tool.name)}`
-  }
-
-  const labels = new Set(tools.map(toolLabel))
-  if (labels.size === 1) {
-    const first = tools[0]
-    return `${toolLabel(first)} × ${tools.length} · ${toolPurpose(first.name)}`
-  }
-
-  return `执行 ${tools.length} 个工具`
+  return toolTitle(tools[0])
 }
 
 function toolGroupDuration(tools: ToolSegment[]) {
@@ -180,42 +197,4 @@ function toolGroupDuration(tools: ToolSegment[]) {
 
   const total = tools.reduce((sum, tool) => sum + Math.max(0, Number(tool.durationMs || 0)), 0)
   return total || undefined
-}
-
-function toolLabel(tool: ToolSegment) {
-  return tool.displayName || toolName(tool.name)
-}
-
-function toolName(name: string) {
-  const names: Record<string, string> = {
-    dispatch_subagent: 'Agent',
-    edit_file: 'Edit',
-    glob: 'Glob',
-    grep: 'Search',
-    load_skill: 'Skill',
-    read_file: 'Read',
-    run_command: 'Bash',
-    scheduler: 'Scheduler',
-    update_todos: 'Update Todos',
-    web_fetch: 'Fetch',
-    write_file: 'Write',
-  }
-  return names[name] || name
-}
-
-function toolPurpose(name: string) {
-  const purposes: Record<string, string> = {
-    dispatch_subagent: '派遣子代理',
-    edit_file: '修改文件',
-    glob: '匹配路径',
-    grep: '搜索文本',
-    load_skill: '加载 Skill',
-    read_file: '读取文件',
-    run_command: '执行命令',
-    scheduler: '调度任务',
-    update_todos: '更新计划',
-    web_fetch: '读取网页',
-    write_file: '写入文件',
-  }
-  return purposes[name] || '工具执行'
 }

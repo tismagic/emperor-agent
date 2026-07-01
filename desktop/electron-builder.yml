@@ -11,8 +11,6 @@ files:
 extraResources:
   - from: build/icon.png
     to: icon.png
-  - from: build/backend
-    to: backend
   - from: ../templates
     to: runtime-defaults/templates
   - from: ../skills
@@ -34,7 +32,6 @@ extraResources:
       - preload.js
       - event-mapper.js
       - idle-scenes.js
-      - runtime-urls.js
 
 asar: true
 
@@ -46,14 +43,17 @@ mac:
   icon: build/icon.png
   artifactName: Emperor-Agent-${version}-mac-${arch}.${ext}
 
-# win/linux targets can be added when needed:
-# win:
-#   target: nsis
-#   icon: build/icon.png
-# linux:
-#   target: AppImage
-#   icon: build/icon.png
-#   category: Utility
+win:
+  target:
+    - nsis
+  artifactName: Emperor-Agent-${version}-win-${arch}.${ext}
 
-# macOS release bundles the Python backend under Resources/backend and copies
-# runtime defaults into the user's app data directory on first launch.
+linux:
+  target:
+    - AppImage
+  icon: build/icon.png
+  category: Utility
+  artifactName: Emperor-Agent-${version}-linux-${arch}.${ext}
+
+# Release builds host CoreApi in the Electron main process and copy runtime
+# defaults into the user's app data directory on first launch.

@@ -3,6 +3,7 @@ import { computed, onMounted, ref, watch, type Component } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import {
   ArchiveRestore,
+  Activity,
   Bot,
   Brain,
   Coins,
@@ -13,6 +14,7 @@ import {
   SlidersHorizontal,
 } from 'lucide-vue-next'
 import ConfigsView from './ConfigsView.vue'
+import DiagnosticsPanel from '../components/panels/DiagnosticsPanel.vue'
 import MemoryView from './MemoryView.vue'
 import ModelView from './ModelView.vue'
 import TokensView from './TokensView.vue'
@@ -35,6 +37,7 @@ const sections = [
   { key: 'memory', label: '记忆', group: '个人', icon: Brain },
   { key: 'tokens', label: 'Token', group: '个人', icon: Coins },
   { key: 'configs', label: '配置', group: '编码', icon: SlidersHorizontal },
+  { key: 'diagnostics', label: '诊断', group: '编码', icon: Activity },
   { key: 'appearance', label: '外观', group: '编码', icon: Palette },
   { key: 'archived', label: '已归档对话', group: '已归档', icon: ArchiveRestore },
 ] as const
@@ -60,6 +63,7 @@ const sectionViews: Partial<Record<SettingsSection, Component>> = {
   memory: MemoryView,
   tokens: TokensView,
   configs: ConfigsView,
+  diagnostics: DiagnosticsPanel,
 }
 
 const activeView = computed(() => sectionViews[currentSection.value])

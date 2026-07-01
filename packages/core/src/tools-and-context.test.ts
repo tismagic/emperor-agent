@@ -1,9 +1,16 @@
 import { describe, expect, it } from 'vitest'
+import { mkdtempSync, readFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { isHighRiskCommand, isLowRiskCommand, isReadonlyCommand, isSensitivePath } from './tools/resolvers'
 import { ToolRegistry } from './tools/registry'
-import { Tool, type ToolExecutionContext } from './tools/base'
-import { type ParamSchema, S, toolParamsSchema } from './tools/schema'
-import { pairToolCalls, capToolResults, shrinkOldToolResults, ContextPipeline } from './context/pipeline'
+import { Tool } from './tools/base'
+import { S, toolParamsSchema } from './tools/schema'
+import { pairToolCalls, capToolResults, shrinkOldToolResults, ContextPipeline, ToolResultStore } from './context/pipeline'
+
+function tmp(prefix: string): string {
+  return mkdtempSync(join(tmpdir(), prefix))
+}
 
 // ── TOOL-005 command resolvers ──
 
@@ -141,5 +148,79 @@ describe('context_pipeline', () => {
     expect(proj.messages).toHaveLength(1)
     expect(proj.filled).toBe(0)
     expect(proj.dropped).toBe(0)
+  })
+
+  it('replaces large tool results with stable artifact references', () => {
+    const root = tmp('emperor-context-pipeline-')
+    const content = 'x'.repeat(9000)
+    const history = [
+      { role: 'assistant', content: '', tool_calls: [{ id: 'call_1', type: 'function', function: { name: 'grep', arguments: '{}' } }] },
+      { role: 'tool', turn_id: 'turn_1', tool_call_id: 'call_1', name: 'grep', content },
+    ]
+    const pipeline = new ContextPipeline({
+      toolResultStore: new ToolResultStore(root),
+      replacementMinBytes: 2000,
+      replacementPreviewChars: 120,
+    })
+
+    const projection = pipeline.project(history)
+    const projectionAgain = pipeline.project(history)
+    const toolMessage = projection.messages[1]!
+    const replacement = (projection.report.tool_result_replacements as Array<Record<string, unknown>>)[0]!
+
+    expect(projection.report.replaced_tool_results).toBe(1)
+    expect(projectionAgain.messages[1]!.content).toBe(toolMessage.content)
+    expect(projectionAgain.report.tool_result_replacements).toEqual(projection.report.tool_result_replacements)
+    expect(readFileSync(join(root, String(replacement.artifact_path)), 'utf8')).toBe(content)
+    expect(String(toolMessage.content)).toContain('Tool result stored outside the model context')
+    expect(String(toolMessage.content)).toContain(String(replacement.artifact_path))
+    expect(String(toolMessage.content)).toContain('original_chars: 9000')
+    expect(String(toolMessage.content).length).toBeLessThan(1000)
+  })
+
+  it('microcompacts old large text messages without touching tool-call messages', () => {
+    const longText = 'alpha '.repeat(900)
+    const recentText = 'beta '.repeat(900)
+    const history = [
+      { role: 'user', content: longText },
+      { role: 'assistant', content: 'short reply' },
+      { role: 'user', content: recentText },
+    ]
+
+    const projection = new ContextPipeline({
+      microcompactKeepRecent: 1,
+      microcompactMinChars: 1000,
+      microcompactHeadChars: 80,
+      microcompactTailChars: 60,
+    }).project(history)
+
+    expect(projection.report.microcompacted_messages).toBe(1)
+    expect((projection.report.microcompact_records as Array<Record<string, unknown>>)[0]).toMatchObject({ index: 0, role: 'user' })
+    expect(String(projection.messages[0]!.content)).toMatch(/^\[local_microcompact\]/)
+    expect(String(projection.messages[0]!.content)).toContain('original_chars:')
+    expect(String(projection.messages[0]!.content)).toContain('alpha alpha')
+    expect(projection.messages[2]!.content).toBe(recentText)
+    expect(history[0]!.content).toBe(longText)
+
+    const preserved = new ContextPipeline({
+      microcompactKeepRecent: 1,
+      microcompactMinChars: 1000,
+    }).project([
+      { role: 'assistant', content: 'x'.repeat(3000), tool_calls: [{ id: 'call_1', type: 'function', function: { name: 'read_file', arguments: '{}' } }] },
+      { role: 'tool', tool_call_id: 'call_1', name: 'read_file', content: 'ok' },
+      { role: 'user', content: 'next' },
+    ])
+    expect(preserved.report.microcompacted_messages).toBe(0)
+    expect((preserved.messages[0]!.tool_calls as Array<Record<string, unknown>>)[0]!.id).toBe('call_1')
+  })
+
+  it('injects plan runtime context before projected history', () => {
+    const projection = new ContextPipeline({
+      planContextProvider: () => ({ role: 'system', content: '[PLAN_RUNTIME_CONTEXT]\nplan_id: plan_1' }),
+    }).project([{ role: 'user', content: 'continue' }])
+
+    expect(String(projection.messages[0]!.content)).toMatch(/^\[PLAN_RUNTIME_CONTEXT\]/)
+    expect(projection.messages[1]).toEqual({ role: 'user', content: 'continue' })
+    expect(projection.report.plan_context_attached).toBe(1)
   })
 })

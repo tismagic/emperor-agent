@@ -3,9 +3,9 @@
  * 对齐 Python `agent/tools/filesystem.py`：ReadFileTool/WriteFileTool/EditFileTool。
  * 工作区路径禁闭：expanduser + resolve 规范化后 relative_to 检查。
  */
-import { existsSync } from 'node:fs'
+import { existsSync, realpathSync } from 'node:fs'
 import { mkdir, open, readFile as fsReadFile, stat, writeFile as fsWriteFile } from 'node:fs/promises'
-import { dirname, normalize, relative, resolve } from 'node:path'
+import { basename, dirname, normalize, relative, resolve } from 'node:path'
 import { Tool, type ToolExecutionContext, type ToolResult, okResult, errResult } from './base'
 import { S, toolParamsSchema } from './schema'
 
@@ -37,6 +37,26 @@ async function readSidecar(path: string): Promise<string | null> {
   return null
 }
 
+/**
+ * 解析路径中已存在的符号链接（若目标本身尚不存在，则解析最近的已存在祖先目录），
+ * 用于在做工作区围栏判断前拿到"真实"落地位置，防止符号链接指向工作区外。
+ */
+function realExisting(p: string): string {
+  const tail: string[] = []
+  let cur = p
+  while (true) {
+    try {
+      const real = realpathSync(cur)
+      return tail.length ? resolve(real, ...tail.reverse()) : real
+    } catch {
+      const parent = dirname(cur)
+      if (parent === cur) return p
+      tail.push(basename(cur))
+      cur = parent
+    }
+  }
+}
+
 /** 对齐 Python `_resolve`：expanduser → normalize → resolve → relative_to 检查。 */
 function resolvePath(raw: string, workspace: string | null): string {
   let p = normalize(raw.replace(/^~/, process.env.HOME ?? ''))
@@ -48,6 +68,13 @@ function resolvePath(raw: string, workspace: string | null): string {
     if (rel.startsWith('..') || resolve(rel) === rel) {
       // The relative path starts with .. or the resolved path is outside
       if (rel.startsWith('..')) throw new Error(`path escape: ${raw} → ${resolved} (outside ${ws})`)
+    }
+    // 词法检查只挡得住 `..`；符号链接需要解析真实落地位置后再做一次包含性检查。
+    const wsReal = realExisting(ws)
+    const targetReal = realExisting(resolved)
+    const relReal = relative(wsReal, targetReal)
+    if (relReal.startsWith('..') || resolve(relReal) === relReal) {
+      throw new Error(`path escape (symlink): ${raw} → ${targetReal} (outside ${wsReal})`)
     }
   }
   return resolved

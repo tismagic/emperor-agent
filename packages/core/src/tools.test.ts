@@ -1,11 +1,10 @@
-import { existsSync, mkdirSync, writeFileSync, rmSync } from 'node:fs'
+import { existsSync, writeFileSync, symlinkSync, readFileSync } from 'node:fs'
 import { mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { beforeEach, describe, expect, it } from 'vitest'
 import { ReadFileTool, WriteFileTool, EditFileTool } from './tools/filesystem'
 import { RunCommand, TodoStore, UpdateTodos } from './tools/builtin'
-import { isReadonlyCommand } from './tools/resolvers'
 
 let dir: string
 beforeEach(() => {
@@ -27,6 +26,19 @@ describe('ReadFileTool', () => {
     const out = await tool.execute({ path: '../../../etc/passwd' })
     expect(out).toContain('[ERR]')
   })
+
+  it('blocks reads through a symlink that escapes the workspace', async () => {
+    const outside = mkdtempSync(join(tmpdir(), 'emperor-outside-'))
+    const secretPath = join(outside, 'secret.txt')
+    writeFileSync(secretPath, 'TOP SECRET', 'utf8')
+    const linkPath = join(dir, 'link_out')
+    symlinkSync(secretPath, linkPath)
+
+    const tool = new ReadFileTool(dir)
+    const out = await tool.execute({ path: 'link_out' })
+    expect(out).toContain('[ERR]')
+    expect(out).not.toContain('TOP SECRET')
+  })
 })
 
 describe('WriteFileTool + EditFileTool', () => {
@@ -47,6 +59,19 @@ describe('WriteFileTool + EditFileTool', () => {
     const e = new EditFileTool(dir)
     expect(await e.execute({ path: join(dir, 'f.txt'), old_text: 'xyz', new_text: 'q' })).toContain('[ERR]')
   })
+
+  it('blocks writes through a symlink that escapes the workspace', async () => {
+    const outside = mkdtempSync(join(tmpdir(), 'emperor-outside-'))
+    const targetPath = join(outside, 'target.txt')
+    writeFileSync(targetPath, 'original', 'utf8')
+    const linkPath = join(dir, 'link_out')
+    symlinkSync(targetPath, linkPath)
+
+    const w = new WriteFileTool(dir)
+    const out = await w.execute({ path: 'link_out', content: 'pwned' })
+    expect(out).toContain('[ERR]')
+    expect(readFileSync(targetPath, 'utf8')).toBe('original')
+  })
 })
 
 describe('RunCommand is_read_only delegates to resolvers', () => {
@@ -59,21 +84,57 @@ describe('RunCommand is_read_only delegates to resolvers', () => {
   })
 })
 
-describe('TodoStore + UpdateTodos', () => {
-  it('rejects more than one in_progress', () => {
+describe('RunCommand deny-list (audit P1-1)', () => {
+  it('refuses symlink creation and other-interpreter arbitrary code execution', async () => {
+    const r = new RunCommand(dir)
+    for (const command of [
+      'ln -s /etc/passwd link',
+      'ln -sf ../../secret secret_link',
+      'perl -e "system(1)"',
+      'ruby -e "puts 1"',
+      'node -e "console.log(1)"',
+      'osascript -e "display dialog 1"',
+    ]) {
+      const out = await r.execute({ command })
+      expect(out, command).toContain('refused by safety policy')
+    }
+  })
+})
+
+// 对齐 Python tests/unit/test_todo_tool.py — update() 返回错误串而非抛错；active_form 渲染。
+describe('TodoStore + UpdateTodos (test_todo_tool.py)', () => {
+  it('rejects more than one in_progress with an error string', () => {
     const s = new TodoStore()
-    const t = new UpdateTodos(s)
-    expect(() => s.replace([
-      { id: 1, content: 'a', status: 'in_progress' },
-      { id: 2, content: 'b', status: 'in_progress' },
-    ])).toThrow(/in_progress/)
+    const result = s.update([
+      { id: 1, content: 'A', active_form: 'Doing A', status: 'in_progress' },
+      { id: 2, content: 'B', active_form: 'Doing B', status: 'in_progress' },
+    ])
+    expect(result).toContain('Error: 同一时间只能有一个 in_progress')
   })
 
-  it('accepts valid todos', async () => {
+  it('accepts valid todos and returns the summary', async () => {
     const s = new TodoStore()
     const t = new UpdateTodos(s)
     const out = await t.execute({ todos: [{ id: 1, content: 'a', status: 'pending' }] })
-    expect(out).toContain('Updated 1')
-    expect(s.getAll()).toHaveLength(1)
+    expect(out).toContain('todos updated: total=1')
+    expect(s.todos).toHaveLength(1)
+  })
+
+  it('preserves active_form and renders it for in_progress', () => {
+    const s = new TodoStore()
+    const result = s.update([
+      { id: 1, content: '运行测试', active_form: '正在运行测试', status: 'in_progress' },
+      { id: 2, content: '整理结果', status: 'pending' },
+    ])
+    expect(s.todos[0]!.active_form).toBe('正在运行测试')
+    expect(result).toContain('[~] 1. 正在运行测试')
+    expect(result).toContain('[ ] 2. 整理结果')
+  })
+
+  it('uses content for completed even with active_form', () => {
+    const s = new TodoStore()
+    const result = s.update([{ id: 1, content: '运行测试', active_form: '正在运行测试', status: 'completed' }])
+    expect(result).toContain('[x] 1. 运行测试')
+    expect(result).not.toContain('正在运行测试')
   })
 })

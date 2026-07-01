@@ -4,7 +4,6 @@ import * as os from 'node:os'
 import * as path from 'node:path'
 
 import {
-  bundledBackendPath,
   initializePackagedRuntime,
   packagedRuntimeRoot,
   runtimeDefaultsRoot,
@@ -17,10 +16,8 @@ describe('packaged runtime paths', () => {
     )
   })
 
-  it('resolves bundled defaults and backend paths from resources', () => {
+  it('resolves bundled defaults from resources', () => {
     expect(runtimeDefaultsRoot('/App/Contents/Resources')).toBe('/App/Contents/Resources/runtime-defaults')
-    expect(bundledBackendPath('/App/Contents/Resources', 'darwin')).toBe('/App/Contents/Resources/backend/emperor-agent')
-    expect(bundledBackendPath('C:\\App\\resources', 'win32')).toBe(path.join('C:\\App\\resources', 'backend', 'emperor-agent.exe'))
   })
 })
 

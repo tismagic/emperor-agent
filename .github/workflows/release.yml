@@ -9,37 +9,61 @@ permissions:
   contents: write
 
 jobs:
-  macos:
-    runs-on: macos-latest
+  package:
+    name: package (${{ matrix.target }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            target: mac
+            artifact_glob: |
+              desktop/dist/*.dmg
+              desktop/dist/*.zip
+          - os: ubuntu-latest
+            target: linux
+            artifact_glob: "desktop/dist/*.AppImage"
+          - os: windows-latest
+            target: win
+            artifact_glob: "desktop/dist/*.exe"
     env:
       CSC_IDENTITY_AUTO_DISCOVERY: "false"
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.13"
-      - name: Install Python dependencies
-        run: pip install -r requirements-dev.txt
       - uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            desktop/package-lock.json
+            desktop-pet/package-lock.json
+      - name: Install core dependencies
+        run: npm ci
       - name: Install desktop dependencies
         working-directory: desktop
         run: npm ci
-      - name: Run backend tests
-        run: python -m pytest tests/unit/test_desktop_pet.py tests/unit/test_desktop_pet_api.py -q
-      - name: Run desktop tests
+      - name: Install desktop pet dependencies
+        working-directory: desktop-pet
+        run: npm ci
+      - name: Core tests
+        run: npm test --workspace @emperor/core
+      - name: Core typecheck
+        run: npm run typecheck --workspace @emperor/core
+      - name: Desktop tests
         working-directory: desktop
-        run: npm run test -- backend-command config lifecycle runtime-root
-      - name: Run desktop pet tests
+        run: npm run test
+      - name: Desktop typecheck
+        working-directory: desktop
+        run: npm run typecheck
+      - name: Desktop pet tests
         working-directory: desktop-pet
         run: npm test
-      - name: Build macOS release
+      - name: Build package
         working-directory: desktop
-        run: npm run dist:mac
+        run: npm run dist:${{ matrix.target }}
       - name: Publish GitHub Release artifacts
         uses: softprops/action-gh-release@v2
         with:
-          files: |
-            desktop/dist/*.dmg
-            desktop/dist/*.zip
+          files: ${{ matrix.artifact_glob }}

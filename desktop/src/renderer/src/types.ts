@@ -1,3 +1,5 @@
+import type { RuntimeEvent as CoreRuntimeEvent } from '@emperor/core'
+
 export interface ToolInfo {
   name: string
   description: string
@@ -360,14 +362,62 @@ export interface DiagnosticsFileInfo {
   updatedAt?: number
 }
 
+export type DiagnosticsStatus = 'ok' | 'missing' | 'corrupt' | 'invalid' | 'unknown' | string
+
+export interface DiagnosticsConfigSummary {
+  path?: string
+  exists?: boolean
+  status?: DiagnosticsStatus
+  error?: string
+  models?: number
+  corruptBackups?: DiagnosticsFileInfo[]
+}
+
+export interface SchedulerDiagnosticsPayload {
+  jobsFile?: string
+  actionFile?: string
+  lastActionErrors?: unknown[]
+  corruptActionFiles?: DiagnosticsFileInfo[]
+}
+
+export interface ExternalDiagnosticsPayload {
+  running?: boolean
+  adapters?: unknown[]
+  inbox?: {
+    pending?: number
+    seen?: number
+    recent?: unknown[]
+  }
+  outbox?: {
+    recent?: unknown[]
+  }
+  recentErrors?: unknown[]
+  store?: {
+    path?: string | null
+    exists?: boolean
+    bytes?: number
+    durable?: boolean
+    corruptBackups?: DiagnosticsFileInfo[]
+  }
+}
+
+export interface DiagnosticsDependencyPayload {
+  nodeRuntime?: boolean
+  desktopRenderer?: boolean
+  desktopPetNodeModules?: boolean
+  [key: string]: unknown
+}
+
 export interface DiagnosticsPayload {
-  modelConfig?: Record<string, unknown>
-  localConfig?: Record<string, unknown>
-  scheduler?: Record<string, unknown>
+  root?: string
+  modelConfig?: DiagnosticsConfigSummary
+  localConfig?: DiagnosticsConfigSummary
+  scheduler?: SchedulerDiagnosticsPayload
   runtime?: RuntimeStats
-  external?: Record<string, unknown>
+  external?: ExternalDiagnosticsPayload
+  activeTasks?: RuntimeTaskRecord[]
   desktopPet?: DesktopPetPayload & Record<string, unknown>
-  dependencies?: Record<string, unknown>
+  dependencies?: DiagnosticsDependencyPayload
 }
 
 export interface BootstrapPayload {
@@ -445,7 +495,17 @@ export interface ToolArtifactRef {
   path: string
   kind?: string
   bytes?: number
+  media?: MediaArtifactRef
   metadata?: Record<string, unknown>
+}
+
+export interface MediaArtifactRef {
+  id: string
+  kind: 'image' | 'audio' | string
+  mime: string
+  name: string
+  relPath: string
+  originalPath: string
 }
 
 export interface TodoItem {
@@ -467,6 +527,11 @@ export interface ThoughtSegment {
   type: 'thought'
   status: 'running' | 'done' | 'error' | 'error_aborted'
   label?: string
+  stage?: string
+  source?: 'audit' | string
+  summary?: string
+  toolIds?: string[]
+  toolNames?: string[]
   startedAt?: number
   endedAt?: number
   durationMs?: number
@@ -800,10 +865,11 @@ export interface SchedulerPayload {
   diagnostics?: Record<string, unknown>
 }
 
-export type WsEvent = ({ seq?: number; ts?: number; turn_id?: string; client_message_id?: string } & (
+export type WsEvent = CoreRuntimeEvent & ({ seq?: number; ts?: number; turn_id?: string; client_message_id?: string } & (
   | { event: 'ready'; model?: string; provider?: string; latest_seq?: number; replay_count?: number; resume_from?: number; busy?: boolean; control?: ControlPayload }
   | { event: 'user_message'; content?: string; attachments?: AttachmentRef[]; source?: string; scheduler?: SchedulerMessageMeta }
   | { event: 'message_delta'; delta?: string }
+  | { event: 'agent_thought'; stage?: string; label?: string; summary?: string; source?: string; status?: 'done' | 'running' | string; tool_call_ids?: string[]; tool_names?: string[] }
   | { event: 'context_usage'; used?: number; max?: number; threshold?: number; usage_type?: string; model_role?: string; model?: string; provider?: string; route_reason?: string; estimated_input_tokens?: number }
   | { event: 'context_projection'; report?: Record<string, unknown>; message_count?: number }
   | { event: 'model_route_fallback'; from_model?: string; to_model?: string; reason?: string; usage_type?: string }

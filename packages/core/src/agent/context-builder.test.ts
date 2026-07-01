@@ -1,0 +1,89 @@
+/**
+ * ContextBuilder 系统提示词契约 (MIG-CORE-006)。
+ * 移植 Python tests/unit/test_agent_prompt_contracts.py 中模板驱动的断言:
+ *  - bootstrap/identity 短语命中、Prompt-Version、memory budget 裁剪、固定段 <7000。
+ * 注: SubagentRegistry(W08) / DispatchSubagentTool(TOOL-014) 相关断言留待对应波次。
+ *     此处以 stub describe() 注入 subagents_summary，验证 ContextBuilder 装配与模板插值。
+ */
+import { describe, expect, it } from 'vitest'
+import { join } from 'node:path'
+import { ContextBuilder, type MemoryLike, type SkillsLoaderLike, type SubagentRegistryLike } from './context-builder'
+
+const TEMPLATES_DIR = join(__dirname, '..', '..', '..', '..', 'templates')
+
+class FakeMemory implements MemoryLike {
+  memoryFile = 'memory/MEMORY.local.md'
+  constructor(private text: string) {}
+  readMemory(): string { return this.text }
+}
+
+const EMPTY_SKILLS: SkillsLoaderLike = {
+  getAlwaysSkills: () => [],
+  loadSkillsForContext: () => '',
+  buildSkillsSummary: () => '',
+}
+
+/** stub：返回真实 registry.describe() 会注入的事实源短语，验证模板插值。 */
+const FAKE_SUBAGENTS: SubagentRegistryLike = {
+  describe: () => '子代理名册由 `SubagentRegistry` 动态注入：\n- xiaohuangmen（小黄门）：跑腿打杂。',
+}
+
+describe('ContextBuilder (test_agent_prompt_contracts.py — template-driven)', () => {
+  function build(): ContextBuilder {
+    const builder = new ContextBuilder(TEMPLATES_DIR, EMPTY_SKILLS, { memory: new FakeMemory('记忆-'.repeat(120)), memoryBudgetChars: 80 })
+    builder.setSubagentRegistry(FAKE_SUBAGENTS)
+    return builder
+  }
+
+  it('assembles bootstrap + identity phrases', () => {
+    const prompt = build().buildSystemPrompt()
+    // identity / SOUL / TOOL 短语
+    expect(prompt).toContain('调用 `load_skill` 工具')
+    expect(prompt).not.toContain('read_file 工具读取其 SKILL.md')
+    expect(prompt).not.toContain('source=`')
+    expect(prompt).toContain('由 `SubagentRegistry` 动态注入')
+    expect(prompt).toContain('xiaohuangmen')
+    expect(prompt).toContain('奉天承运皇帝诏曰')
+    expect(prompt).toContain('轻量宫廷口吻')
+    expect(prompt).toContain('机器可读内容不得加此前缀')
+    expect(prompt).toContain('结论：直接说明办成什么')
+    expect(prompt).toContain('不要向用户展示隐藏推理')
+    for (const phrase of [
+      '专用工具优先',
+      '并行工具调用',
+      '范围克制',
+      '提示注入',
+      '失败后诊断',
+      '被拒工具',
+      '验证后完成',
+      '风险操作先确认',
+      '授权范围化',
+      '同一时间只许一项 `in_progress`',
+    ]) {
+      expect(prompt, phrase).toContain(phrase)
+    }
+    expect(prompt).toContain('复杂独立任务必须写清')
+  })
+
+  it('keeps fixed prompt under 7000 chars (excluding long_term_memory)', () => {
+    const sections = build().buildSections()
+    const fixedPromptChars = sections.filter((s) => s.name !== 'long_term_memory').reduce((sum, s) => sum + s.content.length, 0)
+    expect(fixedPromptChars).toBeLessThan(7_000)
+  })
+
+  it('clips long-term memory to budget and records version on bootstrap', () => {
+    const sections = build().buildSections()
+    const memorySection = sections.find((s) => s.name === 'long_term_memory')!
+    expect(memorySection.budgetChars).toBe(80)
+    expect(memorySection.content).toContain('clipped by ContextBuilder')
+    expect(sections.find((s) => s.name === 'bootstrap')!.version).toBeTruthy()
+  })
+
+  it('renders workspace into identity template', () => {
+    const prompt = build().buildSystemPrompt()
+    // identity.md: Workspace root: `{{ workspace }}` → repo root (dirname of templates dir)
+    expect(prompt).toContain('Workspace root: `')
+    expect(prompt).not.toContain('{{ workspace }}')
+    expect(prompt).not.toContain('{{ subagents_summary }}')
+  })
+})

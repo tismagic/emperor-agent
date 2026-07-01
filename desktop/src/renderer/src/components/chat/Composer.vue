@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, ref } from 'vue'
-import type { CSSProperties } from 'vue'
 import type { CapabilityPickerItem } from '../../capabilities/capabilityPicker'
 import { buildCapabilityPickerGroups } from '../../capabilities/capabilityPickerModel'
 import {
@@ -16,6 +15,7 @@ import type { IconComponent } from '../../icons'
 import { uploadAttachment } from '../../api/attachments'
 import AttachmentChip from './AttachmentChip.vue'
 import CapabilityPicker from './CapabilityPicker.vue'
+import { useFloatingMenu } from './floatingMenu'
 
 const props = defineProps<{
   busy: boolean
@@ -51,13 +51,27 @@ const uploading = ref<Set<string>>(new Set())
 const dragActive = ref(false)
 const addMenuOpen = ref(false)
 const modelMenuOpen = ref(false)
-const modelMenuStyle = ref<CSSProperties>({})
-const modelMenuPlacement = ref<'top' | 'bottom'>('top')
 const modeMenuOpen = ref(false)
-const modeMenuStyle = ref<CSSProperties>({})
-const modeMenuPlacement = ref<'top' | 'bottom'>('top')
-let modelMenuRaf = 0
-let modeMenuRaf = 0
+const modelFloatingMenu = useFloatingMenu({
+  open: modelMenuOpen,
+  button: modelButton,
+  menu: modelMenu,
+  fallbackWidth: 390,
+  fallbackHeight: 260,
+  onClose: closeModelMenu,
+})
+const modeFloatingMenu = useFloatingMenu({
+  open: modeMenuOpen,
+  button: modeButton,
+  menu: modeMenu,
+  fallbackWidth: 320,
+  fallbackHeight: 220,
+  onClose: closeModeMenu,
+})
+const modelMenuStyle = modelFloatingMenu.style
+const modelMenuPlacement = modelFloatingMenu.placement
+const modeMenuStyle = modeFloatingMenu.style
+const modeMenuPlacement = modeFloatingMenu.placement
 
 const ACCEPT_LIST =
   'image/png,image/jpeg,image/webp,image/gif,application/pdf,application/json,text/csv,text/plain,text/markdown'
@@ -313,9 +327,9 @@ async function toggleModeMenu() {
     return
   }
   modeMenuOpen.value = true
-  addModeMenuListeners()
+  modeFloatingMenu.addListeners()
   await nextTick()
-  positionModeMenu()
+  modeFloatingMenu.position()
 }
 
 function selectMode(mode: 'ask_before_edit' | 'auto' | 'plan') {
@@ -334,9 +348,9 @@ async function toggleModelMenu() {
     return
   }
   modelMenuOpen.value = true
-  addModelMenuListeners()
+  modelFloatingMenu.addListeners()
   await nextTick()
-  positionModelMenu()
+  modelFloatingMenu.position()
 }
 
 function selectModel(entryName: string) {
@@ -387,158 +401,13 @@ function onAddMenuPointerDown(event: PointerEvent) {
 function closeModeMenu() {
   if (!modeMenuOpen.value) return
   modeMenuOpen.value = false
-  removeModeMenuListeners()
-  if (modeMenuRaf) {
-    cancelAnimationFrame(modeMenuRaf)
-    modeMenuRaf = 0
-  }
+  modeFloatingMenu.removeListeners()
 }
 
 function closeModelMenu() {
   if (!modelMenuOpen.value) return
   modelMenuOpen.value = false
-  removeModelMenuListeners()
-  if (modelMenuRaf) {
-    cancelAnimationFrame(modelMenuRaf)
-    modelMenuRaf = 0
-  }
-}
-
-function scheduleModelMenuPosition() {
-  if (!modelMenuOpen.value) return
-  if (modelMenuRaf) cancelAnimationFrame(modelMenuRaf)
-  modelMenuRaf = requestAnimationFrame(() => {
-    modelMenuRaf = 0
-    positionModelMenu()
-  })
-}
-
-function scheduleModeMenuPosition() {
-  if (!modeMenuOpen.value) return
-  if (modeMenuRaf) cancelAnimationFrame(modeMenuRaf)
-  modeMenuRaf = requestAnimationFrame(() => {
-    modeMenuRaf = 0
-    positionModeMenu()
-  })
-}
-
-function positionModeMenu() {
-  const button = modeButton.value
-  const menu = modeMenu.value
-  if (!button || !menu) return
-  const margin = 12
-  const gap = 8
-  const buttonRect = button.getBoundingClientRect()
-  const viewportWidth = window.innerWidth
-  const viewportHeight = window.innerHeight
-  const menuWidth = Math.min(menu.offsetWidth || 320, viewportWidth - margin * 2)
-  const menuHeight = Math.min(menu.offsetHeight || 220, viewportHeight - margin * 2)
-  const spaceAbove = buttonRect.top - margin - gap
-  const spaceBelow = viewportHeight - buttonRect.bottom - margin - gap
-  const placeBelow = spaceAbove < menuHeight && spaceBelow > spaceAbove
-  const availableHeight = Math.max(180, placeBelow ? spaceBelow : spaceAbove)
-  const left = clamp(buttonRect.right - menuWidth, margin, viewportWidth - menuWidth - margin)
-  const top = placeBelow
-    ? clamp(buttonRect.bottom + gap, margin, viewportHeight - menuHeight - margin)
-    : clamp(buttonRect.top - gap - menuHeight, margin, viewportHeight - menuHeight - margin)
-
-  modeMenuPlacement.value = placeBelow ? 'bottom' : 'top'
-  modeMenuStyle.value = {
-    left: `${Math.round(left)}px`,
-    top: `${Math.round(top)}px`,
-    width: `${Math.round(menuWidth)}px`,
-    maxHeight: `${Math.round(availableHeight)}px`,
-  }
-}
-
-function positionModelMenu() {
-  const button = modelButton.value
-  const menu = modelMenu.value
-  if (!button || !menu) return
-  const margin = 12
-  const gap = 8
-  const buttonRect = button.getBoundingClientRect()
-  const viewportWidth = window.innerWidth
-  const viewportHeight = window.innerHeight
-  const menuWidth = Math.min(menu.offsetWidth || 390, viewportWidth - margin * 2)
-  const menuHeight = Math.min(menu.offsetHeight || 260, viewportHeight - margin * 2)
-  const spaceAbove = buttonRect.top - margin - gap
-  const spaceBelow = viewportHeight - buttonRect.bottom - margin - gap
-  const placeBelow = spaceAbove < menuHeight && spaceBelow > spaceAbove
-  const availableHeight = Math.max(180, placeBelow ? spaceBelow : spaceAbove)
-  const left = clamp(buttonRect.right - menuWidth, margin, viewportWidth - menuWidth - margin)
-  const top = placeBelow
-    ? clamp(buttonRect.bottom + gap, margin, viewportHeight - menuHeight - margin)
-    : clamp(buttonRect.top - gap - menuHeight, margin, viewportHeight - menuHeight - margin)
-
-  modelMenuPlacement.value = placeBelow ? 'bottom' : 'top'
-  modelMenuStyle.value = {
-    left: `${Math.round(left)}px`,
-    top: `${Math.round(top)}px`,
-    width: `${Math.round(menuWidth)}px`,
-    maxHeight: `${Math.round(availableHeight)}px`,
-  }
-}
-
-function clamp(value: number, min: number, max: number) {
-  if (max < min) return min
-  return Math.min(Math.max(value, min), max)
-}
-
-function addModelMenuListeners() {
-  window.addEventListener('resize', scheduleModelMenuPosition)
-  window.addEventListener('scroll', scheduleModelMenuPosition, true)
-  document.addEventListener('pointerdown', onModelDocumentPointerDown, true)
-  document.addEventListener('focusin', onModelDocumentFocusIn, true)
-}
-
-function removeModelMenuListeners() {
-  window.removeEventListener('resize', scheduleModelMenuPosition)
-  window.removeEventListener('scroll', scheduleModelMenuPosition, true)
-  document.removeEventListener('pointerdown', onModelDocumentPointerDown, true)
-  document.removeEventListener('focusin', onModelDocumentFocusIn, true)
-}
-
-function addModeMenuListeners() {
-  window.addEventListener('resize', scheduleModeMenuPosition)
-  window.addEventListener('scroll', scheduleModeMenuPosition, true)
-  document.addEventListener('pointerdown', onDocumentPointerDown, true)
-  document.addEventListener('focusin', onDocumentFocusIn, true)
-}
-
-function removeModeMenuListeners() {
-  window.removeEventListener('resize', scheduleModeMenuPosition)
-  window.removeEventListener('scroll', scheduleModeMenuPosition, true)
-  document.removeEventListener('pointerdown', onDocumentPointerDown, true)
-  document.removeEventListener('focusin', onDocumentFocusIn, true)
-}
-
-function onModelDocumentPointerDown(event: PointerEvent) {
-  const target = event.target
-  if (!(target instanceof Node)) return
-  if (modelButton.value?.contains(target) || modelMenu.value?.contains(target)) return
-  closeModelMenu()
-}
-
-function onModelDocumentFocusIn(event: FocusEvent) {
-  const target = event.target
-  if (!(target instanceof Node)) return
-  if (modelButton.value?.contains(target) || modelMenu.value?.contains(target)) return
-  closeModelMenu()
-}
-
-function onDocumentPointerDown(event: PointerEvent) {
-  const target = event.target
-  if (!(target instanceof Node)) return
-  if (modeButton.value?.contains(target) || modeMenu.value?.contains(target)) return
-  closeModeMenu()
-}
-
-function onDocumentFocusIn(event: FocusEvent) {
-  const target = event.target
-  if (!(target instanceof Node)) return
-  if (modeButton.value?.contains(target) || modeMenu.value?.contains(target)) return
-  closeModeMenu()
+  modelFloatingMenu.removeListeners()
 }
 
 function pickFiles() {

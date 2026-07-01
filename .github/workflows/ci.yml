@@ -5,31 +5,55 @@ on:
   pull_request:
 
 jobs:
-  backend:
-    runs-on: ubuntu-latest
+  ts-desktop:
+    name: ts-desktop (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 2
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.13"
-      - run: pip install -r requirements-dev.txt
-      - name: whitespace / conflict markers
-        run: git diff --check HEAD~1 HEAD
-      - run: ruff check .
-      - run: python -m pytest tests/ -q
-
-  frontend:
-    runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: desktop
-    steps:
-      - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: "20"
-      - run: npm ci
-      - run: npm run test
-      - run: npm run build
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            desktop/package-lock.json
+      - name: Install core dependencies
+        run: npm ci
+      - name: Install desktop dependencies
+        working-directory: desktop
+        run: npm ci
+      - name: Whitespace / conflict markers
+        shell: bash
+        run: |
+          if git rev-parse HEAD~1 >/dev/null 2>&1; then
+            git diff --check HEAD~1 HEAD
+          else
+            git diff --check
+          fi
+      - name: Core tests
+        run: npm test --workspace @emperor/core
+      - name: Core typecheck
+        run: npm run typecheck --workspace @emperor/core
+      - name: Core lint
+        run: npm run lint --workspace @emperor/core
+      - name: Desktop tests
+        working-directory: desktop
+        run: npm run test
+      - name: Desktop typecheck
+        working-directory: desktop
+        run: npm run typecheck
+      - name: Desktop lint
+        working-directory: desktop
+        run: npm run lint
+      - name: Desktop build
+        working-directory: desktop
+        run: npm run build
+      - name: Package dry run
+        working-directory: desktop
+        run: npm run package:dir

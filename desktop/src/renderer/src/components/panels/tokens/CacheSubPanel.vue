@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import type { TokenStatsRow, TokenUsageRecord, TokensPayload, TokensRange } from '../../../types'
+import type { TokenUsageRecord, TokensPayload, TokensRange } from '../../../types'
 import { formatNumber, formatTokenCompact, usageTypeLabel } from '../../../utils/format'
 import {
   buildModelRows,

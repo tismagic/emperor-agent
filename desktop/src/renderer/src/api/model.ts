@@ -1,11 +1,17 @@
-import type { ModelTestResult } from '../types'
-import { apiUrl } from './backend'
+import type { ModelConfigPayload, ModelTestResult } from '../types'
+import { apiUrl, hasCoreBridge, invokeCore } from './backend'
+
+export async function saveOnboardingModelConfig(settings: Record<string, unknown>): Promise<ModelConfigPayload> {
+  if (!hasCoreBridge()) throw new Error('Core IPC bridge is required for first-run onboarding')
+  return invokeCore('model.saveOnboardingConfig', settings) as Promise<ModelConfigPayload>
+}
 
 export async function testModelEntry(
   entryName: string,
   kind: 'text' | 'vision',
   role: 'main' | 'secondary' = 'main',
 ): Promise<ModelTestResult> {
+  if (hasCoreBridge()) return invokeCore('model.test', { entryName, kind, role }) as Promise<ModelTestResult>
   const r = await fetch(apiUrl('/api/model-test'), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },

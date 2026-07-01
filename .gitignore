@@ -25,7 +25,12 @@ logs/
 .superpowers/
 
 # 运行期产生的私人数据（长期记忆 / 会话历史 / token 用量）
+# 注意：裸 `memory/` 会匹配任意深度同名目录，意外吞掉了 packages/core/src/memory/
+# 这个源码目录（MIG-MEM-001 memory 子系统，含 store.ts/history.ts/versions.ts 等，
+# 从未被 git 追踪过）——用 !.../** 显式排除源码目录，其余运行期 memory/ 目录仍忽略。
 memory/
+!packages/core/src/memory/
+!packages/core/src/memory/**
 /sessions/
 
 # Agent Team 运行期状态（队友配置 / inbox / 独立 thread）

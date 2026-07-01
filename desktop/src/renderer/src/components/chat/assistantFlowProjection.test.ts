@@ -54,23 +54,59 @@ describe('assistant flow projection', () => {
     expect(blocks[0]).toMatchObject({ kind: 'text', streaming: true })
   })
 
-  it('merges consecutive tools and summarizes same tool kinds', () => {
+  it('keeps every tool call as an independent execution node', () => {
     const blocks = projectAssistantFlow(message([
-      tool('read-1', 'read_file', 'done', { durationMs: 5 }),
-      tool('read-2', 'read_file', 'done', { durationMs: 7 }),
+      tool('glob-1', 'glob', 'done', { durationMs: 5 }),
+      tool('glob-2', 'glob', 'done', { durationMs: 7 }),
     ]))
 
-    expect(blocks).toHaveLength(1)
+    expect(blocks).toHaveLength(2)
     expect(blocks[0]).toMatchObject({
       kind: 'tool_group',
-      id: 'tool-group-read-1-read-2',
-      title: 'Read × 2 · 读取文件',
+      id: 'tool-group-glob-1',
+      title: 'Glob · 匹配路径',
       status: 'done',
-      durationMs: 12,
+      durationMs: 5,
+    })
+    expect(blocks[1]).toMatchObject({
+      kind: 'tool_group',
+      id: 'tool-group-glob-2',
+      title: 'Glob · 匹配路径',
+      status: 'done',
+      durationMs: 7,
     })
   })
 
-  it('uses running status before done and error before running', () => {
+  it('keeps consecutive file write tools as separate execution nodes', () => {
+    const blocks = projectAssistantFlow(message([
+      tool('write-1', 'write_file', 'done', { arguments: { path: 'src/App.vue' } }),
+      tool('write-2', 'write_file', 'done', { arguments: { path: 'src/main.ts' } }),
+      tool('write-3', 'write_file', 'done', { arguments: { path: 'README.md' } }),
+    ]))
+
+    expect(blocks).toHaveLength(3)
+    expect(blocks.map((block) => block.kind)).toEqual(['tool_group', 'tool_group', 'tool_group'])
+    expect(blocks.map((block) => block.kind === 'tool_group' ? block.title : '')).toEqual([
+      'Write · App.vue',
+      'Write · main.ts',
+      'Write · README.md',
+    ])
+  })
+
+  it('uses actual file targets in read and edit tool titles', () => {
+    const blocks = projectAssistantFlow(message([
+      tool('read-1', 'read_file', 'done', { arguments: { path: 'agent/runner.py' } }),
+      tool('edit-1', 'edit_file', 'done', { metadata: { path: 'desktop/src/renderer/src/App.vue' } }),
+    ]))
+
+    expect(blocks).toHaveLength(2)
+    expect(blocks.map((block) => block.kind === 'tool_group' ? block.title : '')).toEqual([
+      'Read · runner.py',
+      'Edit · App.vue',
+    ])
+  })
+
+  it('preserves each tool status on its own execution node', () => {
     const running = projectAssistantFlow(message([
       tool('bash-1', 'run_command', 'done'),
       tool('bash-2', 'run_command', 'running'),
@@ -80,8 +116,8 @@ describe('assistant flow projection', () => {
       tool('bash-2', 'run_command', 'error'),
     ]))
 
-    expect(running[0]).toMatchObject({ kind: 'tool_group', status: 'running' })
-    expect(errored[0]).toMatchObject({ kind: 'tool_group', status: 'error' })
+    expect(running.map((block) => block.kind === 'tool_group' ? block.status : '')).toEqual(['done', 'running'])
+    expect(errored.map((block) => block.kind === 'tool_group' ? block.status : '')).toEqual(['running', 'error'])
   })
 
   it('keeps ask and plan controls as independent blocks', () => {
@@ -109,6 +145,66 @@ describe('assistant flow projection', () => {
 
     expect(blocks).toHaveLength(1)
     expect(blocks[0]).toMatchObject({ kind: 'thought', id: 'thought-running' })
+  })
+
+  it('keeps short completed audit thoughts when they include a summary', () => {
+    const blocks = projectAssistantFlow(message([
+      {
+        id: 'thought-audit',
+        type: 'thought',
+        status: 'done',
+        label: '思考参考',
+        summary: '准备调用 read_file，先确认图片路径。',
+        source: 'audit',
+        stage: 'tool_intent',
+        durationMs: 10,
+      },
+    ]))
+
+    expect(blocks).toHaveLength(1)
+    expect(blocks[0]).toMatchObject({
+      kind: 'thought',
+      id: 'thought-audit',
+      segment: {
+        summary: '准备调用 read_file，先确认图片路径。',
+        stage: 'tool_intent',
+      },
+    })
+  })
+
+  it('filters legacy plain-success tool result summaries from the timeline', () => {
+    const blocks = projectAssistantFlow(message([
+      {
+        id: 'thought-result',
+        type: 'thought',
+        status: 'done',
+        label: '思考参考',
+        stage: 'tool_result_summary',
+        source: 'audit',
+        summary: 'glob 成功：README.md AGENTS.md package.json',
+        durationMs: 0,
+      },
+    ]))
+
+    expect(blocks).toHaveLength(0)
+  })
+
+  it('keeps notable tool result summaries for errors and media artifacts', () => {
+    const blocks = projectAssistantFlow(message([
+      {
+        id: 'thought-result',
+        type: 'thought',
+        status: 'done',
+        label: '思考参考',
+        stage: 'tool_result_summary',
+        source: 'audit',
+        summary: 'read_file 失败；run_command 成功，识别到 1 个图片 artifact',
+        durationMs: 0,
+      },
+    ]))
+
+    expect(blocks).toHaveLength(1)
+    expect(blocks[0]).toMatchObject({ kind: 'thought', id: 'thought-result' })
   })
 
   it('uses assistant total duration for the first completed thought execution summary', () => {
@@ -164,6 +260,37 @@ describe('assistant flow projection', () => {
 
     expect(blocks.map((block) => block.kind)).toEqual(['tool_group', 'todos'])
     expect(blocks[1]).toEqual({ kind: 'todos', id: 'todos-todo-tool', todos })
+  })
+
+  it('projects image media artifacts as an inline media block after the tool group', () => {
+    const blocks = projectAssistantFlow(message([
+      tool('bash-1', 'run_command', 'done', {
+        artifacts: [{
+          path: '/Users/me/Desktop/screen.png',
+          kind: 'media',
+          bytes: 512,
+          media: {
+            id: 'media_2026-06_abcdef12',
+            kind: 'image',
+            mime: 'image/png',
+            name: 'screen.png',
+            relPath: 'memory/media/2026-06/abcdef12-screen.png',
+            originalPath: '/Users/me/Desktop/screen.png',
+          },
+        }],
+      }),
+    ]))
+
+    expect(blocks.map((block) => block.kind)).toEqual(['tool_group', 'media'])
+    expect(blocks[1]).toMatchObject({
+      kind: 'media',
+      id: 'media-bash-1',
+      items: [{
+        id: 'media_2026-06_abcdef12',
+        kind: 'image',
+        mime: 'image/png',
+      }],
+    })
   })
 
   it('adds fallback todos only when no tool already promoted todos', () => {

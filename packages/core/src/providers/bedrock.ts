@@ -12,7 +12,7 @@ export class BedrockProvider extends LLMProvider {
     super(cfg)
     try {
       const { BedrockRuntimeClient } = require('@aws-sdk/client-bedrock-runtime')
-      // eslint-disable-next-line @typescript-eslint/no-var-requires
+
       const { StandardRetryStrategy } = require('@aws-sdk/middleware-retry') as any
       // Fall back to a simple client if retry strategy isn't available.
       try {

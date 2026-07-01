@@ -1,5 +1,5 @@
 import { describe, it, expect, afterEach } from 'vitest'
-import { backendBase, apiUrl, wsUrl, getBackendToken } from './backend'
+import { backendBase, apiUrl, wsUrl, getBackendToken, invokeCore, onCoreEvent } from './backend'
 
 const g = globalThis as unknown as { window?: unknown }
 
@@ -7,16 +7,7 @@ afterEach(() => {
   delete g.window
 })
 
-describe('with an injected backend base url', () => {
-  it('builds absolute api and ws urls', () => {
-    g.window = { emperor: { backendBaseUrl: 'http://127.0.0.1:8765' } }
-    expect(backendBase()).toBe('http://127.0.0.1:8765')
-    expect(apiUrl('/api/bootstrap')).toBe('http://127.0.0.1:8765/api/bootstrap')
-    expect(wsUrl('/ws?x=1')).toBe('ws://127.0.0.1:8765/ws?x=1')
-  })
-})
-
-describe('without an injected backend base url (same-origin fallback)', () => {
+describe('same-origin fallback urls', () => {
   it('keeps api paths relative and derives ws from location', () => {
     g.window = { location: { protocol: 'http:', host: 'localhost:5173' } }
     expect(backendBase()).toBe('')
@@ -25,17 +16,59 @@ describe('without an injected backend base url (same-origin fallback)', () => {
   })
 })
 
-describe('with an injected backend token', () => {
-  it('appends the token to ws urls (browsers cannot set ws headers)', () => {
-    g.window = { emperor: { backendBaseUrl: 'http://127.0.0.1:8765', backendToken: 'tok-9' } }
-    expect(getBackendToken()).toBe('tok-9')
-    expect(wsUrl('/ws?x=1')).toBe('ws://127.0.0.1:8765/ws?x=1&token=tok-9')
-    expect(wsUrl('/ws')).toBe('ws://127.0.0.1:8765/ws?token=tok-9')
+describe('backend token', () => {
+  it('is empty because desktop no longer injects backend auth', () => {
+    g.window = { location: { protocol: 'http:', host: 'localhost:5173' } }
+    expect(getBackendToken()).toBe('')
+    expect(wsUrl('/ws?x=1')).toBe('ws://localhost:5173/ws?x=1')
+  })
+})
+
+describe('with an injected Core IPC bridge', () => {
+  it('delegates invokeCore to the preload bridge', async () => {
+    const calls: unknown[][] = []
+    g.window = {
+      emperor: {
+        invokeCore: async (...args: unknown[]) => {
+          calls.push(args)
+          return { ok: true }
+        },
+      },
+    }
+
+    await expect(invokeCore('bootstrap', { sessionId: 's1' })).resolves.toEqual({ ok: true })
+    expect(calls).toEqual([['bootstrap', { sessionId: 's1' }]])
   })
 
-  it('omits the token when absent', () => {
-    g.window = { emperor: { backendBaseUrl: 'http://127.0.0.1:8765' } }
-    expect(getBackendToken()).toBe('')
-    expect(wsUrl('/ws?x=1')).toBe('ws://127.0.0.1:8765/ws?x=1')
+  it('throws safe Core IPC errors instead of returning them as successful payloads', async () => {
+    g.window = {
+      emperor: {
+        invokeCore: async () => ({
+          ok: false,
+          error: { message: 'Internal error', errorId: 'ipc_abc123' },
+        }),
+      },
+    }
+
+    await expect(invokeCore('model.test')).rejects.toMatchObject({
+      message: 'Internal error',
+      errorId: 'ipc_abc123',
+    })
+  })
+
+  it('delegates onCoreEvent to the preload bridge', () => {
+    const events: unknown[] = []
+    const unsubscribe = () => { events.push('off') }
+    g.window = {
+      emperor: {
+        onCoreEvent: (listener: (event: unknown) => void) => {
+          listener({ event: 'ready' })
+          return unsubscribe
+        },
+      },
+    }
+
+    expect(onCoreEvent((event) => { events.push(event) })).toBe(unsubscribe)
+    expect(events).toEqual([{ event: 'ready' }])
   })
 })

@@ -1,12 +1,10 @@
-// Resolve the backend base url. When the desktop preload injected
-// window.emperor.backendBaseUrl (app:// production load), we use it to build
-// absolute /api and /ws urls. Otherwise (Vite dev server, same-origin) we keep
-// paths relative and derive the websocket origin from window.location.
+// Electron desktop talks to CoreApi over IPC. URL helpers remain for browser-only
+// development and tests, where requests are same-origin.
 
 interface EmperorBridge {
-  backendBaseUrl?: string
-  backendToken?: string
   selectDirectory?: () => Promise<string | null>
+  invokeCore?: (operationKey: string, ...args: unknown[]) => Promise<unknown>
+  onCoreEvent?: (listener: (event: unknown) => void) => () => void
 }
 
 function bridge(): EmperorBridge | undefined {
@@ -19,15 +17,11 @@ function loc(): { protocol: string; host: string } {
 }
 
 export function backendBase(): string {
-  const injected = bridge()?.backendBaseUrl
-  return typeof injected === 'string' ? injected : ''
+  return ''
 }
 
-// Per-launch token injected by the packaged Electron app (empty in dev). Sent as a
-// header on fetch and as a query param on the WebSocket (browsers cannot set ws headers).
 export function getBackendToken(): string {
-  const injected = bridge()?.backendToken
-  return typeof injected === 'string' ? injected : ''
+  return ''
 }
 
 export function apiUrl(path: string): string {
@@ -35,17 +29,50 @@ export function apiUrl(path: string): string {
 }
 
 export function wsUrl(path: string): string {
-  const base = backendBase()
-  const { protocol, host } = base ? { protocol: '', host: '' } : loc()
-  const raw = base
-    ? base.replace(/^http/, 'ws') + path
-    : `${protocol === 'https:' ? 'wss:' : 'ws:'}//${host}${path}`
-  const token = getBackendToken()
-  if (!token) return raw
-  return `${raw}${raw.includes('?') ? '&' : '?'}token=${encodeURIComponent(token)}`
+  const { protocol, host } = loc()
+  return `${protocol === 'https:' ? 'wss:' : 'ws:'}//${host}${path}`
 }
 
 export async function selectDirectory(): Promise<string | null> {
   const picker = bridge()?.selectDirectory
   return typeof picker === 'function' ? picker() : null
+}
+
+export async function invokeCore(operationKey: string, ...args: unknown[]): Promise<unknown> {
+  const invoke = bridge()?.invokeCore
+  if (typeof invoke !== 'function') throw new Error('Core IPC bridge is unavailable')
+  const result = await invoke(operationKey, ...args)
+  const safeError = safeCoreIpcError(result)
+  if (safeError) {
+    const error = new Error(safeError.message) as Error & { errorId?: string; code?: string }
+    if (safeError.errorId) error.errorId = safeError.errorId
+    if (safeError.code) error.code = safeError.code
+    throw error
+  }
+  return result
+}
+
+export function hasCoreBridge(): boolean {
+  return typeof bridge()?.invokeCore === 'function'
+}
+
+export function onCoreEvent(listener: (event: unknown) => void): () => void {
+  const subscribe = bridge()?.onCoreEvent
+  if (typeof subscribe !== 'function') return () => {}
+  return subscribe(listener)
+}
+
+function safeCoreIpcError(value: unknown): { message: string; errorId?: string; code?: string } | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null
+  const payload = value as Record<string, unknown>
+  if (payload.ok !== false) return null
+  const rawError = payload.error
+  if (!rawError || typeof rawError !== 'object' || Array.isArray(rawError)) return null
+  const error = rawError as Record<string, unknown>
+  const message = typeof error.message === 'string' && error.message ? error.message : 'Internal error'
+  return {
+    message,
+    errorId: typeof error.errorId === 'string' ? error.errorId : undefined,
+    code: typeof error.code === 'string' ? error.code : undefined,
+  }
 }

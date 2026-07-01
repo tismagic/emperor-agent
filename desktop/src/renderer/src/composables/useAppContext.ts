@@ -67,6 +67,7 @@ export interface AppContext {
 
   showToast: (message: string) => void
   runSafely: (task: () => Promise<void>) => Promise<void>
+  openOnboarding: () => void
 
   tokens: Ref<TokensPayload | null>
   tokensLoading: Ref<boolean>

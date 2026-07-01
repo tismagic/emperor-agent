@@ -4,6 +4,8 @@ import type { ToolSegment, ToolStatus } from '../../types'
 import { toolIcon } from '../../icons'
 import type { AssistantFlowBlock } from './assistantFlowProjection'
 import ToolDetailBody from './ToolDetailBody.vue'
+import { toolPurpose, toolTitle } from './toolDisplay'
+import { toolGroupDetailText } from './toolGroupModel'
 
 type ToolGroupBlock = Extract<AssistantFlowBlock, { kind: 'tool_group' }>
 
@@ -15,17 +17,6 @@ const defaultOpen = computed(() =>
 )
 
 const primaryTool = computed(() => props.block.tools[0])
-const runningTools = computed(() => props.block.tools.filter((tool) => tool.status === 'running'))
-const errorTools = computed(() => props.block.tools.filter((tool) => tool.status === 'error' || tool.status === 'error_aborted'))
-const completedCount = computed(() => props.block.tools.filter((tool) => tool.status === 'done').length)
-const latestTodos = computed(() => {
-  for (let index = props.block.tools.length - 1; index >= 0; index -= 1) {
-    const tool = props.block.tools[index]
-    if (tool?.todos?.length) return tool.todos
-  }
-  return []
-})
-const isTodoOnlyGroup = computed(() => props.block.tools.every((tool) => tool.name === 'update_todos'))
 const agentCount = computed(() =>
   props.block.tools.reduce((count, tool) => {
     const ownAgent = tool.name === 'dispatch_subagent' ? 1 : 0
@@ -35,20 +26,7 @@ const agentCount = computed(() =>
 
 const statusText = computed(() => statusLabel(props.block.status))
 const singleTool = computed(() => props.block.tools.length === 1)
-const detailText = computed(() => {
-  if (runningTools.value.length) return `正在执行 ${toolNames(runningTools.value)}`
-  if (errorTools.value.length) return `${errorTools.value.length} 个工具需要处理`
-  if (isTodoOnlyGroup.value && latestTodos.value.length) return `已更新 ${latestTodos.value.length} 个任务步骤`
-  if (latestTodos.value.length) return `已同步 ${latestTodos.value.length} 个任务步骤`
-  return `已完成 ${completedCount.value}/${props.block.tools.length} 个工具`
-})
-
-function toolNames(tools: ToolSegment[]) {
-  return tools
-    .map((tool) => tool.displayName || tool.name)
-    .slice(0, 2)
-    .join('、')
-}
+const detailText = computed(() => toolGroupDetailText(props.block.tools))
 
 function statusLabel(status: ToolStatus) {
   if (status === 'done') return '完成'
@@ -71,26 +49,6 @@ function isTodoTool(tool: ToolSegment) {
   return tool.name === 'update_todos' && Boolean(tool.todos?.length)
 }
 
-function toolTitle(tool: ToolSegment) {
-  return tool.displayName || tool.name
-}
-
-function toolPurpose(tool: ToolSegment) {
-  const purposes: Record<string, string> = {
-    dispatch_subagent: '派遣子代理',
-    edit_file: '修改文件',
-    glob: '匹配路径',
-    grep: '搜索文本',
-    load_skill: '加载 Skill',
-    read_file: '读取文件',
-    run_command: '执行命令',
-    scheduler: '调度任务',
-    update_todos: '更新任务',
-    web_fetch: '读取网页',
-    write_file: '写入文件',
-  }
-  return purposes[tool.name] || '工具执行'
-}
 </script>
 
 <template>
@@ -101,7 +59,7 @@ function toolPurpose(tool: ToolSegment) {
       </span>
       <span class="tool-group-main">
         <strong>{{ props.block.title }}</strong>
-        <small>{{ detailText }}</small>
+        <small v-if="detailText">{{ detailText }}</small>
       </span>
       <span class="tool-group-meta">
         <em v-if="agentCount">Agent × {{ agentCount }}</em>
@@ -131,7 +89,7 @@ function toolPurpose(tool: ToolSegment) {
             </span>
             <span class="tool-group-tool-title">
               <strong>{{ toolTitle(tool) }}</strong>
-              <small>{{ toolPurpose(tool) }}</small>
+              <small>{{ toolPurpose(tool.name) }}</small>
             </span>
             <span class="tool-group-tool-meta">
               <em>{{ toolStatusLabel(tool) }}</em>
