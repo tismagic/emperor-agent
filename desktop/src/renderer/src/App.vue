@@ -4,6 +4,7 @@ import { useRouter } from 'vue-router'
 import SessionSidebar from './components/layout/SessionSidebar.vue'
 import OnboardingWizard from './components/onboarding/OnboardingWizard.vue'
 import type { WizardModelSettings } from './components/onboarding/onboardingModel'
+import { runInitialStartup } from './appStartup'
 import { buildSlashPaletteItems, parseSkillSlashCommand, parseSlashCommand, slashCommands, type SlashCommand } from './commands'
 import { useBootstrap } from './composables/useBootstrap'
 import { useRuntime } from './composables/useRuntime'
@@ -110,15 +111,13 @@ const { data: tokensData, loading: tokensLoading, load: loadTokens } = tokensCli
 const slashPaletteItems = computed(() => buildSlashPaletteItems(boot.value?.skills || []))
 
 onMounted(async () => {
-  await sessionStore.load()
-  if (sessionStore.activeId.value) switchSession(sessionStore.activeId.value)
-  await loadBootstrap(true, sessionStore.backendSessionId())
-  if (!error.value) {
-    if (!sessionStore.isDraftSessionId(sessionStore.activeId.value)) {
-      restoreFromHistory(boot.value?.unarchivedHistory || [])
-    }
-    connectSocket()
-  }
+  await runInitialStartup({
+    sessionStore,
+    bootstrap,
+    switchSession,
+    restoreFromHistory,
+    connectSocket,
+  })
 })
 
 async function refreshAll() {
