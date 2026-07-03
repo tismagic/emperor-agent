@@ -896,6 +896,34 @@ describe('AgentRunner turn phases (test_runner_state.py)', () => {
     expect(manager.planStore.get(planId)!.steps[0]!.status).toBe('active')
   })
 
+  it('escalates a strategy nudge when the same safety refusal repeats within a turn', async () => {
+    class DeniedTool extends Tool {
+      override name = 'deny_echo'
+      override description = 'always refused by safety policy'
+      override parameters = toolParamsSchema({}, [])
+      async execute(): Promise<string> {
+        return 'Error: command refused by safety policy (matches dangerous pattern: /\\bpython3?\\s+-c\\b/)'
+      }
+    }
+    const registry = new ToolRegistry()
+    registry.register(new DeniedTool())
+    const provider = new FakeProvider([
+      makeResponse({ content: '', toolCalls: [toolCall('deny_1', 'deny_echo', {})], finishReason: 'tool_calls' }),
+      makeResponse({ content: '', toolCalls: [toolCall('deny_2', 'deny_echo', {})], finishReason: 'tool_calls' }),
+      makeResponse({ content: 'done' }),
+    ])
+    const runner = new AgentRunner({ provider, model: 'fake', registry, systemPrompt: 'system' })
+    const history: Msg[] = [{ role: 'user', content: 'run it' }]
+
+    await runner.stepAsync(history)
+
+    const toolMessages = history.filter((message) => message.role === 'tool')
+    expect(toolMessages).toHaveLength(2)
+    expect(String(toolMessages[0]!.content)).not.toContain('已被拒绝')
+    expect(String(toolMessages[1]!.content)).toContain('已被拒绝 2 次')
+    expect(String(toolMessages[1]!.content)).toContain('改变策略')
+  })
+
   it('max_turns terminal reply is a structured delivery summary instead of the flat failure line', async () => {
     const todoStore = new TodoStore()
     todoStore.todos = [

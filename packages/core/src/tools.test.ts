@@ -140,6 +140,14 @@ describe('RunCommand deny-list (audit P1-1)', () => {
       expect(out, command).toContain('refused by safety policy')
     }
   })
+
+  it('refusal message tells the model an actionable alternative', async () => {
+    const r = new RunCommand(dir)
+    const out = await r.execute({ command: 'python3 -c "print(1)"' })
+    expect(out).toContain('refused by safety policy')
+    expect(out).toContain('临时脚本文件')
+    expect(out).toContain('不要')
+  })
 })
 
 describe('RunCommand cancellation', () => {

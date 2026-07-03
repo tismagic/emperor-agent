@@ -329,7 +329,12 @@ export class RunCommand extends Tool {
     const cwdDecision = workspacePolicyForTool(ctx, this.workspace).resolvePath('.', 'execute', { baseRoot: workspace })
     if (!cwdDecision.allowed) return `Error: command cwd blocked by workspace policy: ${formatWorkspacePolicyError(cwdDecision)}`
     for (const pat of DENY_PATTERNS) {
-      if (pat.test(command)) return `Error: command refused by safety policy (matches dangerous pattern: ${pat})`
+      if (pat.test(command)) {
+        return (
+          `Error: command refused by safety policy (matches dangerous pattern: ${pat})\n`
+          + '替代方案：把代码写入临时脚本文件后执行，或运行现有的测试/脚本文件；不要重试同类命令或尝试绕过安全检查。'
+        )
+      }
     }
     try {
       const { stdout } = await execCommand(command, {

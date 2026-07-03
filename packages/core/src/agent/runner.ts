@@ -195,6 +195,7 @@ export class AgentRunner implements RunnerModelHost {
   maxTurns: number | null
   contextPipeline: ContextPipeline
   toolExecutionEngine: ToolExecutionEngine
+  private readonly denyRefusalCounts = new Map<string, number>()
   workspaceRoot: string | null
   promptSections: PromptSectionInput[]
   promptSnapshotDir: string | null
@@ -263,6 +264,7 @@ export class AgentRunner implements RunnerModelHost {
     const turnId = opts?.turnId ?? null
     const signal = opts?.signal ?? null
     throwIfAborted(signal)
+    this.denyRefusalCounts.clear()
     const turnState = new TurnState({ turnId })
     await this.emitTurnPhase(turnState, TurnPhase.STARTED, emit, { history_length: history.length })
     const entryPlanDecision = this.assessPlanDecision(history)
@@ -682,6 +684,7 @@ export class AgentRunner implements RunnerModelHost {
       }
       const result = await this.runToolResult(call, emit, clarification, ctx.planDecisionRef.current, signal)
       throwIfAborted(signal)
+      this.applyRepeatedRefusalNudge(result)
       this.recordPlanDiscovery(call, result)
       this.recordPlanStepToolOutput(call, result)
       const content = result.modelContent
@@ -797,6 +800,20 @@ export class AgentRunner implements RunnerModelHost {
     } catch {
       return null
     }
+  }
+
+  private static readonly SAFETY_REFUSAL_RE = /command refused by safety policy \(matches dangerous pattern: ([^)]+)\)/
+
+  /** 同一危险模式在一轮内反复被拒时，向模型追加换策略的强化提示（P1-4）。 */
+  private applyRepeatedRefusalNudge(result: ToolResultObj): void {
+    const match = AgentRunner.SAFETY_REFUSAL_RE.exec(result.modelContent)
+    if (match === null) return
+    const pattern = match[1]!
+    const count = (this.denyRefusalCounts.get(pattern) ?? 0) + 1
+    this.denyRefusalCounts.set(pattern, count)
+    if (count < 2) return
+    result.modelContent +=
+      `\n（该危险模式本轮已被拒绝 ${count} 次，必须改变策略：把代码写入临时脚本文件后执行，或运行现有测试/脚本文件；不要再重试同类命令。）`
   }
 
   private activePlanForSummary(): PlanRecord | null {
