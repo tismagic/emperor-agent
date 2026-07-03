@@ -15,7 +15,6 @@ import {
   type PlanStep,
 } from '../plans/models'
 import { PlanExecutionState } from '../plans/execution-state'
-import { PlanEvidenceError, assessStepVerification, failedRequired } from '../plans/evidence'
 import type { Interaction } from './models'
 import {
   isPositiveInt,
@@ -58,7 +57,6 @@ export class PlanExecutionManager {
       }
       const todoStatus = String(todo.status ?? 'pending')
       const nextStatus = planStatusFromTodo(todoStatus)
-      this.validatePlanStepTransition(step, { todo, nextStatus })
       const stepEvidence = [...step.evidence]
       if (nextStatus === PlanStepStatus.DONE && step.status !== PlanStepStatus.DONE) {
         stepEvidence.push({
@@ -94,33 +92,6 @@ export class PlanExecutionManager {
     updated = this.syncPlanStepTasks(updated)
     this.cm.planStore.save(updated)
     return updated
-  }
-
-  private validatePlanStepTransition(step: PlanStep, opts: { todo: Record<string, unknown>; nextStatus: string }): void {
-    if (opts.nextStatus === PlanStepStatus.BLOCKED) {
-      const blockedReason = String(opts.todo.blocked_reason ?? '').trim()
-      if (!blockedReason && !this.cm.hasAskInteraction()) {
-        throw new PlanEvidenceError('PLAN_BLOCKED_REASON_REQUIRED', {
-          stepId: step.id,
-          reason: 'blocked steps must include blocked_reason or be paired with ask_user',
-        })
-      }
-    }
-    if (opts.nextStatus !== PlanStepStatus.DONE || step.status === PlanStepStatus.DONE) return
-    const assessment = assessStepVerification(step)
-    const failed = failedRequired(assessment)
-    if (failed.length) {
-      throw new PlanEvidenceError('PLAN_EVIDENCE_FAILED', {
-        stepId: step.id,
-        reason: `declared verification failed: ${failed.slice(0, 3).join('; ')}`,
-      })
-    }
-    if (assessment.blockingErrors.length) {
-      throw new PlanEvidenceError('PLAN_EVIDENCE_REQUIRED', {
-        stepId: step.id,
-        reason: `missing passing verification evidence for: ${assessment.blockingErrors.slice(0, 3).join('; ')}`,
-      })
-    }
   }
 
   recordPlanStepToolOutput(opts: {

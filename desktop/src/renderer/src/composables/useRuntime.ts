@@ -288,9 +288,10 @@ export function useRuntime(options: {
     }
     const count = Array.isArray(data.cancelled) ? data.cancelled.length : 0
     if (!count) {
+      const staleCleared = settleStaleStreamingAssistant('（后端没有正在运行的任务，上次回复已中断。）')
       updatePending('没有正在运行的任务', '', 'done')
       options.showToast('当前没有可停止的任务')
-      return false
+      return staleCleared
     }
     const assistant = currentAssistant.value
     if (assistant) finishInterruptedAssistant(assistant, '（已请求停止当前任务。）')
@@ -594,6 +595,9 @@ export function useRuntime(options: {
     lastSeq.value = Math.max(lastSeq.value, Number(options.boot.value?.runtime?.latestSeq || 0))
     const assistant = currentAssistant.value
     busy.value = Boolean(assistant?.streaming)
+    if (assistant?.streaming && options.boot.value?.runtime?.busy === false) {
+      settleStaleStreamingAssistant('（后端没有正在运行的任务，上次回复已中断。）')
+    }
   }
 
   function handleSocketEvent(raw: string) {
@@ -1043,11 +1047,8 @@ export function useRuntime(options: {
         updatePending()
         options.showToast('服务已重启，上一条未完成回复已停止，请重新发送。')
       }
-    } else if (currentAssistant.value?.streaming && !data.busy && !hasReplay) {
-      finishInterruptedAssistant(currentAssistant.value, '（连接已恢复，但后端没有正在运行的回复，请重新发送。）')
-      currentAssistantId.value = null
-      busy.value = false
-      updatePending()
+    } else if (currentAssistant.value?.streaming && !data.busy) {
+      settleStaleStreamingAssistant('（连接已恢复，但后端没有正在运行的回复，请重新发送。）')
     }
 
     if (options.boot.value) {
@@ -1572,6 +1573,35 @@ export function useRuntime(options: {
       assistant.segments.push({ id: nextId('segment'), type: 'text', content: fallback })
     }
     markRunningAsAborted(assistant)
+  }
+
+  function settleStaleStreamingAssistant(fallback: string): boolean {
+    const assistant = currentAssistant.value
+    if (!assistant?.streaming) return false
+    const endedAt = Date.now()
+    finishActiveThought(assistant)
+    finishTimedState(assistant, endedAt)
+    settleRunningToolSegments(assistant, {
+      endedAt,
+      status: 'error_aborted',
+      summary: '后端没有正在运行的任务',
+    })
+    appendInterruptionNotice(assistant, fallback)
+    markRunningAsAborted(assistant)
+    assistant.streaming = false
+    currentAssistantId.value = null
+    busy.value = false
+    updatePending()
+    return true
+  }
+
+  function appendInterruptionNotice(assistant: AssistantMessage, fallback: string) {
+    const text = fallback.trim()
+    if (!text) return
+    if (!assistant.content) assistant.content = text
+    else if (!assistant.content.includes(text)) assistant.content = `${assistant.content}\n\n${text}`
+    const exists = assistant.segments.some((segment) => segment.type === 'text' && segment.content.includes(text))
+    if (!exists) assistant.segments.push({ id: nextId('segment'), type: 'text', content: text })
   }
 
   function findTeamSubagent(assistant: AssistantMessage, teammate: string) {

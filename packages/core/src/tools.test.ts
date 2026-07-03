@@ -239,4 +239,18 @@ describe('TodoStore + UpdateTodos (test_todo_tool.py)', () => {
     expect(result).toContain('[x] 1. 运行测试')
     expect(result).not.toContain('正在运行测试')
   })
+
+  it('adds a verification nudge for 3+ completed tasks without failing the update', () => {
+    const s = new TodoStore()
+    const result = s.update([
+      { id: 1, content: '实现 API', status: 'completed' },
+      { id: 2, content: '更新 UI', status: 'completed' },
+      { id: 3, content: '整理状态', status: 'completed' },
+    ])
+
+    expect(result).toContain('todos updated: total=3, completed=3')
+    expect(result).toContain('NOTE:')
+    expect(result).toContain('verification')
+    expect(s.todos).toHaveLength(3)
+  })
 })

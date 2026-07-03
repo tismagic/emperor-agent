@@ -4,14 +4,12 @@ import type { ToolSegment, ToolStatus } from '../../types'
 import { toolIcon } from '../../icons'
 import ToolDetailBody from './ToolDetailBody.vue'
 import { toolStatusText } from './toolDisplay'
+import { toolCardDefaultOpen } from './toolGroupModel'
 
 const props = defineProps<{ segment: ToolSegment }>()
 const title = computed(() => props.segment.displayName || displayName(props.segment.name))
 const purpose = computed(() => toolPurpose(props.segment.name))
-const defaultOpen = computed(() =>
-  props.segment.status === 'running' ||
-  Boolean(props.segment.subagents?.length),
-)
+const defaultOpen = computed(() => toolCardDefaultOpen([props.segment]))
 
 function statusLabel(status: ToolStatus) {
   return toolStatusText(status)

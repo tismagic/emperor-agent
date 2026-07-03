@@ -4,6 +4,7 @@
  */
 import { nowTs } from '../util/time'
 import { PlanStatus, PlanStepStatus, planToDict, type PlanRecord } from '../plans/models'
+import { requirementsForStep } from '../plans/verification'
 import { ControlMode, InteractionStatus } from './models'
 import {
   INDEPENDENT_VERIFICATION_SOURCE,
@@ -12,7 +13,6 @@ import {
   hasCommandEvidence,
   independentVerificationRiskSignals,
   latestIndependentVerificationEvidence,
-  metadataWithoutPlanPermissionTokens,
   normalizeCommand,
   planChangedFiles,
   planCommands,
@@ -50,9 +50,10 @@ export class PlanVerificationManager {
     const requested = normalizeCommand(command)
     for (const step of record.steps) {
       if (step.status !== PlanStepStatus.ACTIVE) continue
-      for (const expected of step.commands) {
-        if (normalizeCommand(expected) === requested) {
-          return { plan_id: record.id, step_id: step.id, command: expected }
+      for (const requirement of requirementsForStep(step)) {
+        if (requirement.kind !== 'command' || !requirement.command) continue
+        if (normalizeCommand(requirement.command) === requested) {
+          return { plan_id: record.id, step_id: step.id, command: requirement.command, requirement_id: requirement.id }
         }
       }
     }
@@ -63,15 +64,12 @@ export class PlanVerificationManager {
     const record = this.cm.planStore.get(opts.planId)
     if (record === null) return null
     const now = nowTs()
-    const failed = opts.result.passed === false
     const steps = record.steps.map((step) =>
       step.id === opts.stepId
-        ? { ...step, status: failed ? PlanStepStatus.FAILED : step.status, evidence: [...step.evidence, opts.result] }
+        ? { ...step, evidence: [...step.evidence, opts.result] }
         : step,
     )
-    const metadata = failed
-      ? metadataWithoutPlanPermissionTokens(record.metadata, { reason: 'plan step failed' })
-      : { ...record.metadata }
+    const metadata = { ...record.metadata }
     const updated = { ...record, status: PlanStatus.EXECUTING, updatedAt: now, steps, metadata }
     this.cm.planStore.save(updated)
     this.cm.appendPlanStepVerification(updated, { stepId: opts.stepId, result: opts.result })
@@ -79,27 +77,7 @@ export class PlanVerificationManager {
   }
 
   planCompletionFollowup(): Record<string, unknown> | null {
-    const record = this.cm.latestExecutablePlan()
-    if (record === null || !record.steps.length) return null
-    const unfinished = record.steps.filter((s) => s.status !== PlanStepStatus.DONE && s.status !== PlanStepStatus.SKIPPED)
-    if (!unfinished.length) return null
-    const lines = [
-      '[PLAN_INCOMPLETE]',
-      `plan_id: ${record.id}`,
-      `status: ${record.status}`,
-      '以下计划步骤仍未完成，不能直接最终答复。请继续执行、修复失败步骤，或在确实受阻时说明阻塞原因并调用 ask_user：',
-      '',
-    ]
-    for (const step of unfinished) {
-      lines.push(`- ${step.id} [${step.status}] ${step.title}`)
-      if (step.commands.length) lines.push(`  commands: ${step.commands.slice(0, 3).join('; ')}`)
-      if (step.evidence.length) {
-        const latest = step.evidence[step.evidence.length - 1]!
-        const summary = String(latest.summary ?? latest.error ?? '').slice(0, 300)
-        if (summary) lines.push(`  latest_evidence: ${summary}`)
-      }
-    }
-    return { plan_id: record.id, unfinished_count: unfinished.length, message: lines.join('\n'), plan: planToDict(record) }
+    return null
   }
 
   recordIndependentVerificationResult(opts: { planId: string; result: Record<string, unknown> }): PlanRecord | null {

@@ -361,6 +361,62 @@ describe('useRuntime IPC runtime path (MIG-IPC-010)', () => {
     ]))
   })
 
+  it('settles stale runtime replay when bootstrap says no task is busy', () => {
+    g.window = fakeWindow({
+      invokeCore: async () => ({ ok: true }),
+      onCoreEvent: () => () => {},
+    })
+    const boot = ref({
+      app: 'Emperor Agent',
+      runtime: {
+        latestSeq: 3,
+        busy: false,
+        events: [
+          { event: 'user_message', seq: 1, turn_id: 'turn-stale', content: 'build it' },
+          { event: 'message_delta', seq: 2, turn_id: 'turn-stale', delta: 'working' },
+          { event: 'tool_run_completed', seq: 3, turn_id: 'turn-stale', id: 'call_1', name: 'run_command', summary: 'done' },
+        ],
+      },
+    } as unknown as BootstrapPayload)
+    const runtime = useRuntime({ ...testOptions(), boot })
+
+    runtime.restoreFromHistory([])
+
+    const assistant = runtime.messages.value.find((message) => message.role === 'assistant')
+    expect(runtime.busy.value).toBe(false)
+    expect(assistant).toMatchObject({ streaming: false })
+    expect(JSON.stringify(assistant)).toContain('后端没有正在运行的任务')
+  })
+
+  it('clears stale local streaming state when stop finds no backend task', async () => {
+    g.window = fakeWindow({
+      invokeCore: async (...args: unknown[]) => {
+        if (args[0] === 'chat.stopRuntime') return { cancelled: [], active: [] }
+        return { ok: true }
+      },
+      onCoreEvent: () => () => {},
+    })
+    const boot = ref({
+      app: 'Emperor Agent',
+      runtime: {
+        latestSeq: 2,
+        busy: false,
+        events: [
+          { event: 'user_message', seq: 1, turn_id: 'turn-stale-stop', content: 'build it' },
+          { event: 'message_delta', seq: 2, turn_id: 'turn-stale-stop', delta: 'working' },
+        ],
+      },
+    } as unknown as BootstrapPayload)
+    const runtime = useRuntime({ ...testOptions(), boot })
+    runtime.restoreFromHistory([])
+    expect(runtime.busy.value).toBe(false)
+
+    await expect(runtime.stopActive()).resolves.toBe(false)
+
+    expect(runtime.busy.value).toBe(false)
+    expect(runtime.messages.value.find((message) => message.role === 'assistant')).toMatchObject({ streaming: false })
+  })
+
   it('stops active runtime tasks through Core IPC when the bridge is available', async () => {
     const calls: unknown[][] = []
     g.window = fakeWindow({

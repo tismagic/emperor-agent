@@ -433,12 +433,13 @@ export class ControlManager implements ControlManagerHost, ToolManagerHost {
       interaction.planMarkdown,
       '',
       '[PLAN_EXECUTION_CONTRACT]',
-      '- Convert the approved plan into todos before editing, and keep the active todo aligned with the active PlanStep.',
-      '- Keep exactly one active todo / active PlanStep while executing; move to the next step only after the current step has evidence.',
-      '- Before marking a step done, record verification evidence by running declared commands or producing an explicit tool-backed check result.',
-      '- If verification failed, keep or mark the step failed, diagnose and repair the failure, rerun verification, then continue.',
+      '- Treat the approved plan as execution context, not as a live task database.',
+      '- Use update_todos as the session checklist for complex work; it is not a verification tool and does not decide PlanStep status.',
+      '- Keep exactly one active todo while executing. Mark a todo completed only when the described work is actually complete.',
+      '- Run relevant tests, builds, commands, or an independent reviewer before final reporting when the change is non-trivial.',
+      '- If verification failed, keep the relevant todo in_progress or blocked, diagnose and repair the failure, rerun checks, then continue.',
       '- If the step is blocked by missing input, access, cost, safety, or unrecoverable ambiguity, call ask_user and keep the step blocked until resolved.',
-      '- Do not provide a final answer while any step is pending, active, failed, or blocked.',
+      '- Do not claim completion while the session todo list still has pending, in_progress, or blocked items.',
     )
     if (planRecord !== null && planRecord.steps.length) {
       lines.push('', '[PLAN_STEPS]')

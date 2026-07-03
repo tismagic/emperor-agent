@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { ToolSegment } from '../../types'
-import { toolGroupDetailText } from './toolGroupModel'
+import { toolCardDefaultOpen, toolGroupDetailText } from './toolGroupModel'
 
 function tool(name: string, status: ToolSegment['status'] = 'done', extra: Partial<ToolSegment> = {}): ToolSegment {
   return {
@@ -29,5 +29,13 @@ describe('tool group model', () => {
         { id: 2, content: '继续修复', status: 'pending' },
       ],
     })])).toBe('已更新 2 个任务步骤')
+  })
+
+  it('keeps every tool card collapsed until the user expands it', () => {
+    expect(toolCardDefaultOpen([tool('run_command', 'running')])).toBe(false)
+    expect(toolCardDefaultOpen([tool('update_todos', 'error')])).toBe(false)
+    expect(toolCardDefaultOpen([tool('dispatch_subagent', 'done', {
+      subagents: [{ id: 'agent-1', kind: 'subagent', name: 'worker', status: 'done', tools: [], messages: [] }],
+    })])).toBe(false)
   })
 })

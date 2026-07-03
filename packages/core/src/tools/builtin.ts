@@ -164,6 +164,7 @@ export interface TodoItem {
 
 const TODO_VALID_STATUS = ['pending', 'in_progress', 'completed', 'blocked']
 const TODO_STATUS_ICON: Record<string, string> = { pending: '[ ]', in_progress: '[~]', completed: '[x]', blocked: '[!]' }
+const TODO_VERIFICATION_PATTERN = /\b(verif(?:y|ication)?|test(?:s|ing)?|review(?:er)?)\b|验证|校验|测试|复核/i
 
 function renderTodos(todos: Array<Record<string, unknown>>): string {
   if (!todos.length) return '(当前无待办事项)'
@@ -209,7 +210,8 @@ export class TodoStore {
     const completed = this.todos.filter((t) => t.status === 'completed').length
     const pending = this.todos.filter((t) => t.status === 'pending').length
     const summary = `todos updated: total=${this.todos.length}, completed=${completed}, in_progress=${inProgressCount}, pending=${pending}`
-    return summary + '\n\n当前列表：\n' + renderTodos(this.todos)
+    const nudge = todoVerificationNudge(this.todos)
+    return summary + '\n\n当前列表：\n' + renderTodos(this.todos) + nudge
   }
 
   syncFromPlanSteps(steps: Array<Record<string, unknown>>): string {
@@ -250,11 +252,18 @@ export class TodoStore {
   clear(): void { this.todos = [] }
 }
 
+function todoVerificationNudge(todos: Array<Record<string, unknown>>): string {
+  if (todos.length < 3) return ''
+  if (!todos.every((t) => t.status === 'completed')) return ''
+  if (todos.some((t) => TODO_VERIFICATION_PATTERN.test(String(t.content ?? '')))) return ''
+  return '\n\nNOTE: You just completed 3+ tasks and none of them appears to be verification, test, or review work. Before final reporting, run the relevant checks or use an independent verification reviewer when the change is non-trivial.'
+}
+
 export class UpdateTodos extends Tool {
   override name = 'update_todos'
   override description = (
-    '创建或更新当前任务清单。每次传入完整 todos 数组并全量覆盖，用于拆解多步骤任务和推进状态；同一时间最多只能有一个 in_progress 项。'
-    + '复杂任务开始前先建清单，开始步骤前标记 in_progress 并可填写 active_form，完成后立即标记 completed；验证失败或阻塞时不要标 completed。'
+    '创建或更新当前会话任务清单。每次传入完整 todos 数组并全量覆盖，用于拆解复杂多步骤任务和展示进度；同一时间最多只能有一个 in_progress 项。'
+    + '简单或纯问答任务不需要使用。任务真正完成后及时标记 completed；失败、阻塞或部分完成时保持 in_progress/blocked。该工具只维护清单，不验证实现正确性，也不裁决计划步骤。'
   )
   override parameters = toolParamsSchema(
     { todos: { type: 'array', items: { type: 'object', properties: { id: S('任务ID'), content: S('任务内容'), status: S('pending|in_progress|completed|blocked'), activeForm: S('进行时标签'), planStepId: S('关联计划步骤') }, description: '任务项' }, description: '完整任务列表' } },

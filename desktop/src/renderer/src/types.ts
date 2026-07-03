@@ -504,6 +504,7 @@ export interface RuntimeReplayPayload {
   sessionId?: string
   afterSeq?: number
   latestSeq: number
+  busy?: boolean
   scope?: 'unarchived' | string
   events: RuntimeEventEnvelope[]
 }

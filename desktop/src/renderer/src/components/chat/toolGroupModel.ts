@@ -1,6 +1,10 @@
 import type { ToolSegment } from '../../types'
 import { toolTitle } from './toolDisplay'
 
+export function toolCardDefaultOpen(_tools: ToolSegment[]) {
+  return false
+}
+
 export function toolGroupDetailText(tools: ToolSegment[]) {
   const runningTools = tools.filter((tool) => tool.status === 'running')
   const queuedTools = tools.filter((tool) => tool.status === 'queued')

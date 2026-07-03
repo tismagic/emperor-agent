@@ -559,10 +559,10 @@ describe('ProposePlanTool quality gate (test_plan_quality_gate.py)', () => {
   })
 })
 
-// ── test_plan_verification_matrix.py::test_all_required_legacy_commands_must_pass_before_completion ──
+// ── Claude Code-style TodoWrite/TaskUpdate semantics: todo progress is not a plan evidence gate ──
 
 describe('Plan verification matrix integration (test_plan_verification_matrix.py)', () => {
-  function managerWithActiveStep(commands: string[]): { manager: ControlManager; planId: string } {
+  function managerWithActiveStep(commands: string[], extraStep: Record<string, unknown> = {}): { manager: ControlManager; planId: string } {
     const manager = new ControlManager(tmp('emperor-vmatrix-'))
     manager.setTodoStore(new TodoStore())
     manager.setMode('plan')
@@ -578,6 +578,7 @@ describe('Plan verification matrix integration (test_plan_verification_matrix.py
           files: ['agent/runner.py'],
           commands,
           acceptance: ['verification requirements are satisfied'],
+          ...extraStep,
         },
       ],
       assumptions: [],
@@ -590,19 +591,48 @@ describe('Plan verification matrix integration (test_plan_verification_matrix.py
     return { manager, planId: plan!.id }
   }
 
-  it('all required legacy commands must pass before completion', () => {
+  it('legacy todo projection can complete a step without passing every command first', () => {
     const first = '.venv/bin/python -m pytest tests/unit/test_runner_state.py -q'
     const second = '.venv/bin/python -m pytest tests/unit/test_plan_store.py -q'
     const { manager, planId } = managerWithActiveStep([first, second])
     manager.recordPlanVerificationResult({ planId, stepId: 'step_1', result: { command: first, passed: true, summary: 'first passed' } })
 
-    expect(() =>
-      manager.syncPlanFromTodos([{ id: 1, content: 'Run matrix', status: 'completed' }], { evidence: { source: 'update_todos' } }),
-    ).toThrowError(/PLAN_EVIDENCE_REQUIRED/)
-
-    manager.recordPlanVerificationResult({ planId, stepId: 'step_1', result: { command: second, passed: true, summary: 'second passed' } })
     const updated = manager.syncPlanFromTodos([{ id: 1, content: 'Run matrix', status: 'completed' }], { evidence: { source: 'update_todos' } })
     expect(updated!.steps[0]!.status).toBe('done')
+  })
+
+  it('failed command evidence is recorded without forcing the active step to failed', () => {
+    const command = '.venv/bin/python -m pytest tests/unit/test_runner_state.py -q'
+    const { manager, planId } = managerWithActiveStep([command])
+
+    const updated = manager.recordPlanVerificationResult({
+      planId,
+      stepId: 'step_1',
+      result: { command, passed: false, summary: 'test failed' },
+    })
+
+    expect(updated!.steps[0]!.status).toBe('active')
+    expect(updated!.steps[0]!.evidence.at(-1)).toMatchObject({ command, passed: false })
+  })
+
+  it('matches explicit verification commands as evidence targets', () => {
+    const command = 'npm --prefix desktop run test'
+    const { manager } = managerWithActiveStep([], {
+      verification: [{ id: 'v1', kind: 'command', required: true, command, description: 'desktop tests' }],
+    })
+
+    expect(manager.planVerificationTarget(command)).toMatchObject({
+      step_id: 'step_1',
+      command,
+      requirement_id: 'v1',
+    })
+  })
+
+  it('approved plans do not inject incomplete followup just because PlanStep is still active', () => {
+    const { manager } = managerWithActiveStep(['npm test'])
+
+    expect(manager.latestExecutablePlan()?.steps[0]?.status).toBe('active')
+    expect(manager.planCompletionFollowup()).toBeNull()
   })
 })
 

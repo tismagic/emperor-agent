@@ -232,6 +232,7 @@ export class CoreApi {
       runtime: {
         events: runtimeReplay.events,
         latestSeq: runtimeReplay.latestSeq,
+        busy: this.loop.activeTasks.hasActive(),
         stats: this.loop.runtimeStore.stats({ activeTurnIds }),
       },
       projects: this.projects.list(),

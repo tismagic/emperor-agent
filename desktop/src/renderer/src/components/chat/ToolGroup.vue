@@ -6,16 +6,13 @@ import type { AssistantFlowBlock } from './assistantFlowProjection'
 import ToolDetailBody from './ToolDetailBody.vue'
 import { CHAT_EXPANSION_STORE_KEY } from './expansionStoreKey'
 import { toolPurpose, toolStatusText, toolTitle } from './toolDisplay'
-import { toolGroupDetailText } from './toolGroupModel'
+import { toolCardDefaultOpen, toolGroupDetailText } from './toolGroupModel'
 
 type ToolGroupBlock = Extract<AssistantFlowBlock, { kind: 'tool_group' }>
 
 const props = defineProps<{ block: ToolGroupBlock }>()
 
-const defaultOpen = computed(() =>
-  props.block.status !== 'done' ||
-  props.block.tools.some((tool) => Boolean(tool.subagents?.length)),
-)
+const defaultOpen = computed(() => toolCardDefaultOpen(props.block.tools))
 
 // Wave6：展开态存到 MessageList 提供的 store，虚拟滚动卸载重挂不丢
 const expansion = inject(CHAT_EXPANSION_STORE_KEY, null)
