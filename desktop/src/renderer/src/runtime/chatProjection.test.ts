@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { projectChatEvents } from './chatProjection'
+import { projectAssistantFlow } from '../components/chat/assistantFlowProjection'
+import type { AssistantMessage } from '../types'
 
 describe('chatProjection', () => {
   it('rebuilds text, thought, tool, and control segments from runtime replay', () => {
@@ -65,6 +67,95 @@ describe('chatProjection', () => {
       outputMissing: true,
     })
     expect(tools.find((tool) => tool.toolId === 'call_old')?.output).toBeUndefined()
+  })
+
+  // P1-3 fixture：按旧 session 96b48b39 的真实事件序列复刻（provisional delta 流、
+  // propose_plan 被 cancel、plan_approved 无 turn_id、隐藏 control user_message 换 turn 续跑）。
+  it('replays the full plan draft-delta/approve/resume sequence into one continuous assistant flow', () => {
+    const provisional = (title: string) => ({
+      id: 'provisional-plan-call_1',
+      kind: 'plan',
+      status: 'waiting',
+      parent_call_id: 'call_1',
+      title,
+      summary: '',
+      plan_markdown: '',
+      meta: { plan_stream_id: 'call_1', provisional: true },
+    })
+    const state = projectChatEvents([
+      { event: 'user_message', seq: 1, session_id: 's1', turn_id: 'turn_A', content: '随便做点东西' },
+      { event: 'message_delta', seq: 2, session_id: 's1', turn_id: 'turn_A', delta: '先出个计划。' },
+      { event: 'tool_run_queued', seq: 3, session_id: 's1', turn_id: 'turn_A', id: 'call_1', name: 'propose_plan', arguments: {} },
+      { event: 'tool_run_started', seq: 4, session_id: 's1', turn_id: 'turn_A', id: 'call_1', name: 'propose_plan' },
+      { event: 'tool_call', seq: 5, session_id: 's1', turn_id: 'turn_A', id: 'call_1', name: 'propose_plan', arguments: {} },
+      { event: 'plan_draft_delta', seq: 6, session_id: 's1', turn_id: 'turn_A', interaction: provisional('Term') },
+      { event: 'plan_draft_delta', seq: 7, session_id: 's1', turn_id: 'turn_A', interaction: provisional('Terminal Dream') },
+      { event: 'plan_draft_delta', seq: 8, session_id: 's1', turn_id: 'turn_A', interaction: provisional('Terminal Dreamscape') },
+      { event: 'tool_run_cancelled', seq: 9, session_id: 's1', turn_id: 'turn_A', id: 'call_1', name: 'propose_plan', reason: 'turn_paused' },
+      { event: 'tool_result', seq: 10, session_id: 's1', turn_id: 'turn_A', id: 'call_1', name: 'propose_plan', summary: 'waiting for user (plan:plan_1)' },
+      {
+        event: 'plan_draft',
+        seq: 11,
+        session_id: 's1',
+        turn_id: 'turn_A',
+        interaction: {
+          id: 'plan_1', kind: 'plan', status: 'waiting', parent_call_id: 'call_1',
+          title: 'Terminal Dreamscape', plan_markdown: '# Plan', meta: { plan_id: 'plan_rec_1' },
+        },
+      },
+      { event: 'turn_paused', seq: 12, session_id: 's1', turn_id: 'turn_A', interaction: { id: 'plan_1', kind: 'plan', status: 'waiting' } },
+      { event: 'plan_approved', seq: 13, session_id: 's1', interaction: { id: 'plan_1', kind: 'plan', status: 'approved' } },
+      { event: 'user_message', seq: 14, session_id: 's1', turn_id: 'turn_B', source: 'control', ui_hidden: true, content: '' },
+      { event: 'message_delta', seq: 15, session_id: 's1', turn_id: 'turn_B', delta: '计划批准，开始执行。' },
+      { event: 'tool_call', seq: 16, session_id: 's1', turn_id: 'turn_B', id: 'call_2', name: 'write_file', arguments: { path: 'main.py' } },
+      { event: 'tool_result', seq: 17, session_id: 's1', turn_id: 'turn_B', id: 'call_2', name: 'write_file', summary: 'written' },
+      { event: 'assistant_done', seq: 18, session_id: 's1', turn_id: 'turn_B', content: '先出个计划。计划批准，开始执行。' },
+    ], { sessionId: 's1' })
+
+    const assistants = state.messages.filter((message) => message.role === 'assistant')
+    expect(assistants).toHaveLength(1)
+    const assistant = assistants[0] as AssistantMessage
+    expect(assistant.streaming).toBe(false)
+    expect(state.messages.filter((message) => message.role === 'user')).toHaveLength(1)
+
+    const planSegments = assistant.segments.filter((segment) => segment.type === 'plan')
+    expect(planSegments).toHaveLength(1)
+    expect(planSegments[0]!.interaction).toMatchObject({ id: 'plan_1', status: 'approved' })
+    expect(planSegments[0]!.interaction.meta?.provisional).toBeUndefined()
+
+    const proposeTool = assistant.segments.find((segment) => segment.type === 'tool' && segment.toolId === 'call_1')
+    expect(proposeTool).toBeDefined()
+    expect(proposeTool!.type === 'tool' && (proposeTool!.status === 'running' || proposeTool!.status === 'queued')).toBe(false)
+
+    const blocks = projectAssistantFlow(assistant)
+    const kinds = blocks.map((block) => block.kind)
+    expect(kinds.filter((kind) => kind === 'control')).toHaveLength(1)
+    for (const block of blocks) {
+      if (block.kind === 'text') expect(block.content.trim()).not.toBe('')
+    }
+    const lastText = [...blocks].reverse().find((block) => block.kind === 'text')
+    expect(lastText && lastText.kind === 'text' ? lastText.content : '').toContain('计划批准，开始执行。')
+  })
+
+  it('replays ask answer resume across turns into the same assistant', () => {
+    const state = projectChatEvents([
+      { event: 'user_message', seq: 1, session_id: 's1', turn_id: 'turn_A', content: '帮我改配置' },
+      { event: 'message_delta', seq: 2, session_id: 's1', turn_id: 'turn_A', delta: '需要确认范围。' },
+      { event: 'ask_request', seq: 3, session_id: 's1', turn_id: 'turn_A', interaction: { id: 'ask_1', kind: 'ask', status: 'waiting', context: '改哪个环境？' } },
+      { event: 'turn_paused', seq: 4, session_id: 's1', turn_id: 'turn_A', interaction: { id: 'ask_1', kind: 'ask', status: 'waiting' } },
+      { event: 'ask_answered', seq: 5, session_id: 's1', interaction: { id: 'ask_1', kind: 'ask', status: 'answered', answers: { q1: { choice: 'prod' } } } },
+      { event: 'user_message', seq: 6, session_id: 's1', turn_id: 'turn_B', source: 'control', ui_hidden: true, content: '' },
+      { event: 'message_delta', seq: 7, session_id: 's1', turn_id: 'turn_B', delta: '好，按 prod 处理。' },
+      { event: 'assistant_done', seq: 8, session_id: 's1', turn_id: 'turn_B', content: '需要确认范围。好，按 prod 处理。' },
+    ], { sessionId: 's1' })
+
+    const assistants = state.messages.filter((message) => message.role === 'assistant')
+    expect(assistants).toHaveLength(1)
+    const askSegments = assistants[0]!.segments.filter((segment) => segment.type === 'ask')
+    expect(askSegments).toHaveLength(1)
+    expect(askSegments[0]!.interaction.status).toBe('answered')
+    const blocks = projectAssistantFlow(assistants[0] as AssistantMessage)
+    expect(blocks.map((block) => block.kind)).toEqual(['text', 'control', 'text'])
   })
 
   it('keeps a plan approval resume turn inside the paused assistant flow during replay', () => {

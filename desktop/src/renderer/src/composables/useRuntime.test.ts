@@ -628,6 +628,58 @@ describe('useRuntime IPC runtime path (MIG-IPC-010)', () => {
     ]))
   })
 
+  it('keeps the live plan approve/resume sequence in one continuous assistant flow (P1-3 fixture)', async () => {
+    let listener: ((event: unknown) => void) | null = null
+    g.window = fakeWindow({
+      invokeCore: async () => ({ ok: true }),
+      onCoreEvent: (cb: (event: unknown) => void) => {
+        listener = cb
+        return () => { listener = null }
+      },
+    })
+    const runtime = useRuntime(testOptions())
+
+    runtime.connectSocket()
+    listener?.({ event: 'user_message', seq: 1, turn_id: 'turn-plan', content: '随便做点东西' })
+    listener?.({ event: 'message_delta', seq: 2, turn_id: 'turn-plan', delta: '先出个计划。' })
+    listener?.({ event: 'tool_run_started', seq: 3, turn_id: 'turn-plan', id: 'call_pp', name: 'propose_plan' })
+    listener?.({ event: 'tool_call', seq: 4, turn_id: 'turn-plan', id: 'call_pp', name: 'propose_plan', arguments: {} })
+    listener?.({
+      event: 'plan_draft_delta',
+      seq: 5,
+      turn_id: 'turn-plan',
+      tool_call_id: 'call_pp',
+      interaction: { id: 'provisional-plan-call_pp', kind: 'plan', status: 'waiting', title: 'Term', meta: { plan_stream_id: 'call_pp', provisional: true } },
+    })
+    listener?.({ event: 'tool_run_cancelled', seq: 6, turn_id: 'turn-plan', id: 'call_pp', name: 'propose_plan', reason: 'turn_paused' })
+    listener?.({ event: 'tool_result', seq: 7, turn_id: 'turn-plan', id: 'call_pp', name: 'propose_plan', summary: 'waiting for user (plan:plan_live)' })
+    listener?.({
+      event: 'plan_draft',
+      seq: 8,
+      turn_id: 'turn-plan',
+      interaction: { id: 'plan_live', kind: 'plan', status: 'waiting', parent_call_id: 'call_pp', title: 'Terminal Dreamscape', plan_markdown: '# Plan' },
+    })
+    listener?.({ event: 'turn_paused', seq: 9, turn_id: 'turn-plan', interaction: { id: 'plan_live', kind: 'plan', status: 'waiting' } })
+    listener?.({ event: 'plan_approved', seq: 10, interaction: { id: 'plan_live', kind: 'plan', status: 'approved' } })
+    listener?.({ event: 'user_message', seq: 11, turn_id: 'turn-plan-resume', source: 'control', ui_hidden: true, content: '' })
+    listener?.({ event: 'message_delta', seq: 12, turn_id: 'turn-plan-resume', delta: '计划批准，开始执行。' })
+    listener?.({ event: 'tool_call', seq: 13, turn_id: 'turn-plan-resume', id: 'call_wf', name: 'write_file', arguments: { path: 'main.py' } })
+    listener?.({ event: 'tool_result', seq: 14, turn_id: 'turn-plan-resume', id: 'call_wf', name: 'write_file', summary: 'written' })
+    listener?.({ event: 'assistant_done', seq: 15, turn_id: 'turn-plan-resume', content: '先出个计划。计划批准，开始执行。' })
+
+    const assistants = runtime.messages.value.filter((message) => message.role === 'assistant')
+    expect(assistants).toHaveLength(1)
+    expect(runtime.messages.value.filter((message) => message.role === 'user')).toHaveLength(1)
+    expect(assistants[0]).toMatchObject({ content: '先出个计划。计划批准，开始执行。', streaming: false })
+    const planSegments = assistants[0]!.segments.filter((segment) => segment.type === 'plan')
+    expect(planSegments).toHaveLength(1)
+    expect(planSegments[0]!.interaction).toMatchObject({ id: 'plan_live', status: 'approved' })
+    const proposeTool = assistants[0]!.segments.find((segment) => segment.type === 'tool' && segment.toolId === 'call_pp')
+    expect(proposeTool).toMatchObject({ status: 'done', summary: 'waiting for user (plan:plan_live)' })
+    const resumeTool = assistants[0]!.segments.find((segment) => segment.type === 'tool' && segment.toolId === 'call_wf')
+    expect(resumeTool).toMatchObject({ status: 'done' })
+  })
+
   it('merges streaming plan_draft_delta events into the final plan card', async () => {
     let listener: ((event: unknown) => void) | null = null
     g.window = fakeWindow({
