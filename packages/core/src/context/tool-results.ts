@@ -11,6 +11,7 @@ export const DEFAULT_KEEP_RECENT = 10
 export const DEFAULT_MIN_BYTES = 1500
 export const DEFAULT_TOOL_RESULT_BUDGET = 8000
 export const DEFAULT_TOOL_RESULT_TAIL = 200
+export const DEFAULT_AGGREGATE_TOOL_RESULT_BUDGET = 24_000
 
 export interface ToolResultReplacementRecord {
   turn_id: string
@@ -154,9 +155,113 @@ export function replaceLargeToolResults(
   return [out, replacements]
 }
 
+export function replaceAggregateToolResults(
+  history: OpenAiMsg[],
+  store: ToolResultStore,
+  opts: {
+    budgetChars?: number
+    previewChars?: number
+  } = {},
+): [OpenAiMsg[], ToolResultReplacementRecord[], Array<Record<string, unknown>>] {
+  const budgetChars = opts.budgetChars ?? DEFAULT_AGGREGATE_TOOL_RESULT_BUDGET
+  if (!Number.isInteger(budgetChars) || budgetChars <= 0) return [history.slice(), [], []]
+
+  const out = history.map((msg) => ({ ...msg }))
+  const groups = new Map<string, {
+    key: string
+    total: number
+    entries: Array<{
+      index: number
+      size: number
+      content: string
+      toolCallId: string
+      toolName: string
+      turnId: string
+      replaceable: boolean
+    }>
+  }>()
+  let currentBatchKey: string | null = null
+  let currentBatchTurnId: string | null = null
+
+  out.forEach((msg, index) => {
+    if (msg.role === 'assistant') {
+      const toolCalls = Array.isArray(msg.tool_calls) ? msg.tool_calls : []
+      currentBatchKey = toolCalls.length > 0 ? `assistant:${String(msg.turn_id || msg.id || index)}` : null
+      currentBatchTurnId = toolCalls.length > 0 ? String(msg.turn_id || msg.id || currentBatchKey) : null
+      return
+    }
+    if (msg.role !== 'tool') {
+      currentBatchKey = null
+      currentBatchTurnId = null
+      return
+    }
+
+    const explicitTurnId = String(msg.turn_id || '').trim()
+    const groupKey = explicitTurnId ? `turn:${explicitTurnId}` : currentBatchKey ?? `tool:${index}`
+    const turnId = explicitTurnId || currentBatchTurnId || 'unknown_turn'
+    const content = typeof msg.content === 'string' ? msg.content : String(msg.content ?? '')
+    const size = contentTextSize(msg.content)
+    const toolCallId = String(msg.tool_call_id || msg.id || `tool_${index}`)
+    const toolName = String(msg.name || toolCallId || 'tool')
+    const group = groups.get(groupKey) ?? { key: groupKey, total: 0, entries: [] }
+    group.total += size
+    group.entries.push({
+      index,
+      size,
+      content,
+      toolCallId,
+      toolName,
+      turnId,
+      replaceable: size > 0 && !isToolResultReplacement(content),
+    })
+    groups.set(groupKey, group)
+  })
+
+  const replacements: ToolResultReplacementRecord[] = []
+  const groupReports: Array<Record<string, unknown>> = []
+  for (const group of groups.values()) {
+    if (group.total <= budgetChars) continue
+    let currentTotal = group.total
+    const replacedCallIds: string[] = []
+    const candidates = group.entries
+      .filter((entry) => entry.replaceable)
+      .sort((a, b) => (b.size - a.size) || (a.index - b.index))
+
+    for (const entry of candidates) {
+      if (currentTotal <= budgetChars) break
+      const record = store.persistLargeResult(entry.turnId, entry.toolCallId, entry.toolName, entry.content, {
+        previewChars: opts.previewChars ?? 1000,
+      })
+      const replacement = replacementMessage(record)
+      const replacementSize = contentTextSize(replacement)
+      if (replacementSize >= entry.size) continue
+      out[entry.index] = { ...out[entry.index]!, content: replacement }
+      currentTotal = currentTotal - entry.size + replacementSize
+      replacements.push(record)
+      replacedCallIds.push(entry.toolCallId)
+    }
+
+    if (replacedCallIds.length) {
+      groupReports.push({
+        group_key: group.key,
+        budget_chars: budgetChars,
+        original_chars: group.total,
+        projected_chars: currentTotal,
+        replaced_tool_call_ids: replacedCallIds,
+      })
+    }
+  }
+
+  return [out, replacements, groupReports]
+}
+
 function limitForTool(toolName: string, limits: Record<string, number>, fallback: number): number {
   const value = limits[toolName]
   return typeof value === 'number' && Number.isInteger(value) && value > 0 ? value : fallback
+}
+
+function isToolResultReplacement(content: string): boolean {
+  return content.trimStart().startsWith('[tool_result_replacement]')
 }
 
 function replacementMessage(record: ToolResultReplacementRecord): string {

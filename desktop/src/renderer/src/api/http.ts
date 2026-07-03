@@ -27,6 +27,7 @@ function coreRoute(path: string, options: RequestInit): { operation: string; arg
 
   if (method === 'GET') {
     if (pathname === '/api/bootstrap') return op('bootstrap', { sessionId: url.searchParams.get('session') || null })
+    if (pathname === '/api/runtime/replay') return op('runtime.replay', runtimeReplayOptions(url))
     if (pathname === '/api/sessions') return op('sessions.list', { includeArchived: url.searchParams.get('archived') === '1' })
     if (pathname === '/api/projects') return op('projects.list')
     if (pathname === '/api/control') return op('control.get')
@@ -135,4 +136,20 @@ function queryOptions(url: URL): Record<string, number> {
     if (Number.isFinite(value)) out[key] = value
   }
   return out
+}
+
+function runtimeReplayOptions(url: URL): Record<string, unknown> {
+  return {
+    sessionId: url.searchParams.get('session') || url.searchParams.get('session_id') || null,
+    afterSeq: numberParam(url, 'after_seq') ?? numberParam(url, 'afterSeq') ?? 0,
+    limit: numberParam(url, 'limit'),
+    includeArchive: url.searchParams.get('archive') === '1' || url.searchParams.get('include_archive') === '1',
+  }
+}
+
+function numberParam(url: URL, key: string): number | null {
+  const raw = url.searchParams.get(key)
+  if (raw == null || raw === '') return null
+  const value = Number(raw)
+  return Number.isFinite(value) ? value : null
 }

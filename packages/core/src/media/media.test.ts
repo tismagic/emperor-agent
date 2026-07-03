@@ -120,6 +120,23 @@ describe('tool media ingestion', () => {
     expect(result.artifacts[0]?.media?.originalPath).toBe(source)
   })
 
+  it('resolves relative image paths from workspaceRoot while storing media under runtime root', async () => {
+    const root = tmp('emperor-media-runtime-root-')
+    const workspaceRoot = tmp('emperor-media-workspace-root-')
+    const source = join(workspaceRoot, 'screen.png')
+    writeFileSync(source, pngBytes())
+    const registry = new ToolRegistry(root)
+    registry.register(new StaticTool('screen.png'))
+
+    const result = await registry.executeResult('run_command', {}, { workspaceRoot })
+    const media = result.artifacts[0]?.media
+
+    expect(media?.originalPath).toBe(source)
+    expect(media?.relPath).toContain('memory/media/')
+    expect(existsSync(join(root, media!.relPath))).toBe(true)
+    expect(existsSync(join(workspaceRoot, 'memory'))).toBe(false)
+  })
+
   it('tells the model about image media imported from tool arguments even when the tool result is an error', async () => {
     const root = tmp('emperor-media-error-')
     const source = join(root, 'screen.png')

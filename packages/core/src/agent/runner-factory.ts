@@ -4,6 +4,7 @@
  */
 import type { LLMProvider } from '../providers/base'
 import type { ModelRoute } from '../model/router'
+import type { PromptSectionInput } from '../prompts/manifest'
 import type { ToolRegistry } from '../tools/registry'
 import {
   AgentRunner,
@@ -27,6 +28,10 @@ export function buildRoutedRunner(opts: {
   controlManager?: ControlManagerRunnerHost | null
   maxContext?: number | null
   maxTurns?: number
+  workspaceRoot?: string | null
+  promptSections?: PromptSectionInput[] | null
+  promptSnapshotDir?: string | null
+  sessionId?: string | null
 }): AgentRunner {
   const snapshot = opts.route.snapshot
   const fallback = opts.route.fallback
@@ -59,5 +64,9 @@ export function buildRoutedRunner(opts: {
     controlManager: opts.controlManager ?? null,
     ...(opts.maxContext !== null && opts.maxContext !== undefined ? { maxContext: opts.maxContext } : {}),
     maxTurns: opts.maxTurns ?? 12,
+    workspaceRoot: opts.workspaceRoot ?? null,
+    promptSections: opts.promptSections ?? null,
+    promptSnapshotDir: opts.promptSnapshotDir ?? null,
+    sessionId: opts.sessionId ?? null,
   })
 }

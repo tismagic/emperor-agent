@@ -1,9 +1,10 @@
 import type { TeamManager } from '../../team/manager'
 
 type Dict = Record<string, any>
+type TeamManagerProvider = TeamManager | (() => TeamManager | null) | null
 
 export interface CoreTeamServiceDeps {
-  teamManager: TeamManager | null
+  teamManager: TeamManagerProvider
   activeSession?: () => { mode?: string | null; project_id?: string | null } | null
   assertMutation?: (area: string, action: string) => void
 }
@@ -16,7 +17,7 @@ export class CoreTeamService {
   }
 
   get(): Dict {
-    const manager = this.deps.teamManager
+    const manager = this.managerOrNull()
     if (!manager) return fallbackPayload()
     const payload = manager.payload() as Dict
     payload.managed = true
@@ -62,8 +63,15 @@ export class CoreTeamService {
   }
 
   private requireManager(): TeamManager {
-    if (!this.deps.teamManager) throw new Error('Team is only available inside Build project sessions')
-    return this.deps.teamManager
+    const manager = this.managerOrNull()
+    if (!manager) throw new Error('Team is only available inside Build project sessions')
+    return manager
+  }
+
+  private managerOrNull(): TeamManager | null {
+    const provider = this.deps.teamManager
+    if (!provider) return null
+    return typeof provider === 'function' ? provider() : provider
   }
 
   private assertMutation(area: string, action: string): void {

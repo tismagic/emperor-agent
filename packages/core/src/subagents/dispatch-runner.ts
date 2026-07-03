@@ -34,6 +34,7 @@ export function buildDispatchRunner(args: DispatchRunnerFactoryArgs, opts: Route
     controlManager: opts.controlManager ?? null,
     maxContext: opts.maxContext ?? null,
     maxTurns: args.spec.maxTurns,
+    workspaceRoot: args.workspaceRoot ?? null,
   })
   return {
     step: (history) => runner.stepAsync(history),

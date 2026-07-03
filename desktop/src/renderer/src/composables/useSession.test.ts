@@ -145,7 +145,15 @@ describe('useSession IPC session routes (MIG-IPC-010)', () => {
     await session.create({
       mode: 'build',
       title: '构建 demo',
-      project: { project_id: 'project_1', project_path: '/tmp/demo', project_name: 'demo' },
+      project: {
+        project_id: 'project_1',
+        project_path: '/tmp/demo',
+        workspace_path: '/tmp/demo',
+        project_name: 'demo',
+        state_path: '/state/projects/project_1',
+        memory_path: '/state/projects/project_1/AGENTS.local.md',
+        legacy_agents_path: null,
+      },
     })
 
     expect(calls[0]).toEqual([
@@ -153,7 +161,15 @@ describe('useSession IPC session routes (MIG-IPC-010)', () => {
       {
         title: '构建 demo',
         mode: 'build',
-        project: { project_id: 'project_1', project_path: '/tmp/demo', project_name: 'demo' },
+        project: {
+          project_id: 'project_1',
+          project_path: '/tmp/demo',
+          workspace_path: '/tmp/demo',
+          project_name: 'demo',
+          state_path: '/state/projects/project_1',
+          memory_path: '/state/projects/project_1/AGENTS.local.md',
+          legacy_agents_path: null,
+        },
       },
     ])
     expect(session.sessions.value[0]).toMatchObject({

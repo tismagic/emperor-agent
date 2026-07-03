@@ -7,6 +7,8 @@
  */
 import { describe, expect, it } from 'vitest'
 import { join } from 'node:path'
+import { mkdtempSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { ContextBuilder, type MemoryLike, type SkillsLoaderLike, type SubagentRegistryLike } from './context-builder'
 
 const TEMPLATES_DIR = join(__dirname, '..', '..', '..', '..', 'templates')
@@ -43,9 +45,11 @@ describe('ContextBuilder (test_agent_prompt_contracts.py — template-driven)', 
     expect(prompt).not.toContain('source=`')
     expect(prompt).toContain('由 `SubagentRegistry` 动态注入')
     expect(prompt).toContain('xiaohuangmen')
-    expect(prompt).toContain('奉天承运皇帝诏曰')
-    expect(prompt).toContain('轻量宫廷口吻')
-    expect(prompt).toContain('机器可读内容不得加此前缀')
+    expect(prompt).toContain('Prompt Profile: technical')
+    expect(prompt).toContain('不使用固定角色扮演前缀')
+    expect(prompt).not.toContain('奉天承运皇帝诏曰')
+    expect(prompt).not.toContain('小太监')
+    expect(prompt).toContain('机器可读内容必须保持原格式')
     expect(prompt).toContain('结论：直接说明办成什么')
     expect(prompt).toContain('不要向用户展示隐藏推理')
     for (const phrase of [
@@ -85,5 +89,35 @@ describe('ContextBuilder (test_agent_prompt_contracts.py — template-driven)', 
     expect(prompt).toContain('Workspace root: `')
     expect(prompt).not.toContain('{{ workspace }}')
     expect(prompt).not.toContain('{{ subagents_summary }}')
+  })
+
+  it('keeps ceremonial wording behind the explicit classic prompt profile', () => {
+    const builder = new ContextBuilder(TEMPLATES_DIR, EMPTY_SKILLS, {
+      memory: new FakeMemory(''),
+      promptProfile: 'classic',
+    })
+    builder.setSubagentRegistry(FAKE_SUBAGENTS)
+
+    const prompt = builder.buildSystemPrompt()
+
+    expect(prompt).toContain('Prompt Profile: classic')
+    expect(prompt).toContain('奉天承运皇帝诏曰')
+  })
+
+  it('loads USER.local.md from the private state root when provided', () => {
+    const stateTemplates = mkdtempSync(join(tmpdir(), 'emperor-user-template-'))
+    const userFile = join(stateTemplates, 'USER.local.md')
+    writeFileSync(userFile, '# Private User\n\nstate-root-profile\n', 'utf8')
+    const builder = new ContextBuilder(TEMPLATES_DIR, EMPTY_SKILLS, {
+      memory: new FakeMemory(''),
+      userFile,
+    })
+    builder.setSubagentRegistry(FAKE_SUBAGENTS)
+
+    const sections = builder.buildSections()
+    const bootstrap = sections.find((section) => section.name === 'bootstrap')!
+
+    expect(bootstrap.content).toContain('state-root-profile')
+    expect(bootstrap.source).toContain(userFile)
   })
 })

@@ -85,6 +85,7 @@ export const actionIcons = {
   send: ArrowUp,
   caretDown: ChevronDown,
   modeAskBeforeEdit: ShieldQuestion,
+  modeAcceptEdits: FilePen,
   modeAuto: Zap,
   modePlan: ClipboardList,
   statusBusy: LoaderCircle,
@@ -93,6 +94,7 @@ export const actionIcons = {
 } satisfies Record<string, IconComponent>
 
 export function modeIcon(mode: string): IconComponent {
+  if (mode === 'accept_edits') return FilePen
   if (mode === 'auto') return Zap
   if (mode === 'plan') return ClipboardList
   return ShieldQuestion

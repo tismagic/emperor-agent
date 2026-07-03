@@ -6,7 +6,7 @@
  * 注: ToolResultStore 相关断言（large tool result 替换、registered budget）依赖 ContextPipeline 升级，单列。
  */
 import { describe, expect, it } from 'vitest'
-import { mkdtempSync, readFileSync } from 'node:fs'
+import { existsSync, mkdtempSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { AgentRunner, type MemoryStoreLike } from './runner'
@@ -36,6 +36,16 @@ function toolCall(id: string, name: string, args: Record<string, unknown>): Tool
   return { id, name, arguments: args }
 }
 
+function memoryDouble(): MemoryStoreLike & { cleared: boolean } {
+  return {
+    cleared: false,
+    writeCheckpoint: () => undefined,
+    clearCheckpoint() { this.cleared = true },
+    readCheckpoint: () => null,
+    appendHistory: () => undefined,
+  }
+}
+
 class FakeProvider extends LLMProvider {
   responses: LLMResponse[]
   seenMessages: ChatArgs['messages'][] = []
@@ -48,6 +58,38 @@ class FakeProvider extends LLMProvider {
     this.seenMessages.push(args.messages)
     this.seenTools.push(((args.tools as Array<Record<string, unknown>>) ?? []).map((t) => String(t.name)))
     return this.responses.length ? this.responses.shift()! : makeResponse({ content: 'done' })
+  }
+}
+
+class ContextOverflowOnceProvider extends LLMProvider {
+  seenMessages: ChatArgs['messages'][] = []
+  calls = 0
+  constructor(private readonly mode: 'once' | 'always' = 'once') {
+    super({ defaultModel: 'fake' })
+  }
+
+  async chat(args: ChatArgs): Promise<LLMResponse> {
+    this.calls++
+    this.seenMessages.push(args.messages)
+    if (this.mode === 'always' || this.calls === 1) {
+      throw Object.assign(new Error('maximum context length exceeded'), { code: 'context_length_exceeded' })
+    }
+    return makeResponse({ content: 'done', usage: { input: 80, output: 4 } })
+  }
+}
+
+class FlakyProvider extends LLMProvider {
+  seenMessages: ChatArgs['messages'][] = []
+  calls = 0
+  constructor(private readonly failuresBeforeSuccess: number, private readonly errorFactory: () => Error) {
+    super({ defaultModel: 'fake' })
+  }
+
+  async chat(args: ChatArgs): Promise<LLMResponse> {
+    this.calls++
+    this.seenMessages.push(args.messages)
+    if (this.calls <= this.failuresBeforeSuccess) throw this.errorFactory()
+    return makeResponse({ content: 'done', usage: { input: 90, output: 4 } })
   }
 }
 
@@ -202,6 +244,183 @@ describe('AgentRunner turn phases (test_runner_state.py)', () => {
     expect(phases.every((e) => e.turn_id === 'turn_1')).toBe(true)
   })
 
+  it('records compaction failure as degraded runtime state without failing a completed reply', async () => {
+    const emitted: Msg[] = []
+    const memory = memoryDouble()
+    const runner = new AgentRunner({
+      provider: new FakeProvider([makeResponse({ content: 'done' })]),
+      model: 'fake',
+      registry: new ToolRegistry(),
+      systemPrompt: 'system',
+      memoryStore: memory,
+      tokenTracker: {
+        record: () => undefined,
+        shouldCompact: () => true,
+      },
+      compactor: {
+        compactAsync: async () => {
+          throw new Error('compact failed')
+        },
+      },
+      maxContext: 100,
+    })
+
+    const reply = await runner.stepAsync([{ role: 'user', content: 'hi' }], { emit: (event) => { emitted.push(event) }, turnId: 'turn_compact_fail' })
+
+    expect(reply).toBe('done')
+    expect(memory.cleared).toBe(true)
+    expect(emitted).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        event: 'record_degraded',
+        kind: 'memory_compaction',
+        taskId: 'turn_compact_fail',
+      }),
+      expect.objectContaining({ event: 'turn_phase', phase: 'completed' }),
+    ]))
+  })
+
+  it('emits context usage with the active route context window', async () => {
+    const runner = new AgentRunner({
+      provider: new FakeProvider([makeResponse({ content: 'done', usage: { input: 120, output: 3 } })]),
+      model: 'fake',
+      registry: new ToolRegistry(),
+      systemPrompt: 'system',
+      maxContext: 1_000,
+    })
+    const emitted: Msg[] = []
+
+    await runner.stepAsync([{ role: 'user', content: 'hi' }], { emit: (event) => { emitted.push(event) } })
+
+    expect(emitted.find((event) => event.event === 'context_usage')).toMatchObject({
+      used: 120,
+      max: 1_000,
+      threshold: 700,
+    })
+  })
+
+  it('recovers once from provider context overflow with emergency projection shrink', async () => {
+    const provider = new ContextOverflowOnceProvider('once')
+    const runner = new AgentRunner({ provider, model: 'fake', registry: new ToolRegistry(), systemPrompt: 'system' })
+    const emitted: Msg[] = []
+    const history: Msg[] = [{ role: 'user', content: 'overflow '.repeat(3000) }]
+
+    const reply = await runner.stepAsync(history, { emit: (event) => { emitted.push(event) } })
+
+    const firstUser = provider.seenMessages[0]!.find((message) => message.role === 'user')!
+    const secondUser = provider.seenMessages[1]!.find((message) => message.role === 'user')!
+    const projectionReports = emitted.filter((event) => event.event === 'context_projection').map((event) => event.report as Record<string, unknown>)
+
+    expect(reply).toBe('done')
+    expect(provider.calls).toBe(2)
+    expect(String(firstUser.content).length).toBeGreaterThan(20_000)
+    expect(String(secondUser.content)).toContain('[local_microcompact]')
+    expect(String(secondUser.content).length).toBeLessThan(String(firstUser.content).length)
+    expect(projectionReports[1]).toMatchObject({ context_overflow_retry: 1, emergency_context_shrink: 1 })
+    expect(emitted).toEqual(expect.arrayContaining([
+      expect.objectContaining({ event: 'record_degraded', kind: 'context_overflow' }),
+    ]))
+    expect(history.filter((message) => message.role === 'assistant')).toHaveLength(1)
+  })
+
+  it('returns a domain context_overflow error after the emergency retry also overflows', async () => {
+    const provider = new ContextOverflowOnceProvider('always')
+    const runner = new AgentRunner({ provider, model: 'fake', registry: new ToolRegistry(), systemPrompt: 'system' })
+    const history: Msg[] = [{ role: 'user', content: 'overflow '.repeat(3000) }]
+
+    await expect(runner.stepAsync(history)).rejects.toMatchObject({
+      code: 'context_overflow',
+    })
+
+    expect(provider.calls).toBe(2)
+    expect(history.filter((message) => message.role === 'assistant')).toHaveLength(0)
+  })
+
+  it('retries retryable provider errors before succeeding', async () => {
+    const provider = new FlakyProvider(2, () => Object.assign(new Error('temporarily unavailable'), { status: 503 }))
+    const runner = new AgentRunner({ provider, model: 'fake', registry: new ToolRegistry(), systemPrompt: 'system' })
+    const emitted: Msg[] = []
+
+    const reply = await runner.stepAsync([{ role: 'user', content: 'hi' }], { emit: (event) => { emitted.push(event) } })
+
+    expect(reply).toBe('done')
+    expect(provider.calls).toBe(3)
+    expect(emitted.filter((event) => event.event === 'model_provider_retry')).toHaveLength(2)
+    expect(emitted.find((event) => event.event === 'context_usage')).toMatchObject({ provider_retry_count: 2 })
+  })
+
+  it('does not retry non-retryable auth provider errors', async () => {
+    const provider = new FlakyProvider(1, () => Object.assign(new Error('invalid api key'), { status: 401, code: 'invalid_api_key' }))
+    const runner = new AgentRunner({ provider, model: 'fake', registry: new ToolRegistry(), systemPrompt: 'system' })
+
+    await expect(runner.stepAsync([{ role: 'user', content: 'hi' }])).rejects.toMatchObject({ status: 401 })
+
+    expect(provider.calls).toBe(1)
+  })
+
+  it('degrades to a configured fallback provider without mutating the main route', async () => {
+    const primary = new FlakyProvider(3, () => Object.assign(new Error('temporarily unavailable'), { status: 503 }))
+    const fallback = new FakeProvider([makeResponse({ content: 'fallback done', usage: { input: 70, output: 5 } })])
+    const runner = new AgentRunner({
+      provider: primary,
+      model: 'main-model',
+      registry: new ToolRegistry(),
+      systemPrompt: 'system',
+      fallbackProvider: fallback,
+      fallbackModel: 'fallback-model',
+      fallbackProviderName: 'fallback-provider',
+      usageType: 'scheduler',
+    })
+    const emitted: Msg[] = []
+
+    const reply = await runner.stepAsync([{ role: 'user', content: 'hi' }], { emit: (event) => { emitted.push(event) } })
+
+    expect(reply).toBe('fallback done')
+    expect(primary.calls).toBe(3)
+    expect(fallback.seenMessages).toHaveLength(1)
+    expect(runner.model).toBe('main-model')
+    expect(runner.provider).toBe(primary)
+    expect(emitted.find((event) => event.event === 'model_route_fallback')).toMatchObject({
+      from_model: 'main-model',
+      to_model: 'fallback-model',
+      usage_type: 'scheduler',
+    })
+    expect(emitted.find((event) => event.event === 'context_usage')).toMatchObject({
+      model: 'fallback-model',
+      provider_retry_count: 2,
+      used_fallback: true,
+    })
+  })
+
+  it('writes a redacted prompt snapshot for each turn', async () => {
+    const snapshotDir = mkdtempSync(join(tmpdir(), 'emperor-prompt-snapshot-'))
+    const runner = new AgentRunner({
+      provider: new FakeProvider([makeResponse({ content: 'done' })]),
+      model: 'fake',
+      registry: new ToolRegistry(),
+      systemPrompt: 'secret bootstrap',
+      promptSections: [
+        { name: 'bootstrap', content: 'secret bootstrap', source: 'templates/SOUL.md', priority: 100, budgetChars: null, version: 'test' },
+      ],
+      promptSnapshotDir: snapshotDir,
+      sessionId: 'session_1',
+    })
+
+    await runner.stepAsync([{ role: 'user', content: 'hi' }], { turnId: 'turn_prompt' })
+
+    const snapshotPath = join(snapshotDir, 'turn_prompt.json')
+    expect(existsSync(snapshotPath)).toBe(true)
+    const snapshot = JSON.parse(readFileSync(snapshotPath, 'utf8'))
+    expect(snapshot).toMatchObject({ sessionId: 'session_1', turnId: 'turn_prompt', model: 'fake' })
+    expect(snapshot.sections[0]).toMatchObject({
+      name: 'bootstrap',
+      source: 'templates/SOUL.md',
+      charCount: 'secret bootstrap'.length,
+      redacted: true,
+    })
+    expect(snapshot.sections[0].hash).toMatch(/^[a-f0-9]{64}$/)
+    expect(JSON.stringify(snapshot)).not.toContain('secret bootstrap')
+  })
+
   it('emits tool batch phases', async () => {
     const registry = new ToolRegistry()
     registry.register(new EchoTool())
@@ -337,8 +556,10 @@ describe('AgentRunner turn phases (test_runner_state.py)', () => {
     const completedEvent = emitted.find((e) => e.event === 'tool_run_completed')!
     expect(toolMessage.content).toBe('model:large')
     expect(toolResultEvent.summary).toBe('summary:large')
+    expect(toolResultEvent.output).toBe('model:large')
     expect(toolResultEvent.artifacts).toEqual([{ path: 'memory/tool-results/large.txt', kind: 'text', bytes: 9, metadata: {} }])
     expect(completedEvent.summary).toBe('summary:large')
+    expect(completedEvent.output).toBe('model:large')
     expect(completedEvent.metadata).toEqual({ source: 'runner-test' })
   })
 
@@ -361,6 +582,7 @@ describe('AgentRunner turn phases (test_runner_state.py)', () => {
     expect(toolResultEvent.id).toBe('call_1')
     expect(toolResultEvent.is_error).toBe(true)
     expect(String(toolResultEvent.summary)).toContain('blocked by policy')
+    expect(String(toolResultEvent.output)).toContain('blocked by policy')
     expect(failedEvent.id).toBe('call_1')
     expect(String(failedEvent.message)).toContain('blocked by policy')
   })
@@ -413,8 +635,56 @@ describe('AgentRunner turn phases (test_runner_state.py)', () => {
     expect(readFileSync(join(root, String(replacement.artifact_path)), 'utf8')).toBe(content)
   })
 
+  it('default context pipeline reports aggregate tool result replacements', async () => {
+    const root = tmp('emperor-runner-aggregate-tool-result-')
+    const memory = new MemoryFake() as MemoryFake & { memoryDir: string }
+    memory.memoryDir = join(root, 'memory')
+    const provider = new FakeProvider([makeResponse({ content: 'done', usage: { input: 100, output: 4 } })])
+    const runner = new AgentRunner({ provider, model: 'fake', registry: new ToolRegistry(), systemPrompt: 'system', memoryStore: memory })
+    const emitted: Msg[] = []
+    const toolCalls = Array.from({ length: 10 }, (_, index) => ({
+      id: `call_${index + 1}`,
+      type: 'function',
+      function: { name: 'grep', arguments: '{}' },
+    }))
+    const toolMessages = toolCalls.map((call, index) => ({
+      role: 'tool',
+      turn_id: 'turn_aggregate',
+      tool_call_id: call.id,
+      name: 'grep',
+      content: String.fromCharCode(97 + index).repeat(3000),
+    }))
+
+    await runner.stepAsync(
+      [
+        { role: 'user', content: 'inspect many results' },
+        { role: 'assistant', content: '', tool_calls: toolCalls },
+        ...toolMessages,
+      ],
+      { emit: (event) => { emitted.push(event) } },
+    )
+
+    const contextEvent = emitted.find((event) => event.event === 'context_projection')!
+    const usageEvent = emitted.find((event) => event.event === 'context_usage')!
+    const report = contextEvent.report as Record<string, unknown>
+    const aggregateRecords = report.aggregate_tool_result_replacements as Array<Record<string, unknown>>
+    const projectedTools = provider.seenMessages[0]!.filter((message) => message.role === 'tool')
+
+    expect(report.aggregate_replaced_tool_results).toBeGreaterThan(0)
+    expect(report.replaced_tool_results).toBe(aggregateRecords.length)
+    expect(usageEvent).toMatchObject({
+      replaced_tool_results: aggregateRecords.length,
+      aggregate_replaced_tool_results: aggregateRecords.length,
+      aggregate_tool_result_budget: 24_000,
+    })
+    expect(String(projectedTools[0]!.content)).toContain('Tool result stored outside the model context')
+    expect(String(projectedTools.at(-1)!.content)).toBe(String(toolMessages.at(-1)!.content))
+    expect(readFileSync(join(root, String(aggregateRecords[0]!.artifact_path)), 'utf8')).toBe(toolMessages[0]!.content)
+  })
+
   it('default context pipeline supplies approved plan runtime context', async () => {
     const manager = new ControlManager(tmp('emperor-runner-plan-context-'))
+    manager.setRuntimeScope({ sessionId: 'session_plan', projectId: 'project_plan', workspaceRoot: '/tmp/plan-project' })
     const interaction = manager.createPlan({
       title: 'Continue approved plan',
       summary: 'Keep executing the active step.',
@@ -439,6 +709,91 @@ describe('AgentRunner turn phases (test_runner_state.py)', () => {
     const planContext = contents.find((content) => content.includes('[PLAN_RUNTIME_CONTEXT]')) ?? ''
     expect(planContext).toContain('plan_id:')
     expect(planContext).toContain('status: approved')
+  })
+
+  it('does not project runtime plan context from another project scope', async () => {
+    const manager = new ControlManager(tmp('emperor-runner-cross-project-plan-context-'))
+    manager.setRuntimeScope({ sessionId: 'session_old', projectId: 'project_old', workspaceRoot: '/tmp/old-project' })
+    const interaction = manager.createPlan({
+      title: 'Old project plan',
+      summary: 'This plan belongs to another project.',
+      planMarkdown: '# Plan\n\n- Continue old project',
+      assumptions: [],
+      riskLevel: 'low',
+      steps: [{
+        id: 'step_1',
+        title: 'Continue old project',
+        description: 'Should not appear in the new project context.',
+        commands: ['echo old'],
+        acceptance: ['old only'],
+      }],
+    })
+    manager.approve(interaction.id)
+    manager.setRuntimeScope({ sessionId: 'session_new', projectId: 'project_new', workspaceRoot: '/tmp/new-project' })
+    const provider = new FakeProvider([makeResponse({ content: 'new project only' })])
+    const runner = new AgentRunner({
+      provider,
+      model: 'fake',
+      registry: new ToolRegistry(),
+      systemPrompt: 'system',
+      controlManager: manager,
+      maxTurns: 1,
+    })
+    const emitted: Msg[] = []
+
+    await runner.stepAsync([{ role: 'user', content: 'report files' }], { emit: (event) => { emitted.push(event) } })
+
+    const contextEvent = emitted.find((event) => event.event === 'context_projection')!
+    expect((contextEvent.report as Record<string, unknown>).plan_context_attached).toBe(0)
+    const contents = provider.seenMessages[0]!.map((message) => String(message.content ?? ''))
+    expect(contents.some((content) => content.includes('[PLAN_RUNTIME_CONTEXT]'))).toBe(false)
+  })
+
+  it('stops repeated plan incomplete followups without reaching max turns or duplicating assistant history', async () => {
+    const manager = new ControlManager(tmp('emperor-runner-plan-loop-'))
+    const interaction = manager.createPlan({
+      title: 'Stuck Plan',
+      summary: 'Keep executing a step.',
+      planMarkdown: '# Plan\n\n- Finish step',
+      assumptions: [],
+      riskLevel: 'low',
+      steps: [{
+        id: 'step_1',
+        title: 'Finish step',
+        description: 'This step remains active to exercise followup loop protection.',
+        commands: ['echo verify'],
+        acceptance: ['runner does not loop forever'],
+      }],
+    })
+    manager.approve(interaction.id)
+    const provider = new FakeProvider([
+      makeResponse({ content: 'step already done' }),
+      makeResponse({ content: 'still blocked by stale plan' }),
+      makeResponse({ content: 'should not be called' }),
+    ])
+    const memory = new MemoryFake()
+    const runner = new AgentRunner({
+      provider,
+      model: 'fake',
+      registry: new ToolRegistry(),
+      systemPrompt: 'system',
+      controlManager: manager,
+      memoryStore: memory,
+      maxTurns: 20,
+    })
+    const emitted: Msg[] = []
+
+    const reply = await runner.stepAsync([{ role: 'user', content: 'continue' }], { emit: (event) => { emitted.push(event) }, turnId: 'turn_plan_loop' })
+
+    expect(reply).toContain('stale plan')
+    expect(provider.seenMessages.length).toBe(2)
+    expect(emitted).toEqual(expect.arrayContaining([
+      expect.objectContaining({ event: 'record_degraded', kind: 'plan_followup_loop', taskId: 'turn_plan_loop' }),
+      expect.objectContaining({ event: 'turn_phase', phase: 'completed' }),
+    ]))
+    expect(emitted.some((event) => event.event === 'turn_phase' && event.phase === 'max_turns')).toBe(false)
+    expect(memory.history.filter((item) => item.role === 'assistant')).toHaveLength(1)
+    expect(memory.history.find((item) => item.role === 'assistant')!.content).toBe(reply)
   })
 })
 

@@ -1,6 +1,6 @@
 import { existsSync, mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { join, resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { AgentLoop } from '../../agent/loop'
 import type { ModelRoute, ProviderSnapshot } from '../../model/router'
@@ -40,6 +40,58 @@ describe('CoreMemoryService (MIG-IPC-007)', () => {
     expect(payload.runtime.activeTurns).toBe(1)
     expect(payload.watchlist.content).toBe('- [ ] check later\n')
     expect(payload.versions).toHaveProperty('versions')
+
+    await loop.close()
+  })
+
+  it('reports memory source domains for build project private state', async () => {
+    const { root, loop, service } = await makeService()
+    const projectDir = tmp('emperor-memory-service-project-')
+    const project = loop.projectStore.resolve(projectDir)
+    const session = loop.sessionStore.create('Build Project', { mode: 'build', project: project as unknown as Record<string, unknown> })
+    loop.activateSession(session.id)
+    loop.activeMemoryStore.writeMemory('## Project Memory\n\n- Build context belongs to this project.')
+
+    const payload = service.getMemory()
+
+    expect(payload.context).toMatchObject({
+      mode: 'build',
+      projectMemory: expect.stringContaining('Build context belongs to this project'),
+      sourceMap: expect.arrayContaining([
+        expect.objectContaining({
+          domain: 'project',
+          kind: 'private_memory',
+          projectId: project.project_id,
+          workspacePath: resolve(projectDir),
+          statePath: join(root, '.emperor', 'projects', project.project_id),
+          path: join(root, '.emperor', 'projects', project.project_id, 'AGENTS.local.md'),
+        }),
+      ]),
+    })
+    expect(existsSync(join(projectDir, 'AGENTS.md'))).toBe(false)
+
+    await loop.close()
+  })
+
+  it('versions and restores project private memory through the shared memory version API', async () => {
+    const { loop, service } = await makeService()
+    const projectDir = tmp('emperor-memory-service-project-versions-')
+    const project = loop.projectStore.resolve(projectDir)
+    const session = loop.sessionStore.create('Build Project', { mode: 'build', project: project as unknown as Record<string, unknown> })
+    loop.activateSession(session.id)
+
+    loop.activeMemoryStore.writeMemory('## Project Memory\n\n- first version')
+    loop.activeMemoryStore.writeMemory('## Project Memory\n\n- second version')
+
+    const versions = service.listVersions({ target: 'project', limit: 10 }).versions
+    expect(versions[0]).toMatchObject({
+      target: 'project',
+      relPath: `projects/${project.project_id}/AGENTS.local.md`,
+    })
+
+    service.restoreVersion(String(versions[0]!.id))
+
+    expect(loop.projectStore.readManagedMemory(project.project_id)).toContain('first version')
 
     await loop.close()
   })
@@ -126,6 +178,25 @@ describe('CoreMemoryService (MIG-IPC-007)', () => {
     expect(loop.activeMemoryStore.loadUnarchivedHistory()).toEqual([])
     expect(loop.runtimeStore.eventsForTurns(['turn_1'])).toEqual([])
     expect(provider.calls.at(-1)?.model).toBe('fake-mini')
+
+    await loop.close()
+  })
+
+  it('does not clear session history when memory compaction fails', async () => {
+    const provider = new FakeProvider()
+    provider.reply = 'not xml'
+    const { loop, service } = await makeService(provider)
+    loop.activeMemoryStore.appendHistory('user', 'first', { extra: { turn_id: 'turn_1' } })
+    loop.activeMemoryStore.appendHistory('assistant', 'reply', { extra: { turn_id: 'turn_1' } })
+
+    const payload = await service.compact()
+
+    expect(payload).toMatchObject({
+      status: 'degraded',
+      count: 2,
+    })
+    expect(payload.message).toContain('压缩失败')
+    expect(loop.activeMemoryStore.loadUnarchivedHistory()).toHaveLength(2)
 
     await loop.close()
   })

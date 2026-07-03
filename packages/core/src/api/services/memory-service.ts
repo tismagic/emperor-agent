@@ -145,7 +145,13 @@ export class CoreMemoryService {
     }
 
     const compactor = this.buildCompactor()
-    await compactor.compactStartupAsync(unarchivedHistory)
+    let compacted = false
+    try {
+      compacted = await compactor.compactStartupAsync(unarchivedHistory)
+    } catch (exc) {
+      return this.compactionFailed(count, unarchivedHistory, exc)
+    }
+    if (!compacted) return this.compactionFailed(count, unarchivedHistory)
     const runtime = this.loop.runtimeStore.compact(this.loop.activeMemoryStore.loadUnarchivedTurnIds())
     this.loop.history = []
     this.refreshRuntimeContext?.()
@@ -192,12 +198,40 @@ export class CoreMemoryService {
     const projectId = String(session?.project_id || '')
     const project = projectId ? this.loop.projectStore.get(projectId) : null
     const sources = ['templates/SOUL.md', 'templates/TOOL.md', 'templates/USER.local.md']
-    if (mode === 'build') sources.push('Project AGENTS.md')
-    else sources.push('memory/MEMORY.local.md', 'memory/projects/index.json')
+    const sourceMap: Dict[] = [
+      { domain: 'prompt', kind: 'bootstrap', path: 'templates/SOUL.md', scope: 'global' },
+      { domain: 'prompt', kind: 'tool_contract', path: 'templates/TOOL.md', scope: 'global' },
+      { domain: 'memory', kind: 'user_profile', path: this.loop.sharedMemory.userFile, scope: 'global' },
+      { domain: 'session', kind: 'history', path: this.loop.activeMemoryStore.historyFile, sessionId },
+      { domain: 'runtime', kind: 'events', path: this.loop.runtimeStore.eventsFile, sessionId },
+    ]
+    if (mode === 'build') {
+      sources.push('Project AGENTS.md')
+      if (project) {
+        sources.push(project.agents_path)
+        sourceMap.push({
+          domain: 'project',
+          kind: 'private_memory',
+          projectId: project.project_id,
+          path: project.agents_path,
+          statePath: project.state_path,
+          workspacePath: project.workspace_path || project.project_path,
+          legacyAgentsPath: project.legacy_agents_path,
+          legacyImportedAt: project.legacy_imported_at,
+        })
+      }
+    } else {
+      sources.push('memory/MEMORY.local.md', 'memory/projects/index.json')
+      sourceMap.push(
+        { domain: 'memory', kind: 'global_memory', path: this.loop.sharedMemory.memoryFile, scope: 'global' },
+        { domain: 'project', kind: 'index_summary', path: this.loop.projectStore.indexPath, scope: 'chat' },
+      )
+    }
     return {
       mode,
       session,
       sources,
+      sourceMap,
       project,
       projectIndexSummary: this.loop.projectStore.summaryForChat(),
       projectMemory: projectId ? this.loop.projectStore.readManagedMemory(projectId) : '',
@@ -212,6 +246,17 @@ export class CoreMemoryService {
       enabled: jobs.filter((job) => job.enabled).length,
       nextRunAtMs: nextRuns.length ? Math.min(...nextRuns) : null,
       lastError: jobs.find((job) => job.state.last_status === 'error' && job.state.last_error)?.state.last_error ?? null,
+    }
+  }
+
+  private compactionFailed(count: number, unarchivedHistory: Array<Record<string, unknown>>, exc?: unknown): Dict {
+    return {
+      status: 'degraded',
+      count,
+      message: '记忆压缩失败，已保留当前会话历史。',
+      memory: this.getMemory(),
+      unarchivedHistory,
+      error: exc ? String(exc instanceof Error ? exc.message : exc).slice(0, 500) : 'compaction_failed',
     }
   }
 
@@ -264,7 +309,7 @@ function isEpisodeFilename(name: string): boolean {
 
 function normalizeVersionTarget(target: string | null): MemoryVersionTarget | null {
   if (!target) return null
-  if (target === 'memory' || target === 'user' || target === 'episode') return target
+  if (target === 'memory' || target === 'user' || target === 'episode' || target === 'project') return target
   throw new Error('Invalid version target')
 }
 

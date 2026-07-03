@@ -6,6 +6,7 @@ import { createHash } from 'node:crypto'
 
 export enum PermissionMode {
   ASK_BEFORE_EDIT = 'ask_before_edit',
+  ACCEPT_EDITS = 'accept_edits',
   AUTO = 'auto',
   PLAN = 'plan',
 }

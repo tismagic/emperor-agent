@@ -6,6 +6,7 @@ import type {
   ExternalDiagnosticsPayload,
   RuntimeStats,
   SchedulerDiagnosticsPayload,
+  WorkspacePolicyDiagnosticsPayload,
 } from '../../types'
 
 export type DiagnosticTone = 'ok' | 'warn' | 'error' | 'muted'
@@ -74,6 +75,7 @@ export function diagnosticRows(payload: DiagnosticsPayload | null | undefined): 
       rows: [
         schedulerRow(diagnostics.scheduler),
         runtimeRow(diagnostics.runtime),
+        workspacePolicyRow(diagnostics.workspacePolicy),
         activeTasksRow(diagnostics.activeTasks),
       ],
     },
@@ -153,6 +155,27 @@ function activeTasksRow(activeTasks: unknown[] | undefined): DiagnosticRow {
     value: taskCount ? `${taskCount} 个运行中` : '空闲',
     detail: taskCount ? '有可取消任务' : '当前没有登记的运行任务',
     tone: taskCount ? 'warn' : 'ok',
+  }
+}
+
+function workspacePolicyRow(policy: WorkspacePolicyDiagnosticsPayload | undefined): DiagnosticRow {
+  const allowRoots = policy?.allowRoots ?? []
+  const denyRoots = policy?.denyRoots ?? []
+  const workspaceRoot = policy?.workspaceRoot || ''
+  const stateRoot = policy?.stateRoot || ''
+  return {
+    id: 'workspace-policy',
+    label: 'Workspace Fence',
+    value: policy ? `${allowRoots.length} 个允许根 / ${denyRoots.length} 个禁止根` : '未返回',
+    detail: policy
+      ? joinParts([
+        workspaceRoot ? `workspace ${workspaceRoot}` : '',
+        stateRoot ? `state ${stateRoot}` : '',
+        policy.outsideWorkspace ? `outside ${policy.outsideWorkspace}` : '',
+      ])
+      : '未返回详细信息',
+    tone: !policy ? 'muted' : allowRoots.length ? 'ok' : 'warn',
+    path: workspaceRoot || stateRoot || undefined,
   }
 }
 

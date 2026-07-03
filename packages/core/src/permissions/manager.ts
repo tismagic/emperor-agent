@@ -13,6 +13,7 @@ import {
 } from './models'
 import { PermissionPolicy } from './policy'
 import { isHighRiskCommand } from '../tools/resolvers'
+import type { PermissionRuleInput } from './rules'
 
 /** PermissionManager 依赖的 ControlManager 表面。 */
 export interface PermissionControlHost {
@@ -37,9 +38,9 @@ export class PermissionManager {
   private readonly approvedOnce = new Set<string>()
   private readonly deniedOnce = new Set<string>()
 
-  constructor(controlManager: PermissionControlHost) {
+  constructor(controlManager: PermissionControlHost, opts: { rules?: PermissionRuleInput[] | null } = {}) {
     this.controlManager = controlManager
-    this.policy = new PermissionPolicy()
+    this.policy = new PermissionPolicy(undefined, { rules: opts.rules ?? [] })
   }
 
   assess(toolName: string, args: Record<string, unknown> | null, opts?: { registry?: ToolRegistry | null }): PermissionDecision {

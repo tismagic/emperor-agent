@@ -1,7 +1,9 @@
 /**
  * 搜索工具 (MIG-TOOL-008/009) + WebFetch (MIG-TOOL-010) + RunCommand scaffold (MIG-TOOL-011) + skills (MIG-TOOL-012)。
  */
-import { execSync } from 'node:child_process'
+import { exec, execSync, type ExecOptions } from 'node:child_process'
+import { relative } from 'node:path'
+import { formatWorkspacePolicyError, workspacePolicyForTool } from '../permissions/workspace-policy'
 import { Tool, type ToolResult, type ToolExecutionContext } from './base'
 import { B, S, toolParamsSchema } from './schema'
 import { isReadonlyCommand } from './resolvers'
@@ -22,12 +24,17 @@ export class GlobTool extends Tool {
 
   constructor(root: string) { super(); this.workspace = root }
 
-  async execute(args: Record<string, unknown>): Promise<string> {
+  async execute(args: Record<string, unknown>, ctx?: ToolExecutionContext): Promise<string> {
     const pattern = String(args.pattern ?? '')
+    const workspace = ctx?.workspaceRoot ?? ctx?.root ?? this.workspace
+    if (isEscapingGlobPattern(pattern)) {
+      const decision = workspacePolicyForTool(ctx, this.workspace).resolvePath(pattern.replace(/[*?{[\]]/g, '_'), 'read')
+      return formatWorkspacePolicyError(decision)
+    }
     // Try native glob; fallback to find
     try {
-      const cmd = `cd "${this.workspace}" && ls -t ${pattern} 2>/dev/null || find . -path "./${pattern}" -not -path '*/node_modules/*' -not -path '*/.git/*' -not -path '*/__pycache__/*' -printf '%T@ %p\n' 2>/dev/null | sort -rn | head -200 | cut -d' ' -f2-`
-      const out = execSync(cmd, { encoding: 'utf8', timeout: 10_000, cwd: this.workspace })
+      const cmd = `cd "${workspace}" && ls -t ${pattern} 2>/dev/null || find . -path "./${pattern}" -not -path '*/node_modules/*' -not -path '*/.git/*' -not -path '*/__pycache__/*' -printf '%T@ %p\n' 2>/dev/null | sort -rn | head -200 | cut -d' ' -f2-`
+      const out = execSync(cmd, { encoding: 'utf8', timeout: 10_000, cwd: workspace })
       return out.trim() || '(no matches)'
     } catch { return '(glob error)' }
   }
@@ -59,7 +66,7 @@ export class GrepTool extends Tool {
 
   constructor(root: string) { super(); this.workspace = root }
 
-  async execute(args: Record<string, unknown>): Promise<string> {
+  async execute(args: Record<string, unknown>, ctx?: ToolExecutionContext): Promise<string> {
     const pattern = String(args.pattern ?? '')
     const path = String(args.path ?? '.')
     const mode = String(args.output_mode ?? 'files_with_matches')
@@ -68,9 +75,14 @@ export class GrepTool extends Tool {
     const globStr = args.glob ? `--glob "${args.glob}"` : ''
     const ctxFlag = ctxBefore || ctxAfter ? `-B${ctxBefore} -A${ctxAfter}` : ''
     const modeFlag = mode === 'count' ? '-c' : mode === 'content' ? '' : '-l'
+    const workspace = ctx?.workspaceRoot ?? ctx?.root ?? this.workspace
+    const policy = workspacePolicyForTool(ctx, this.workspace)
+    const pathDecision = policy.resolvePath(path || '.', 'read')
+    if (!pathDecision.allowed) return formatWorkspacePolicyError(pathDecision)
+    const searchPath = relative(workspace, pathDecision.resolvedPath) || '.'
     try {
-      const cmd = `cd "${this.workspace}" && rg --no-heading ${modeFlag} ${ctxFlag} ${globStr} --max-filesize 2M -e "${pattern.replace(/"/g, '\\"')}" "${path}" 2>/dev/null | head -200`
-      const out = execSync(cmd, { encoding: 'utf8', timeout: 15_000, cwd: this.workspace })
+      const cmd = `cd "${workspace}" && rg --no-heading ${modeFlag} ${ctxFlag} ${globStr} --max-filesize 2M -e "${pattern.replace(/"/g, '\\"')}" "${searchPath.replace(/"/g, '\\"')}" 2>/dev/null | head -200`
+      const out = execSync(cmd, { encoding: 'utf8', timeout: 15_000, cwd: workspace })
       return out.trim() || '(no matches)'
     } catch {
       // Fallback to basic node search
@@ -302,24 +314,28 @@ export class RunCommand extends Tool {
 
   constructor(root: string) { super(); this.workspace = root }
 
-  async execute(args: Record<string, unknown>, _ctx?: ToolExecutionContext): Promise<string> {
+  async execute(args: Record<string, unknown>, ctx?: ToolExecutionContext): Promise<string> {
     const command = String(args.command ?? '')
+    const workspace = ctx?.workspaceRoot ?? ctx?.root ?? this.workspace
+    const cwdDecision = workspacePolicyForTool(ctx, this.workspace).resolvePath('.', 'execute', { baseRoot: workspace })
+    if (!cwdDecision.allowed) return `Error: command cwd blocked by workspace policy: ${formatWorkspacePolicyError(cwdDecision)}`
     for (const pat of DENY_PATTERNS) {
       if (pat.test(command)) return `Error: command refused by safety policy (matches dangerous pattern: ${pat})`
     }
     try {
-      const out = execSync(command, {
+      const { stdout } = await execCommand(command, {
         encoding: 'utf8',
         timeout: 120_000,
-        cwd: this.workspace || process.cwd(),
+        cwd: workspace || process.cwd(),
         env: { HOME: process.env.HOME ?? '', PATH: process.env.PATH ?? '/usr/bin:/bin', LANG: 'C.UTF-8', TERM: 'dumb', USER: process.env.USER ?? '' },
-        stdio: ['ignore', 'pipe', 'pipe'],
+        signal: ctx?.signal ?? undefined,
       })
-      return out.trim() || '(command completed with no output)'
+      return stdout.trim() || '(command completed with no output)'
     } catch (e: any) {
       const stderr = e.stderr ?? ''
       const stdout = e.stdout ?? ''
       const body = stdout || stderr
+      if (e.name === 'AbortError' || ctx?.signal?.aborted) return 'Error: command cancelled'
       if (e.code === 'ETIMEDOUT' || e.killed) return 'Error: command timed out after 120 seconds'
       const msg = body ? `Error (exit ${e.status ?? 1}):\n${body}`.trim() : `Error: ${e.message}`
       return msg.slice(0, MAX_OUTPUT_CHARS)
@@ -342,4 +358,25 @@ export class RunCommand extends Tool {
       isError: isErr,
     }
   }
+}
+
+function isEscapingGlobPattern(pattern: string): boolean {
+  const text = String(pattern || '').trim()
+  if (!text) return false
+  if (text.startsWith('/') || text.startsWith('~/')) return true
+  return text.split(/[\\/]+/).some((part) => part === '..')
+}
+
+function execCommand(command: string, options: ExecOptions & { encoding: BufferEncoding }): Promise<{ stdout: string; stderr: string }> {
+  return new Promise((resolve, reject) => {
+    exec(command, options, (error, stdout, stderr) => {
+      if (error) {
+        ;(error as NodeJS.ErrnoException & { stdout?: string; stderr?: string }).stdout = stdout
+        ;(error as NodeJS.ErrnoException & { stdout?: string; stderr?: string }).stderr = stderr
+        reject(error)
+        return
+      }
+      resolve({ stdout, stderr })
+    })
+  })
 }

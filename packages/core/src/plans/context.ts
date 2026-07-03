@@ -20,14 +20,16 @@ const COMPLETED_HISTORY_MARKERS = [
 export class PlanContextBuilder {
   private readonly planStore: PlanStore
   private readonly maxChars: number
+  private readonly filter: ((record: PlanRecord) => boolean) | null
 
-  constructor(planStore: PlanStore, opts?: { maxChars?: number }) {
+  constructor(planStore: PlanStore, opts?: { maxChars?: number; filter?: ((record: PlanRecord) => boolean) | null }) {
     this.planStore = planStore
     this.maxChars = opts?.maxChars ?? 4000
+    this.filter = opts?.filter ?? null
   }
 
   messageFor(history: Array<Record<string, unknown>>): { role: string; content: string } | null {
-    const record = this.planStore.latest()
+    const record = this.latestScopedPlan()
     if (record === null) return null
     if (!ACTIVE_STATUSES.has(record.status)) {
       if (record.status !== PlanStatus.COMPLETED || !asksAboutCompletedPlan(history)) return null
@@ -35,6 +37,12 @@ export class PlanContextBuilder {
     const content = this.buildText(record)
     if (!content) return null
     return { role: 'system', content }
+  }
+
+  private latestScopedPlan(): PlanRecord | null {
+    const plans = this.planStore.list().filter((record) => (this.filter ? this.filter(record) : true))
+    if (!plans.length) return null
+    return plans.reduce((a, b) => (b.updatedAt > a.updatedAt ? b : a))
   }
 
   buildText(record: PlanRecord): string {

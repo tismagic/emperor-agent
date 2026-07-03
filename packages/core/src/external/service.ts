@@ -6,11 +6,15 @@ import { ExternalBridgeStore } from './store'
 export type SubmitExternalTurn = (payload: Record<string, unknown>) => Promise<string>
 export type CanAcceptTurn = () => boolean
 export type ExternalEventSink = (event: Record<string, unknown>) => Promise<void> | void
+export type ExternalTargetSession = () => string | null | undefined
+
+const TARGET_SESSION_METADATA_KEY = 'emperor_target_session_id'
 
 export class ExternalBridgeService {
   private readonly submitTurn: SubmitExternalTurn
   private readonly canAcceptTurn: CanAcceptTurn
   private readonly eventSink: ExternalEventSink
+  private readonly targetSessionId: ExternalTargetSession
   private readonly maxRecent: number
   private readonly store: ExternalBridgeStore | null
   private readonly adapters = new Map<string, ExternalAdapter>()
@@ -25,12 +29,14 @@ export class ExternalBridgeService {
     submitTurn: SubmitExternalTurn
     canAcceptTurn: CanAcceptTurn
     eventSink: ExternalEventSink
+    targetSessionId?: ExternalTargetSession | null
     maxRecent?: number
     root?: string | null
   }) {
     this.submitTurn = opts.submitTurn
     this.canAcceptTurn = opts.canAcceptTurn
     this.eventSink = opts.eventSink
+    this.targetSessionId = opts.targetSessionId ?? (() => null)
     this.maxRecent = opts.maxRecent ?? 100
     this.store = opts.root ? new ExternalBridgeStore(opts.root, { maxRecent: this.maxRecent }) : null
     const restored = this.store?.load()
@@ -56,6 +62,7 @@ export class ExternalBridgeService {
   }
 
   async ingest(message: ExternalInbound): Promise<Record<string, unknown>> {
+    message = this.withTargetSession(message)
     const dedupe = message.dedupeKey
     const key = dedupe ? seenKey(dedupe[0], dedupe[1]) : null
     if (key && this.seen.has(key)) return { status: 'duplicate', message: message.toDict() }
@@ -68,14 +75,14 @@ export class ExternalBridgeService {
     this.inbox.push(record)
     this.trim()
     this.persist()
-    await this.emit(runtimeEvents.externalInbound(message.toDict()))
+    await this.emit(this.withEventSession(runtimeEvents.externalInbound(message.toDict()), message))
 
     if (!this.canAcceptTurn()) {
       record.status = 'queued'
       this.pending.push(message)
       this.trim()
       this.persist()
-      await this.emit(runtimeEvents.externalQueued(message.toDict(), { reason: 'mainline busy or control interaction pending' }))
+      await this.emit(this.withEventSession(runtimeEvents.externalQueued(message.toDict(), { reason: 'mainline busy or control interaction pending' }), message))
       return { status: 'queued', message: message.toDict() }
     }
 
@@ -165,9 +172,11 @@ export class ExternalBridgeService {
 
   private async submitInbound(message: ExternalInbound): Promise<string> {
     const display = ExternalBridgeService.displayContent(message)
+    const sessionId = targetSessionFromMessage(message)
     return this.submitTurn({
       content: ExternalBridgeService.modelContent(message),
       display_content: display,
+      session_id: sessionId || undefined,
       attachments: [],
       attachment_ids: [],
       client_message_id: `external:${message.platform}:${message.external_message_id || message.id}`,
@@ -183,6 +192,24 @@ export class ExternalBridgeService {
       },
       label: `External turn: ${message.platform}`,
     })
+  }
+
+  private withTargetSession(message: ExternalInbound): ExternalInbound {
+    if (targetSessionFromMessage(message)) return message
+    const sessionId = cleanString(this.targetSessionId())
+    if (!sessionId) return message
+    return ExternalInbound.fromDict({
+      ...message.toDict(),
+      metadata: {
+        ...message.metadata,
+        [TARGET_SESSION_METADATA_KEY]: sessionId,
+      },
+    })
+  }
+
+  private withEventSession(event: Record<string, unknown>, message: ExternalInbound): Record<string, unknown> {
+    const sessionId = targetSessionFromMessage(message)
+    return sessionId ? { ...event, session_id: sessionId } : event
   }
 
   static modelContent(message: ExternalInbound): string {
@@ -247,4 +274,12 @@ export class ExternalBridgeService {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value && typeof value === 'object' && !Array.isArray(value))
+}
+
+function targetSessionFromMessage(message: ExternalInbound): string {
+  return cleanString(message.metadata[TARGET_SESSION_METADATA_KEY])
+}
+
+function cleanString(value: unknown): string {
+  return String(value ?? '').trim()
 }

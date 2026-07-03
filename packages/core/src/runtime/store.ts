@@ -9,10 +9,23 @@ import {
   statSync,
   writeFileSync,
 } from 'node:fs'
-import { gzipSync } from 'node:zlib'
+import { gunzipSync, gzipSync } from 'node:zlib'
 import { basename, dirname, join, relative } from 'node:path'
 
 type Row = Record<string, any>
+
+export interface RuntimeAppendOptions {
+  turnId?: string | null
+  sessionId?: string | null
+  source?: string | null
+  owner?: Row | null
+}
+
+export interface RuntimeReplayOptions {
+  limit?: number | null
+  sessionId?: string | null
+  includeArchive?: boolean | null
+}
 
 export interface RuntimeStats {
   version: number
@@ -38,10 +51,12 @@ export class RuntimeEventStore {
   readonly eventsFile: string
   readonly archiveDir: string
   readonly indexFile: string
+  private readonly sessionId: string | null
   private _latestSeq = 0
 
   constructor(root: string, opts: { sessionDirOverride?: boolean } = {}) {
     this.root = root
+    this.sessionId = opts.sessionDirOverride ? basename(root) || null : null
     this.runtimeDir = opts.sessionDirOverride ? join(root, 'runtime') : join(root, 'memory', 'runtime')
     this.eventsFile = join(this.runtimeDir, 'events.jsonl')
     this.archiveDir = join(this.runtimeDir, 'archive')
@@ -54,19 +69,30 @@ export class RuntimeEventStore {
     return this._latestSeq
   }
 
-  append(event: Row, opts: { turnId?: string | null } = {}): Row {
+  append(event: Row, opts: RuntimeAppendOptions = {}): Row {
     this._latestSeq += 1
     const payload = jsonSafe({ ...event }) as Row
     payload.seq = this._latestSeq
     if (payload.ts === undefined) payload.ts = Date.now() / 1000
     if (opts.turnId && !payload.turn_id) payload.turn_id = opts.turnId
+    const sessionId = cleanString(payload.session_id ?? opts.sessionId ?? this.sessionId)
+    const turnId = cleanString(payload.turn_id ?? opts.turnId)
+    if (sessionId && !payload.session_id) payload.session_id = sessionId
+    if (payload.source === undefined) payload.source = opts.source ?? 'core'
+    const receipt = ownerReceipt(payload.owner ?? opts.owner ?? null, { sessionId, turnId })
+    if (receipt) payload.owner = receipt
     appendFileSync(this.eventsFile, JSON.stringify(payload) + '\n', 'utf8')
     this.writeIndex(this.statsFromIndex(this.loadIndex()))
     return payload
   }
 
-  replayAfter(seq: number, opts: { limit?: number | null } = {}): Row[] {
-    const out = this.iterEvents().filter((event) => Number(event.seq || 0) > seq)
+  replayAfter(seq: number, opts: RuntimeReplayOptions = {}): Row[] {
+    const sessionId = cleanString(opts.sessionId)
+    const out = this.iterEvents({ includeArchive: opts.includeArchive }).filter((event) => {
+      if (Number(event.seq || 0) <= seq) return false
+      if (!sessionId) return true
+      return cleanString(event.session_id ?? event.owner?.session_id ?? this.sessionId) === sessionId
+    })
     return opts.limit && out.length > opts.limit ? out.slice(-opts.limit) : out
   }
 
@@ -75,10 +101,10 @@ export class RuntimeEventStore {
     return this.iterEvents().slice(-limit)
   }
 
-  eventsForTurns(turnIds: string[], opts: { limit?: number | null } = {}): Row[] {
+  eventsForTurns(turnIds: string[], opts: RuntimeReplayOptions = {}): Row[] {
     const wanted = new Set(turnIds.filter(Boolean).map(String))
     if (!wanted.size) return []
-    const out = this.iterEvents().filter((event) => wanted.has(String(event.turn_id || '')))
+    const out = this.iterEvents({ includeArchive: opts.includeArchive }).filter((event) => wanted.has(String(event.turn_id || '')))
     return opts.limit && out.length > opts.limit ? out.slice(-opts.limit) : out
   }
 
@@ -119,20 +145,58 @@ export class RuntimeEventStore {
     return latest
   }
 
-  private iterEvents(): Row[] {
+  private iterEvents(opts: { includeArchive?: boolean | null } = {}): Row[] {
+    const rows = opts.includeArchive ? [...this.iterArchiveEvents(), ...this.iterHotEvents()] : this.iterHotEvents()
+    rows.sort((a, b) => (Number(a.seq || 0) || 0) - (Number(b.seq || 0) || 0))
+    return rows
+  }
+
+  private iterHotEvents(): Row[] {
     if (!existsSync(this.eventsFile)) return []
+    return this.parseJsonl(readFileSync(this.eventsFile, 'utf8'))
+  }
+
+  private iterArchiveEvents(): Row[] {
+    if (!existsSync(this.archiveDir)) return []
     const rows: Row[] = []
-    for (let line of readFileSync(this.eventsFile, 'utf8').split('\n')) {
-      line = line.trim()
-      if (!line) continue
+    const names = readdirSync(this.archiveDir).filter((name) => name.endsWith('.jsonl.gz')).sort()
+    for (const name of names) {
+      const path = join(this.archiveDir, name)
       try {
-        const raw = JSON.parse(line)
-        if (raw && typeof raw === 'object' && typeof raw.event === 'string') rows.push(raw)
+        rows.push(...this.parseJsonl(gunzipSync(readFileSync(path)).toString('utf8')))
       } catch {
         continue
       }
     }
     return rows
+  }
+
+  private parseJsonl(content: string): Row[] {
+    const rows: Row[] = []
+    for (let line of content.split('\n')) {
+      line = line.trim()
+      if (!line) continue
+      try {
+        const raw = JSON.parse(line)
+        const event = this.normalizeEvent(raw)
+        if (event) rows.push(event)
+      } catch {
+        continue
+      }
+    }
+    return rows
+  }
+
+  private normalizeEvent(raw: unknown): Row | null {
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw) || typeof (raw as Row).event !== 'string') return null
+    const payload = jsonSafe({ ...(raw as Row) }) as Row
+    const sessionId = cleanString(payload.session_id ?? payload.owner?.session_id ?? this.sessionId)
+    const turnId = cleanString(payload.turn_id ?? payload.owner?.turn_id)
+    if (sessionId && !payload.session_id) payload.session_id = sessionId
+    if (payload.source === undefined) payload.source = 'core'
+    const receipt = ownerReceipt(payload.owner ?? null, { sessionId, turnId })
+    if (receipt) payload.owner = receipt
+    return payload
   }
 
   private statsFromIndex(index: Row, opts: { activeTurnIds?: string[] | null } = {}): RuntimeStats {
@@ -221,6 +285,24 @@ function eventTsSeconds(event: Row): number {
     return Number.isFinite(parsed) ? parsed / 1000 : 0
   }
   return 0
+}
+
+function ownerReceipt(owner: unknown, scope: { sessionId?: string | null; turnId?: string | null }): Row | undefined {
+  const sessionId = cleanString(scope.sessionId)
+  const turnId = cleanString(scope.turnId)
+  if (!sessionId && !turnId && !isRecord(owner)) return undefined
+  const out = isRecord(owner) ? { ...owner } : {}
+  if (sessionId && !out.session_id) out.session_id = sessionId
+  if (turnId && !out.turn_id) out.turn_id = turnId
+  return out
+}
+
+function cleanString(value: unknown): string {
+  return typeof value === 'string' && value.trim() ? value.trim() : ''
+}
+
+function isRecord(value: unknown): value is Row {
+  return Boolean(value && typeof value === 'object' && !Array.isArray(value))
 }
 
 function archiveMonth(event: Row): string {

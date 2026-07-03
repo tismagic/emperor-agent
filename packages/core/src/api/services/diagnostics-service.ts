@@ -2,12 +2,16 @@ import { existsSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { localConfigDiagnostics, type LocalConfigDiagnostics } from '../../config/local-config'
 import { loadModelConfig, validateCompleteModelEntries } from '../../config/model-config'
+import { listRecentPromptSnapshots } from '../../prompts/manifest'
+import type { RuntimePaths } from '../../runtime/paths'
 
 type Dict = Record<string, unknown>
 
 export interface CoreDiagnosticsServiceDeps {
+  runtimePaths?: RuntimePaths | null
   schedulerDiagnostics?: () => Dict
   runtimeStats?: () => Dict
+  workspacePolicy?: () => Dict
   externalPayload?: () => Dict
   activeTasks?: () => unknown[]
   desktopPetPayload?: () => Dict | Promise<Dict>
@@ -15,10 +19,13 @@ export interface CoreDiagnosticsServiceDeps {
 
 export interface CoreDiagnosticsPayload {
   root: string
+  paths: Dict
   modelConfig: Dict
   localConfig: LocalConfigDiagnostics
   scheduler: Dict
   runtime: Dict
+  workspacePolicy: Dict
+  promptSnapshots: Dict
   external: Dict
   activeTasks: unknown[]
   desktopPet: Dict
@@ -37,10 +44,13 @@ export class CoreDiagnosticsService {
   async payload(): Promise<CoreDiagnosticsPayload> {
     return {
       root: this.root,
+      paths: this.pathsPayload(),
       modelConfig: await this.modelConfig(),
       localConfig: await localConfigDiagnostics(this.root),
       scheduler: this.deps.schedulerDiagnostics?.() ?? {},
       runtime: this.deps.runtimeStats?.() ?? {},
+      workspacePolicy: this.deps.workspacePolicy?.() ?? {},
+      promptSnapshots: this.promptSnapshotsPayload(),
       external: this.deps.externalPayload?.() ?? {},
       activeTasks: this.deps.activeTasks?.() ?? [],
       desktopPet: await this.deps.desktopPetPayload?.() ?? {},
@@ -76,5 +86,17 @@ export class CoreDiagnosticsService {
       desktopRenderer: existsSync(join(this.root, 'desktop', 'out', 'renderer', 'index.html')),
       desktopPetNodeModules: existsSync(join(this.root, 'desktop-pet', 'node_modules')),
     }
+  }
+
+  private pathsPayload(): Dict {
+    const paths = this.deps.runtimePaths
+    if (!paths) return { runtimeRoot: this.root, stateRoot: this.root }
+    return { ...paths }
+  }
+
+  private promptSnapshotsPayload(): Dict {
+    const paths = this.deps.runtimePaths
+    if (!paths) return { count: 0, recent: [] }
+    return listRecentPromptSnapshots(paths.sessionsRoot, 5)
   }
 }

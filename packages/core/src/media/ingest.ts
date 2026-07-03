@@ -7,6 +7,7 @@ import { ToolResultObj } from '../tools/base'
 
 export interface MediaIngestOptions {
   root: string
+  workspaceRoot?: string | null
   toolName: string
   arguments?: Record<string, unknown>
   turnId?: string | null
@@ -15,7 +16,7 @@ export interface MediaIngestOptions {
 }
 
 const IMAGE_PATH_RE = /(?:file:\/\/)?(?:~\/|\/|\.{1,2}\/)?[A-Za-z0-9_.~-][^\s"'`<>]*?\.(?:png|jpe?g|webp|gif)/gi
-const SENSITIVE_SEGMENTS = new Set(['.ssh', '.aws', '.gnupg'])
+const SENSITIVE_SEGMENTS = new Set(['.emperor', '.ssh', '.aws', '.gnupg'])
 const SENSITIVE_SUFFIXES = [
   ['library', 'keychains'],
   ['library', 'application support', 'google', 'chrome'],
@@ -26,6 +27,7 @@ const SENSITIVE_SUFFIXES = [
 export function ingestToolResultMedia(result: ToolResultObj, opts: MediaIngestOptions): ToolResultObj {
   const root = opts.root ? resolve(opts.root) : ''
   if (!root) return result
+  const sourceRoot = opts.workspaceRoot ? resolve(opts.workspaceRoot) : root
   const candidates = collectCandidatePaths(result, opts.arguments ?? {})
   if (!candidates.length) return result
 
@@ -36,10 +38,10 @@ export function ingestToolResultMedia(result: ToolResultObj, opts: MediaIngestOp
   const maxArtifacts = opts.maxArtifacts ?? 4
 
   for (const candidate of candidates) {
-    const absPath = resolveCandidatePath(candidate, root)
+    const absPath = resolveCandidatePath(candidate, sourceRoot)
     if (!absPath || seenPaths.has(absPath)) continue
     seenPaths.add(absPath)
-    if (!isAllowedSourcePath(absPath, root)) continue
+    if (!isAllowedSourcePath(absPath, sourceRoot)) continue
     let ref: MediaRef
     try {
       ref = store.importImagePath(absPath, {

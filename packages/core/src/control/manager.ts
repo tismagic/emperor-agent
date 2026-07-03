@@ -5,7 +5,8 @@
 import { nowTs } from '../util/time'
 import { PermissionManager } from '../permissions/manager'
 import type { PlanPermissionToken } from '../permissions/models'
-import { PlanStatus, planToDict, type PlanRecord } from '../plans/models'
+import type { PermissionRuleInput } from '../permissions/rules'
+import { PlanStatus, PlanStepStatus, planToDict, type PlanRecord } from '../plans/models'
 import { PlanStore } from '../plans/store'
 import type { ToolRegistry } from '../tools/registry'
 import type { ToolDefinition } from '../tools/base'
@@ -30,7 +31,7 @@ import { PlanDecision, PlanDecisionPolicy } from './plan-policy'
 import { PlanVerificationManager } from './plan-verification'
 import { ControlPolicy } from './policy'
 import { ControlStore } from './store'
-import type { ControlManagerHost, TaskManagerLike, TodoStoreLike } from './host'
+import type { ControlManagerHost, ControlRuntimeScope, TaskManagerLike, TodoStoreLike } from './host'
 import type { ToolManagerHost } from './tools'
 
 export interface ControlResume {
@@ -59,14 +60,18 @@ export class ControlManager implements ControlManagerHost, ToolManagerHost {
   todoStore: TodoStoreLike | null = null
   taskManager: TaskManagerLike | null = null
   private pendingObserver: ControlPendingObserver | null = null
+  private runtimeScope: Required<ControlRuntimeScope> | null = null
 
-  constructor(root: string) {
+  constructor(root: string, opts: { permissionRules?: PermissionRuleInput[] | null } = {}) {
     this.store = new ControlStore(root)
     this.planStore = new PlanStore(root)
     this.policy = new ControlPolicy(this)
     this.clarificationPolicy = new ClarificationPolicy()
     this.planDecisionPolicy = new PlanDecisionPolicy()
-    this.permissionManager = new PermissionManager(this as unknown as ConstructorParameters<typeof PermissionManager>[0])
+    this.permissionManager = new PermissionManager(
+      this as unknown as ConstructorParameters<typeof PermissionManager>[0],
+      { rules: opts.permissionRules ?? [] },
+    )
     this.permissionTokens = new PlanPermissionTokenManager(this)
     this.verification = new PlanVerificationManager(this)
     this.drafting = new PlanDraftingManager(this)
@@ -79,6 +84,10 @@ export class ControlManager implements ControlManagerHost, ToolManagerHost {
 
   setTaskManager(taskManager: TaskManagerLike | null): void {
     this.taskManager = taskManager
+  }
+
+  setRuntimeScope(scope: ControlRuntimeScope | null): void {
+    this.runtimeScope = normalizeRuntimeScope(scope)
   }
 
   setPendingObserver(observer: ControlPendingObserver | null): void {
@@ -97,9 +106,15 @@ export class ControlManager implements ControlManagerHost, ToolManagerHost {
     let value = String(mode ?? '').trim().toLowerCase()
     if (value === 'on' || value === 'plan') value = ControlMode.PLAN
     else if (value === 'off' || value === 'normal' || value === 'ask' || value === 'ask_before_edit' || value === 'edit_before_ask') value = ControlMode.ASK_BEFORE_EDIT
+    else if (value === 'accept_edits' || value === 'accept-edits' || value === 'accept edits' || value === 'edits') value = ControlMode.ACCEPT_EDITS
     else if (value === 'auto' || value === 'automatic') value = ControlMode.AUTO
-    if (value !== ControlMode.ASK_BEFORE_EDIT && value !== ControlMode.AUTO && value !== ControlMode.PLAN) {
-      throw new Error('mode must be ask_before_edit, auto or plan')
+    if (
+      value !== ControlMode.ASK_BEFORE_EDIT &&
+      value !== ControlMode.ACCEPT_EDITS &&
+      value !== ControlMode.AUTO &&
+      value !== ControlMode.PLAN
+    ) {
+      throw new Error('mode must be ask_before_edit, accept_edits, auto or plan')
     }
     const state = this.store.load()
     const oldMode = state.mode
@@ -196,6 +211,7 @@ export class ControlManager implements ControlManagerHost, ToolManagerHost {
     updated.answers = normalized
     this.permissionManager.recordAnswer(updated as unknown as { meta?: Record<string, unknown>; answers?: Record<string, unknown> })
     this.drafting.recordPlanResolvedQuestions(updated)
+    this.cancelExecutablePlanIfRequested(updated)
     this.complete(updated)
     const message = this.answerMessage(updated)
     return {
@@ -280,8 +296,53 @@ export class ControlManager implements ControlManagerHost, ToolManagerHost {
     this.notifyPendingCleared(interaction)
   }
 
+  private cancelExecutablePlanIfRequested(interaction: Interaction): PlanRecord | null {
+    const record = this.latestExecutablePlan()
+    if (record === null) return null
+    if (!askAnswerCancelsPlan(interaction)) return null
+    const now = nowTs()
+    const evidence = {
+      source: 'ask_answer',
+      interaction_id: interaction.id,
+      reason: 'user chose to abandon or ignore the active plan',
+      cancelled_at: now,
+    }
+    const steps = record.steps.map((step) => {
+      if (step.status === PlanStepStatus.DONE || step.status === PlanStepStatus.SKIPPED) return step
+      return { ...step, status: PlanStepStatus.SKIPPED, evidence: [...step.evidence, evidence] }
+    })
+    const metadata = {
+      ...record.metadata,
+      cancelled_by: 'ask_answer',
+      cancelled_interaction_id: interaction.id,
+      cancel_reason: 'user chose to abandon or ignore the active plan',
+    }
+    const updated: PlanRecord = {
+      ...record,
+      status: PlanStatus.CANCELLED,
+      updatedAt: now,
+      steps,
+      metadata,
+    }
+    this.planStore.save(updated)
+    return updated
+  }
+
   private notifyPendingSet(interaction: Interaction): void {
     this.pendingObserver?.setPending(interaction)
+  }
+
+  planScopeMetadata(): Record<string, unknown> | null {
+    if (this.runtimeScope === null) return null
+    const scope: Record<string, unknown> = {}
+    if (this.runtimeScope.sessionId) scope.session_id = this.runtimeScope.sessionId
+    if (this.runtimeScope.projectId) scope.project_id = this.runtimeScope.projectId
+    if (this.runtimeScope.workspaceRoot) scope.workspace_root = this.runtimeScope.workspaceRoot
+    return Object.keys(scope).length ? scope : null
+  }
+
+  planMatchesCurrentScope(record: PlanRecord): boolean {
+    return planMatchesScope(record, this.runtimeScope)
   }
 
   private notifyPendingCleared(interaction: Interaction): void {
@@ -486,7 +547,9 @@ export class ControlManager implements ControlManagerHost, ToolManagerHost {
   }
 
   latestExecutablePlan(): PlanRecord | null {
-    const plans = this.planStore.list().filter((p) => p.status === PlanStatus.APPROVED || p.status === PlanStatus.EXECUTING)
+    const plans = this.planStore
+      .list()
+      .filter((p) => (p.status === PlanStatus.APPROVED || p.status === PlanStatus.EXECUTING) && this.planMatchesCurrentScope(p))
     if (!plans.length) return null
     return plans.reduce((a, b) => (b.updatedAt > a.updatedAt ? b : a))
   }
@@ -500,13 +563,17 @@ export class ControlManager implements ControlManagerHost, ToolManagerHost {
   latestReviewablePlan(): PlanRecord | null {
     const plans = this.planStore
       .list()
-      .filter((p) => p.status === PlanStatus.APPROVED || p.status === PlanStatus.EXECUTING || p.status === PlanStatus.COMPLETED)
+      .filter((p) => (p.status === PlanStatus.APPROVED || p.status === PlanStatus.EXECUTING || p.status === PlanStatus.COMPLETED) && this.planMatchesCurrentScope(p))
     if (!plans.length) return null
     return plans.reduce((a, b) => (b.updatedAt > a.updatedAt ? b : a))
   }
 
   static restoreMode(state: ControlState): string {
-    if (state.previousMode === ControlMode.ASK_BEFORE_EDIT || state.previousMode === ControlMode.AUTO) {
+    if (
+      state.previousMode === ControlMode.ASK_BEFORE_EDIT ||
+      state.previousMode === ControlMode.ACCEPT_EDITS ||
+      state.previousMode === ControlMode.AUTO
+    ) {
       return state.previousMode
     }
     return ControlMode.ASK_BEFORE_EDIT
@@ -527,4 +594,64 @@ export class ControlManager implements ControlManagerHost, ToolManagerHost {
     const interaction = raw && typeof raw === 'object' ? (raw as Record<string, unknown>).interaction : null
     return interaction && typeof interaction === 'object' ? (interaction as Record<string, unknown>) : null
   }
+}
+
+function normalizeRuntimeScope(scope: ControlRuntimeScope | null | undefined): Required<ControlRuntimeScope> | null {
+  if (!scope) return null
+  const normalized = {
+    sessionId: cleanScopeValue(scope.sessionId),
+    projectId: cleanScopeValue(scope.projectId),
+    workspaceRoot: cleanScopeValue(scope.workspaceRoot),
+  }
+  return normalized.sessionId || normalized.projectId || normalized.workspaceRoot ? normalized : null
+}
+
+function cleanScopeValue(value: unknown): string {
+  return String(value ?? '').trim()
+}
+
+function planMatchesScope(record: PlanRecord, current: Required<ControlRuntimeScope> | null): boolean {
+  if (current === null) return true
+  const saved = planRuntimeScope(record)
+  if (saved === null) return false
+  let compared = false
+  for (const key of ['sessionId', 'projectId', 'workspaceRoot'] as const) {
+    const currentValue = current[key]
+    const savedValue = saved[key]
+    if (!currentValue && !savedValue) continue
+    compared = true
+    if (!currentValue || !savedValue || currentValue !== savedValue) return false
+  }
+  return compared
+}
+
+function planRuntimeScope(record: PlanRecord): Required<ControlRuntimeScope> | null {
+  const metadata = record.metadata ?? {}
+  const scope = metadata.scope && typeof metadata.scope === 'object' ? metadata.scope as Record<string, unknown> : {}
+  const normalized = normalizeRuntimeScope({
+    sessionId: cleanScopeValue(scope.session_id ?? scope.sessionId ?? metadata.session_id ?? metadata.sessionId),
+    projectId: cleanScopeValue(scope.project_id ?? scope.projectId ?? metadata.project_id ?? metadata.projectId),
+    workspaceRoot: cleanScopeValue(scope.workspace_root ?? scope.workspaceRoot ?? metadata.workspace_root ?? metadata.workspaceRoot),
+  })
+  return normalized
+}
+
+function askAnswerCancelsPlan(interaction: Interaction): boolean {
+  const parts: string[] = []
+  for (const question of interaction.questions) {
+    parts.push(question.id, question.header, question.question)
+  }
+  for (const answer of Object.values(interaction.answers)) {
+    if (answer && typeof answer === 'object') {
+      parts.push(String((answer as Record<string, unknown>).choice ?? ''))
+      parts.push(String((answer as Record<string, unknown>).freeform ?? ''))
+    } else {
+      parts.push(String(answer ?? ''))
+    }
+  }
+  const text = parts.join('\n').toLowerCase()
+  return (
+    /无视系统继续|放弃该计划|放弃这个计划|放弃旧计划|取消计划|终止计划|停止计划/.test(text) ||
+    /\b(abandon|cancel|ignore)\b[\s\S]{0,40}\b(plan|stuck plan)\b/i.test(text)
+  )
 }

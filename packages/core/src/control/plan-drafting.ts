@@ -64,6 +64,7 @@ export class PlanDraftingManager {
     if (opts.enforceQuality) {
       new PlanQualityGate().requireOk({ steps: structuredSteps, draft })
     }
+    const scope = this.cm.planScopeMetadata()
     this.cm.planStore.save(
       makePlanRecord({
         id: planId,
@@ -80,6 +81,7 @@ export class PlanDraftingManager {
         metadata: metadataWithoutPlanPermissionTokens({
           ...(existing !== null ? existing.metadata : {}),
           risk_level: interaction.riskLevel,
+          ...(scope ? { scope } : {}),
         }),
       }),
     )
@@ -149,6 +151,7 @@ export class PlanDraftingManager {
     const existing = this.latestDraftPlan()
     if (existing !== null) return existing
     const now = nowTs()
+    const scope = this.cm.planScopeMetadata()
     const record = makePlanRecord({
       id: `plan_${randomUUID().replace(/-/g, '').slice(0, 12)}`,
       title: 'Plan Draft',
@@ -157,21 +160,22 @@ export class PlanDraftingManager {
       createdAt: now,
       updatedAt: now,
       draft: { ...emptyDraft(), phase: PlanDraftPhase.EXPLORING },
-      metadata: { risk_level: 'medium' },
+      metadata: { risk_level: 'medium', ...(scope ? { scope } : {}) },
     })
     this.cm.planStore.save(record)
     return record
   }
 
   private latestDraftPlan(): PlanRecord | null {
-    const plans = this.cm.planStore.list().filter((p) => p.status === PlanStatus.DRAFT)
+    const plans = this.cm.planStore.list().filter((p) => p.status === PlanStatus.DRAFT && this.cm.planMatchesCurrentScope(p))
     if (!plans.length) return null
     return plans.reduce((a, b) => (b.updatedAt > a.updatedAt ? b : a))
   }
 
   private planRecordForMeta(meta: Record<string, unknown>): PlanRecord | null {
     const planId = String(meta.plan_id ?? '')
-    return planId ? this.cm.planStore.get(planId) : null
+    const record = planId ? this.cm.planStore.get(planId) : null
+    return record && this.cm.planMatchesCurrentScope(record) ? record : null
   }
 
   recordPlanOpenQuestions(interaction: Interaction): void {

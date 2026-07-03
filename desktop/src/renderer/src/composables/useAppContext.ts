@@ -56,7 +56,7 @@ export interface AppContext {
   checkWatchlist: () => Promise<WatchlistDecision>
   setDesktopPetEnabled: (enabled: boolean) => Promise<DesktopPetPayload>
 
-  setControlMode: (mode: 'ask_before_edit' | 'auto' | 'plan') => Promise<{ ok: boolean; error?: string }>
+  setControlMode: (mode: 'ask_before_edit' | 'accept_edits' | 'auto' | 'plan') => Promise<{ ok: boolean; error?: string }>
   sendMessage: (payload: string | ChatSendPayload) => boolean
   sendInteractionAnswer: (interactionId: string, answers: Record<string, unknown>) => boolean
   sendPlanComment: (interactionId: string, comment: string) => boolean

@@ -101,9 +101,12 @@ describe('PermissionPolicy (test_permissions.py)', () => {
   it('ask_before_edit requires approval for sensitive path', () => {
     const policy = new PermissionPolicy()
     const memory = policy.assess('write_file', { path: 'memory/history.jsonl' }, PermissionMode.ASK_BEFORE_EDIT)
+    const state = policy.assess('write_file', { path: '.emperor/memory/MEMORY.local.md' }, PermissionMode.ASK_BEFORE_EDIT)
     const dist = policy.assess('write_file', { path: 'desktop/out/main/index.js' }, PermissionMode.ASK_BEFORE_EDIT)
     expect(memory.requiresApproval).toBe(true)
     expect(memory.reason).toContain('sensitive')
+    expect(state.requiresApproval).toBe(true)
+    expect(state.reason).toContain('sensitive')
     expect(dist.requiresApproval).toBe(true)
   })
 
@@ -184,6 +187,80 @@ describe('PermissionPipeline (test_permission_pipeline_v2.py)', () => {
     expect(decision.allowed).toBe(false)
     expect(decision.requiresApproval).toBe(true)
     expect(decision.risk).toBe('high')
+  })
+
+  it('accept_edits mode allows low-risk file edits but still asks before shell and scheduler mutations', () => {
+    const policy = new PermissionPolicy()
+    const registry = makeRegistry('/tmp/perm-root')
+
+    const edit = policy.assess('write_file', { path: 'notes/todo.md' }, PermissionMode.ACCEPT_EDITS, { registry })
+    const shell = policy.assess('run_command', { command: 'git status' }, PermissionMode.ACCEPT_EDITS, { registry })
+    const scheduler = policy.assess('scheduler', { action: 'add', message: 'later' }, PermissionMode.ACCEPT_EDITS, { registry })
+    const planWrite = policy.assess('write_file', { path: 'notes/todo.md' }, PermissionMode.PLAN, { registry })
+
+    expect(edit.allowed).toBe(true)
+    expect(edit.rule).toBe('accept_edits.file_edit')
+    expect(shell.allowed).toBe(false)
+    expect(shell.requiresApproval).toBe(true)
+    expect(shell.rule).toBe('accept_edits.run_command.approval')
+    expect(scheduler.requiresApproval).toBe(true)
+    expect(planWrite.allowed).toBe(false)
+  })
+
+  it('accept_edits mode does not auto-approve non-file mutating tools', () => {
+    const registry = new ToolRegistry()
+    registry.register(new DynamicTool())
+    const decision = new PermissionPipeline().assess(
+      'dynamic_tool',
+      { action: 'mutate' },
+      PermissionMode.ACCEPT_EDITS,
+      { registry },
+    )
+
+    expect(decision.allowed).toBe(false)
+    expect(decision.requiresApproval).toBe(true)
+    expect(decision.rule).toBe('accept_edits.default_approval')
+  })
+
+  it('applies user deny rules before mode allow rules', () => {
+    const pipeline = new PermissionPipeline({
+      rules: [
+        { id: 'deny-secret-notes', action: 'deny', tool: 'write_file', pathGlob: 'secrets/**', reason: 'secret notes are manual' },
+      ],
+    })
+    const decision = pipeline.assess(
+      'write_file',
+      { path: 'secrets/key.md', content: 'x' },
+      PermissionMode.ACCEPT_EDITS,
+    )
+
+    expect(decision.allowed).toBe(false)
+    expect(decision.requiresApproval).toBe(false)
+    expect(decision.rule).toBe('user_rule.deny-secret-notes')
+    expect(decision.reason).toContain('secret notes are manual')
+  })
+
+  it('applies user ask rules and keeps invalid rules in diagnostics', () => {
+    const pipeline = new PermissionPipeline({
+      rules: [
+        { id: 'ask-npm', action: 'ask', tool: 'run_command', commandPrefix: 'npm publish', reason: 'publishing is explicit' },
+        { id: '', action: 'allow', tool: 'read_file' },
+      ],
+    })
+    const decision = pipeline.assess(
+      'run_command',
+      { command: 'npm publish --dry-run' },
+      PermissionMode.AUTO,
+    )
+
+    expect(decision.allowed).toBe(false)
+    expect(decision.requiresApproval).toBe(true)
+    expect(decision.rule).toBe('user_rule.ask-npm')
+    expect(decision.reason).toContain('publishing is explicit')
+    expect(pipeline.diagnostics()).toMatchObject({
+      loaded: 1,
+      invalid: 1,
+    })
   })
 
   it('supports argument-level plan read-only', () => {

@@ -122,6 +122,30 @@ describe('Compactor (test_compactor.py)', () => {
     expect(provider.prompts[0]).toContain('[PLAN_RUNTIME_CONTEXT]')
     expect(provider.prompts[0]).toContain('plan_id: plan_1')
   })
+
+  it('caps long user and assistant text before sending the compaction prompt', async () => {
+    const root = tmp('emperor-compact-long-text-')
+    const provider = new QueueProvider([VALID_COMPACTION])
+    const store = makeMemory(root)
+    const longUser = `BEGIN_USER_${'u'.repeat(30_000)}_END_USER`
+    const longAssistant = `BEGIN_ASSISTANT_${'a'.repeat(30_000)}_END_ASSISTANT`
+    const history = [
+      { role: 'user', content: longUser },
+      { role: 'assistant', content: longAssistant },
+      ...makeHistory(Compactor.K),
+    ]
+    const compactor = new Compactor({ provider, model: 'fake-model', memoryStore: store, docsDir: TEMPLATES_DIR })
+
+    await compactor.compactAsync(history)
+
+    const prompt = provider.prompts[0]!
+    expect(prompt).toContain('BEGIN_USER_')
+    expect(prompt).toContain('BEGIN_ASSISTANT_')
+    expect(prompt).toContain('[truncated')
+    expect(prompt).not.toContain('_END_USER')
+    expect(prompt).not.toContain('_END_ASSISTANT')
+    expect(prompt.length).toBeLessThan(25_000)
+  })
 })
 
 // ── test_token_usage.py (TokenTracker) ──

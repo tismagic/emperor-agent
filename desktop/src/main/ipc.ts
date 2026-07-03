@@ -36,6 +36,9 @@ function resolveOperation(coreApi: CoreApiLike, operationKey: string): { fn: unk
 }
 
 function safeIpcError(error: unknown, operationKey: string): Record<string, unknown> {
+  const interruption = benignTurnInterruption(error)
+  if (interruption) return { ok: false, error: interruption }
+
   const errorId = `ipc_${randomUUID().replace(/-/g, '').slice(0, 12)}`
   if (process.env.NODE_ENV !== 'production') {
     console.error(`[core-ipc] ${operationKey} failed (${errorId})`, error)
@@ -47,4 +50,12 @@ function safeIpcError(error: unknown, operationKey: string): Record<string, unkn
       errorId,
     },
   }
+}
+
+function benignTurnInterruption(error: unknown): { message: string; code: string } | null {
+  const name = error && typeof error === 'object' && 'name' in error ? String((error as { name?: unknown }).name || '') : ''
+  if (name === 'TurnPaused') return { message: 'Turn paused', code: 'turn_paused' }
+  if (name === 'CancelledTaskError') return { message: 'Task cancelled', code: 'cancelled' }
+  if (name === 'TurnBusyError') return { message: 'Another agent turn is already running', code: 'turn_busy' }
+  return null
 }

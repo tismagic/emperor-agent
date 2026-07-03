@@ -350,6 +350,11 @@ async function handleModeCommand(raw: string) {
     addLocalCommand(raw, result.ok ? '权限模式已切换为：编辑前询问。' : `权限模式切换失败：${result.error}`)
     return
   }
+  if (['accept_edits', 'accept-edits', 'edits'].includes(normalized)) {
+    const result = await setControlMode('accept_edits')
+    addLocalCommand(raw, result.ok ? '权限模式已切换为：接受编辑。' : `权限模式切换失败：${result.error}`)
+    return
+  }
   if (normalized === 'auto') {
     const result = await setControlMode('auto')
     addLocalCommand(raw, result.ok ? '权限模式已切换为：自动执行。' : `权限模式切换失败：${result.error}`)
@@ -374,14 +379,14 @@ function renderModeStatus() {
   ].join('\n')
 }
 
-async function setControlMode(mode: 'ask_before_edit' | 'auto' | 'plan'): Promise<{ ok: boolean; error?: string }> {
+async function setControlMode(mode: 'ask_before_edit' | 'accept_edits' | 'auto' | 'plan'): Promise<{ ok: boolean; error?: string }> {
   try {
     const data = await api<ControlPayload>('/api/control/mode', {
       method: 'POST',
       body: JSON.stringify({ mode }),
     })
     if (boot.value) boot.value.control = data
-    const label = mode === 'plan' ? '计划模式' : mode === 'auto' ? '自动执行' : '编辑前询问'
+    const label = mode === 'plan' ? '计划模式' : mode === 'auto' ? '自动执行' : mode === 'accept_edits' ? '接受编辑' : '编辑前询问'
     showToast(`已切换为${label}`)
     return { ok: true }
   } catch (err) {

@@ -10,6 +10,7 @@ import type { TokenTracker } from './token-tracker'
 import { nowIsoUtc8 } from './time-utc8'
 
 const REQUIRED_TAGS = ['episode', 'updated_memory', 'updated_user'] as const
+const COMPACTOR_TEXT_MESSAGE_LIMIT = 4000
 const REPAIR_PROMPT = `The previous memory compaction response was invalid.
 Return only the required XML blocks, with no commentary. Required tags:
 <episode>...</episode>
@@ -158,10 +159,11 @@ export class Compactor {
     return recent
   }
 
-  async compactStartupAsync(history: Array<Record<string, unknown>>): Promise<void> {
-    if (history.length < 2) return
-    if (!(await this.compactMessages(history))) return
+  async compactStartupAsync(history: Array<Record<string, unknown>>): Promise<boolean> {
+    if (history.length < 2) return false
+    if (!(await this.compactMessages(history))) return false
     this.memory.appendCompactMarker([])
+    return true
   }
 
   private async compactMessages(messages: Array<Record<string, unknown>>): Promise<boolean> {
@@ -308,7 +310,7 @@ export function messagesToText(messages: Array<Record<string, unknown>>, runtime
       continue
     }
     if (typeof content === 'string' && content) {
-      parts.push(`[${role}] ${content}`)
+      parts.push(`[${role}] ${capCompactorText(content)}`)
     } else if (Array.isArray(content)) {
       parts.push(...contentBlocksToText(role, content))
     }
@@ -329,7 +331,7 @@ function contentBlocksToText(role: string, blocks: unknown[]): string[] {
     const b = block as Record<string, unknown>
     const btype = b.type
     if (btype === 'text') {
-      parts.push(`[${role}] ${b.text ?? ''}`)
+      parts.push(`[${role}] ${capCompactorText(String(b.text ?? ''))}`)
     } else if (btype === 'tool_use' || btype === 'tool_call') {
       parts.push(`[${role}:tool_call] ${b.name ?? ''}`)
     } else if (btype === 'tool_result') {
@@ -341,4 +343,9 @@ function contentBlocksToText(role: string, blocks: unknown[]): string[] {
     }
   }
   return parts
+}
+
+function capCompactorText(text: string): string {
+  if (text.length <= COMPACTOR_TEXT_MESSAGE_LIMIT) return text
+  return `${text.slice(0, COMPACTOR_TEXT_MESSAGE_LIMIT)}\n[truncated, total ${text.length} chars]`
 }

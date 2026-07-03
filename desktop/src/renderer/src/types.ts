@@ -65,9 +65,16 @@ export type SessionMode = 'chat' | 'build'
 export interface ProjectInfo {
   project_id: string
   project_path: string
+  workspace_path?: string
   project_name: string
   summary?: string
   agents_path?: string
+  state_path?: string
+  memory_path?: string
+  project_json_path?: string
+  prompt_overlay_path?: string
+  legacy_agents_path?: string | null
+  legacy_imported_at?: string | null
   created_at?: string
   updated_at?: string
   version?: number
@@ -77,6 +84,18 @@ export interface MemoryContextPayload {
   mode?: SessionMode | string
   session?: SessionInfo | null
   sources?: string[]
+  sourceMap?: Array<{
+    domain?: string
+    kind?: string
+    path?: string
+    sessionId?: string
+    projectId?: string
+    statePath?: string
+    workspacePath?: string
+    legacyAgentsPath?: string | null
+    legacyImportedAt?: string | null
+    scope?: string
+  }>
   project?: ProjectInfo | null
   projectIndexSummary?: string
   projectMemory?: string
@@ -408,12 +427,27 @@ export interface DiagnosticsDependencyPayload {
   [key: string]: unknown
 }
 
+export interface WorkspacePolicyRootPayload {
+  path?: string
+  label?: string
+}
+
+export interface WorkspacePolicyDiagnosticsPayload {
+  workspaceRoot?: string | null
+  stateRoot?: string | null
+  allowRoots?: WorkspacePolicyRootPayload[]
+  denyRoots?: WorkspacePolicyRootPayload[]
+  readOnlyRoots?: WorkspacePolicyRootPayload[]
+  outsideWorkspace?: string
+}
+
 export interface DiagnosticsPayload {
   root?: string
   modelConfig?: DiagnosticsConfigSummary
   localConfig?: DiagnosticsConfigSummary
   scheduler?: SchedulerDiagnosticsPayload
   runtime?: RuntimeStats
+  workspacePolicy?: WorkspacePolicyDiagnosticsPayload
   external?: ExternalDiagnosticsPayload
   activeTasks?: RuntimeTaskRecord[]
   desktopPet?: DesktopPetPayload & Record<string, unknown>
@@ -441,7 +475,7 @@ export interface BootstrapPayload {
 }
 
 export interface CompactResult {
-  status: 'compacted' | 'skipped'
+  status: 'compacted' | 'skipped' | 'degraded'
   count: number
   message: string
   memory: MemoryPayload
@@ -467,8 +501,10 @@ export interface RuntimeEventEnvelope {
 }
 
 export interface RuntimeReplayPayload {
+  sessionId?: string
+  afterSeq?: number
   latestSeq: number
-  scope: 'unarchived' | string
+  scope?: 'unarchived' | string
   events: RuntimeEventEnvelope[]
 }
 
@@ -548,6 +584,9 @@ export interface ToolSegment {
   arguments?: Record<string, unknown>
   status: ToolStatus
   summary?: string
+  output?: string
+  outputMissing?: boolean
+  outputTruncated?: boolean
   artifacts?: ToolArtifactRef[]
   metadata?: Record<string, unknown>
   todos?: TodoItem[]
@@ -569,7 +608,7 @@ export interface ControlQuestion {
   options: ControlQuestionOption[]
 }
 
-export type ControlMode = 'ask_before_edit' | 'auto' | 'plan' | string
+export type ControlMode = 'ask_before_edit' | 'accept_edits' | 'auto' | 'plan' | string
 export type InteractionKind = 'ask' | 'plan' | string
 export type InteractionStatus = 'waiting' | 'answered' | 'commented' | 'approved' | 'cancelled' | string
 
@@ -595,7 +634,7 @@ export interface ControlInteraction {
 export interface ControlPayload {
   version?: number
   mode: ControlMode
-  previous_mode?: 'ask_before_edit' | 'auto' | null
+  previous_mode?: 'ask_before_edit' | 'accept_edits' | 'auto' | null
   pending?: ControlInteraction | null
   last_interaction?: ControlInteraction | null
   updated_at?: number
@@ -865,13 +904,14 @@ export interface SchedulerPayload {
   diagnostics?: Record<string, unknown>
 }
 
-export type WsEvent = CoreRuntimeEvent & ({ seq?: number; ts?: number; turn_id?: string; client_message_id?: string } & (
+export type WsEvent = CoreRuntimeEvent & ({ seq?: number; ts?: number; session_id?: string; turn_id?: string; client_message_id?: string; owner?: Record<string, unknown> } & (
   | { event: 'ready'; model?: string; provider?: string; latest_seq?: number; replay_count?: number; resume_from?: number; busy?: boolean; control?: ControlPayload }
   | { event: 'user_message'; content?: string; attachments?: AttachmentRef[]; source?: string; scheduler?: SchedulerMessageMeta; ui_hidden?: boolean }
   | { event: 'message_delta'; delta?: string }
   | { event: 'agent_thought'; stage?: string; label?: string; summary?: string; source?: string; status?: 'done' | 'running' | string; tool_call_ids?: string[]; tool_names?: string[] }
-  | { event: 'context_usage'; used?: number; max?: number; threshold?: number; usage_type?: string; model_role?: string; model?: string; provider?: string; route_reason?: string; estimated_input_tokens?: number }
+  | { event: 'context_usage'; used?: number; max?: number; threshold?: number; usage_type?: string; model_role?: string; model?: string; provider?: string; route_reason?: string; estimated_input_tokens?: number; used_fallback?: boolean; fallback_reason?: string; provider_retry_count?: number; provider_error_kind?: string; replaced_tool_results?: number; aggregate_replaced_tool_results?: number; aggregate_tool_result_budget?: number }
   | { event: 'context_projection'; report?: Record<string, unknown>; message_count?: number }
+  | { event: 'model_provider_retry'; model?: string; provider?: string | null; usage_type?: string; attempt?: number; max_retries?: number; error_kind?: string; reason?: string }
   | { event: 'model_route_fallback'; from_model?: string; to_model?: string; reason?: string; usage_type?: string }
   | { event: 'session_created'; session?: SessionInfo; client_draft_id?: string }
   | { event: 'session_title_updated'; session?: SessionInfo }
@@ -881,14 +921,15 @@ export type WsEvent = CoreRuntimeEvent & ({ seq?: number; ts?: number; turn_id?:
   | { event: 'external_outbound_sent'; message?: Record<string, unknown>; delivery?: Record<string, unknown> }
   | { event: 'external_outbound_error'; message?: Record<string, unknown>; error?: string }
   | { event: 'tool_call'; id?: string; name: string; arguments?: Record<string, unknown> }
-  | { event: 'tool_result'; id?: string; name?: string; summary?: string; artifacts?: ToolArtifactRef[]; metadata?: Record<string, unknown>; todos?: TodoItem[]; is_error?: boolean }
+  | { event: 'tool_result'; id?: string; name?: string; summary?: string; output?: string; output_truncated?: boolean; artifacts?: ToolArtifactRef[]; metadata?: Record<string, unknown>; todos?: TodoItem[]; is_error?: boolean }
   | { event: 'tool_error'; id?: string; name?: string; message?: string }
   | { event: 'tool_run_queued'; id?: string; name: string; arguments?: Record<string, unknown> }
   | { event: 'tool_run_started'; id?: string; name: string }
-  | { event: 'tool_run_completed'; id?: string; name: string; summary?: string; artifacts?: ToolArtifactRef[]; metadata?: Record<string, unknown> }
+  | { event: 'tool_run_completed'; id?: string; name: string; summary?: string; output?: string; output_truncated?: boolean; artifacts?: ToolArtifactRef[]; metadata?: Record<string, unknown> }
   | { event: 'tool_run_failed'; id?: string; name: string; message?: string }
   | { event: 'tool_run_cancelled'; id?: string; name: string; reason?: string }
   | { event: 'turn_phase'; phase?: string; sequence?: number; iteration?: number; detail?: Record<string, unknown> }
+  | { event: 'turn_scope'; mode?: string; workspace_root?: string; state_root?: string; session_root?: string; project_id?: string | null; project_state_root?: string | null }
   | { event: 'assistant_done'; content?: string }
   | { event: 'error'; message?: string; partial?: boolean }
   | { event: 'control_mode_update'; control?: ControlPayload }

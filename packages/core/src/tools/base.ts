@@ -104,12 +104,14 @@ export class ToolResultObj {
 
 export interface ToolExecutionContext {
   root: string
+  workspaceRoot?: string | null
   arguments: Record<string, unknown>
   turnId?: string | null
   parentCallId?: string | null
   /** 运行时事件发射器（流式事件 dict）。对齐 runner/control 的 StreamEmitter。 */
   emit?: ((event: Record<string, unknown>) => void | Promise<void>) | null
   loop?: unknown | null
+  signal?: AbortSignal | null
 }
 
 // ── tool base ──

@@ -9,6 +9,8 @@ import { AttachmentStore } from '../attachments/store'
 import type { ControlResume } from '../control/manager'
 import { ExternalBridgeService } from '../external/service'
 import { AgentLoop, type AgentLoopCreateOptions, type LoopModelRouter } from '../agent/loop'
+import type { RuntimePaths } from '../runtime/paths'
+import { RuntimeEventStore } from '../runtime/store'
 import { assertCoreMutationAllowed } from './mutation-guard'
 import { ChatService, InvalidSessionError, MainlineTurnService } from './chat-service'
 import { CoreConfigService, type UserConfigPayload } from './services/config-service'
@@ -93,6 +95,7 @@ export const CORE_API_ROUTE_OPERATIONS: RouteOperation[] = [
   op('memory.compact', 'POST', '/api/compact'),
   op('projects.list', 'GET', '/api/projects'),
   op('projects.resolve', 'POST', '/api/projects/resolve'),
+  op('runtime.replay', 'GET', '/api/runtime/replay'),
   op('skills.tools', 'GET', '/api/tools'),
   op('skills.list', 'GET', '/api/skills'),
   op('skills.get', 'GET', '/api/skill'),
@@ -108,6 +111,7 @@ export const CORE_API_ROUTE_OPERATIONS: RouteOperation[] = [
 
 export class CoreApi {
   readonly root: string
+  readonly paths: RuntimePaths
   readonly loop: AgentLoop
   readonly attachmentStore: AttachmentStore
   readonly watchlist: WatchlistService
@@ -125,9 +129,10 @@ export class CoreApi {
   private constructor(root: string, loop: AgentLoop) {
     this.root = resolve(root)
     this.loop = loop
-    this.attachmentStore = new AttachmentStore(this.root)
-    this.watchlist = new WatchlistService(this.root, { tokenTracker: this.loop.tokenTracker })
-    this.configService = new CoreConfigService(this.root, {
+    this.paths = loop.paths
+    this.attachmentStore = new AttachmentStore(this.paths.stateRoot)
+    this.watchlist = new WatchlistService(this.paths.stateRoot, { tokenTracker: this.loop.tokenTracker })
+    this.configService = new CoreConfigService(this.paths.stateRoot, {
       refreshRuntimeContext: () => { this.loop.refreshRuntimeContext() },
       reloadMcp: () => this.loop.reloadMcp(),
     }, { templatesDir: this.loop.templatesDir })
@@ -138,7 +143,7 @@ export class CoreApi {
       router: () => this.loop.modelRouter,
       refreshModelConfig: () => this.loop.refreshModelConfig(),
     })
-    this.memoryService = new CoreMemoryService(this.root, {
+    this.memoryService = new CoreMemoryService(this.paths.stateRoot, {
       loop: this.loop,
       watchlist: this.watchlist,
       refreshRuntimeContext: () => { this.loop.refreshRuntimeContext() },
@@ -148,7 +153,7 @@ export class CoreApi {
       refreshRuntimeContext: () => { this.loop.refreshRuntimeContext() },
     })
     this.teamService = new CoreTeamService({
-      teamManager: this.loop.teamManager,
+      teamManager: () => this.loop.teamManagerForActiveSession(),
       activeSession: () => this.loop.activeSession,
       assertMutation: (area, action) => this.assertMutation(area, action),
     })
@@ -156,9 +161,12 @@ export class CoreApi {
     this.chatService = new ChatService(this.mainline)
     this.loop.setSchedulerAgentTurnSubmitter((payload) => this.mainline.submitSchedulerTurn(payload))
     this.externalBridge = new ExternalBridgeService({
-      root: this.root,
+      root: this.paths.stateRoot,
       canAcceptTurn: () => !this.loop.activeTasks.hasActive() && !this.loop.controlManager.payload().pending,
-      eventSink: async (event) => { this.loop.runtimeStore.append(event) },
+      targetSessionId: () => this.loop.activeSessionId,
+      eventSink: async (event) => {
+        await this.emitRuntime(event, { sessionId: runtimeEventSessionId(event) || this.loop.activeSessionId })
+      },
       submitTurn: async (payload) => {
         const turnId = String(payload.client_message_id ?? payload.clientMessageId ?? '')
         const result = await this.mainline.submit({
@@ -166,14 +174,17 @@ export class CoreApi {
           turnId: turnId || null,
           displayContent: String(payload.display_content ?? payload.displayContent ?? payload.content ?? ''),
           source: 'external',
+          sessionId: String(payload.session_id ?? payload.sessionId ?? '').trim() || null,
           memoryExtra: isRecord(payload.memory_extra) ? payload.memory_extra : isRecord(payload.memoryExtra) ? payload.memoryExtra : null,
         })
         return result.turnId
       },
     })
     this.diagnosticsService = new CoreDiagnosticsService(this.root, {
+      runtimePaths: this.paths,
       schedulerDiagnostics: () => this.loop.schedulerStore.diagnostics(),
       runtimeStats: () => this.loop.runtimeStore.stats({ activeTurnIds: this.loop.activeMemoryStore.loadUnarchivedTurnIds() }) as unknown as Dict,
+      workspacePolicy: () => this.loop.workspacePolicyDiagnostics() as Dict,
       externalPayload: () => this.externalBridge.payload(),
       activeTasks: () => this.loop.activeTasks.list(),
       desktopPetPayload: () => this.desktopPet.get(),
@@ -198,6 +209,7 @@ export class CoreApi {
     const sessionDiagnostics = this.loop.sessionStore.diagnostics()
     const route = this.loop.modelRouter.route('main_agent')
     const activeTurnIds = this.loop.activeMemoryStore.loadUnarchivedTurnIds()
+    const runtimeReplay = this.runtime.replay({ sessionId: this.loop.activeSessionId, afterSeq: 0, limit: 5000 })
     return {
       app: 'Emperor Agent',
       sessionIndexSource: sessionDiagnostics.sessionIndexSource,
@@ -216,8 +228,8 @@ export class CoreApi {
       context_used: this.loop.tokenTracker.lastInputTokensValue(),
       unarchivedHistory: this.loop.activeMemoryStore.loadUnarchivedHistory(),
       runtime: {
-        events: this.loop.runtimeStore.eventsForTurns(activeTurnIds, { limit: 5000 }),
-        latestSeq: this.loop.runtimeStore.latestSeq,
+        events: runtimeReplay.events,
+        latestSeq: runtimeReplay.latestSeq,
         stats: this.loop.runtimeStore.stats({ activeTurnIds }),
       },
       projects: this.projects.list(),
@@ -252,6 +264,29 @@ export class CoreApi {
     },
   }
 
+  readonly runtime = {
+    replay: (opts: {
+      sessionId?: string | null
+      afterSeq?: number | string | null
+      after_seq?: number | string | null
+      limit?: number | string | null
+      includeArchive?: boolean | string | null
+      include_archive?: boolean | string | null
+    } = {}): Dict => {
+      const sessionId = this.requireReadableSessionId(opts.sessionId ?? this.loop.activeSessionId ?? null, 'runtime.replay')
+      const afterSeq = normalizedNonNegativeNumber(opts.afterSeq ?? opts.after_seq ?? 0)
+      const limit = normalizedPositiveNumber(opts.limit ?? null)
+      const includeArchive = normalizedBoolean(opts.includeArchive ?? opts.include_archive ?? false)
+      const store = new RuntimeEventStore(this.loop.sessionStore.sessionDir(sessionId), { sessionDirOverride: true })
+      return {
+        sessionId,
+        afterSeq,
+        latestSeq: store.latestSeq,
+        events: store.replayAfter(afterSeq, { sessionId, limit, includeArchive }),
+      }
+    },
+  }
+
   readonly config = {
     get: (): UserConfigPayload => this.configService.getUserConfig(),
     save: (body: { content?: unknown } | string = {}): UserConfigPayload => {
@@ -264,7 +299,7 @@ export class CoreApi {
     save: (opts: { raw: Buffer | Uint8Array; name: string; mime: string }): Dict => this.attachmentStore.save(opts) as unknown as Dict,
     rawPath: (attachmentId: string): Dict | null => {
       const ref = this.attachmentStore.get(attachmentId)
-      return ref ? { path: join(this.root, ref.rel_path), ref } : null
+      return ref ? { path: join(this.attachmentStore.root, ref.rel_path), ref } : null
     },
   }
 
@@ -306,7 +341,13 @@ export class CoreApi {
       const ownerSessionId = this.loop.controlPendingOwnerSessionId(id)
       return this.resumeControl(this.loop.controlManager.approve(id), opts, ownerSessionId)
     },
-    cancelInteraction: (id: string): Dict => this.loop.controlManager.cancel(id),
+    cancelInteraction: async (id: string): Promise<Dict> => {
+      const ownerSessionId = this.loop.controlPendingOwnerSessionId(id)
+      const result = this.loop.controlManager.cancel(id)
+      const event = { ...result, control: this.loop.controlManager.payload() }
+      await this.emitRuntime(event, { sessionId: ownerSessionId })
+      return event
+    },
   }
 
   readonly plans = {
@@ -384,7 +425,7 @@ export class CoreApi {
   readonly tasks = {
     list: (): Dict[] => this.loop.taskManager.store.list().map((task) => task.toDict() as unknown as Dict),
     get: (taskId: string): Dict | null => this.loop.taskManager.store.get(taskId)?.toDict() as unknown as Dict ?? null,
-    transcript: (taskId: string, opts: { offset?: number; limit?: number } = {}): Dict => new SidechainTranscript(this.root, taskId).read(opts),
+    transcript: (taskId: string, opts: { offset?: number; limit?: number } = {}): Dict => new SidechainTranscript(this.paths.stateRoot, taskId).read(opts),
   }
 
   readonly memory = {
@@ -417,9 +458,12 @@ export class CoreApi {
   }
 
   readonly sidebar = {
-    get: (): Dict => normalizeSidebarState(readJson(join(this.root, 'memory', 'sidebar_state.json'), {})),
+    get: (): Dict => normalizeSidebarState(readJson(
+      join(this.paths.memoryRoot, 'sidebar_state.json'),
+      readJson(join(this.root, 'memory', 'sidebar_state.json'), {}),
+    )),
     patch: (patch: Dict): Dict => {
-      const path = join(this.root, 'memory', 'sidebar_state.json')
+      const path = join(this.paths.memoryRoot, 'sidebar_state.json')
       const next = normalizeSidebarState({ ...readJson(path, {}), ...patch })
       atomicWriteText(path, JSON.stringify(next, null, 2) + '\n')
       return next
@@ -446,7 +490,7 @@ export class CoreApi {
 
   private async resumeControl(resume: ControlResume, opts: ControlResumeOptions, ownerSessionId: string | null): Promise<Dict> {
     const event = isRecord(resume.event) ? { ...resume.event, control: this.loop.controlManager.payload() } : null
-    if (event) await this.emitRuntime(event, { emit: opts.emit ?? null })
+    if (event) await this.emitRuntime(event, { emit: opts.emit ?? null, sessionId: ownerSessionId })
     let result: Dict | null = null
     if (resume.resume === true) {
       const uiHidden = opts.uiHidden ?? false
@@ -464,22 +508,38 @@ export class CoreApi {
     return { ...(resume as unknown as Dict), event: event ?? resume.event, result }
   }
 
-  private async emitRuntime(event: Dict, opts: { emit?: StreamEmitter | null } = {}): Promise<Dict> {
-    const payload = this.loop.runtimeStore.append(event)
+  private async emitRuntime(event: Dict, opts: { emit?: StreamEmitter | null; sessionId?: string | null } = {}): Promise<Dict> {
+    const targetSessionId = String(opts.sessionId ?? '').trim()
+    const store = targetSessionId && targetSessionId !== this.loop.activeSessionId
+      ? new RuntimeEventStore(this.loop.sessionStore.sessionDir(targetSessionId), { sessionDirOverride: true })
+      : this.loop.runtimeStore
+    const payload = store.append(event, { sessionId: targetSessionId || null })
     const sink = opts.emit ?? this.loop.eventSink
     if (sink) await sink(payload)
     return payload
   }
 
   private activateBootstrapSession(sessionId: string): void {
+    const session = this.requireReadableSession(sessionId, 'bootstrap')
+    this.loop.activateSession(session.id)
+  }
+
+  private requireReadableSessionId(sessionId: string | null | undefined, operation: string): string {
+    return this.requireReadableSession(String(sessionId ?? '').trim(), operation).id
+  }
+
+  private requireReadableSession(sessionId: string, operation: string): { id: string; archived_at?: string | null } {
+    if (!sessionId) {
+      throw new InvalidSessionError(`${operation} requires a real sessionId`, null)
+    }
     if (sessionId.startsWith('draft:')) {
-      throw new InvalidSessionError(`bootstrap cannot activate draft session ${sessionId}`, sessionId)
+      throw new InvalidSessionError(`${operation} cannot read draft session ${sessionId}`, sessionId)
     }
     const session = this.loop.sessionStore.get(sessionId)
     if (!session || session.archived_at) {
-      throw new InvalidSessionError(`bootstrap received unknown session ${sessionId}`, sessionId)
+      throw new InvalidSessionError(`${operation} received unknown session ${sessionId}`, sessionId)
     }
-    this.loop.activateSession(session.id)
+    return session
   }
 
 }
@@ -558,6 +618,29 @@ function normalizeSidebarProjectSessionOrder(value: unknown): Record<string, str
 function stringList(value: unknown): string[] {
   if (!Array.isArray(value)) return []
   return value.map((item) => String(item)).filter(Boolean)
+}
+
+function normalizedNonNegativeNumber(value: unknown): number {
+  const parsed = Number(value)
+  return Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : 0
+}
+
+function normalizedPositiveNumber(value: unknown): number | null {
+  if (value === null || value === undefined || value === '') return null
+  const parsed = Number(value)
+  return Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : null
+}
+
+function normalizedBoolean(value: unknown): boolean {
+  return value === true || value === 'true' || value === '1' || value === 1
+}
+
+function runtimeEventSessionId(event: unknown): string {
+  if (!isRecord(event)) return ''
+  const direct = String(event.session_id ?? event.sessionId ?? '').trim()
+  if (direct) return direct
+  const owner = event.owner
+  return isRecord(owner) ? String(owner.session_id ?? owner.sessionId ?? '').trim() : ''
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

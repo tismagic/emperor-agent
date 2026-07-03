@@ -46,6 +46,13 @@ export class ValidationError extends EmperorError {
   }
 }
 
+/** 模型输入超过上下文窗口。 */
+export class ContextOverflowError extends EmperorError {
+  constructor(message: string, options?: ErrorOptions) {
+    super(message, 'context_overflow', options)
+  }
+}
+
 /** 把任意 throwable 归一成安全错误（IPC 出口用）。 */
 export function toSafeError(err: unknown): { code: string; message: string } {
   if (err instanceof EmperorError) return err.toSafe()

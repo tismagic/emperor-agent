@@ -13,6 +13,7 @@ export * from './store/jsonl'
 export * from './providers/registry'
 export * from './providers/base'
 export * from './providers/factory'
+export * from './prompts/manifest'
 export * from './config/local-config'
 export * from './config/model-config'
 export * from './model/router'
@@ -23,6 +24,7 @@ export * from './tools/resolvers'
 export * from './tools/filesystem'
 export * from './tools/builtin'
 export * from './tools/dispatch'
+export * from './tools/web-search'
 export * from './context/pipeline'
 // agent core (W03)
 export * from './agent/query-state'
@@ -39,6 +41,7 @@ export * from './permissions/resolve-profile'
 export * from './permissions/pipeline'
 export * from './permissions/policy'
 export * from './permissions/manager'
+export * from './permissions/workspace-policy'
 // plans (W05)
 export * from './plans/verification'
 export * from './plans/models'
@@ -74,11 +77,22 @@ export * from './runtime/events'
 export * from './runtime/types'
 export * from './runtime/store'
 export * from './runtime/active'
+export * from './runtime/migrate-state-root'
+export * from './runtime/paths'
 export * from './tasks/models'
 export * from './tasks/store'
 export * from './tasks/sidechain'
 export * from './tasks/manager'
 export * from './projects/store'
+export {
+  ProjectStateStore,
+  DEFAULT_PROJECT_MEMORY_BLOCK,
+  extractProjectMemoryBlock,
+  replaceProjectMemoryBlock,
+  type ProjectStateInput,
+  type ProjectStateMetadata,
+  type ProjectStatePaths,
+} from './projects/state-store'
 // subagents (W08)
 export * from './subagents/spec'
 export * from './subagents/registry'

@@ -2,7 +2,7 @@ import { ActiveTaskRegistry } from '../runtime/active'
 import { TaskManager } from '../tasks/manager'
 import { TaskKind } from '../tasks/models'
 import type { WatchlistDecision } from '../watchlist/models'
-import { SchedulerJob, SchedulerPayload } from './models'
+import { SchedulerJob, SchedulerPayload, schedulerPayloadSessionId } from './models'
 import { resetSchedulerRun, setSchedulerRun } from './tool'
 
 export interface SchedulerAgentTurnPayload {
@@ -14,6 +14,7 @@ export interface SchedulerAgentTurnPayload {
   source: 'scheduler'
   scheduler: { jobId: string; jobName: string }
   taskId: string | null
+  sessionId?: string | null
 }
 
 export interface TeamWakeManager {
@@ -101,6 +102,7 @@ export class SchedulerJobExecutor {
       source: 'scheduler',
       scheduler: { jobId: job.id, jobName: job.name },
       taskId: opts.taskId,
+      sessionId: schedulerPayloadSessionId(job.payload) || null,
     })
   }
 

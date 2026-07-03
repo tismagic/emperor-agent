@@ -17,6 +17,15 @@ export class CancelledTaskError extends Error {
   }
 }
 
+export class TurnBusyError extends Error {
+  readonly code = 'turn_busy'
+
+  constructor() {
+    super('Another agent turn is already running')
+    this.name = 'TurnBusyError'
+  }
+}
+
 interface ActiveTask {
   info: ActiveTaskInfo
   cancel: () => void
@@ -32,6 +41,7 @@ export class ActiveTaskRegistry {
     awaitable: Promise<T>
     turnId?: string | null
     jobId?: string | null
+    abort?: (() => void) | null
   }): Promise<T> {
     if (this.tasks.has(opts.taskId)) throw new Error(`active task already exists: ${opts.taskId}`)
     let rejectCancel: (error: Error) => void = () => {}
@@ -49,6 +59,7 @@ export class ActiveTaskRegistry {
       info,
       cancel: () => {
         info.cancelled = true
+        opts.abort?.()
         rejectCancel(new CancelledTaskError(opts.taskId))
       },
     })
@@ -83,6 +94,10 @@ export class ActiveTaskRegistry {
 
   hasActive(): boolean {
     return this.tasks.size > 0
+  }
+
+  hasActiveKind(kind: ActiveTaskKind): boolean {
+    return [...this.tasks.values()].some((active) => active.info.kind === kind)
   }
 }
 

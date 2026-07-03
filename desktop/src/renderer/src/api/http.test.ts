@@ -77,6 +77,7 @@ describe('api Core IPC routes (MIG-IPC-010)', () => {
     g.window = { emperor: { invokeCore: async (...args: unknown[]) => { calls.push(args); return {} } } }
 
     await api('/api/bootstrap?session=sess%201')
+    await api('/api/runtime/replay?session=sess%201&after_seq=3&limit=25&archive=1')
     await api('/api/control')
     await api('/api/plans')
     await api('/api/plans/plan%201')
@@ -88,6 +89,7 @@ describe('api Core IPC routes (MIG-IPC-010)', () => {
 
     expect(calls).toEqual([
       ['bootstrap', { sessionId: 'sess 1' }],
+      ['runtime.replay', { sessionId: 'sess 1', afterSeq: 3, limit: 25, includeArchive: true }],
       ['control.get'],
       ['plans.list'],
       ['plans.get', 'plan 1'],

@@ -1,4 +1,4 @@
-import { existsSync, writeFileSync, symlinkSync, readFileSync } from 'node:fs'
+import { existsSync, mkdirSync, writeFileSync, symlinkSync, readFileSync } from 'node:fs'
 import { mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -39,6 +39,26 @@ describe('ReadFileTool', () => {
     expect(out).toContain('[ERR]')
     expect(out).not.toContain('TOP SECRET')
   })
+
+  it('blocks private state-root reads and explains the effective workspace fence', async () => {
+    const workspace = mkdtempSync(join(tmpdir(), 'emperor-workspace-'))
+    const stateRoot = join(workspace, '.emperor')
+    const privatePath = join(stateRoot, 'memory', 'MEMORY.local.md')
+    mkdirSync(join(stateRoot, 'memory'), { recursive: true })
+    writeFileSync(privatePath, 'PRIVATE MEMORY', 'utf8')
+
+    const tool = new ReadFileTool(workspace)
+    const out = await tool.execute(
+      { path: privatePath },
+      { root: stateRoot, workspaceRoot: workspace, arguments: { path: privatePath } },
+    )
+
+    expect(out).toContain('[ERR] path denied by workspace policy')
+    expect(out).toContain(`requested: ${privatePath}`)
+    expect(out).toContain(`allowed_roots: ${workspace}`)
+    expect(out).toContain(`denied_roots: ${stateRoot}`)
+    expect(out).not.toContain('PRIVATE MEMORY')
+  })
 })
 
 describe('WriteFileTool + EditFileTool', () => {
@@ -72,6 +92,24 @@ describe('WriteFileTool + EditFileTool', () => {
     expect(out).toContain('[ERR]')
     expect(readFileSync(targetPath, 'utf8')).toBe('original')
   })
+
+  it('blocks absolute writes outside the effective workspace with the requested path', async () => {
+    const workspace = mkdtempSync(join(tmpdir(), 'emperor-workspace-'))
+    const outside = mkdtempSync(join(tmpdir(), 'emperor-outside-'))
+    const targetPath = join(outside, 'target.txt')
+    const stateRoot = join(workspace, '.emperor')
+
+    const w = new WriteFileTool(workspace)
+    const out = await w.execute(
+      { path: targetPath, content: 'pwned' },
+      { root: stateRoot, workspaceRoot: workspace, arguments: { path: targetPath, content: 'pwned' } },
+    )
+
+    expect(out).toContain('[ERR] path is outside workspace')
+    expect(out).toContain(`requested: ${targetPath}`)
+    expect(out).toContain(`allowed_roots: ${workspace}`)
+    expect(existsSync(targetPath)).toBe(false)
+  })
 })
 
 describe('RunCommand is_read_only delegates to resolvers', () => {
@@ -98,6 +136,27 @@ describe('RunCommand deny-list (audit P1-1)', () => {
       const out = await r.execute({ command })
       expect(out, command).toContain('refused by safety policy')
     }
+  })
+})
+
+describe('RunCommand cancellation', () => {
+  it('stops a running shell command when the turn abort signal fires', async () => {
+    const r = new RunCommand(dir)
+    const controller = new AbortController()
+    const pending = r.execute(
+      { command: 'sleep 0.3; echo should-not-finish' },
+      {
+        root: dir,
+        arguments: { command: 'sleep 0.3; echo should-not-finish' },
+        signal: controller.signal,
+      } as never,
+    )
+    setTimeout(() => controller.abort(), 10)
+
+    const out = await pending
+
+    expect(out).toContain('command cancelled')
+    expect(out).not.toContain('should-not-finish')
   })
 })
 

@@ -7,6 +7,12 @@ import type { PlanStore } from '../plans/store'
 import type { ControlStore } from './store'
 import type { PlanPermissionTokenManager } from './plan-permissions'
 
+export interface ControlRuntimeScope {
+  sessionId?: string | null
+  projectId?: string | null
+  workspaceRoot?: string | null
+}
+
 export interface TodoStoreLike {
   todos: Array<Record<string, unknown>>
   syncFromPlanSteps(steps: Array<Record<string, unknown>>): string
@@ -29,6 +35,8 @@ export interface ControlManagerHost {
   taskManager: TaskManagerLike | null
   ensureNoPending(): void
   setPending(interaction: import('./models').Interaction): void
+  planScopeMetadata(): Record<string, unknown> | null
+  planMatchesCurrentScope(record: PlanRecord): boolean
   latestExecutablePlan(): PlanRecord | null
   latestReviewablePlan(): PlanRecord | null
   hasAskInteraction(): boolean

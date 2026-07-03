@@ -97,6 +97,49 @@ describe('RuntimeEventStore (test_runtime_events.py)', () => {
     expect(store.eventsForTurns(['turn_b']).map((event) => event.event)).toEqual(['user_message', 'assistant_done'])
   })
 
+  it('adds session receipts and filters replay by session owner', () => {
+    const root = tmp('emperor-runtime-session-replay-')
+    const sessionRoot = join(root, 'sessions', 'session_a')
+    const store = new RuntimeEventStore(sessionRoot, { sessionDirOverride: true })
+
+    const event = store.append({ event: 'user_message', content: 'hello' }, { turnId: 'turn_a' })
+
+    expect(event).toMatchObject({
+      seq: 1,
+      event: 'user_message',
+      source: 'core',
+      session_id: 'session_a',
+      turn_id: 'turn_a',
+      owner: {
+        session_id: 'session_a',
+        turn_id: 'turn_a',
+      },
+    })
+    expect(store.replayAfter(0, { sessionId: 'session_a' }).map((item) => item.content)).toEqual(['hello'])
+    expect(store.replayAfter(0, { sessionId: 'session_b' })).toEqual([])
+  })
+
+  it('infers legacy event session receipts from the session directory', () => {
+    const sessionRoot = join(tmp('emperor-runtime-legacy-session-'), 'sessions', 'legacy_session')
+    const store = new RuntimeEventStore(sessionRoot, { sessionDirOverride: true })
+    writeFileSync(
+      store.eventsFile,
+      JSON.stringify({ seq: 7, event: 'assistant_done', turn_id: 'legacy_turn', content: 'done' }) + '\n',
+      'utf8',
+    )
+
+    const replayed = new RuntimeEventStore(sessionRoot, { sessionDirOverride: true }).replayAfter(0, { sessionId: 'legacy_session' })
+
+    expect(replayed).toHaveLength(1)
+    expect(replayed[0]).toMatchObject({
+      session_id: 'legacy_session',
+      owner: {
+        session_id: 'legacy_session',
+        turn_id: 'legacy_turn',
+      },
+    })
+  })
+
   it('stats and compacts inactive turns to archive while keeping latest seq', () => {
     const root = tmp('emperor-runtime-compact-')
     const store = new RuntimeEventStore(root)
@@ -113,6 +156,8 @@ describe('RuntimeEventStore (test_runtime_events.py)', () => {
     })
     const stats = store.compact(['turn_b'])
     expect(store.replayAfter(0).map((event) => event.turn_id)).toEqual(['turn_b'])
+    expect(store.replayAfter(0, { includeArchive: true }).map((event) => event.turn_id)).toEqual(['turn_a', 'turn_a', 'turn_b'])
+    expect(store.replayAfter(2, { includeArchive: true }).map((event) => event.turn_id)).toEqual(['turn_b'])
     expect(stats.events).toBe(1)
     expect(stats.archiveFiles).toBe(1)
     expect(stats.archiveBytes).toBeGreaterThan(0)

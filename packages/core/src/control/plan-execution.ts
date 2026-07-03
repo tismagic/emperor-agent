@@ -157,6 +157,7 @@ export class PlanExecutionManager {
   private syncPlanStepTasks(record: PlanRecord): PlanRecord {
     if (this.cm.taskManager === null || !record.steps.length) return record
     const mapping = { ...((record.metadata.plan_step_tasks as Record<string, string>) ?? {}) }
+    const scope = planStepTaskScope(record, this.cm.planScopeMetadata())
     record.steps.forEach((step, idx) => {
       const index = idx + 1
       const metadata = {
@@ -164,6 +165,7 @@ export class PlanExecutionManager {
         plan_step_id: step.id,
         sequence: index,
         verification_status: stepVerificationStatus(step),
+        ...(scope ? { scope } : {}),
       }
       const taskId = String(mapping[step.id] ?? '')
       const status = taskStatusFromPlanStep(step.status)
@@ -237,11 +239,14 @@ export class PlanExecutionManager {
     const now = nowTs()
     let draft = record.draft
     if (opts?.approved) draft = { ...draft, phase: PlanDraftPhase.APPROVED }
+    const scope = this.cm.planScopeMetadata()
+    const metadata = { ...record.metadata, ...(scope && !record.metadata.scope ? { scope } : {}) }
     const payload: Record<string, unknown> = {
       ...planToDict(record),
       status,
       updated_at: now,
       draft: { ...planToDict({ ...record, draft }).draft as Record<string, unknown> },
+      metadata,
     }
     if (opts?.approved) payload.approved_at = now
     this.cm.planStore.save(planFromDict(payload))
@@ -261,4 +266,10 @@ export class PlanExecutionManager {
     this.cm.todoStore.syncFromPlanSteps(activated.steps.map(stepToDict))
     return activated
   }
+}
+
+function planStepTaskScope(record: PlanRecord, current: Record<string, unknown> | null): Record<string, unknown> | null {
+  const saved = record.metadata.scope
+  if (saved && typeof saved === 'object' && !Array.isArray(saved)) return { ...(saved as Record<string, unknown>) }
+  return current ? { ...current } : null
 }

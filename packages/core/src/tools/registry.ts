@@ -70,11 +70,13 @@ export class ToolRegistry {
     const casted = this.prepareCall(name, args)
     const execCtx: ToolExecutionContext = {
       root: ctx?.root ?? this.#root,
+      workspaceRoot: ctx?.workspaceRoot ?? ctx?.root ?? this.#root,
       arguments: casted,
       turnId: ctx?.turnId ?? null,
       parentCallId: ctx?.parentCallId ?? null,
       emit: ctx?.emit ?? null,
       loop: ctx?.loop ?? null,
+      signal: ctx?.signal ?? null,
     }
     const raw = await tool.execute(casted, execCtx)
     const mapped = typeof raw === 'string'
@@ -82,6 +84,7 @@ export class ToolRegistry {
       : capToolResult(raw, tool.maxResultChars)
     return ingestToolResultMedia(ToolResultObj.fromData(mapped), {
       root: execCtx.root,
+      workspaceRoot: execCtx.workspaceRoot,
       toolName: name,
       arguments: casted,
       turnId: execCtx.turnId,

@@ -11,6 +11,7 @@ const SAFE_ID_RE = /^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,63}$/
 
 export enum ControlMode {
   ASK_BEFORE_EDIT = 'ask_before_edit',
+  ACCEPT_EDITS = 'accept_edits',
   AUTO = 'auto',
   PLAN = 'plan',
 }
@@ -267,7 +268,11 @@ export function controlStateFromDict(raw: Record<string, unknown>): ControlState
   if (!CONTROL_MODES.has(mode)) mode = ControlMode.ASK_BEFORE_EDIT
   let previousMode: string | null = String(raw.previous_mode ?? raw.previousMode ?? '') || null
   if (previousMode === 'normal') previousMode = ControlMode.ASK_BEFORE_EDIT
-  if (previousMode !== ControlMode.ASK_BEFORE_EDIT && previousMode !== ControlMode.AUTO) previousMode = null
+  if (
+    previousMode !== ControlMode.ASK_BEFORE_EDIT &&
+    previousMode !== ControlMode.ACCEPT_EDITS &&
+    previousMode !== ControlMode.AUTO
+  ) previousMode = null
   return {
     version: Number(raw.version ?? SCHEMA_VERSION) || SCHEMA_VERSION,
     mode,

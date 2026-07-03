@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import type { AgentLoop } from '../agent/loop'
+import { TurnBusyError } from '../runtime/active'
 import type { SchedulerAgentTurnPayload } from '../scheduler/executor'
 
 export type MainlineEventSink = (event: Record<string, unknown>) => void | Promise<void>
@@ -47,6 +48,9 @@ export class MainlineTurnService {
   }
 
   async submit(input: MainlineSubmitInput): Promise<MainlineSubmitResult> {
+    if (input.useActiveTask !== false && this.loop.activeTasks.hasActiveKind('turn')) {
+      throw new TurnBusyError()
+    }
     const turnId = input.turnId || randomUUID().replace(/-/g, '').slice(0, 16)
     const sessionId = String(input.sessionId ?? '').trim()
     const source = String(input.source ?? 'chat').trim() || 'chat'
@@ -81,6 +85,7 @@ export class MainlineTurnService {
       clientMessageId: payload.clientMessageId,
       turnId: payload.clientMessageId,
       source: payload.source,
+      sessionId: payload.sessionId ?? null,
       scheduler: payload.scheduler,
       taskId: payload.taskId,
       emit: payload.deliver ? this.loop.eventSink : async () => undefined,

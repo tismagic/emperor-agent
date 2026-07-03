@@ -4,6 +4,7 @@ import {
   clearRuntimeSnapshotRaw,
   writeRuntimeSnapshotRaw,
 } from '../runtime/persistence'
+import { isChatProjectionEvent, projectChatEvents } from '../runtime/chatProjection'
 import { replayRuntimeEvents } from '../runtime/reducer'
 import { findSubagent, findSubagentTool, findToolSegment } from '../runtime/selectors'
 import { applyPlanEvent, type PlanProjection } from '../runtime/handlers/plans'
@@ -51,6 +52,8 @@ export function useRuntime(options: {
   let rehydrating = false
   let bridgeUnavailableToastShown = false
   const turnClock = new Map<string, number>()
+  const controlResumeTurnTargets = new Map<string, string>()
+  let pendingControlResumeAssistantId: string | null = null
 
   const currentAssistant = computed(() => messages.value.find((message) => message.id === currentAssistantId.value && message.role === 'assistant') as AssistantMessage | undefined)
 
@@ -214,7 +217,7 @@ export function useRuntime(options: {
       clientMessageId: userMsg.id,
       sessionId: sessionId.value,
     }).catch((err) => {
-      handleChatError(err instanceof Error ? err.message : String(err))
+      handleChatSubmitError(err)
     })
     return true
   }
@@ -298,16 +301,22 @@ export function useRuntime(options: {
 
   function sendControlPayloadViaCore(payload: Record<string, unknown>, userLabel: string, expectAssistant: boolean) {
     const controlMessageId = nextId('control')
+    const interactionId = String(payload.interaction_id || '')
     let optimisticAssistantId: string | null = null
     if (expectAssistant) {
-      const assistantId = nextId('assistant')
-      optimisticAssistantId = assistantId
-      messages.value.push(createStreamingAssistant(assistantId, Date.now()))
-      currentAssistantId.value = assistantId
+      const resumeAssistant = assistantForControlInteraction(interactionId)
+      if (resumeAssistant) {
+        pendingControlResumeAssistantId = resumeAssistant.id
+        currentAssistantId.value = resumeAssistant.id
+      } else {
+        const assistantId = nextId('assistant')
+        optimisticAssistantId = assistantId
+        messages.value.push(createStreamingAssistant(assistantId, Date.now()))
+        currentAssistantId.value = assistantId
+      }
       busy.value = true
       updatePending('正在继续执行...', userLabel)
     }
-    const interactionId = String(payload.interaction_id || '')
     const resumeOpts = toPlainRecord({ clientMessageId: controlMessageId, displayContent: '', uiHidden: true })
     let call: Promise<unknown>
     if (payload.type === 'interaction_answer') {
@@ -323,6 +332,7 @@ export function useRuntime(options: {
       return false
     }
     void call.catch((err) => {
+      if (handleBenignTurnInterruption(err)) return
       void handleControlPayloadError(err, optimisticAssistantId)
     })
     return true
@@ -359,6 +369,101 @@ export function useRuntime(options: {
     return errorId ? `${message} · ${errorId}` : message
   }
 
+  function handleBenignTurnInterruption(error: unknown): boolean {
+    const code = interruptionCode(error)
+    if (!code) return false
+    status.value = hasCoreBridge() ? 'ready' : 'error'
+    if (code === 'turn_busy') {
+      const assistant = currentAssistant.value
+      if (assistant) finishInterruptedAssistant(assistant, '（已有任务正在运行，未发送。）')
+      currentAssistantId.value = null
+      busy.value = false
+      updatePending('已有任务正在运行', '请等待当前回复结束', 'done')
+      return true
+    }
+    if (code === 'cancelled') {
+      const assistant = currentAssistant.value
+      if (assistant) finishInterruptedAssistant(assistant, '（任务已停止。）')
+      currentAssistantId.value = null
+      busy.value = false
+      updatePending('任务已停止', '', 'done')
+      return true
+    }
+
+    const assistant = currentAssistant.value
+    if (assistant) {
+      finishActiveThought(assistant)
+      finishTimedState(assistant)
+      settleRunningToolSegments(assistant, { summary: '回合已暂停' })
+      assistant.streaming = false
+    }
+    currentAssistantId.value = null
+    busy.value = false
+    updatePending('等待你定夺', '', 'done')
+    return true
+  }
+
+  function interruptionCode(error: unknown): 'turn_paused' | 'cancelled' | 'turn_busy' | '' {
+    if (!error || typeof error !== 'object') return ''
+    const code = 'code' in error ? String((error as { code?: unknown }).code || '') : ''
+    if (code === 'turn_paused' || code === 'cancelled' || code === 'turn_busy') return code
+    return ''
+  }
+
+  function isForeignSessionEvent(data: unknown): boolean {
+    const ownerSessionId = eventOwnerSessionId(data)
+    const activeSessionId = String(sessionId.value || '').trim()
+    if (!ownerSessionId || !activeSessionId || isDraftSessionId(activeSessionId)) return false
+    return ownerSessionId !== activeSessionId
+  }
+
+  function eventOwnerSessionId(data: unknown): string {
+    if (!data || typeof data !== 'object' || Array.isArray(data)) return ''
+    const payload = data as Record<string, unknown>
+    const direct = String(payload.session_id ?? payload.sessionId ?? '').trim()
+    if (direct) return direct
+    const owner = payload.owner
+    if (owner && typeof owner === 'object' && !Array.isArray(owner)) {
+      return String((owner as Record<string, unknown>).session_id ?? (owner as Record<string, unknown>).sessionId ?? '').trim()
+    }
+    return ''
+  }
+
+  function syncSessionControlPendingFromEvent(data: WsEvent): void {
+    const ownerSessionId = eventOwnerSessionId(data)
+    if (!ownerSessionId) return
+    if ((data.event === 'ask_request' || data.event === 'plan_draft') && data.interaction) {
+      setBootControlPending(data.interaction)
+      options.onSessionControlPendingChanged?.(ownerSessionId, data.interaction)
+      return
+    }
+    if (
+      data.event === 'ask_answered' ||
+      data.event === 'plan_comment_added' ||
+      data.event === 'plan_approved' ||
+      data.event === 'interaction_cancelled'
+    ) {
+      clearBootControlPending(data)
+      options.onSessionControlPendingChanged?.(ownerSessionId, null)
+    }
+  }
+
+  function setBootControlPending(interaction: ControlInteraction): void {
+    if (!options.boot.value) return
+    options.boot.value.control ||= { mode: 'ask_before_edit', pending: null }
+    options.boot.value.control.pending = interaction
+  }
+
+  function clearBootControlPending(data: WsEvent): void {
+    if (!options.boot.value) return
+    if ('control' in data && data.control) {
+      options.boot.value.control = data.control
+      return
+    }
+    options.boot.value.control ||= { mode: 'ask_before_edit', pending: null }
+    options.boot.value.control.pending = null
+  }
+
   function toPlainRecord(value: unknown): Record<string, unknown> {
     const plain = toPlainIpcValue(value)
     return plain && typeof plain === 'object' && !Array.isArray(plain) ? plain as Record<string, unknown> : {}
@@ -384,6 +489,8 @@ export function useRuntime(options: {
     currentAssistantId.value = null
     busy.value = false
     turnClock.clear()
+    controlResumeTurnTargets.clear()
+    pendingControlResumeAssistantId = null
     updatePending()
     clearRuntimeSnapshot()
     options.showToast('当前屏幕已清空')
@@ -456,9 +563,18 @@ export function useRuntime(options: {
     updatePending()
     lastSeq.value = 0
     turnClock.clear()
+    controlResumeTurnTargets.clear()
+    pendingControlResumeAssistantId = null
     rehydrating = true
     try {
-      replayRuntimeEvents(events, ({ event }) => handleSocketEvent(JSON.stringify(event)))
+      const projection = projectChatEvents(events, { sessionId: sessionId.value || options.boot.value?.runtime?.sessionId || null })
+      messages.value = projection.messages
+      currentAssistantId.value = projection.currentAssistantId
+      lastSeq.value = projection.lastSeq
+      replayRuntimeEvents(
+        events.filter((event) => !isChatProjectionEvent(event)),
+        ({ event }) => handleSocketEvent(JSON.stringify(event)),
+      )
     } finally {
       rehydrating = false
     }
@@ -478,6 +594,11 @@ export function useRuntime(options: {
 
     if (data.event === 'ready') {
       handleReadyEvent(data)
+      return
+    }
+
+    if (isForeignSessionEvent(data)) {
+      syncSessionControlPendingFromEvent(data)
       return
     }
 
@@ -545,36 +666,36 @@ export function useRuntime(options: {
       return
     }
 
+    if (data.event === 'tool_run_queued' || data.event === 'tool_run_started') {
+      const assistant = assistantForEvent(data)
+      if (assistant) {
+        finishActiveThought(assistant, data)
+        const seg = ensureToolSegment(assistant, data)
+        seg.status = 'running'
+        if (data.event === 'tool_run_queued' && !seg.summary) seg.summary = '等待执行'
+      }
+      updatePending(`正在执行: ${data.name}`, data.event === 'tool_run_queued' ? compactJson(data.arguments, 180) : '')
+      return
+    }
+
     if (data.event === 'tool_call') {
       const assistant = assistantForEvent(data)
       if (assistant) {
         finishActiveThought(assistant, data)
-        const startedAt = eventTimeMs(data)
-        assistant.segments.push({
-          id: nextId('segment'),
-          type: 'tool',
-          toolId: data.id,
-          name: data.name,
-          displayName: toolDisplayName(data.name),
-          inputLabel: 'IN',
-          outputLabel: 'OUT',
-          arguments: data.arguments || {},
-          status: 'running',
-          summary: '',
-          subagents: [],
-          startedAt,
-        })
+        ensureToolSegment(assistant, data)
       }
       updatePending(`正在执行: ${data.name}`, compactJson(data.arguments, 180))
       return
     }
 
     if (data.event === 'tool_result') {
-      const assistant = assistantForEvent(data, false)
-      const seg = findToolSegment(assistant, data.id)
+      const assistant = assistantForEvent(data)
+      const seg = assistant ? ensureToolSegment(assistant, data) : undefined
       if (seg) {
         applyToolResultToSegment(seg, {
           summary: data.summary,
+          output: data.output,
+          outputTruncated: Boolean(data.output_truncated),
           artifacts: data.artifacts,
           metadata: data.metadata,
           todos: data.todos,
@@ -596,12 +717,14 @@ export function useRuntime(options: {
       data.event === 'tool_run_failed' ||
       data.event === 'tool_run_cancelled'
     ) {
-      const assistant = assistantForEvent(data, false)
-      const seg = findToolSegment(assistant, data.id)
+      const assistant = assistantForEvent(data)
+      const seg = assistant ? ensureToolSegment(assistant, data) : undefined
       if (seg) {
         applyToolRunUpdateToSegment(seg, {
           status: data.event === 'tool_run_completed' ? 'done' : data.event === 'tool_run_failed' ? 'error' : 'error_aborted',
           summary: data.event === 'tool_run_completed' ? data.summary : data.event === 'tool_run_failed' ? data.message : data.reason,
+          output: data.event === 'tool_run_completed' ? data.output : undefined,
+          outputTruncated: data.event === 'tool_run_completed' ? Boolean(data.output_truncated) : false,
           artifacts: data.event === 'tool_run_completed' ? data.artifacts : undefined,
           metadata: data.event === 'tool_run_completed' ? data.metadata : undefined,
           endedAt: eventTimeMs(data),
@@ -633,6 +756,10 @@ export function useRuntime(options: {
         assistant.content = data.content || assistant.content
         syncAssistantDoneContent(assistant, data.content || '')
         assistant.streaming = false
+        if (data.turn_id) {
+          turnClock.delete(data.turn_id)
+          controlResumeTurnTargets.delete(data.turn_id)
+        }
         if (assistant.turn_id) turnClock.delete(assistant.turn_id)
       }
       currentAssistantId.value = null
@@ -665,8 +792,11 @@ export function useRuntime(options: {
       data.event === 'interaction_cancelled'
     ) {
       if ('control' in data && data.control && options.boot.value) options.boot.value.control = data.control
-      if (sessionId.value) options.onSessionControlPendingChanged?.(sessionId.value, null)
-      if (data.interaction) updateControlSegment(data.interaction)
+      const ownerSessionId = eventOwnerSessionId(data) || sessionId.value
+      if (ownerSessionId) options.onSessionControlPendingChanged?.(ownerSessionId, null)
+      const resumeAssistantId = data.interaction ? updateControlSegment(data.interaction) : null
+      if (data.event === 'interaction_cancelled') pendingControlResumeAssistantId = null
+      else if (resumeAssistantId) pendingControlResumeAssistantId = resumeAssistantId
       if (data.event === 'plan_approved') {
         const next = applyPlanEvent(
           { plans: planProjection.plans, entryDecisions: planProjection.entryDecisions },
@@ -688,6 +818,10 @@ export function useRuntime(options: {
         finishTimedState(assistant, endedAt)
         settleRunningToolSegments(assistant, { endedAt, summary: '回合已暂停' })
         assistant.streaming = false
+        if (data.turn_id) {
+          turnClock.delete(data.turn_id)
+          controlResumeTurnTargets.delete(data.turn_id)
+        }
         if (assistant.turn_id) turnClock.delete(assistant.turn_id)
       }
       currentAssistantId.value = null
@@ -704,8 +838,10 @@ export function useRuntime(options: {
     }
 
     if (data.event === 'runtime_task_cancelled') {
-      const assistant = assistantForEvent({ turn_id: data.turn_id || data.task?.turnId }, false) || currentAssistant.value
+      const cancelledTurnId = data.turn_id || data.task?.turnId
+      const assistant = assistantForEvent({ turn_id: cancelledTurnId }, false) || currentAssistant.value
       if (assistant) finishInterruptedAssistant(assistant, '（任务已停止。）')
+      if (cancelledTurnId) controlResumeTurnTargets.delete(cancelledTurnId)
       currentAssistantId.value = null
       busy.value = false
       updatePending('任务已停止', data.task?.label || data.reason || '', 'done')
@@ -763,7 +899,10 @@ export function useRuntime(options: {
     const clientId = data.client_message_id || ''
     const content = data.content || ''
     if (turnId) turnClock.set(turnId, eventTimeMs(data))
-    if (data.ui_hidden || data.source === 'control') return
+    if (data.ui_hidden || data.source === 'control') {
+      bindControlResumeTurn(turnId)
+      return
+    }
     const meta = schedulerMessageMeta(content, clientId, data.source, data.scheduler)
     const existing = messages.value.find((message) =>
       message.role === 'user' && (
@@ -794,6 +933,17 @@ export function useRuntime(options: {
   function assistantForEvent(data?: { turn_id?: string; ts?: number }, create = true): AssistantMessage | undefined {
     const turnId = data?.turn_id || ''
     if (turnId) {
+      const resumeAssistantId = controlResumeTurnTargets.get(turnId)
+      if (resumeAssistantId) {
+        const resumed = messages.value.find((message): message is AssistantMessage =>
+          message.role === 'assistant' && message.id === resumeAssistantId
+        )
+        if (resumed) {
+          currentAssistantId.value = resumed.id
+          return resumed
+        }
+        controlResumeTurnTargets.delete(turnId)
+      }
       const existing = messages.value.find((message): message is AssistantMessage =>
         message.role === 'assistant' && message.turn_id === turnId
       )
@@ -816,6 +966,36 @@ export function useRuntime(options: {
       return createAssistantForIncomingControl(turnId, turnClock.get(turnId) || eventTimeMs(data))
     }
     return create ? (currentAssistant.value || createAssistantForIncomingControl('', eventTimeMs(data))) : currentAssistant.value
+  }
+
+  function ensureToolSegment(assistant: AssistantMessage, data: { id?: string; name?: string; arguments?: unknown; ts?: number }): ToolSegment {
+    const existing = findToolSegment(assistant, data.id)
+    const name = typeof data.name === 'string' && data.name ? data.name : existing?.name || 'unknown_tool'
+    const args = data.arguments && typeof data.arguments === 'object' && !Array.isArray(data.arguments)
+      ? data.arguments as Record<string, unknown>
+      : existing?.arguments || {}
+    if (existing) {
+      existing.name = name
+      existing.displayName ||= toolDisplayName(name)
+      existing.arguments = args
+      return existing
+    }
+    const segment: ToolSegment = {
+      id: nextId('segment'),
+      type: 'tool',
+      toolId: data.id,
+      name,
+      displayName: toolDisplayName(name),
+      inputLabel: 'IN',
+      outputLabel: 'OUT',
+      arguments: args,
+      status: 'running',
+      summary: '',
+      subagents: [],
+      startedAt: eventTimeMs(data),
+    }
+    assistant.segments.push(segment)
+    return segment
   }
 
   function handleReadyEvent(data: Extract<WsEvent, { event: 'ready' }>) {
@@ -856,7 +1036,8 @@ export function useRuntime(options: {
       options.boot.value.control ||= { mode: 'ask_before_edit', pending: null }
       options.boot.value.control.pending = data.interaction
     }
-    if (sessionId.value) options.onSessionControlPendingChanged?.(sessionId.value, data.interaction)
+    const ownerSessionId = eventOwnerSessionId(data) || sessionId.value
+    if (ownerSessionId) options.onSessionControlPendingChanged?.(ownerSessionId, data.interaction)
     const assistant = assistantForEvent(data)
     if (!assistant) return
     finishActiveThought(assistant, data)
@@ -921,6 +1102,33 @@ export function useRuntime(options: {
     messages.value.push(assistant)
     currentAssistantId.value = assistantId
     return assistant
+  }
+
+  function assistantForControlInteraction(interactionId: string): AssistantMessage | undefined {
+    if (!interactionId) return undefined
+    return messages.value.find((message): message is AssistantMessage =>
+      message.role === 'assistant' &&
+      message.segments.some((segment) =>
+        (segment.type === 'ask' || segment.type === 'plan') &&
+        segment.interaction.id === interactionId,
+      )
+    )
+  }
+
+  function bindControlResumeTurn(turnId: string): void {
+    if (!turnId || !pendingControlResumeAssistantId) return
+    const assistant = messages.value.find((message): message is AssistantMessage =>
+      message.role === 'assistant' && message.id === pendingControlResumeAssistantId
+    )
+    if (!assistant) {
+      pendingControlResumeAssistantId = null
+      return
+    }
+    controlResumeTurnTargets.set(turnId, assistant.id)
+    pendingControlResumeAssistantId = null
+    assistant.streaming = true
+    currentAssistantId.value = assistant.id
+    busy.value = true
   }
 
   function createStreamingAssistant(assistantId: string, startedAt: number): AssistantMessage {
@@ -997,8 +1205,9 @@ export function useRuntime(options: {
     return names[name] || name
   }
 
-  function updateControlSegment(interaction: ControlInteraction) {
+  function updateControlSegment(interaction: ControlInteraction): string | null {
     const streamId = controlInteractionStreamId(interaction)
+    let assistantId: string | null = null
     for (const message of messages.value) {
       if (message.role !== 'assistant') continue
       for (const segment of message.segments) {
@@ -1007,9 +1216,11 @@ export function useRuntime(options: {
           (segment.type === 'plan' && streamId && controlInteractionStreamId(segment.interaction) === streamId)
         )) {
           segment.interaction = mergeControlInteraction(segment.interaction, interaction)
+          assistantId ||= message.id
         }
       }
     }
+    return assistantId
   }
 
   function findControlSegment(assistant: AssistantMessage, type: 'ask' | 'plan', interaction: ControlInteraction) {
@@ -1272,6 +1483,26 @@ export function useRuntime(options: {
     currentAssistantId.value = null
     busy.value = false
     status.value = 'error'
+  }
+
+  function handleChatSubmitError(error: unknown) {
+    if (handleBenignTurnInterruption(error)) return
+    const message = error instanceof Error ? error.message : String(error)
+    if (isRuntimeCancellationError(message)) {
+      const assistant = currentAssistant.value
+      if (assistant) finishInterruptedAssistant(assistant, '（已停止当前任务。）')
+      currentAssistantId.value = null
+      busy.value = false
+      status.value = hasCoreBridge() ? 'ready' : 'error'
+      updatePending('已停止当前任务', '', 'done', 2000)
+      return
+    }
+    handleChatError(message)
+  }
+
+  function isRuntimeCancellationError(message: string) {
+    const text = message.toLowerCase()
+    return text.includes('active task cancelled') || text.includes('command cancelled') || text.includes('aborterror')
   }
 
   function markRunningAsAborted(assistant?: AssistantMessage) {

@@ -5,12 +5,13 @@
 import type { ToolRegistry } from '../tools/registry'
 import type { PermissionDecision } from './models'
 import { PermissionPipeline } from './pipeline'
+import type { PermissionRuleInput } from './rules'
 
 export class PermissionPolicy {
   readonly pipeline: PermissionPipeline
 
-  constructor(pipeline?: PermissionPipeline) {
-    this.pipeline = pipeline ?? new PermissionPipeline()
+  constructor(pipeline?: PermissionPipeline, opts: { rules?: PermissionRuleInput[] | null } = {}) {
+    this.pipeline = pipeline ?? new PermissionPipeline({ rules: opts.rules ?? [] })
   }
 
   assess(

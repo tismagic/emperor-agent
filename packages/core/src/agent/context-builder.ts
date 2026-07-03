@@ -6,6 +6,7 @@
  */
 import { existsSync, readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
+import { normalizePromptProfile, type PromptProfile } from '../config/local-config'
 
 const DEFAULT_MEMORY_BUDGET_CHARS = 12_000
 
@@ -43,30 +44,36 @@ export class ContextBuilder {
   readonly skills: SkillsLoaderLike
   readonly memory: MemoryLike | null
   readonly memoryBudgetChars: number
+  readonly userFile: string | null
+  readonly promptProfile: PromptProfile
   subagentRegistry: SubagentRegistryLike | null = null
   sessionMode: 'chat' | 'build' = 'chat'
   projectAgents = ''
+  projectAgentsSource = ''
   projectPath = ''
   projectIndexSummary = ''
 
   constructor(
     docsDir: string,
     skillsLoader: SkillsLoaderLike,
-    opts?: { memory?: MemoryLike | null; memoryBudgetChars?: number },
+    opts?: { memory?: MemoryLike | null; memoryBudgetChars?: number; userFile?: string | null; promptProfile?: PromptProfile | string | null },
   ) {
     this.docsDir = docsDir
     this.skills = skillsLoader
     this.memory = opts?.memory ?? null
     this.memoryBudgetChars = opts?.memoryBudgetChars ?? DEFAULT_MEMORY_BUDGET_CHARS
+    this.userFile = opts?.userFile ?? null
+    this.promptProfile = normalizePromptProfile(opts?.promptProfile)
   }
 
   setSubagentRegistry(subagentRegistry: SubagentRegistryLike | null): void {
     this.subagentRegistry = subagentRegistry
   }
 
-  setSessionScope(opts?: { mode?: string; projectAgents?: string; projectPath?: string; projectIndexSummary?: string }): void {
+  setSessionScope(opts?: { mode?: string; projectAgents?: string; projectAgentsSource?: string; projectPath?: string; projectIndexSummary?: string }): void {
     this.sessionMode = opts?.mode === 'build' ? 'build' : 'chat'
     this.projectAgents = String(opts?.projectAgents ?? '').trim()
+    this.projectAgentsSource = String(opts?.projectAgentsSource ?? '').trim()
     this.projectPath = String(opts?.projectPath ?? '').trim()
     this.projectIndexSummary = String(opts?.projectIndexSummary ?? '').trim()
   }
@@ -87,7 +94,7 @@ export class ContextBuilder {
   }
 
   buildSystemPrompt(): string {
-    return this.buildSections().map((s) => s.content).join('\n\n---\n\n')
+    return renderContextSections(this.buildSections())
   }
 
   buildSections(): ContextSection[] {
@@ -108,12 +115,21 @@ export class ContextBuilder {
       sections.push({
         name: 'bootstrap',
         content: bootstrap,
-        source: 'templates/SOUL.md+TOOL.md+USER.md',
+        source: bootstrapSource(versions, this.userFile),
         priority: 100,
         budgetChars: null,
         version: versions.join(', ') || null,
       })
     }
+
+    sections.push({
+      name: 'persona',
+      content: profilePrompt(this.promptProfile),
+      source: `prompt-profile:${this.promptProfile}`,
+      priority: 95,
+      budgetChars: null,
+      version: 'prompt-profile-v1',
+    })
 
     const workspace = this.sessionMode === 'build' && this.projectPath ? this.projectPath : dirname(this.docsDir)
     const identity = this.renderTemplate('identity.md', { workspace, subagents_summary: this.subagentsSummary() })
@@ -133,10 +149,10 @@ export class ContextBuilder {
         sections.push({
           name: 'project_agents',
           content:
-            '# Project AGENTS.md\n\n' +
+            '# Project State\n\n' +
             `Project path: ${this.projectPath || '(unknown)'}\n\n` +
-            `${clipText(this.projectAgents, this.memoryBudgetChars, 'Project AGENTS.md')}`,
-          source: this.projectPath ? join(this.projectPath, 'AGENTS.md') : 'Project AGENTS.md',
+            `${clipText(this.projectAgents, this.memoryBudgetChars, 'Project State')}`,
+          source: this.projectAgentsSource || 'state/projects/AGENTS.local.md',
           priority: 85,
           budgetChars: this.memoryBudgetChars,
           version: null,
@@ -159,7 +175,7 @@ export class ContextBuilder {
         sections.push({
           name: 'project_index_summary',
           content: `# Project Index Summary\n\n${this.projectIndexSummary}`,
-          source: 'memory/projects/index.json',
+          source: 'state/projects/index.json',
           priority: 75,
           budgetChars: null,
           version: null,
@@ -200,8 +216,7 @@ export class ContextBuilder {
 
   private bootstrapPath(name: string): string {
     if (name === 'USER.md') {
-      const local = join(this.docsDir, 'USER.local.md')
-      if (existsSync(local)) return local
+      if (this.userFile && existsSync(this.userFile)) return this.userFile
       const init = join(this.docsDir, 'init', 'USER.md')
       if (existsSync(init)) return init
     }
@@ -212,6 +227,43 @@ export class ContextBuilder {
     if (this.subagentRegistry === null) return '(subagent registry not yet attached)'
     return this.subagentRegistry.describe()
   }
+}
+
+function bootstrapSource(versions: string[], userFile: string | null): string {
+  const userSource = userFile ? userFile : 'templates/init/USER.md'
+  return `templates/SOUL.md+templates/TOOL.md+${userSource}${versions.length ? '' : ''}`
+}
+
+function profilePrompt(profile: PromptProfile): string {
+  if (profile === 'classic') {
+    return [
+      '# Prompt Profile: classic',
+      '',
+      '- 普通自然语言最终回复可以使用轻量宫廷口吻。',
+      '- 面向用户的普通闲聊或轻量总结可使用固定前缀"奉天承运皇帝诏曰"。',
+      '- 机器可读输出、Ask/Plan 协议、错误诊断、工具参数、代码、提交信息和测试输出不得使用角色口吻。',
+    ].join('\n')
+  }
+  if (profile === 'neutral') {
+    return [
+      '# Prompt Profile: neutral',
+      '',
+      '- 默认使用自然、克制、礼貌的中文。',
+      '- 不使用固定角色扮演前缀。',
+      '- 错误诊断、权限提示、Ask/Plan 协议和工具事件保持原始结构。',
+    ].join('\n')
+  }
+  return [
+    '# Prompt Profile: technical',
+    '',
+    '- 默认使用直接、准确、技术导向的中文。',
+    '- 不使用固定角色扮演前缀。',
+    '- 工程、排障、内部错误、权限、Ask/Plan 协议、工具事件和诊断信息必须保持清晰结构，不加入角色扮演措辞。',
+  ].join('\n')
+}
+
+export function renderContextSections(sections: ContextSection[]): string {
+  return sections.map((s) => s.content).join('\n\n---\n\n')
 }
 
 function promptVersion(text: string): string | null {

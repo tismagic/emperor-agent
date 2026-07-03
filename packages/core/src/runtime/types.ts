@@ -3,8 +3,16 @@ export type RuntimeEventPayload = Record<string, unknown>
 export interface RuntimeEventEnvelope {
   seq?: number
   ts?: number
+  session_id?: string
   turn_id?: string
   client_message_id?: string
+  source?: string
+  owner?: RuntimeEventPayload
+  workspace_root?: string
+  state_root?: string
+  session_root?: string
+  project_id?: string | null
+  project_state_root?: string | null
 }
 
 export type RuntimeEvent = RuntimeEventEnvelope & (
@@ -12,8 +20,9 @@ export type RuntimeEvent = RuntimeEventEnvelope & (
   | { event: 'user_message'; content?: string; attachments?: RuntimeEventPayload[]; source?: string; scheduler?: RuntimeEventPayload; ui_hidden?: boolean }
   | { event: 'message_delta'; delta?: string }
   | { event: 'agent_thought'; stage?: string; label?: string; summary?: string; source?: string; status?: 'done' | 'running' | string; tool_call_ids?: string[]; tool_names?: string[] }
-  | { event: 'context_usage'; used?: number; max?: number; threshold?: number; usage_type?: string; model_role?: string; model?: string; provider?: string; route_reason?: string; estimated_input_tokens?: number }
+  | { event: 'context_usage'; used?: number; max?: number; threshold?: number; usage_type?: string; model_role?: string; model?: string; provider?: string; route_reason?: string; estimated_input_tokens?: number; used_fallback?: boolean; fallback_reason?: string; provider_retry_count?: number; provider_error_kind?: string; replaced_tool_results?: number; aggregate_replaced_tool_results?: number; aggregate_tool_result_budget?: number }
   | { event: 'context_projection'; report?: RuntimeEventPayload; message_count?: number }
+  | { event: 'model_provider_retry'; model?: string; provider?: string | null; usage_type?: string; attempt?: number; max_retries?: number; error_kind?: string; reason?: string }
   | { event: 'model_route_fallback'; from_model?: string; to_model?: string; reason?: string; usage_type?: string }
   | { event: 'session_created'; session?: RuntimeEventPayload; client_draft_id?: string }
   | { event: 'session_title_updated'; session?: RuntimeEventPayload }
@@ -23,14 +32,15 @@ export type RuntimeEvent = RuntimeEventEnvelope & (
   | { event: 'external_outbound_sent'; message?: RuntimeEventPayload; delivery?: RuntimeEventPayload }
   | { event: 'external_outbound_error'; message?: RuntimeEventPayload; error?: string }
   | { event: 'tool_call'; id?: string; name: string; arguments?: RuntimeEventPayload }
-  | { event: 'tool_result'; id?: string; name?: string; summary?: string; artifacts?: RuntimeEventPayload[]; metadata?: RuntimeEventPayload; todos?: RuntimeEventPayload[]; is_error?: boolean }
+  | { event: 'tool_result'; id?: string; name?: string; summary?: string; output?: string; output_truncated?: boolean; artifacts?: RuntimeEventPayload[]; metadata?: RuntimeEventPayload; todos?: RuntimeEventPayload[]; is_error?: boolean }
   | { event: 'tool_error'; id?: string; name?: string; message?: string }
   | { event: 'tool_run_queued'; id?: string; name: string; arguments?: RuntimeEventPayload }
   | { event: 'tool_run_started'; id?: string; name: string }
-  | { event: 'tool_run_completed'; id?: string; name: string; summary?: string; artifacts?: RuntimeEventPayload[]; metadata?: RuntimeEventPayload }
+  | { event: 'tool_run_completed'; id?: string; name: string; summary?: string; output?: string; output_truncated?: boolean; artifacts?: RuntimeEventPayload[]; metadata?: RuntimeEventPayload }
   | { event: 'tool_run_failed'; id?: string; name: string; message?: string }
   | { event: 'tool_run_cancelled'; id?: string; name: string; reason?: string }
   | { event: 'turn_phase'; phase?: string; sequence?: number; iteration?: number; detail?: RuntimeEventPayload }
+  | { event: 'turn_scope'; mode?: string; workspace_root?: string; state_root?: string; session_root?: string; project_id?: string | null; project_state_root?: string | null }
   | { event: 'assistant_done'; content?: string }
   | { event: 'error'; message?: string; partial?: boolean }
   | { event: 'control_mode_update'; control?: RuntimeEventPayload }

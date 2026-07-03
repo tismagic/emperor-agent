@@ -3,9 +3,11 @@ import { B, I, S, toolParamsSchema } from '../tools/schema'
 import { LEAD_ACTOR } from './models'
 import type { TeamManager } from './manager'
 
+type TeamManagerProvider = TeamManager | (() => TeamManager | null)
+
 export class TeamTool extends Tool {
   override requiresRuntimeContext = true
-  protected readonly manager: TeamManager
+  protected readonly managerProvider: TeamManagerProvider
   protected readonly sender: string
   protected readonly actor: string
   protected readonly allowWake: boolean
@@ -13,9 +15,9 @@ export class TeamTool extends Tool {
   override description = 'team tool'
   override parameters = toolParamsSchema({})
 
-  constructor(manager: TeamManager, opts: { sender?: string; actor?: string; allowWake?: boolean } = {}) {
+  constructor(manager: TeamManagerProvider, opts: { sender?: string; actor?: string; allowWake?: boolean } = {}) {
     super()
-    this.manager = manager
+    this.managerProvider = manager
     this.sender = opts.sender ?? LEAD_ACTOR
     this.actor = opts.actor ?? LEAD_ACTOR
     this.allowWake = opts.allowWake ?? true
@@ -27,6 +29,12 @@ export class TeamTool extends Tool {
 
   override mapResult(raw: string, _ctx: ToolExecutionContext): ToolResult {
     return okResult(raw, { meta: { tool: this.name, team: true } })
+  }
+
+  protected manager(): TeamManager {
+    const manager = typeof this.managerProvider === 'function' ? this.managerProvider() : this.managerProvider
+    if (!manager) throw new Error('Team is only available inside Build project sessions')
+    return manager
   }
 }
 
@@ -42,13 +50,14 @@ export class TeamSpawnTool extends TeamTool {
   }, ['name', 'role'])
 
   override execute(args: Record<string, unknown>, ctx?: ToolExecutionContext): Promise<string> {
-    return this.manager.spawnTeammate({
+    return this.manager().spawnTeammate({
       name: String(args.name ?? ''),
       role: String(args.role ?? ''),
       task: nullableString(args.task),
       agent_type: nullableString(args.agent_type),
       sender: this.sender,
       parent_call_id: ctx?.parentCallId ?? null,
+      eventSink: ctx?.emit ?? null,
     })
   }
 }
@@ -61,7 +70,7 @@ export class TeamListTool extends TeamTool {
   override parameters = toolParamsSchema({})
 
   override execute(_args?: Record<string, unknown>): string {
-    return this.manager.listTeammates()
+    return this.manager().listTeammates()
   }
 }
 
@@ -72,12 +81,13 @@ export class TeamSendMessageTool extends TeamTool {
   override parameters = toolParamsSchema({ to: S('接收者：lead 或队友名称'), content: S('消息内容'), wake: B('是否立即唤醒目标队友执行') }, ['to', 'content'])
 
   override execute(args: Record<string, unknown>, ctx?: ToolExecutionContext): Promise<string> {
-    return this.manager.sendMessage({
+    return this.manager().sendMessage({
       to: String(args.to ?? ''),
       content: String(args.content ?? ''),
       sender: this.sender,
       wake: Boolean((args.wake ?? true) && this.allowWake),
       parent_call_id: ctx?.parentCallId ?? null,
+      eventSink: ctx?.emit ?? null,
     })
   }
 }
@@ -90,7 +100,7 @@ export class TeamReadInboxTool extends TeamTool {
   override parameters = toolParamsSchema({ limit: I('最多读取多少条未读消息，默认 20；0 表示读取全部未读'), mark_read: B('是否把读取到的消息标记为已读，默认 true') })
 
   override execute(args: Record<string, unknown>): string {
-    return this.manager.readInbox({ actor: this.actor, limit: Number(args.limit ?? 20), mark_read: Boolean(args.mark_read ?? true) })
+    return this.manager().readInbox({ actor: this.actor, limit: Number(args.limit ?? 20), mark_read: Boolean(args.mark_read ?? true) })
   }
 }
 
@@ -105,11 +115,12 @@ export class TeamBroadcastTool extends TeamTool {
   }, ['content'])
 
   override execute(args: Record<string, unknown>, ctx?: ToolExecutionContext): Promise<string> {
-    return this.manager.broadcast({
+    return this.manager().broadcast({
       content: String(args.content ?? ''),
       recipients: Array.isArray(args.recipients) ? args.recipients.map(String) : null,
       wake: Boolean(args.wake ?? true),
       parent_call_id: ctx?.parentCallId ?? null,
+      eventSink: ctx?.emit ?? null,
     })
   }
 }
@@ -120,8 +131,8 @@ export class TeamShutdownTool extends TeamTool {
   override exclusive = true
   override parameters = toolParamsSchema({ name: S('队友名称') }, ['name'])
 
-  override execute(args: Record<string, unknown>): Promise<string> {
-    return this.manager.shutdownTeammate({ name: String(args.name ?? '') })
+  override execute(args: Record<string, unknown>, ctx?: ToolExecutionContext): Promise<string> {
+    return this.manager().shutdownTeammate({ name: String(args.name ?? ''), eventSink: ctx?.emit ?? null })
   }
 }
 

@@ -52,4 +52,49 @@ describe('CoreDiagnosticsService (MIG-IPC-007 / MIG-APP-002)', () => {
       desktopPetNodeModules: false,
     })
   })
+
+  it('reports the effective workspace fence separately from runtime paths', async () => {
+    const root = tmp('emperor-diagnostics-workspace-policy-')
+    const workspace = join(root, 'project')
+    const stateRoot = join(root, '.emperor')
+    const service = new CoreDiagnosticsService(root, {
+      runtimePaths: {
+        runtimeRoot: root,
+        stateRoot,
+        templatesDir: join(root, 'templates'),
+        skillsDir: join(root, 'skills'),
+        assetsDir: join(root, 'assets'),
+        memoryRoot: join(stateRoot, 'memory'),
+        sessionsRoot: join(stateRoot, 'sessions'),
+        projectsRoot: join(stateRoot, 'projects'),
+        attachmentsRoot: join(stateRoot, 'attachments'),
+        mediaRoot: join(stateRoot, 'media'),
+        teamRoot: join(stateRoot, '.team'),
+        tokensFile: join(stateRoot, 'memory', 'token_tracker.json'),
+        schedulerRoot: join(stateRoot, 'scheduler'),
+        tasksRoot: join(stateRoot, 'tasks'),
+        controlRoot: join(stateRoot, 'control'),
+        externalRoot: join(stateRoot, 'external'),
+      },
+      workspacePolicy: () => ({
+        workspaceRoot: workspace,
+        stateRoot,
+        allowRoots: [{ path: workspace, label: 'workspace' }],
+        denyRoots: [{ path: stateRoot, label: 'state' }],
+        readOnlyRoots: [],
+        outsideWorkspace: 'deny',
+      }),
+    })
+
+    const payload = await service.payload()
+
+    expect(payload.paths).toMatchObject({ runtimeRoot: root, stateRoot })
+    expect(payload.workspacePolicy).toMatchObject({
+      workspaceRoot: workspace,
+      stateRoot,
+      outsideWorkspace: 'deny',
+      allowRoots: [{ path: workspace, label: 'workspace' }],
+      denyRoots: [{ path: stateRoot, label: 'state' }],
+    })
+  })
 })

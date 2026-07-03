@@ -32,7 +32,7 @@ describe('MainlineTurnService (MIG-IPC-005)', () => {
     expect(events.map((event) => event.event)).toContain('assistant_done')
     expect(api.loop.activeMemoryStore.loadUnarchivedHistory().map((row) => row.role)).toEqual(['user', 'assistant'])
     expect(JSON.stringify(api.loop.activeMemoryStore.loadUnarchivedHistory())).toContain('Ping display')
-    expect(existsSync(join(root, 'sessions', api.loop.activeSessionId!, 'history.jsonl'))).toBe(true)
+    expect(existsSync(join(root, '.emperor', 'sessions', api.loop.activeSessionId!, 'history.jsonl'))).toBe(true)
 
     await api.close()
   })
@@ -56,7 +56,7 @@ describe('MainlineTurnService (MIG-IPC-005)', () => {
     await expect(api.chat.submit({ content: 'draft session', sessionId: 'draft:new-chat' })).rejects.toThrow(/draft/i)
     await expect(api.chat.submit({ content: 'unknown session', sessionId: 'not-real' })).rejects.toThrow(/unknown|session/i)
 
-    const historyPath = join(root, 'sessions', activeSessionId, 'history.jsonl')
+    const historyPath = join(root, '.emperor', 'sessions', activeSessionId, 'history.jsonl')
     expect(existsSync(historyPath) ? readFileSync(historyPath, 'utf8').trim() : '').toBe('')
 
     await api.close()
@@ -73,15 +73,38 @@ describe('MainlineTurnService (MIG-IPC-005)', () => {
 
     await api.chat.submit({ content: 'ping', turnId: 'turn_build_1', sessionId: String(build.id) })
 
-    const buildHistory = readFileSync(join(root, 'sessions', String(build.id), 'history.jsonl'), 'utf8')
+    const buildHistory = readFileSync(join(root, '.emperor', 'sessions', String(build.id), 'history.jsonl'), 'utf8')
     expect(buildHistory).toContain('ping')
-    const defaultHistory = join(root, 'sessions', defaultSessionId, 'history.jsonl')
+    const defaultHistory = join(root, '.emperor', 'sessions', defaultSessionId, 'history.jsonl')
     expect(existsSync(defaultHistory) ? readFileSync(defaultHistory, 'utf8').trim() : '').toBe('')
     expect(api.loop.sessionStore.get(String(build.id))).toMatchObject({
       mode: 'build',
       project_path: projectPath,
       project_name: 'project',
     })
+
+    await api.close()
+  })
+
+  it('rejects a second concurrent mainline turn before switching sessions', async () => {
+    const root = tmp('emperor-mainline-concurrent-turn-')
+    const provider = new BlockingProvider()
+    const api = await CoreApi.create({ root, templatesDir: TEMPLATES_DIR, modelRouter: fakeRouter(provider) })
+    const first = api.sessions.create({ title: 'First' })
+    const second = api.sessions.create({ title: 'Second' })
+
+    const running = api.chat.submit({ content: 'first', turnId: 'turn_busy_1', sessionId: String(first.id) })
+    await provider.started
+
+    await expect(api.chat.submit({ content: 'second', turnId: 'turn_busy_2', sessionId: String(second.id) }))
+      .rejects.toMatchObject({ name: 'TurnBusyError' })
+    expect(api.loop.activeSessionId).toBe(String(first.id))
+
+    provider.finish(response('first done'))
+    await expect(running).resolves.toMatchObject({ content: 'first done' })
+
+    const secondHistoryPath = join(root, '.emperor', 'sessions', String(second.id), 'history.jsonl')
+    expect(existsSync(secondHistoryPath) ? readFileSync(secondHistoryPath, 'utf8') : '').not.toContain('second')
 
     await api.close()
   })
@@ -121,7 +144,29 @@ class FakeProvider extends LLMProvider {
   }
 }
 
-function fakeRouter(provider: FakeProvider): { route: (useCase: string, agentType?: string | null, task?: string | null) => ModelRoute; payload: () => Record<string, unknown> } {
+class BlockingProvider extends LLMProvider {
+  calls: ChatArgs[] = []
+  private startedResolve: () => void = () => {}
+  private finishResolve: (response: LLMResponse) => void = () => {}
+  readonly started = new Promise<void>((resolve) => { this.startedResolve = resolve })
+
+  constructor() {
+    super({ defaultModel: 'fake-main' })
+  }
+
+  async chat(args: ChatArgs): Promise<LLMResponse> {
+    this.calls.push(args)
+    if (this.calls.length > 1) return response('unexpected second turn')
+    this.startedResolve()
+    return new Promise<LLMResponse>((resolve) => { this.finishResolve = resolve })
+  }
+
+  finish(response: LLMResponse): void {
+    this.finishResolve(response)
+  }
+}
+
+function fakeRouter(provider: LLMProvider): { route: (useCase: string, agentType?: string | null, task?: string | null) => ModelRoute; payload: () => Record<string, unknown> } {
   return {
     route: (useCase: string, _agentType?: string | null, _task?: string | null) => ({
       snapshot: snapshot(provider, useCase === 'main_agent' ? 'main' : 'secondary'),
@@ -134,7 +179,7 @@ function fakeRouter(provider: FakeProvider): { route: (useCase: string, agentTyp
   }
 }
 
-function snapshot(provider: FakeProvider, role: 'main' | 'secondary'): ProviderSnapshot {
+function snapshot(provider: LLMProvider, role: 'main' | 'secondary'): ProviderSnapshot {
   return {
     provider,
     providerName: 'fake',

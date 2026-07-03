@@ -6,7 +6,10 @@ import { isHighRiskCommand, isLowRiskCommand, isReadonlyCommand, isSensitivePath
 import { ToolRegistry } from './tools/registry'
 import { Tool } from './tools/base'
 import { S, toolParamsSchema } from './tools/schema'
+import { WebSearchTool } from './tools/web-search'
 import { pairToolCalls, capToolResults, shrinkOldToolResults, ContextPipeline, ToolResultStore } from './context/pipeline'
+import { PermissionMode } from './permissions/models'
+import { PermissionPipeline } from './permissions/pipeline'
 
 function tmp(prefix: string): string {
   return mkdtempSync(join(tmpdir(), prefix))
@@ -18,6 +21,8 @@ describe('command resolvers', () => {
   it('high risk flags push/sudo/rm -rf/docker push/terraform apply etc', () => {
     expect(isHighRiskCommand('git push origin main')).toBe(true)
     expect(isHighRiskCommand('sudo rm -rf /')).toBe(true)
+    expect(isHighRiskCommand('ls; rm -rf .')).toBe(true)
+    expect(isHighRiskCommand('git status && sudo whoami')).toBe(true)
     expect(isHighRiskCommand('docker push image')).toBe(true)
     expect(isHighRiskCommand('terraform apply')).toBe(true)
     expect(isHighRiskCommand('pip install requests')).toBe(true)
@@ -27,6 +32,8 @@ describe('command resolvers', () => {
     expect(isHighRiskCommand('pwd')).toBe(false)
     expect(isHighRiskCommand('git status')).toBe(false)
     expect(isHighRiskCommand('pytest tests/ -q')).toBe(false)
+    expect(isHighRiskCommand('echo "rm -rf /"')).toBe(false)
+    expect(isHighRiskCommand('printf "git push origin main"')).toBe(false)
   })
 
   it('low risk allowlist covers ls/pwd/pytest/git status|diff|log + npm test + python3 -m pytest', () => {
@@ -43,6 +50,8 @@ describe('command resolvers', () => {
     expect(isLowRiskCommand('ls && rm -rf .')).toBe(false)
     expect(isLowRiskCommand('pwd; cat /etc/passwd')).toBe(false)
     expect(isLowRiskCommand('ls > /dev/null')).toBe(false)
+    expect(isLowRiskCommand('git status\nrm -rf .')).toBe(false)
+    expect(isLowRiskCommand('git status $(echo ok)')).toBe(false)
   })
 
   it('readonly excludes pytest/npm test (code execution)', () => {
@@ -91,6 +100,56 @@ describe('ToolRegistry', () => {
     reg.register(new EchoTool())
     expect(() => reg.register(new EchoTool())).toThrow(/already registered/)
     expect(() => reg.prepareCall('nope', {})).toThrow(/Unknown tool/)
+  })
+
+  it('web_search returns structured untrusted results from an adapter', async () => {
+    const reg = new ToolRegistry()
+    reg.register(new WebSearchTool({
+      name: 'fake-search',
+      search: async () => [
+        {
+          title: '<b>Result</b>',
+          url: 'https://example.com/a',
+          snippet: '<p>Snippet with <script>bad()</script> html</p>',
+          source: 'example',
+          timestamp: '2026-07-02T00:00:00Z',
+        },
+      ],
+    }))
+
+    const result = await reg.executeResult('web_search', { query: 'agent runtime', max_results: 1 })
+
+    expect(result.isError).toBe(false)
+    expect(result.metadata).toMatchObject({
+      tool: 'web_search',
+      untrusted: true,
+      backend: 'fake-search',
+      query: 'agent runtime',
+    })
+    expect(result.modelContent).toContain('[web_search_results]')
+    expect(result.modelContent).toContain('UNTRUSTED')
+    expect(result.modelContent).toContain('https://example.com/a')
+    expect(result.modelContent).not.toContain('<script>')
+  })
+
+  it('web_search reports a clear backend-missing error by default', async () => {
+    const reg = new ToolRegistry()
+    reg.register(new WebSearchTool())
+
+    const result = await reg.executeResult('web_search', { query: 'agent runtime' })
+
+    expect(result.isError).toBe(true)
+    expect(result.modelContent).toContain('web_search backend not configured')
+    expect(result.metadata).toMatchObject({ tool: 'web_search', backend: 'missing' })
+  })
+
+  it('web_search is exposed as a read-only tool for Plan mode', () => {
+    const registry = new ToolRegistry()
+    registry.register(new WebSearchTool())
+    const decision = new PermissionPipeline().assess('web_search', { query: 'agent runtime' }, PermissionMode.PLAN, { registry })
+
+    expect(decision.allowed).toBe(true)
+    expect(decision.rule).toBe('plan.read_only')
   })
 })
 
@@ -176,6 +235,53 @@ describe('context_pipeline', () => {
     expect(String(toolMessage.content)).toContain(String(replacement.artifact_path))
     expect(String(toolMessage.content)).toContain('original_chars: 9000')
     expect(String(toolMessage.content).length).toBeLessThan(1000)
+  })
+
+  it('replaces the largest tool results when a batch exceeds the aggregate budget', () => {
+    const root = tmp('emperor-context-pipeline-aggregate-')
+    const small = 's'.repeat(1000)
+    const mediumA = 'a'.repeat(2600)
+    const mediumB = 'b'.repeat(2200)
+    const history = [
+      {
+        role: 'assistant',
+        content: '',
+        tool_calls: [
+          { id: 'call_small', type: 'function', function: { name: 'grep', arguments: '{}' } },
+          { id: 'call_a', type: 'function', function: { name: 'grep', arguments: '{}' } },
+          { id: 'call_b', type: 'function', function: { name: 'grep', arguments: '{}' } },
+        ],
+      },
+      { role: 'tool', turn_id: 'turn_1', tool_call_id: 'call_small', name: 'grep', content: small },
+      { role: 'tool', turn_id: 'turn_1', tool_call_id: 'call_a', name: 'grep', content: mediumA },
+      { role: 'tool', turn_id: 'turn_1', tool_call_id: 'call_b', name: 'grep', content: mediumB },
+    ]
+    const pipeline = new ContextPipeline({
+      toolResultStore: new ToolResultStore(root),
+      replacementMinBytes: 10_000,
+      replacementPreviewChars: 80,
+      aggregateToolResultBudget: 3_500,
+    })
+
+    const projection = pipeline.project(history)
+    const projectionAgain = pipeline.project(history)
+    const report = projection.report as Record<string, unknown>
+    const aggregateRecords = report.aggregate_tool_result_replacements as Array<Record<string, unknown>>
+    const projectedSmall = projection.messages[1]!
+    const projectedA = projection.messages[2]!
+    const projectedB = projection.messages[3]!
+
+    expect(report.replaced_tool_results).toBe(2)
+    expect(report.per_call_replaced_tool_results).toBe(0)
+    expect(report.aggregate_replaced_tool_results).toBe(2)
+    expect(aggregateRecords.map((record) => record.tool_call_id)).toEqual(['call_a', 'call_b'])
+    expect(projectedSmall.content).toBe(small)
+    expect(String(projectedA.content)).toContain('Tool result stored outside the model context')
+    expect(String(projectedB.content)).toContain('Tool result stored outside the model context')
+    expect(projectionAgain.messages[2]!.content).toBe(projectedA.content)
+    expect(projectionAgain.report.aggregate_tool_result_replacements).toEqual(aggregateRecords)
+    expect(readFileSync(join(root, String(aggregateRecords[0]!.artifact_path)), 'utf8')).toBe(mediumA)
+    expect(readFileSync(join(root, String(aggregateRecords[1]!.artifact_path)), 'utf8')).toBe(mediumB)
   })
 
   it('microcompacts old large text messages without touching tool-call messages', () => {

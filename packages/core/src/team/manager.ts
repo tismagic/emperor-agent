@@ -74,7 +74,7 @@ export class TeamManager {
     }
   }
 
-  async spawnTeammate(opts: { name: string; role: string; task?: string | null; agent_type?: string | null; sender?: string; parent_call_id?: string | null }): Promise<string> {
+  async spawnTeammate(opts: { name: string; role: string; task?: string | null; agent_type?: string | null; sender?: string; parent_call_id?: string | null; eventSink?: TeamEventSink | null }): Promise<string> {
     const safeName = validateMemberName(opts.name)
     const resolved = opts.agent_type || roleToAgentType(opts.role)
     const spec = this.subagentRegistry.get(resolved)
@@ -90,13 +90,13 @@ export class TeamManager {
       last_error: existing?.last_error ?? null,
     })
     this.store.upsertMember(member)
-    await this.emit(events.memberUpdate(member))
+    await this.emit(events.memberUpdate(member), opts.eventSink)
     if (!opts.task) return JSON.stringify({ created: member.toDict() })
 
     const taskId = newTeamId('task')
     const msg = this.bus.send({ from_actor: opts.sender ?? LEAD_ACTOR, to: member.name, content: opts.task, type: 'task', task_id: taskId })
-    await this.emit(events.messageEvent(msg))
-    const result = await this.wakeTeammate(member.name, { parent_call_id: opts.parent_call_id ?? null, purpose: opts.task.slice(0, 120) })
+    await this.emit(events.messageEvent(msg), opts.eventSink)
+    const result = await this.wakeTeammate(member.name, { parent_call_id: opts.parent_call_id ?? null, purpose: opts.task.slice(0, 120), eventSink: opts.eventSink ?? null })
     return JSON.stringify({ created: member.toDict(), message: msg.toDict(), result })
   }
 
@@ -109,17 +109,17 @@ export class TeamManager {
     return JSON.stringify(messages.map((msg) => msg.toDict()), null, 2)
   }
 
-  async sendMessage(opts: { to: string; content: string; sender?: string; wake?: boolean; type?: string; parent_call_id?: string | null }): Promise<string> {
+  async sendMessage(opts: { to: string; content: string; sender?: string; wake?: boolean; type?: string; parent_call_id?: string | null; eventSink?: TeamEventSink | null }): Promise<string> {
     if (opts.to !== LEAD_ACTOR) this.requireMember(opts.to)
     if ((opts.sender ?? LEAD_ACTOR) !== LEAD_ACTOR) this.requireMember(opts.sender ?? LEAD_ACTOR)
     const msg = this.bus.send({ from_actor: opts.sender ?? LEAD_ACTOR, to: opts.to, content: opts.content, type: opts.type ?? 'message' })
-    await this.emit(events.messageEvent(msg))
+    await this.emit(events.messageEvent(msg), opts.eventSink)
     let result: string | null = null
-    if ((opts.wake ?? true) && opts.to !== LEAD_ACTOR) result = await this.wakeTeammate(opts.to, { parent_call_id: opts.parent_call_id ?? null, purpose: opts.content.slice(0, 120) })
+    if ((opts.wake ?? true) && opts.to !== LEAD_ACTOR) result = await this.wakeTeammate(opts.to, { parent_call_id: opts.parent_call_id ?? null, purpose: opts.content.slice(0, 120), eventSink: opts.eventSink ?? null })
     return JSON.stringify({ message: msg.toDict(), result })
   }
 
-  async broadcast(opts: { content: string; recipients?: string[] | null; wake?: boolean; parent_call_id?: string | null }): Promise<string> {
+  async broadcast(opts: { content: string; recipients?: string[] | null; wake?: boolean; parent_call_id?: string | null; eventSink?: TeamEventSink | null }): Promise<string> {
     let members = this.store.listMembers().filter((member) => member.status !== TeamStatus.SHUTDOWN)
     if (opts.recipients?.length) {
       const wanted = new Set(opts.recipients.map(validateMemberName))
@@ -130,19 +130,19 @@ export class TeamManager {
     for (const member of members) {
       const msg = this.bus.send({ from_actor: LEAD_ACTOR, to: member.name, content: opts.content, type: 'message' })
       sent.push(msg.toDict())
-      await this.emit(events.messageEvent(msg))
-      if (opts.wake ?? true) results.push({ name: member.name, result: await this.wakeTeammate(member.name, { parent_call_id: opts.parent_call_id ?? null, purpose: opts.content.slice(0, 120) }) })
+      await this.emit(events.messageEvent(msg), opts.eventSink)
+      if (opts.wake ?? true) results.push({ name: member.name, result: await this.wakeTeammate(member.name, { parent_call_id: opts.parent_call_id ?? null, purpose: opts.content.slice(0, 120), eventSink: opts.eventSink ?? null }) })
     }
     return JSON.stringify({ sent, results }, null, 2)
   }
 
-  async shutdownTeammate(opts: { name: string }): Promise<string> {
+  async shutdownTeammate(opts: { name: string; eventSink?: TeamEventSink | null }): Promise<string> {
     const member = this.store.updateMember(opts.name, { status: TeamStatus.SHUTDOWN, last_error: null })
-    await this.emit(events.memberUpdate(member))
+    await this.emit(events.memberUpdate(member), opts.eventSink)
     return JSON.stringify({ shutdown: member.toDict() })
   }
 
-  async wakeTeammate(name: string, opts: { parent_call_id?: string | null; purpose?: string } = {}): Promise<string> {
+  async wakeTeammate(name: string, opts: { parent_call_id?: string | null; purpose?: string; eventSink?: TeamEventSink | null } = {}): Promise<string> {
     const member = this.requireMember(name)
     if (member.status === TeamStatus.SHUTDOWN) return `Error: teammate '${member.name}' is shutdown`
     if (this.working.has(member.name)) return `Error: teammate '${member.name}' is already working`
@@ -154,10 +154,10 @@ export class TeamManager {
     }
   }
 
-  private async wakeLocked(member: TeamMember, opts: { parent_call_id?: string | null; purpose?: string }): Promise<string> {
+  private async wakeLocked(member: TeamMember, opts: { parent_call_id?: string | null; purpose?: string; eventSink?: TeamEventSink | null }): Promise<string> {
     const working = this.store.updateMember(member.name, { status: TeamStatus.WORKING, last_error: null })
-    await this.emit(events.memberUpdate(working))
-    await this.emit(events.runStart({ parent_id: opts.parent_call_id ?? null, member: working, purpose: opts.purpose ?? '' }))
+    await this.emit(events.memberUpdate(working), opts.eventSink)
+    await this.emit(events.runStart({ parent_id: opts.parent_call_id ?? null, member: working, purpose: opts.purpose ?? '' }), opts.eventSink)
 
     const inbox = this.bus.allMessages(working.name)
     const cursorStart = Math.min(this.store.readCursor(working.name), inbox.length)
@@ -167,8 +167,8 @@ export class TeamManager {
     const history = this.store.readThread(working.name)
     if (!unread.length) {
       const idle = this.store.updateMember(working.name, { status: TeamStatus.IDLE, last_error: null })
-      await this.emit(events.memberUpdate(idle))
-      await this.emit(events.runDone({ parent_id: opts.parent_call_id ?? null, member: idle, summary: '没有未读消息。' }))
+      await this.emit(events.memberUpdate(idle), opts.eventSink)
+      await this.emit(events.runDone({ parent_id: opts.parent_call_id ?? null, member: idle, summary: '没有未读消息。' }), opts.eventSink)
       return '没有未读消息。'
     }
 
@@ -180,25 +180,25 @@ export class TeamManager {
     const leadBefore = new Set(this.bus.allMessages(LEAD_ACTOR).map((msg) => msg.id))
 
     try {
-      const final = runner.stepStream ? await runner.stepStream(history, async (evt) => { await this.emit(this.mapRunnerEvent(evt, working, opts.parent_call_id ?? null) ?? evt) }) : await runner.step(history)
+      const final = runner.stepStream ? await runner.stepStream(history, async (evt) => { await this.emit(this.mapRunnerEvent(evt, working, opts.parent_call_id ?? null) ?? evt, opts.eventSink) }) : await runner.step(history)
       this.store.writeThread(working.name, history)
       this.store.clearCheckpoint(working.name)
       this.store.writeCursor(working.name, cursorEnd)
       const idle = this.store.updateMember(working.name, { status: TeamStatus.IDLE, last_error: null })
-      await this.emit(events.memberUpdate(idle))
+      await this.emit(events.memberUpdate(idle), opts.eventSink)
       const explicitReply = this.bus.allMessages(LEAD_ACTOR).some((msg) => !leadBefore.has(msg.id) && msg.from_actor === working.name)
       if (!explicitReply) {
         const reply = this.bus.send({ from_actor: working.name, to: LEAD_ACTOR, content: final, type: 'result', in_reply_to: pendingIds.at(-1) ?? null, meta: { role: working.role, agent_type: working.agent_type } })
-        await this.emit(events.messageEvent(reply))
+        await this.emit(events.messageEvent(reply), opts.eventSink)
       }
-      await this.emit(events.runDone({ parent_id: opts.parent_call_id ?? null, member: idle, summary: final }))
+      await this.emit(events.runDone({ parent_id: opts.parent_call_id ?? null, member: idle, summary: final }), opts.eventSink)
       return final
     } catch (error) {
       const text = error instanceof Error ? error.message : String(error)
       this.store.writeCheckpoint(working.name, history, { pending_cursor_start: cursorStart, pending_cursor_end: cursorEnd, pending_message_ids: pendingIds })
       const errored = this.store.updateMember(working.name, { status: TeamStatus.ERROR, last_error: text })
-      await this.emit(events.memberUpdate(errored))
-      await this.emit(events.runError({ parent_id: opts.parent_call_id ?? null, member: errored, message: text }))
+      await this.emit(events.memberUpdate(errored), opts.eventSink)
+      await this.emit(events.runError({ parent_id: opts.parent_call_id ?? null, member: errored, message: text }), opts.eventSink)
       return `Error: teammate '${working.name}' raised: ${text}`
     }
   }
@@ -252,10 +252,11 @@ export class TeamManager {
     return lines.join('\n')
   }
 
-  private async emit(event: Record<string, unknown>): Promise<void> {
-    if (!this.eventSink) return
+  private async emit(event: Record<string, unknown>, eventSink?: TeamEventSink | null): Promise<void> {
+    const sink = eventSink ?? this.eventSink
+    if (!sink) return
     const payload = this.projectId && String(event.event ?? '').startsWith('team_') ? { ...event, project_id: this.projectId } : event
-    await this.eventSink(payload)
+    await sink(payload)
   }
 }
 

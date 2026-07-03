@@ -1,56 +1,86 @@
 import { describe, expect, it } from 'vitest'
-import type { AssistantMessage, ToolSegment } from '../types'
-import { applyToolResultToSegment, settleRunningToolSegments } from './toolStatus'
+import type { ToolSegment } from '../types'
+import { applyToolResultToSegment, applyToolRunUpdateToSegment, settleRunningToolSegments } from './toolStatus'
 
-function tool(extra: Partial<ToolSegment> = {}): ToolSegment {
+function segment(): ToolSegment {
   return {
-    id: 'segment-1',
+    id: 'seg_1',
     type: 'tool',
-    toolId: 'call-1',
-    name: 'run_command',
+    toolId: 'call_1',
+    name: 'unknown_tool',
+    arguments: {},
     status: 'running',
-    startedAt: 1_000,
     summary: '',
-    ...extra,
+    startedAt: 100,
   }
 }
 
-function assistant(segment: ToolSegment): AssistantMessage {
-  return {
-    id: 'assistant-1',
-    role: 'assistant',
-    content: '',
-    segments: [segment],
-    streaming: true,
-  }
-}
+describe('toolStatus guards', () => {
+  it('ignores malformed tool result payload shapes instead of poisoning the segment', () => {
+    const seg = segment()
 
-describe('tool runtime status helpers', () => {
-  it('marks error tool_result events as failed segments', () => {
-    const segment = tool()
-
-    applyToolResultToSegment(segment, {
-      summary: 'Error: permission denied',
-      isError: true,
-      endedAt: 2_500,
+    applyToolResultToSegment(seg, {
+      summary: { bad: true } as any,
+      artifacts: { path: 'not-an-array' } as any,
+      metadata: 'not-object' as any,
+      todos: { length: 1 } as any,
+      endedAt: 150,
     })
 
-    expect(segment.status).toBe('error')
-    expect(segment.durationMs).toBe(1_500)
-    expect(segment.summary).toBe('Error: permission denied')
+    expect(seg.status).toBe('done')
+    expect(seg.summary).toBe('已完成')
+    expect(Array.isArray(seg.artifacts || [])).toBe(true)
+    expect(seg.artifacts).toBeUndefined()
+    expect(seg.metadata).toBeUndefined()
+    expect(seg.todos).toBeUndefined()
   })
 
-  it('settles orphan running tools when an assistant turn finishes', () => {
-    const segment = tool()
-    const message = assistant(segment)
+  it('keeps cancelled and missing-completion segments settled with safe text', () => {
+    const seg = segment()
 
-    settleRunningToolSegments(message, {
-      endedAt: 4_000,
-      summary: '工具未返回结束事件',
+    applyToolRunUpdateToSegment(seg, {
+      status: 'error_aborted',
+      summary: ['cancelled'] as any,
+      artifacts: [null, { path: 'ok.png', kind: 'image', bytes: 12 }] as any,
+      metadata: { diff: 'patch' },
+      endedAt: 200,
     })
 
-    expect(segment.status).toBe('error_aborted')
-    expect(segment.durationMs).toBe(3_000)
-    expect(segment.summary).toBe('工具未返回结束事件')
+    expect(seg.status).toBe('error_aborted')
+    expect(seg.summary).toBe('')
+    expect(seg.artifacts).toEqual([{ path: 'ok.png', kind: 'image', bytes: 12 }])
+    expect(seg.metadata).toEqual({ diff: 'patch' })
+
+    const other = segment()
+    const count = settleRunningToolSegments({ id: 'a1', role: 'assistant', content: '', segments: [other], streaming: true } as any, { endedAt: 300 })
+    expect(count).toBe(1)
+    expect(other.status).toBe('error_aborted')
+    expect(other.summary).toBe('工具未返回结束事件')
+  })
+
+  it('separates full tool output from short summary and marks legacy summary-only events', () => {
+    const seg = segment()
+
+    applyToolResultToSegment(seg, {
+      summary: 'run_command exit 0: npm test',
+      output: 'full stdout\nline 2',
+      endedAt: 180,
+    })
+
+    expect(seg.status).toBe('done')
+    expect(seg.summary).toBe('run_command exit 0: npm test')
+    expect(seg.output).toBe('full stdout\nline 2')
+    expect(seg.outputMissing).toBeFalsy()
+
+    const legacy = segment()
+    applyToolResultToSegment(legacy, {
+      summary: 'legacy summary only',
+      endedAt: 190,
+    })
+
+    expect(legacy.status).toBe('done')
+    expect(legacy.summary).toBe('legacy summary only')
+    expect(legacy.output).toBeUndefined()
+    expect(legacy.outputMissing).toBe(true)
   })
 })

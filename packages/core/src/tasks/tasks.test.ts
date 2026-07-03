@@ -102,29 +102,58 @@ describe('TaskManager and SidechainTranscript (test_task_runtime_api.py)', () =>
 })
 
 describe('ProjectStore (test_project_store.py)', () => {
-  it('resolves a project path, creates AGENTS.md block, and updates managed memory', async () => {
+  it('resolves a project path and stores managed memory outside the user project', async () => {
     const { ProjectStore, PROJECT_MEMORY_START, PROJECT_MEMORY_END } = await import('../projects/store')
-    const root = tmp('emperor-project-store-')
-    const projectDir = join(root, 'demo-project')
-    mkdirSync(projectDir)
-    const store = new ProjectStore(root)
+    const stateRoot = tmp('emperor-project-store-state-')
+    const projectDir = tmp('emperor-project-store-workspace-')
+    const store = new ProjectStore(stateRoot)
 
     const entry = store.resolve(projectDir)
 
     const expectedId = createHash('sha256').update(resolve(projectDir), 'utf8').digest('hex').slice(0, 16)
     expect(entry.project_id).toBe(expectedId)
     expect(entry.project_path).toBe(resolve(projectDir))
-    expect(entry.project_name).toBe('demo-project')
+    expect(entry.project_name).toBe(projectDir.split('/').at(-1))
     const agentsPath = join(projectDir, 'AGENTS.md')
-    expect(readFileSync(agentsPath, 'utf8')).toContain(PROJECT_MEMORY_START)
-    expect(readFileSync(agentsPath, 'utf8')).toContain(PROJECT_MEMORY_END)
+    expect(existsSync(agentsPath)).toBe(false)
+    expect(entry.agents_path).toBe(join(stateRoot, 'projects', expectedId, 'AGENTS.local.md'))
+    expect(readFileSync(entry.agents_path, 'utf8')).toContain(PROJECT_MEMORY_START)
+    expect(readFileSync(entry.agents_path, 'utf8')).toContain(PROJECT_MEMORY_END)
 
     const updated = store.updateMemory(entry.project_id, '## 项目情况\n\n- 使用 Vue + Python。\n- 最近在做 Build 模式。')
-    const text = readFileSync(agentsPath, 'utf8')
+    const text = readFileSync(entry.agents_path, 'utf8')
     expect(text).toContain('使用 Vue + Python')
     expect(updated.summary).toBe('使用 Vue + Python；最近在做 Build 模式')
     expect(store.readManagedMemory(entry.project_id)).toContain('最近在做 Build 模式')
-    expect(store.summaryForChat()).toContain('demo-project')
+    expect(store.summaryForChat()).toContain(entry.project_name)
+    expect(existsSync(agentsPath)).toBe(false)
+  })
+
+  it('imports a legacy managed AGENTS.md block without mutating the project file', async () => {
+    const { ProjectStore, PROJECT_MEMORY_START, PROJECT_MEMORY_END } = await import('../projects/store')
+    const stateRoot = tmp('emperor-project-store-state-')
+    const projectDir = tmp('emperor-project-store-legacy-workspace-')
+    const agentsPath = join(projectDir, 'AGENTS.md')
+    const legacyText = [
+      '# Existing AGENTS',
+      '',
+      'Keep this user-authored section.',
+      '',
+      PROJECT_MEMORY_START,
+      '## Legacy Project Memory',
+      '',
+      '- 从旧托管块迁移。',
+      PROJECT_MEMORY_END,
+      '',
+    ].join('\n')
+    writeFileSync(agentsPath, legacyText, 'utf8')
+    const store = new ProjectStore(stateRoot)
+
+    const entry = store.resolve(projectDir)
+
+    expect(readFileSync(agentsPath, 'utf8')).toBe(legacyText)
+    expect(readFileSync(entry.agents_path, 'utf8')).toContain('从旧托管块迁移')
+    expect(store.readManagedMemory(entry.project_id)).toContain('从旧托管块迁移')
   })
 
   it('rejects missing project directories', async () => {

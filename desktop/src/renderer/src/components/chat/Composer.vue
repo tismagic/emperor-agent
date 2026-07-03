@@ -15,7 +15,7 @@ import type { IconComponent } from '../../icons'
 import { uploadAttachment } from '../../api/attachments'
 import AttachmentChip from './AttachmentChip.vue'
 import CapabilityPicker from './CapabilityPicker.vue'
-import { composerSendDisabled } from './composerControls'
+import { composerModeOptions, composerSendDisabled, currentComposerMode, type ControlModeValue } from './composerControls'
 import { useFloatingMenu } from './floatingMenu'
 
 const props = defineProps<{
@@ -34,7 +34,7 @@ const emit = defineEmits<{
   send: [payload: ChatSendPayload]
   stop: []
   error: [message: string]
-  'set-mode': [mode: 'ask_before_edit' | 'auto' | 'plan']
+  'set-mode': [mode: ControlModeValue]
   'switch-model': [entryName: string]
   'set-reasoning-effort': [level: string | null]
 }>()
@@ -139,32 +139,21 @@ const composerSlashParts = computed((): { token: string; rest: string } | null =
 
 const attachTitle = computed(() => props.busy ? '等待当前任务结束后再添加' : 'Add files and more')
 
-const modeOptions = [
-  {
-    value: 'ask_before_edit',
-    label: '询问确认',
-    short: '询问',
-    description: '高风险或不确定操作前先确认',
-    icon: actionIcons.modeAskBeforeEdit,
-  },
-  {
-    value: 'auto',
-    label: '自动执行',
-    short: '自动',
-    description: '在当前权限下直接推进任务',
-    icon: actionIcons.modeAuto,
-  },
-  {
-    value: 'plan',
-    label: '计划预览',
-    short: '计划',
-    description: '先只读探索，再提交计划审批',
-    icon: actionIcons.modePlan,
-  },
-] as const
+const modeOptions = composerModeOptions.map((option) => ({
+  ...option,
+  icon: option.value === 'ask_before_edit'
+    ? actionIcons.modeAskBeforeEdit
+    : option.value === 'accept_edits'
+      ? actionIcons.modeAcceptEdits
+      : option.value === 'auto'
+        ? actionIcons.modeAuto
+        : actionIcons.modePlan,
+}))
 
-const normalizedControlMode = computed(() => props.controlMode === 'normal' ? 'ask_before_edit' : props.controlMode)
-const currentMode = computed(() => modeOptions.find((item) => item.value === normalizedControlMode.value) || modeOptions[0])
+const currentMode = computed(() => {
+  const option = currentComposerMode(props.controlMode)
+  return modeOptions.find((item) => item.value === option.value) || modeOptions[0]
+})
 const modeTitle = computed(() => props.busy ? '等待当前任务结束后再切换' : '切换执行方式')
 const availableModelEntries = computed(() => props.modelEntries.filter((entry) => entry.name))
 const activeModelName = computed(() =>
@@ -333,7 +322,7 @@ async function toggleModeMenu() {
   modeFloatingMenu.position()
 }
 
-function selectMode(mode: 'ask_before_edit' | 'auto' | 'plan') {
+function selectMode(mode: ControlModeValue) {
   if (props.busy) return
   closeModeMenu()
   if (mode !== props.controlMode) emit('set-mode', mode)

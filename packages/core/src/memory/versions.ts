@@ -4,10 +4,10 @@
  */
 import { createHash } from 'node:crypto'
 import { existsSync, mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from 'node:fs'
-import { basename, dirname, join, relative, resolve } from 'node:path'
+import { basename, dirname, isAbsolute, join, relative, resolve } from 'node:path'
 import { randomUUID } from 'node:crypto'
 
-export type MemoryVersionTarget = 'memory' | 'user' | 'episode'
+export type MemoryVersionTarget = 'memory' | 'user' | 'episode' | 'project'
 const DATE_EPISODE_RE = /^\d{4}-\d{2}-\d{2}\.md$/
 
 export interface MemoryVersion {
@@ -23,7 +23,7 @@ export interface MemoryVersion {
 
 export function memoryVersionFromDict(raw: Record<string, unknown>): MemoryVersion {
   let target = String(raw.target ?? 'memory')
-  if (target !== 'memory' && target !== 'user' && target !== 'episode') target = 'memory'
+  if (target !== 'memory' && target !== 'user' && target !== 'episode' && target !== 'project') target = 'memory'
   return {
     id: String(raw.id ?? ''),
     target: target as MemoryVersionTarget,
@@ -174,6 +174,7 @@ export class MemoryVersionStore {
     if (real === resolve(join(this.memoryDir, 'MEMORY.local.md'))) return 'memory'
     if (real === this.userFile) return 'user'
     if (dirname(real) === this.memoryDir && DATE_EPISODE_RE.test(basename(real))) return 'episode'
+    if (basename(real) === 'AGENTS.local.md' && isProjectMemoryRelPath(relative(this.root, real))) return 'project'
     return null
   }
 
@@ -263,4 +264,10 @@ function diffOps(a: string[], b: string[]): DiffOp[] {
   while (i < n) { ops.push({ tag: 'delete', line: a[i]!, aIdx: i, bIdx: j }); i++; changed = true }
   while (j < m) { ops.push({ tag: 'insert', line: b[j]!, aIdx: i, bIdx: j }); j++; changed = true }
   return changed ? ops : []
+}
+
+function isProjectMemoryRelPath(relPath: string): boolean {
+  if (!relPath || relPath.startsWith('..') || isAbsolute(relPath)) return false
+  const parts = relPath.split(/[\\/]+/)
+  return parts.length === 3 && parts[0] === 'projects' && parts[2] === 'AGENTS.local.md' && Boolean(parts[1])
 }

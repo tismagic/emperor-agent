@@ -79,6 +79,7 @@ export interface ChatArgs {
   maxTokens?: number
   temperature?: number
   reasoningEffort?: string | null
+  signal?: AbortSignal | null
 }
 
 export interface ChatStreamArgs extends ChatArgs {

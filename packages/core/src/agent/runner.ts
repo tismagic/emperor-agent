@@ -27,6 +27,7 @@ import { resultFromToolOutput, type VerificationCommand } from '../plans/verific
 import { PlanEvidenceError } from '../plans/evidence'
 import { planToDict, type PlanRecord } from '../plans/models'
 import type { PlanStore } from '../plans/store'
+import { writePromptSnapshot, type PromptSectionInput } from '../prompts/manifest'
 import {
   TransitionReason,
   beginIteration,
@@ -42,6 +43,9 @@ import {
 } from './query-state'
 import { TurnPhase, TurnState } from './turn-state'
 import { ModelCaller, type ModelCallMeta, type RunnerModelHost } from './model-caller'
+import { CancelledTaskError } from '../runtime/active'
+import { ContextOverflowError } from '../errors'
+import { isContextOverflowProviderError } from '../providers/errors'
 import * as runtimeEvents from './runtime-events'
 import {
   contextUsedFromUsage,
@@ -106,6 +110,7 @@ export interface ControlManagerRunnerHost {
   createPlanFromText(text: string): Interaction
   recordPlanDiscovery?(opts: Record<string, unknown>): unknown
   recordPlanStepToolOutput?(opts: Record<string, unknown>): unknown
+  planMatchesCurrentScope?(record: PlanRecord): boolean
   syncPlanFromTodos?(todos: Array<Record<string, unknown>>, opts?: { evidence?: Record<string, unknown> }): PlanRecord | null
   planCompletionFollowup?(): Record<string, unknown> | null
   planIndependentVerificationFollowup?(opts?: { dispatchAvailable?: boolean }): Record<string, unknown> | null
@@ -154,6 +159,10 @@ export interface AgentRunnerOptions {
   maxTurns?: number | null
   contextPipeline?: ContextPipeline | null
   toolExecutionEngine?: ToolExecutionEngine | null
+  workspaceRoot?: string | null
+  promptSections?: PromptSectionInput[] | null
+  promptSnapshotDir?: string | null
+  sessionId?: string | null
 }
 
 export class AgentRunner implements RunnerModelHost {
@@ -184,7 +193,12 @@ export class AgentRunner implements RunnerModelHost {
   maxTurns: number | null
   contextPipeline: ContextPipeline
   toolExecutionEngine: ToolExecutionEngine
+  workspaceRoot: string | null
+  promptSections: PromptSectionInput[]
+  promptSnapshotDir: string | null
+  sessionId: string | null
   lastEstimatedInputTokens: number | null = null
+  lastContextProjectionReport: Record<string, unknown> | null = null
   lastModelCall: ModelCallMeta
 
   constructor(opts: AgentRunnerOptions) {
@@ -215,6 +229,10 @@ export class AgentRunner implements RunnerModelHost {
     this.maxTurns = opts.maxTurns ?? null
     this.contextPipeline = opts.contextPipeline ?? this.defaultContextPipeline()
     this.toolExecutionEngine = opts.toolExecutionEngine ?? new ToolExecutionEngine(opts.registry)
+    this.workspaceRoot = opts.workspaceRoot ?? null
+    this.promptSections = opts.promptSections ? [...opts.promptSections] : []
+    this.promptSnapshotDir = opts.promptSnapshotDir ?? null
+    this.sessionId = opts.sessionId ?? null
     this.lastModelCall = {
       model: this.model,
       provider: this.providerName,
@@ -224,18 +242,23 @@ export class AgentRunner implements RunnerModelHost {
       estimatedInputTokens: null,
       usedFallback: false,
       fallbackReason: '',
+      providerRetryCount: 0,
+      providerErrorKind: '',
     }
   }
 
-  async stepStream(history: Msg[], emit: StreamEmitter, opts?: { turnId?: string | null }): Promise<string> {
-    const reply = await this.stepAsync(history, { emit, turnId: opts?.turnId ?? null })
+  async stepStream(history: Msg[], emit: StreamEmitter, opts?: { turnId?: string | null; signal?: AbortSignal | null }): Promise<string> {
+    const reply = await this.stepAsync(history, { emit, turnId: opts?.turnId ?? null, signal: opts?.signal ?? null })
+    throwIfAborted(opts?.signal ?? null)
     await emit({ event: 'assistant_done', content: reply })
     return reply
   }
 
-  async stepAsync(history: Msg[], opts?: { emit?: StreamEmitter | null; turnId?: string | null }): Promise<string> {
+  async stepAsync(history: Msg[], opts?: { emit?: StreamEmitter | null; turnId?: string | null; signal?: AbortSignal | null }): Promise<string> {
     const emit = opts?.emit ?? null
     const turnId = opts?.turnId ?? null
+    const signal = opts?.signal ?? null
+    throwIfAborted(signal)
     const turnState = new TurnState({ turnId })
     await this.emitTurnPhase(turnState, TurnPhase.STARTED, emit, { history_length: history.length })
     const entryPlanDecision = this.assessPlanDecision(history)
@@ -244,12 +267,14 @@ export class AgentRunner implements RunnerModelHost {
     }
     let queryState: QueryState = makeQueryState({ turnId, maxTurns: this.maxTurns })
     const finalParts: string[] = []
+    const seenPlanFollowups = new Set<string>()
     const clarification = this.assessClarification(history)
     if (this.memoryStore !== null) {
       this.memoryStore.writeCheckpoint(history)
       await this.emitTurnPhase(turnState, TurnPhase.CHECKPOINT, emit, { reason: 'turn_start' })
     }
     while (true) {
+      throwIfAborted(signal)
       const maxTurnsTransition = maxTurnsReached(queryState)
       if (maxTurnsTransition !== null) {
         queryState = maxTurnsTransition.nextState
@@ -268,7 +293,8 @@ export class AgentRunner implements RunnerModelHost {
       turnState.startIteration()
 
       await this.emitTurnPhase(turnState, TurnPhase.MODEL_REQUEST, emit)
-      const response = await this.askModel(history, emit, clarification)
+      const response = await this.askModel(history, emit, clarification, signal, turnId)
+      throwIfAborted(signal)
       await this.emitTurnPhase(turnState, TurnPhase.MODEL_RESPONSE, emit, {
         finish_reason: response.finishReason,
         tool_call_count: response.toolCalls.length,
@@ -276,6 +302,7 @@ export class AgentRunner implements RunnerModelHost {
       })
       if (response.usage && Object.keys(response.usage).length) {
         const callMeta = this.lastModelCall
+        const projectionReport = this.lastContextProjectionReport ?? {}
         if (this.tokenTracker) {
           this.tokenTracker.record(String(callMeta.model || this.model), response.usage, {
             provider: String(callMeta.provider || this.providerName || 'unknown'),
@@ -300,6 +327,13 @@ export class AgentRunner implements RunnerModelHost {
             provider: callMeta.provider,
             route_reason: callMeta.routeReason,
             estimated_input_tokens: callMeta.estimatedInputTokens,
+            used_fallback: Boolean(callMeta.usedFallback),
+            fallback_reason: callMeta.fallbackReason || undefined,
+            provider_retry_count: optionalInt(callMeta.providerRetryCount) ?? undefined,
+            provider_error_kind: callMeta.providerErrorKind || undefined,
+            replaced_tool_results: optionalInt(projectionReport.replaced_tool_results) ?? undefined,
+            aggregate_replaced_tool_results: optionalInt(projectionReport.aggregate_replaced_tool_results) ?? undefined,
+            aggregate_tool_result_budget: optionalInt(projectionReport.aggregate_tool_result_budget) ?? undefined,
           })
         }
       }
@@ -355,7 +389,8 @@ export class AgentRunner implements RunnerModelHost {
         let toolMessages: Msg[]
         try {
           const planDecision = this.assessPlanDecision(history)
-          toolMessages = await this.executeToolCalls(response.toolCalls, emit, clarification, planDecision)
+          toolMessages = await this.executeToolCalls(response.toolCalls, emit, clarification, planDecision, signal)
+          throwIfAborted(signal)
         } catch (pause) {
           if (!(pause instanceof TurnPaused)) throw pause
           history.push(...pause.toolMessages)
@@ -433,9 +468,6 @@ export class AgentRunner implements RunnerModelHost {
       else if (this.reasoningEnabled()) assistantMessage.reasoning_content = ''
       if (response.thinkingBlocks) assistantMessage.thinking_blocks = response.thinkingBlocks
       history.push(assistantMessage)
-      if (this.memoryStore) {
-        this.memoryStore.appendHistory('assistant', finalReply, { extra: turnId ? { turn_id: turnId } : null })
-      }
 
       if (this.todoStore && this.todoStore.todos.length) {
         const unfinished = this.todoStore.todos.filter((t) => t.status !== 'completed')
@@ -451,6 +483,27 @@ export class AgentRunner implements RunnerModelHost {
 
       const planFollowup = this.planCompletionFollowup()
       if (planFollowup !== null) {
+        const key = planFollowupSignature(planFollowup)
+        if (seenPlanFollowups.has(key)) {
+          if (emit) {
+            await emit({
+              event: 'record_degraded',
+              kind: 'plan_followup_loop',
+              reason: 'repeated plan completion followup in one turn',
+              taskId: turnId ?? undefined,
+              plan_id: planFollowup.plan_id,
+              unfinished_count: planFollowup.unfinished_count,
+            })
+          }
+          if (this.memoryStore) {
+            this.memoryStore.appendHistory('assistant', finalReply, { extra: turnId ? { turn_id: turnId } : null })
+            this.memoryStore.clearCheckpoint()
+          }
+          queryState = markCompleted(queryState).nextState
+          await this.emitTurnPhase(turnState, TurnPhase.COMPLETED, emit, { content_chars: finalReply.length, degraded: 'plan_followup_loop' })
+          return finalReply
+        }
+        seenPlanFollowups.add(key)
         history.push({ role: 'user', content: String(planFollowup.message) })
         await this.emitTurnPhase(turnState, TurnPhase.PLAN_FOLLOWUP, emit, { plan_id: planFollowup.plan_id, unfinished: planFollowup.unfinished_count })
         continue
@@ -464,8 +517,11 @@ export class AgentRunner implements RunnerModelHost {
       }
 
       await this.emitTurnPhase(turnState, TurnPhase.COMPACT_CHECK, emit)
-      await this.maybeCompact(history)
-      if (this.memoryStore !== null) this.memoryStore.clearCheckpoint()
+      await this.maybeCompact(history, emit, turnId)
+      if (this.memoryStore !== null) {
+        this.memoryStore.appendHistory('assistant', finalReply, { extra: turnId ? { turn_id: turnId } : null })
+        this.memoryStore.clearCheckpoint()
+      }
       queryState = markCompleted(queryState).nextState
       await this.emitTurnPhase(turnState, TurnPhase.COMPLETED, emit, { content_chars: finalReply.length })
       return finalReply
@@ -477,29 +533,111 @@ export class AgentRunner implements RunnerModelHost {
     if (emit) await emit(event.toRuntimeEvent())
   }
 
-  private async askModel(history: Msg[], emit: StreamEmitter | null, clarification: Clarification | null): Promise<LLMResponse> {
-    const projection = this.contextPipeline.project(history as never)
+  private async askModel(history: Msg[], emit: StreamEmitter | null, clarification: Clarification | null, signal: AbortSignal | null, turnId: string | null): Promise<LLMResponse> {
+    try {
+      return await this.callModelWithProjection(history, emit, clarification, signal, turnId, false)
+    } catch (exc) {
+      if (!isContextOverflowProviderError(exc)) throw exc
+      if (emit) {
+        await emit({
+          event: 'record_degraded',
+          kind: 'context_overflow',
+          reason: String(exc instanceof Error ? exc.message : exc).slice(0, 500),
+          taskId: turnId ?? undefined,
+        })
+      }
+      try {
+        return await this.callModelWithProjection(history, emit, clarification, signal, turnId, true)
+      } catch (retryExc) {
+        if (!isContextOverflowProviderError(retryExc)) throw retryExc
+        const options = retryExc instanceof Error ? { cause: retryExc } : undefined
+        throw new ContextOverflowError(
+          'context_overflow: model context window exceeded after emergency context shrink. Shorten the request, clear older context, or attach large outputs as files.',
+          options,
+        )
+      }
+    }
+  }
+
+  private async callModelWithProjection(
+    history: Msg[],
+    emit: StreamEmitter | null,
+    clarification: Clarification | null,
+    signal: AbortSignal | null,
+    turnId: string | null,
+    emergencyShrink: boolean,
+  ): Promise<LLMResponse> {
+    const pipeline = emergencyShrink ? this.emergencyContextPipeline() : this.contextPipeline
+    const projection = pipeline.project(history as never)
     const governed = projection.messages
+    const report = emergencyShrink
+      ? { ...projection.report, context_overflow_retry: 1, emergency_context_shrink: 1 }
+      : projection.report
+    this.lastContextProjectionReport = report
     if (emit) {
       await emit(
         runtimeEvents.contextProjection({
-          report: projection.report,
+          report,
           messageCount: governed.length,
         }),
       )
     }
     let systemPrompt = this.systemPrompt
+    const promptSections: PromptSectionInput[] = this.promptSections.length ? [...this.promptSections] : [{
+      name: 'system',
+      content: this.systemPrompt,
+      source: 'AgentRunner.systemPrompt',
+      priority: 100,
+      budgetChars: null,
+      version: null,
+    }]
     let toolDefinitions: ToolDefinition[]
     if (this.controlManager !== null) {
-      systemPrompt = `${systemPrompt}\n\n---\n\n${this.controlManager.systemPrompt()}`
-      if (clarification && clarification.required) systemPrompt = `${systemPrompt}\n\n---\n\n${clarificationPrompt(clarification)}`
+      const controlPrompt = this.controlManager.systemPrompt()
+      systemPrompt = `${systemPrompt}\n\n---\n\n${controlPrompt}`
+      promptSections.push({
+        name: 'control',
+        content: controlPrompt,
+        source: 'ControlManager.systemPrompt()',
+        priority: 50,
+        budgetChars: null,
+        version: null,
+      })
+      if (clarification && clarification.required) {
+        const askGuardPrompt = clarificationPrompt(clarification)
+        systemPrompt = `${systemPrompt}\n\n---\n\n${askGuardPrompt}`
+        promptSections.push({
+          name: 'clarification',
+          content: askGuardPrompt,
+          source: 'ControlManager.assessClarification()',
+          priority: 45,
+          budgetChars: null,
+          version: null,
+        })
+      }
       toolDefinitions = this.controlManager.toolDefinitions(this.registry)
     } else {
       toolDefinitions = this.registry.getDefinitions()
     }
     const messages: ChatArgs['messages'] = [{ role: 'system', content: systemPrompt }, ...(governed as never[])]
     this.lastEstimatedInputTokens = estimateMessagesTokens(messages as unknown as Msg[])
-    return new ModelCaller(this).ask({ messages, tools: toolDefinitions as unknown as Array<Record<string, unknown>>, emit })
+    if (this.promptSnapshotDir && turnId) {
+      try {
+        writePromptSnapshot({
+          dir: this.promptSnapshotDir,
+          sessionId: this.sessionId,
+          turnId,
+          model: this.model,
+          provider: this.providerName,
+          modelRole: this.modelRole,
+          estimatedInputTokens: this.lastEstimatedInputTokens,
+          sections: promptSections,
+        })
+      } catch {
+        // Prompt snapshots are diagnostics only; never fail the model call because of them.
+      }
+    }
+    return new ModelCaller(this).ask({ messages, tools: toolDefinitions as unknown as Array<Record<string, unknown>>, emit, signal })
   }
 
   private async executeToolCalls(
@@ -507,17 +645,20 @@ export class AgentRunner implements RunnerModelHost {
     emit: StreamEmitter | null,
     clarification: Clarification | null,
     planDecision: unknown,
+    signal: AbortSignal | null,
   ): Promise<Msg[]> {
     const resultsById = new Map<string, ToolResultObj>()
     const planFollowups: Msg[] = []
 
     const runOne = async (call: ToolCallRequest): Promise<ToolResultObj> => {
+      throwIfAborted(signal)
       await this.emitToolCall(call, emit)
       const verificationTarget = this.planVerificationTarget(call)
       if (verificationTarget !== null && emit) {
         await emit(runtimeEvents.planVerificationStart({ planId: verificationTarget.plan_id!, stepId: verificationTarget.step_id!, command: verificationTarget.command! }))
       }
-      let result = await this.runToolResult(call, emit, clarification, planDecision)
+      let result = await this.runToolResult(call, emit, clarification, planDecision, signal)
+      throwIfAborted(signal)
       this.recordPlanDiscovery(call, result)
       this.recordPlanStepToolOutput(call, result)
       const content = result.modelContent
@@ -550,13 +691,15 @@ export class AgentRunner implements RunnerModelHost {
       return result
     }
 
-    const toolMessages = await this.toolExecutionEngine.runBatch(toolCalls, { emit, runOne })
+    const toolMessages = await this.toolExecutionEngine.runBatch(toolCalls, { emit, runOne, signal })
+    throwIfAborted(signal)
     const resultThought = toolResultSummaryThought(toolCalls, resultsById)
     if (resultThought) await this.emitAgentThought(resultThought, emit)
     return [...toolMessages, ...planFollowups]
   }
 
-  private async runToolResult(call: ToolCallRequest, emit: StreamEmitter | null, clarification: Clarification | null, planDecision: unknown): Promise<ToolResultObj> {
+  private async runToolResult(call: ToolCallRequest, emit: StreamEmitter | null, clarification: Clarification | null, planDecision: unknown, signal: AbortSignal | null): Promise<ToolResultObj> {
+    throwIfAborted(signal)
     if (clarification && clarification.required && this.askGuardBlocksTool(call.name)) {
       return ToolResultObj.fromText(ASK_GUARD_BLOCK, { isError: true })
     }
@@ -573,10 +716,13 @@ export class AgentRunner implements RunnerModelHost {
       }
     }
     const tool = this.registry.get(call.name)
-    if (emit && tool && tool.requiresRuntimeContext) {
-      return this.registry.executeResult(call.name, call.arguments, { emit, parentCallId: call.id })
+    const ctx = {
+      ...(this.workspaceRoot ? { workspaceRoot: this.workspaceRoot } : {}),
+      ...(emit && tool && tool.requiresRuntimeContext ? { emit } : {}),
+      parentCallId: call.id,
+      signal,
     }
-    return this.registry.executeResult(call.name, call.arguments)
+    return this.registry.executeResult(call.name, call.arguments, ctx)
   }
 
   private assessPlanDecision(history: Msg[]): unknown {
@@ -801,6 +947,7 @@ export class AgentRunner implements RunnerModelHost {
     if (!emit) return
     const r = result instanceof ToolResultObj ? result : ToolResultObj.fromText(String(result), { isError: String(result).startsWith('Error:') })
     const payload: Msg = { event: 'tool_result', id: call.id, name: call.name, summary: summarizeToolResult(r.summary) }
+    Object.assign(payload, runtimeEvents.compactRuntimeToolOutput(r.modelContent))
     if (r.isError) payload.is_error = true
     const artifacts = r.artifactPayloads()
     if (artifacts.length) payload.artifacts = artifacts
@@ -817,15 +964,26 @@ export class AgentRunner implements RunnerModelHost {
     await emit(payload)
   }
 
-  private async maybeCompact(history: Msg[]): Promise<void> {
+  private async maybeCompact(history: Msg[], emit: StreamEmitter | null, turnId: string | null): Promise<void> {
     if (!(this.compactor && this.tokenTracker)) return
     if (!this.tokenTracker.shouldCompact(this.maxContext, this.compactThreshold)) return
-    if (typeof this.compactor.compactAsync === 'function') {
-      const out = await this.compactor.compactAsync(history)
-      history.splice(0, history.length, ...out)
-    } else if (typeof this.compactor.compact === 'function') {
-      const out = this.compactor.compact(history)
-      history.splice(0, history.length, ...out)
+    try {
+      if (typeof this.compactor.compactAsync === 'function') {
+        const out = await this.compactor.compactAsync(history)
+        history.splice(0, history.length, ...out)
+      } else if (typeof this.compactor.compact === 'function') {
+        const out = this.compactor.compact(history)
+        history.splice(0, history.length, ...out)
+      }
+    } catch (exc) {
+      if (emit) {
+        await emit({
+          event: 'record_degraded',
+          kind: 'memory_compaction',
+          reason: String(exc instanceof Error ? exc.message : exc).slice(0, 500),
+          taskId: turnId ?? undefined,
+        })
+      }
     }
   }
 
@@ -843,9 +1001,37 @@ export class AgentRunner implements RunnerModelHost {
     }
   }
 
+  private emergencyContextPipeline(): ContextPipeline {
+    const planContextProvider = this.defaultPlanContextProvider()
+    const common = {
+      perCallLimit: 1200,
+      keepRecent: 0,
+      replacementMinBytes: 1200,
+      replacementPreviewChars: 200,
+      aggregateToolResultBudget: 6000,
+      planContextProvider,
+      microcompactKeepRecent: 0,
+      microcompactMinChars: 1500,
+      microcompactHeadChars: 500,
+      microcompactTailChars: 200,
+    }
+    if (!this.memoryStore?.memoryDir) return new ContextPipeline(common)
+    try {
+      return new ContextPipeline({
+        ...common,
+        toolResultStore: new ToolResultStore(dirname(this.memoryStore.memoryDir)),
+        toolResultLimits: this.registry.toolResultLimits(),
+      })
+    } catch {
+      return new ContextPipeline(common)
+    }
+  }
+
   private defaultPlanContextProvider(): PlanContextProvider | null {
     if (!this.controlManager?.planStore) return null
-    const builder = new PlanContextBuilder(this.controlManager.planStore)
+    const builder = new PlanContextBuilder(this.controlManager.planStore, {
+      filter: (record) => this.controlManager?.planMatchesCurrentScope?.(record) ?? true,
+    })
     return (history) => builder.messageFor(history)
   }
 
@@ -853,4 +1039,20 @@ export class AgentRunner implements RunnerModelHost {
     return Boolean(this.reasoningEffort && !['none', 'minimal', 'minimum'].includes(this.reasoningEffort.toLowerCase()))
   }
 
+}
+
+function throwIfAborted(signal: AbortSignal | null | undefined): void {
+  if (signal?.aborted) throw new CancelledTaskError('turn')
+}
+
+function planFollowupSignature(followup: Record<string, unknown>): string {
+  const plan = followup.plan && typeof followup.plan === 'object' ? followup.plan as Record<string, unknown> : null
+  const steps = Array.isArray(plan?.steps)
+    ? plan.steps
+      .filter((step): step is Record<string, unknown> => Boolean(step && typeof step === 'object' && !Array.isArray(step)))
+      .filter((step) => step.status !== 'done' && step.status !== 'skipped')
+      .map((step) => `${String(step.id ?? '')}:${String(step.status ?? '')}`)
+      .join('|')
+    : String(followup.message ?? '')
+  return `${String(followup.plan_id ?? '')}:${steps}`
 }

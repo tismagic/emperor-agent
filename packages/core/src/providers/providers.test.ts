@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { AnthropicProvider } from './anthropic'
 import { BedrockProvider } from './bedrock'
 import { DEFAULT_MAX_RETRIES, parseJsonArgs } from './base'
+import { classifyProviderError } from './errors'
 import { createProvider } from './factory'
 import { AzureOpenAIProvider, OpenAICompatProvider } from './openai-compat'
 import { findByName } from './registry'
@@ -14,6 +15,15 @@ describe('parseJsonArgs', () => {
     expect(parseJsonArgs('{"x":2}')).toEqual({ x: 2 })
     expect(parseJsonArgs('not json')).toEqual({})
     expect(parseJsonArgs('')).toEqual({})
+  })
+})
+
+describe('classifyProviderError', () => {
+  it('classifies context window errors before generic provider errors', () => {
+    expect(classifyProviderError(Object.assign(new Error('maximum context length exceeded'), { code: 'context_length_exceeded' })))
+      .toBe('context_overflow')
+    expect(classifyProviderError(new Error('This model context window is too small for the prompt')))
+      .toBe('context_overflow')
   })
 })
 

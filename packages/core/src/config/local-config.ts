@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto'
 import { existsSync } from 'node:fs'
 import { mkdir, readFile, readdir, rename, stat, writeFile } from 'node:fs/promises'
 import { dirname, join, resolve } from 'node:path'
+import { parsePermissionRules, type PermissionRuleDiagnostics, type PermissionRuleInput } from '../permissions/rules'
 
 export const LOCAL_CONFIG_FILE = 'emperor.local.json'
 
@@ -16,9 +17,21 @@ export interface DesktopPetPreferences {
   autoStartWithWebui: boolean
 }
 
+export type PromptProfile = 'classic' | 'neutral' | 'technical'
+
+export interface PromptPreferences {
+  profile: PromptProfile
+}
+
+export interface PermissionPreferences {
+  rules: PermissionRuleInput[]
+}
+
 export interface LocalConfig {
   webui: WebUIPreferences
   desktopPet: DesktopPetPreferences
+  prompt: PromptPreferences
+  permissions: PermissionPreferences
 }
 
 export interface LocalConfigBackup {
@@ -32,6 +45,7 @@ export interface LocalConfigDiagnostics {
   exists: boolean
   status: 'missing' | 'ok' | 'corrupt'
   error: string
+  permissions: PermissionRuleDiagnostics
   corruptBackups: LocalConfigBackup[]
 }
 
@@ -39,6 +53,8 @@ function defaultLocalConfig(): LocalConfig {
   return {
     webui: { host: '127.0.0.1', port: 8765, openBrowser: false },
     desktopPet: { enabled: false, autoStartWithWebui: true },
+    prompt: { profile: 'technical' },
+    permissions: { rules: [] },
   }
 }
 
@@ -56,6 +72,8 @@ export function parseLocalConfig(raw: Record<string, any> | null | undefined): L
   const webui = objectOrEmpty(data.webui)
   let desktopPet = objectOrEmpty(data.desktopPet)
   if (Object.keys(desktopPet).length === 0) desktopPet = objectOrEmpty(data.desktop_pet)
+  const prompt = objectOrEmpty(data.prompt)
+  const permissions = objectOrEmpty(data.permissions)
   return {
     webui: {
       host: String(webui.host || '127.0.0.1'),
@@ -66,6 +84,14 @@ export function parseLocalConfig(raw: Record<string, any> | null | undefined): L
       enabled: Boolean(desktopPet.enabled ?? false),
       autoStartWithWebui: Boolean(desktopPet.autoStartWithWebui ?? desktopPet.auto_start_with_webui ?? true),
     },
+    prompt: {
+      profile: normalizePromptProfile(prompt.profile),
+    },
+    permissions: {
+      rules: Array.isArray(permissions.rules)
+        ? permissions.rules.filter((item) => item && typeof item === 'object' && !Array.isArray(item)) as PermissionRuleInput[]
+        : [],
+    },
   }
 }
 
@@ -73,13 +99,13 @@ export function localConfigPath(root: string): string {
   return join(resolve(root), LOCAL_CONFIG_FILE)
 }
 
-export async function loadLocalConfig(root: string): Promise<LocalConfig> {
+export async function loadLocalConfig(root: string, opts: { preserveCorrupt?: boolean } = {}): Promise<LocalConfig> {
   const path = localConfigPath(root)
   if (!existsSync(path)) return defaultLocalConfig()
   try {
     return parseLocalConfig(JSON.parse((await readFile(path, 'utf8')) || '{}'))
   } catch {
-    await preserveCorruptLocalConfig(path)
+    if (opts.preserveCorrupt !== false) await preserveCorruptLocalConfig(path)
     return defaultLocalConfig()
   }
 }
@@ -96,12 +122,22 @@ export async function saveLocalConfig(root: string, config: LocalConfig): Promis
       enabled: config.desktopPet.enabled,
       autoStartWithWebui: config.desktopPet.autoStartWithWebui,
     },
+    prompt: {
+      profile: normalizePromptProfile(config.prompt?.profile),
+    },
+    permissions: {
+      rules: Array.isArray(config.permissions?.rules) ? config.permissions.rules : [],
+    },
   }
   await mkdir(dirname(path), { recursive: true })
   const tmp = join(dirname(path), `.${LOCAL_CONFIG_FILE}.${randomUUID().replace(/-/g, '')}.tmp`)
   await writeFile(tmp, `${JSON.stringify(payload, null, 2)}\n`, 'utf8')
   await rename(tmp, path)
   return path
+}
+
+export function normalizePromptProfile(value: unknown): PromptProfile {
+  return value === 'classic' || value === 'neutral' || value === 'technical' ? value : 'technical'
 }
 
 export function mergeWebuiOverrides(
@@ -124,8 +160,18 @@ export async function localConfigDiagnostics(root: string): Promise<LocalConfigD
   let error = ''
   if (exists) {
     try {
-      JSON.parse((await readFile(path, 'utf8')) || '{}')
+      const raw = JSON.parse((await readFile(path, 'utf8')) || '{}')
+      const parsed = parseLocalConfig(raw)
+      const permissionDiagnostics = parsePermissionRules(parsed.permissions.rules).diagnostics
       status = 'ok'
+      return {
+        path,
+        exists,
+        status,
+        error,
+        permissions: permissionDiagnostics,
+        corruptBackups: await listCorruptBackups(path),
+      }
     } catch (err) {
       status = 'corrupt'
       error = err instanceof Error ? err.message : String(err)
@@ -136,6 +182,7 @@ export async function localConfigDiagnostics(root: string): Promise<LocalConfigD
     exists,
     status,
     error,
+    permissions: parsePermissionRules([]).diagnostics,
     corruptBackups: await listCorruptBackups(path),
   }
 }

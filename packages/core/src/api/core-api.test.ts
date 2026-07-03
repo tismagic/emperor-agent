@@ -1,9 +1,11 @@
 import { existsSync, mkdtempSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { join, resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import type { ModelRoute, ProviderSnapshot } from '../model/router'
 import { LLMProvider, type ChatArgs, type LLMResponse } from '../providers/base'
+import { ExternalInbound } from '../external/models'
+import { SchedulerPayload, SchedulerSchedule } from '../scheduler/models'
 import { CoreApi, CORE_API_ROUTE_OPERATIONS } from './core-api'
 import { CoreMutationGuardError } from './mutation-guard'
 
@@ -49,6 +51,7 @@ const EXPECTED_OPERATIONS = [
   'plans.list',
   'projects.list',
   'projects.resolve',
+  'runtime.replay',
   'scheduler.createJob',
   'scheduler.deleteJob',
   'scheduler.get',
@@ -113,7 +116,38 @@ describe('CoreApi (MIG-IPC-001)', () => {
     expect(reply.content).toBe('pong')
     expect(events.map((event) => event.event)).toContain('assistant_done')
     expect(activeSessionId).toBeTruthy()
-    expect(existsSync(join(root, 'sessions', activeSessionId, 'history.jsonl'))).toBe(true)
+    expect(existsSync(join(root, '.emperor', 'sessions', activeSessionId, 'history.jsonl'))).toBe(true)
+
+    await api.close()
+  })
+
+  it('stores new private runtime state under .emperor and reports effective paths', async () => {
+    const root = tmp('emperor-core-api-state-root-')
+    const api = await CoreApi.create({ root, templatesDir: TEMPLATES_DIR, modelRouter: fakeRouter(new FakeProvider()) })
+
+    const session = api.sessions.create({ title: 'State Root Chat' })
+    await api.chat.submit({ content: 'ping', turnId: 'turn_state_1', sessionId: String(session.id), emit: async () => {} })
+    const diagnostics = await api.diagnostics.get()
+
+    expect(existsSync(join(root, '.emperor', 'memory', 'MEMORY.local.md'))).toBe(true)
+    expect(existsSync(join(root, '.emperor', 'sessions', String(session.id), 'history.jsonl'))).toBe(true)
+    expect(existsSync(join(root, '.emperor', 'sessions', String(session.id), 'runtime', 'events.jsonl'))).toBe(true)
+    expect(existsSync(join(root, '.emperor', 'sessions', String(session.id), 'prompt-snapshots', 'turn_state_1.json'))).toBe(true)
+    expect(existsSync(join(root, '.emperor', 'memory', 'control', 'state.json'))).toBe(true)
+    expect(existsSync(join(root, '.emperor', '.team', 'config.json'))).toBe(false)
+    expect(existsSync(join(root, 'memory'))).toBe(false)
+    expect(existsSync(join(root, 'sessions'))).toBe(false)
+    expect(diagnostics.paths).toMatchObject({
+      runtimeRoot: root,
+      stateRoot: join(root, '.emperor'),
+      sessionsRoot: join(root, '.emperor', 'sessions'),
+      memoryRoot: join(root, '.emperor', 'memory'),
+    })
+    expect((diagnostics as any).promptSnapshots.recent[0]).toMatchObject({
+      sessionId: String(session.id),
+      turnId: 'turn_state_1',
+    })
+    expect((diagnostics as any).promptSnapshots.recent[0].sections.map((section: any) => section.name)).toContain('bootstrap')
 
     await api.close()
   })
@@ -128,6 +162,35 @@ describe('CoreApi (MIG-IPC-001)', () => {
 
     await expect(api.bootstrap({ sessionId: 'draft:new-chat' })).rejects.toThrow(/draft/i)
     expect(api.loop.activeSessionId).toBe(activeSessionId)
+
+    await api.close()
+  })
+
+  it('replays runtime events for the requested session only', async () => {
+    const root = tmp('emperor-core-api-runtime-replay-')
+    const api = await CoreApi.create({ root, templatesDir: TEMPLATES_DIR, modelRouter: fakeRouter(new FakeProvider()) })
+    const firstSessionId = String(api.loop.activeSessionId)
+    const second = api.sessions.create({ title: 'Second Chat' })
+
+    await api.chat.submit({ content: 'first', turnId: 'turn_first', sessionId: firstSessionId, emit: async () => {} })
+    await api.chat.submit({ content: 'second', turnId: 'turn_second', sessionId: String(second.id), emit: async () => {} })
+
+    const replay = api.runtime.replay({ sessionId: firstSessionId, afterSeq: 0 }) as any
+    const turnIds = replay.events.map((event: any) => event.turn_id)
+
+    expect(replay).toMatchObject({
+      sessionId: firstSessionId,
+      afterSeq: 0,
+      latestSeq: expect.any(Number),
+    })
+    expect(turnIds).toContain('turn_first')
+    expect(turnIds).not.toContain('turn_second')
+    expect(replay.events.every((event: any) => event.session_id === firstSessionId)).toBe(true)
+
+    const boot = await api.bootstrap({ sessionId: firstSessionId })
+    const bootTurnIds = ((boot.runtime as any).events as any[]).map((event) => event.turn_id)
+    expect(bootTurnIds).toContain('turn_first')
+    expect(bootTurnIds).not.toContain('turn_second')
 
     await api.close()
   })
@@ -153,6 +216,68 @@ describe('CoreApi (MIG-IPC-001)', () => {
     expect(String(archived.archived_at || '')).toBeTruthy()
     expect(all.some((item) => item.id === created.id)).toBe(true)
     expect(activated).toMatchObject({ active: api.loop.activeSessionId, complete: true })
+
+    await api.close()
+  })
+
+  it('returns distinct workspace and agent state paths for resolved projects', async () => {
+    const root = tmp('emperor-core-api-project-paths-')
+    const projectDir = tmp('emperor-core-api-project-workspace-')
+    const api = await CoreApi.create({ root, templatesDir: TEMPLATES_DIR, modelRouter: fakeRouter(new FakeProvider()) })
+
+    const project = api.projects.resolve(projectDir) as any
+
+    expect(project).toMatchObject({
+      project_path: resolve(projectDir),
+      workspace_path: resolve(projectDir),
+      state_path: join(root, '.emperor', 'projects', project.project_id),
+      memory_path: join(root, '.emperor', 'projects', project.project_id, 'AGENTS.local.md'),
+      agents_path: join(root, '.emperor', 'projects', project.project_id, 'AGENTS.local.md'),
+      legacy_agents_path: null,
+      legacy_imported_at: null,
+    })
+    expect(existsSync(join(projectDir, 'AGENTS.md'))).toBe(false)
+
+    await api.close()
+  })
+
+  it('keeps chat and build project contexts isolated in provider prompts', async () => {
+    const root = tmp('emperor-core-api-context-isolation-')
+    const provider = new FakeProvider()
+    const api = await CoreApi.create({ root, templatesDir: TEMPLATES_DIR, modelRouter: fakeRouter(provider) })
+    const chatSessionId = String(api.loop.activeSessionId)
+    const projectAPath = join(root, 'project-a')
+    const projectBPath = join(root, 'project-b')
+    mkdirSync(projectAPath, { recursive: true })
+    mkdirSync(projectBPath, { recursive: true })
+    const projectA = api.projects.resolve(projectAPath) as any
+    const projectB = api.projects.resolve(projectBPath) as any
+    api.loop.projectStore.updateMemory(String(projectA.project_id), 'PROJECT_A_PRIVATE_MEMORY')
+    api.loop.projectStore.updateMemory(String(projectB.project_id), 'PROJECT_B_PRIVATE_MEMORY')
+    const buildA = api.sessions.create({ title: 'Build A', mode: 'build', project_path: projectAPath })
+    const buildB = api.sessions.create({ title: 'Build B', mode: 'build', project_path: projectBPath })
+    api.control.setMode('auto')
+
+    await api.chat.submit({ content: 'ping', turnId: 'turn_chat_iso', sessionId: chatSessionId })
+    await api.chat.submit({ content: 'ping', turnId: 'turn_a_iso', sessionId: String(buildA.id) })
+    await api.chat.submit({ content: 'ping', turnId: 'turn_b_iso', sessionId: String(buildB.id) })
+
+    const prompts = provider.calls.slice(-3).map((call) => JSON.stringify(call.messages))
+    const chatPrompt = prompts[0] ?? ''
+    const promptA = prompts[1] ?? ''
+    const promptB = prompts[2] ?? ''
+
+    expect(chatPrompt).not.toContain('PROJECT_A_PRIVATE_MEMORY')
+    expect(chatPrompt).not.toContain('PROJECT_B_PRIVATE_MEMORY')
+    expect(promptA).toContain(projectAPath)
+    expect(promptA).toContain('PROJECT_A_PRIVATE_MEMORY')
+    expect(promptA).not.toContain('PROJECT_B_PRIVATE_MEMORY')
+    expect(promptB).toContain(projectBPath)
+    expect(promptB).toContain('PROJECT_B_PRIVATE_MEMORY')
+    expect(promptB).not.toContain('PROJECT_A_PRIVATE_MEMORY')
+    expect(readFileSync(join(root, '.emperor', 'sessions', chatSessionId, 'history.jsonl'), 'utf8')).toContain('turn_chat_iso')
+    expect(readFileSync(join(root, '.emperor', 'sessions', String(buildA.id), 'history.jsonl'), 'utf8')).toContain('turn_a_iso')
+    expect(readFileSync(join(root, '.emperor', 'sessions', String(buildB.id), 'history.jsonl'), 'utf8')).toContain('turn_b_iso')
 
     await api.close()
   })
@@ -216,7 +341,7 @@ describe('CoreApi (MIG-IPC-001)', () => {
     const initial = api.config.get()
 
     expect(initial).toMatchObject({ path: 'templates/USER.local.md' })
-    expect(readFileSync(join(root, 'templates', 'USER.local.md'), 'utf8')).toBe((initial as any).content)
+    expect(readFileSync(join(root, '.emperor', 'templates', 'USER.local.md'), 'utf8')).toBe((initial as any).content)
     expect(existsSync(join(root, 'emperor.local.json'))).toBe(false)
 
     const saved = api.config.save({ content: '偏好更新\n\n' })
@@ -225,7 +350,7 @@ describe('CoreApi (MIG-IPC-001)', () => {
       path: 'templates/USER.local.md',
       content: '偏好更新\n',
     })
-    expect(readFileSync(join(root, 'templates', 'USER.local.md'), 'utf8')).toBe('偏好更新\n')
+    expect(readFileSync(join(root, '.emperor', 'templates', 'USER.local.md'), 'utf8')).toBe('偏好更新\n')
     expect(existsSync(join(root, 'emperor.local.json'))).toBe(false)
 
     await api.close()
@@ -402,9 +527,153 @@ describe('CoreApi (MIG-IPC-001)', () => {
     expect(api.loop.activeSessionId).toBe(ownerSessionId)
     expect(api.loop.sessionStore.get(ownerSessionId)?.control_pending).toBeNull()
     expect(api.loop.sessionStore.get(String(other.id))?.control_pending).toBeNull()
-    expect(readFileSync(join(root, 'sessions', ownerSessionId, 'history.jsonl'), 'utf8')).toContain('[CONTROL:ASK_ANSWERED]')
-    const otherHistoryPath = join(root, 'sessions', String(other.id), 'history.jsonl')
+    expect(readFileSync(join(root, '.emperor', 'sessions', ownerSessionId, 'history.jsonl'), 'utf8')).toContain('[CONTROL:ASK_ANSWERED]')
+    const ownerEvents = readFileSync(join(root, '.emperor', 'sessions', ownerSessionId, 'runtime', 'events.jsonl'), 'utf8')
+    expect(ownerEvents).toContain('"event":"ask_answered"')
+    expect(ownerEvents).toContain(`"session_id":"${ownerSessionId}"`)
+    const otherHistoryPath = join(root, '.emperor', 'sessions', String(other.id), 'history.jsonl')
     expect(existsSync(otherHistoryPath) ? readFileSync(otherHistoryPath, 'utf8') : '').not.toContain('[CONTROL:ASK_ANSWERED]')
+    const otherEventsPath = join(root, '.emperor', 'sessions', String(other.id), 'runtime', 'events.jsonl')
+    expect(existsSync(otherEventsPath) ? readFileSync(otherEventsPath, 'utf8') : '').not.toContain('"event":"ask_answered"')
+
+    await api.close()
+  })
+
+  it('records cancelled control interactions in their owning session after the user switches away', async () => {
+    const root = tmp('emperor-core-api-control-cancel-owner-')
+    const api = await CoreApi.create({
+      root,
+      templatesDir: TEMPLATES_DIR,
+      modelRouter: fakeRouter(new FakeProvider()),
+    })
+    const ownerSessionId = String(api.loop.activeSessionId)
+    const other = api.sessions.create({ title: 'Other Session' })
+    const interaction = api.loop.controlManager.createAsk({
+      questions: [{
+        id: 'scope',
+        header: '范围',
+        question: '范围怎么定',
+        options: [
+          { label: '完整', description: 'full' },
+          { label: '最小', description: 'small' },
+        ],
+      }],
+      context: 'need scope',
+    })
+    api.sessions.activate(String(other.id))
+
+    await api.control.cancelInteraction(interaction.id)
+
+    expect(api.loop.sessionStore.get(ownerSessionId)?.control_pending).toBeNull()
+    expect(api.loop.sessionStore.get(String(other.id))?.control_pending).toBeNull()
+    const ownerEvents = readFileSync(join(root, '.emperor', 'sessions', ownerSessionId, 'runtime', 'events.jsonl'), 'utf8')
+    expect(ownerEvents).toContain('"event":"interaction_cancelled"')
+    expect(ownerEvents).toContain(`"session_id":"${ownerSessionId}"`)
+    const otherEventsPath = join(root, '.emperor', 'sessions', String(other.id), 'runtime', 'events.jsonl')
+    expect(existsSync(otherEventsPath) ? readFileSync(otherEventsPath, 'utf8') : '').not.toContain('"event":"interaction_cancelled"')
+
+    await api.close()
+  })
+
+  it('drains queued external messages into the session that received them after the user switches away', async () => {
+    const root = tmp('emperor-core-api-external-owner-')
+    const api = await CoreApi.create({
+      root,
+      templatesDir: TEMPLATES_DIR,
+      modelRouter: fakeRouter(new FakeProvider()),
+    })
+    const ownerSessionId = String(api.loop.activeSessionId)
+    const other = api.sessions.create({ title: 'Other Session' })
+    const pending = api.loop.controlManager.createAsk({
+      questions: [{
+        id: 'scope',
+        header: '范围',
+        question: '范围怎么定',
+        options: [
+          { label: '完整', description: 'full' },
+          { label: '最小', description: 'small' },
+        ],
+      }],
+      context: 'busy owner session',
+    })
+
+    const queued = await api.externalBridge.ingest(new ExternalInbound({
+      platform: 'slack',
+      sender_id: 'u1',
+      external_message_id: 'm-owner',
+      content: 'external hello',
+    }))
+    api.sessions.activate(String(other.id))
+    await api.control.cancelInteraction(pending.id)
+
+    const drained = await api.externalBridge.drainPending()
+
+    expect(queued.status).toBe('queued')
+    expect(drained[0]).toMatchObject({ status: 'dispatched' })
+    const ownerHistory = readFileSync(join(root, '.emperor', 'sessions', ownerSessionId, 'history.jsonl'), 'utf8')
+    expect(ownerHistory).toContain('external hello')
+    const ownerEvents = readFileSync(join(root, '.emperor', 'sessions', ownerSessionId, 'runtime', 'events.jsonl'), 'utf8')
+    expect(ownerEvents).toContain('"event":"external_queued"')
+    expect(ownerEvents).toContain(`"session_id":"${ownerSessionId}"`)
+    const otherHistoryPath = join(root, '.emperor', 'sessions', String(other.id), 'history.jsonl')
+    expect(existsSync(otherHistoryPath) ? readFileSync(otherHistoryPath, 'utf8') : '').not.toContain('external hello')
+    const otherEventsPath = join(root, '.emperor', 'sessions', String(other.id), 'runtime', 'events.jsonl')
+    expect(existsSync(otherEventsPath) ? readFileSync(otherEventsPath, 'utf8') : '').not.toContain('"event":"external_queued"')
+
+    await api.close()
+  })
+
+  it('runs scheduler agent_turn jobs in the session that created them after the user switches away', async () => {
+    const root = tmp('emperor-core-api-scheduler-owner-')
+    const api = await CoreApi.create({
+      root,
+      templatesDir: TEMPLATES_DIR,
+      modelRouter: fakeRouter(new FakeProvider()),
+    })
+    const ownerSessionId = String(api.loop.activeSessionId)
+    const other = api.sessions.create({ title: 'Other Session' })
+    const job = api.loop.schedulerService.addJob({
+      name: 'Owner scheduled turn',
+      schedule: new SchedulerSchedule({ kind: 'every', every_ms: 60_000 }),
+      payload: new SchedulerPayload({ kind: 'agent_turn', message: 'scheduled hello', deliver: false }),
+    })
+    api.sessions.activate(String(other.id))
+
+    await expect(api.loop.schedulerService.runJob(job.id, { force: true })).resolves.toBe(true)
+
+    const ownerHistory = readFileSync(join(root, '.emperor', 'sessions', ownerSessionId, 'history.jsonl'), 'utf8')
+    expect(ownerHistory).toContain('scheduled hello')
+    const ownerEvents = readFileSync(join(root, '.emperor', 'sessions', ownerSessionId, 'runtime', 'events.jsonl'), 'utf8')
+    expect(ownerEvents).toContain('"event":"scheduler_run_start"')
+    expect(ownerEvents).toContain(`"session_id":"${ownerSessionId}"`)
+    const otherHistoryPath = join(root, '.emperor', 'sessions', String(other.id), 'history.jsonl')
+    expect(existsSync(otherHistoryPath) ? readFileSync(otherHistoryPath, 'utf8') : '').not.toContain('scheduled hello')
+    const otherEventsPath = join(root, '.emperor', 'sessions', String(other.id), 'runtime', 'events.jsonl')
+    expect(existsSync(otherEventsPath) ? readFileSync(otherEventsPath, 'utf8') : '').not.toContain('"event":"scheduler_run_start"')
+
+    await api.close()
+  })
+
+  it('keeps persistent Team roster isolated between build projects', async () => {
+    const root = tmp('emperor-core-api-team-project-scope-')
+    const projectAPath = join(root, 'project-a')
+    const projectBPath = join(root, 'project-b')
+    mkdirSync(projectAPath, { recursive: true })
+    mkdirSync(projectBPath, { recursive: true })
+    const api = await CoreApi.create({
+      root,
+      templatesDir: TEMPLATES_DIR,
+      modelRouter: fakeRouter(new FakeProvider()),
+    })
+    const buildA = api.sessions.create({ title: 'Build A', mode: 'build', project_path: projectAPath })
+    const buildB = api.sessions.create({ title: 'Build B', mode: 'build', project_path: projectBPath })
+
+    api.sessions.activate(String(buildA.id))
+    await api.team.spawnMember({ name: 'alice', role: 'reader' })
+    expect((api.team.get().members as Array<Record<string, unknown>>).map((member) => member.name)).toContain('alice')
+
+    api.sessions.activate(String(buildB.id))
+    expect((api.team.get().members as Array<Record<string, unknown>>).map((member) => member.name)).not.toContain('alice')
 
     await api.close()
   })

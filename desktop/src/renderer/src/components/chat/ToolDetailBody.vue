@@ -9,7 +9,11 @@ import SubagentTrail from './SubagentTrail.vue'
 const props = defineProps<{ segment: ToolSegment }>()
 
 const inputText = computed(() => fullJson(props.segment.arguments))
-const outputText = computed(() => props.segment.summary || (props.segment.status === 'running' ? '等待结果...' : '已记录执行结果'))
+const outputText = computed(() => {
+  if (props.segment.output) return props.segment.outputTruncated ? `${props.segment.output}\n\n[输出已截断]` : props.segment.output
+  if (props.segment.outputMissing && props.segment.summary) return `历史事件仅保存摘要：\n${props.segment.summary}`
+  return props.segment.summary || (props.segment.status === 'running' ? '等待结果...' : '已记录执行结果')
+})
 const artifacts = computed(() => props.segment.artifacts || [])
 const mediaItems = computed(() => artifacts.value.map((artifact) => artifact.media).filter(isImageMedia))
 const metadata = computed(() => props.segment.metadata || {})

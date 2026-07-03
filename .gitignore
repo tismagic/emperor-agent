@@ -61,6 +61,7 @@ pnpm-debug.log*
 # 规则必须锚定在仓库根目录，避免误忽略 packages/core/src/memory 等源码目录。
 /memory/
 /sessions/
+/.emperor/
 /packages/*/memory/
 /packages/*/sessions/
 

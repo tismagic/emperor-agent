@@ -41,7 +41,7 @@ export class OpenAICompatProvider extends LLMProvider {
     const resp = await this.client.chat.completions.create({
       ...(this.kwargsFor(args, false) as any),
       stream: false,
-    })
+    }, OpenAICompatProvider.requestOptions(args))
     const choice = resp.choices[0]!
     const m = choice.message as any
     const tc: ToolCallRequest[] = ((m?.tool_calls ?? []) as any[]).map((tc) => ({
@@ -64,12 +64,12 @@ export class OpenAICompatProvider extends LLMProvider {
     ;(streamKwargs as any).stream_options = { include_usage: true }
     let stream: any
     try {
-      stream = await this.client.chat.completions.create({ ...(streamKwargs as any), stream: true })
+      stream = await this.client.chat.completions.create({ ...(streamKwargs as any), stream: true }, OpenAICompatProvider.requestOptions(args))
     } catch (exc: unknown) {
       if (!streamUsageUnsupported(String(exc))) throw exc
       logger.debug(`Provider does not support stream usage, retrying without it: ${String(exc)}`)
       delete (streamKwargs as any).stream_options
-      stream = await this.client.chat.completions.create({ ...(streamKwargs as any), stream: true })
+      stream = await this.client.chat.completions.create({ ...(streamKwargs as any), stream: true }, OpenAICompatProvider.requestOptions(args))
     }
     const contentParts: string[] = []
     const reasoningParts: string[] = []
@@ -119,6 +119,10 @@ export class OpenAICompatProvider extends LLMProvider {
       reasoningContent: reasoningParts.join('') || null,
       thinkingBlocks: null,
     }
+  }
+
+  private static requestOptions(args: ChatArgs): Record<string, unknown> | undefined {
+    return args.signal ? { signal: args.signal } : undefined
   }
 
   kwargsFor(args: ChatArgs, stream: boolean): Record<string, unknown> {

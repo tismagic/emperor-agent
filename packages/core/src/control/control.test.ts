@@ -24,6 +24,7 @@ import { TodoStore } from '../tools/builtin'
 import { ToolRegistry } from '../tools/registry'
 import { makePlanRecord, PlanStatus } from '../plans/models'
 import { independentVerificationRiskSignals } from './plan-helpers'
+import { TaskManager } from '../tasks/manager'
 
 function tmp(prefix: string): string {
   return mkdtempSync(join(tmpdir(), prefix))
@@ -83,6 +84,116 @@ describe('ControlManager (test_control.py)', () => {
     expect(manager.payload().pending).toBeNull()
   })
 
+  it('cancels an executable plan when the user answers to ignore or abandon the stuck plan', () => {
+    const manager = new ControlManager(tmp('emperor-ctrl-abandon-plan-'))
+    const planInteraction = manager.createPlan({
+      title: 'Stale game plan',
+      summary: 'A plan the user no longer wants.',
+      planMarkdown: '# Plan\n\n- Build game',
+      assumptions: [],
+      riskLevel: 'low',
+      steps: [{
+        id: 'step_1',
+        title: 'Build game',
+        description: 'Create a game file.',
+        commands: ['echo verify'],
+        acceptance: ['file exists'],
+      }],
+    })
+    manager.approve(planInteraction.id)
+    expect(manager.latestExecutablePlan()?.status).toBe(PlanStatus.APPROVED)
+
+    const ask = manager.createAsk({
+      questions: [{
+        id: 'plan_stuck',
+        header: '计划系统阻塞',
+        question: '是否继续执行这个旧计划？',
+        options: [
+          { label: '无视系统继续', description: '放弃旧计划，回到用户新指令' },
+          { label: '继续执行', description: '继续当前计划' },
+        ],
+      }],
+    })
+
+    manager.answer(ask.id, { plan_stuck: { choice: '无视系统继续', freeform: '' } })
+
+    const latest = manager.planStore.latest()
+    expect(latest?.status).toBe(PlanStatus.CANCELLED)
+    expect(manager.latestExecutablePlan()).toBeNull()
+    expect(manager.planCompletionFollowup()).toBeNull()
+  })
+
+  it('does not expose executable plans across different session or project scopes', () => {
+    const manager = new ControlManager(tmp('emperor-ctrl-plan-scope-'))
+    manager.setRuntimeScope({
+      sessionId: 'session_old',
+      projectId: 'project_old',
+      workspaceRoot: '/tmp/old-project',
+    })
+    const planInteraction = manager.createPlan({
+      title: 'Old scoped plan',
+      summary: 'Belongs to a different project.',
+      planMarkdown: '# Plan\n\n- Old work',
+      assumptions: [],
+      riskLevel: 'low',
+      steps: [{
+        id: 'step_1',
+        title: 'Old work',
+        description: 'This must not leak into another project.',
+        commands: ['echo old'],
+        acceptance: ['old project only'],
+      }],
+    })
+    manager.approve(planInteraction.id)
+    expect(manager.latestExecutablePlan()?.id).toBe(String(planInteraction.meta.plan_id))
+
+    manager.setRuntimeScope({
+      sessionId: 'session_new',
+      projectId: 'project_new',
+      workspaceRoot: '/tmp/new-project',
+    })
+
+    expect(manager.latestExecutablePlan()).toBeNull()
+    expect(manager.planCompletionFollowup()).toBeNull()
+  })
+
+  it('tags plan step tasks with the current runtime scope', () => {
+    const root = tmp('emperor-ctrl-plan-task-scope-')
+    const manager = new ControlManager(root)
+    const taskManager = new TaskManager(root)
+    manager.setTodoStore(new TodoStore())
+    manager.setTaskManager(taskManager)
+    manager.setRuntimeScope({
+      sessionId: 'session_1',
+      projectId: 'project_1',
+      workspaceRoot: '/tmp/project_1',
+    })
+    const planInteraction = manager.createPlan({
+      title: 'Scoped plan task',
+      summary: 'Plan step tasks must be queryable by session/project scope.',
+      planMarkdown: '# Plan\n\n- Scoped work',
+      assumptions: [],
+      riskLevel: 'low',
+      steps: [{
+        id: 'step_1',
+        title: 'Scoped work',
+        description: 'Create a scoped task.',
+        commands: ['echo ok'],
+        acceptance: ['task metadata includes scope'],
+      }],
+    })
+
+    manager.approve(planInteraction.id)
+
+    const plan = manager.planStore.latest()
+    const taskId = String((plan!.metadata.plan_step_tasks as Record<string, string>).step_1)
+    expect(taskManager.store.get(taskId)?.metadata.scope).toEqual({
+      session_id: 'session_1',
+      project_id: 'project_1',
+      workspace_root: '/tmp/project_1',
+    })
+  })
+
   it('propose_plan comment and approve restores previous (plan) mode', () => {
     const manager = new ControlManager(tmp('emperor-ctrl-plan-'))
     manager.setMode('plan')
@@ -128,6 +239,24 @@ describe('ControlManager (test_control.py)', () => {
     })
     manager.approve(interaction.id)
     expect(manager.payload().mode).toBe(ControlMode.AUTO)
+    expect(manager.payload().previous_mode).toBeNull()
+  })
+
+  it('plan approval restores accept_edits mode', () => {
+    const manager = new ControlManager(tmp('emperor-ctrl-accept-edits-'))
+    manager.setMode(ControlMode.ACCEPT_EDITS)
+    manager.setMode(ControlMode.PLAN)
+    expect(manager.payload().previous_mode).toBe(ControlMode.ACCEPT_EDITS)
+
+    const interaction = manager.createPlan({
+      title: '编辑模式计划',
+      summary: '批准后回到 accept_edits',
+      planMarkdown: '# Plan\n\n- Run it',
+      assumptions: [],
+      riskLevel: 'low',
+    })
+    manager.approve(interaction.id)
+    expect(manager.payload().mode).toBe(ControlMode.ACCEPT_EDITS)
     expect(manager.payload().previous_mode).toBeNull()
   })
 

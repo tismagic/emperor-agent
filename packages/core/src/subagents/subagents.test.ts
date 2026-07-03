@@ -124,6 +124,43 @@ describe('DispatchSubagentTool (W04-014/W08)', () => {
     expect(page.messages[0]!.content).toBe(captured.task)
   })
 
+  it('does not overwrite a subagent task that was cancelled before the runner returns', async () => {
+    const root = tmp('emperor-dispatch-cancelled-')
+    const subagents = new SubagentRegistry(TEMPLATES)
+    const parent = new ToolRegistry()
+    parent.register(new ReadTool())
+    const manager = new TaskManager(root)
+
+    const tool = new DispatchSubagentTool({
+      parentRegistry: parent,
+      subagentRegistry: subagents,
+      runnerFactory: () => ({
+        step: () => {
+          const [record] = manager.store.list()
+          manager.cancelTask(record!.id, { reason: 'user stopped subagent' })
+          return '结论: should not complete'
+        },
+      }),
+      taskManager: manager,
+    })
+
+    const result = await tool.execute({
+      agent_type: 'sili_suitang',
+      task: '阅读核心流程',
+      purpose: 'read files',
+      expected_output: '结论/证据',
+      evidence_required: '文件路径',
+      scope_limit: '只读',
+    }, { root: root, arguments: {}, parentCallId: 'call_cancelled' })
+
+    const [record] = manager.store.list()
+    expect(result).toContain('cancelled')
+    expect(record!.status).toBe(TaskStatus.CANCELLED)
+    expect(record!.progress.reason).toBe('user stopped subagent')
+    const page = new SidechainTranscript(root, record!.id).read()
+    expect(page.messages.map((m) => m.role)).toEqual(['user'])
+  })
+
   it('enforces plan mode readonly explorer contract', () => {
     const subagents = new SubagentRegistry(TEMPLATES)
     const tool = new DispatchSubagentTool({

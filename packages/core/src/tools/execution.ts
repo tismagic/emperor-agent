@@ -7,6 +7,7 @@ import { ToolResultObj } from './base'
 import type { ToolRegistry } from './registry'
 import { TurnPaused } from '../control/exceptions'
 import * as runtimeEvents from '../agent/runtime-events'
+import { CancelledTaskError } from '../runtime/active'
 
 export type StreamEmitter = (event: Record<string, unknown>) => void | Promise<void>
 type ToolRunStatus = 'queued' | 'executing' | 'completed' | 'failed' | 'cancelled'
@@ -27,10 +28,11 @@ export class ToolExecutionEngine {
 
   async runBatch(
     toolCalls: ToolCallRequest[],
-    opts?: { emit?: StreamEmitter | null; runOne?: (call: ToolCallRequest) => Promise<ToolResultObj> },
+    opts?: { emit?: StreamEmitter | null; runOne?: (call: ToolCallRequest) => Promise<ToolResultObj>; signal?: AbortSignal | null },
   ): Promise<Array<Record<string, unknown>>> {
     const emit = opts?.emit ?? null
     const runOne = opts?.runOne
+    const signal = opts?.signal ?? null
     const states = toolCalls.map((call) => this.stateForCall(call))
     if (emit) {
       for (const state of states) {
@@ -40,6 +42,7 @@ export class ToolExecutionEngine {
     const resultsById = new Map<string, ToolResultObj>()
     let index = 0
     while (index < toolCalls.length) {
+      throwIfAborted(signal)
       const state = states[index]!
       if (state.concurrencySafe) {
         const groupCalls: ToolCallRequest[] = []
@@ -50,7 +53,7 @@ export class ToolExecutionEngine {
           index += 1
         }
         const gathered = await Promise.allSettled(
-          groupCalls.map((call, i) => this.runState(call, groupStates[i]!, { emit, runOne })),
+          groupCalls.map((call, i) => this.runState(call, groupStates[i]!, { emit, runOne, signal })),
         )
         for (let i = 0; i < groupCalls.length; i++) {
           const call = groupCalls[i]!
@@ -58,6 +61,7 @@ export class ToolExecutionEngine {
           const raw = gathered[i]!
           if (raw.status === 'rejected') {
             if (raw.reason instanceof TurnPaused) throw raw.reason
+            if (raw.reason instanceof CancelledTaskError) throw raw.reason
             const result = ToolResultObj.fromText(`Error: ${raw.reason}`, { isError: true })
             item.status = 'failed'
             item.error = String(raw.reason)
@@ -69,7 +73,7 @@ export class ToolExecutionEngine {
         }
         continue
       }
-      resultsById.set(toolCalls[index]!.id, await this.runState(toolCalls[index]!, state, { emit, runOne }))
+      resultsById.set(toolCalls[index]!.id, await this.runState(toolCalls[index]!, state, { emit, runOne, signal }))
       index += 1
     }
     return toolCalls.map((call) => ({
@@ -89,8 +93,9 @@ export class ToolExecutionEngine {
   private async runState(
     call: ToolCallRequest,
     state: ToolRunState,
-    opts: { emit: StreamEmitter | null; runOne?: (call: ToolCallRequest) => Promise<ToolResultObj> },
+    opts: { emit: StreamEmitter | null; runOne?: (call: ToolCallRequest) => Promise<ToolResultObj>; signal?: AbortSignal | null },
   ): Promise<ToolResultObj> {
+    throwIfAborted(opts.signal ?? null)
     state.status = 'executing'
     if (opts.emit) await opts.emit(runtimeEvents.toolRunStarted({ id: state.id, name: state.name }))
     let result: ToolResultObj
@@ -106,22 +111,30 @@ export class ToolExecutionEngine {
         if (opts.emit) await opts.emit(runtimeEvents.toolRunCancelled({ id: state.id, name: state.name, reason: 'turn_paused' }))
         throw exc
       }
+      if (exc instanceof CancelledTaskError) {
+        state.status = 'cancelled'
+        if (opts.emit) await opts.emit(runtimeEvents.toolRunCancelled({ id: state.id, name: state.name, reason: 'cancelled' }))
+        throw exc
+      }
       state.status = 'failed'
       state.error = String(exc)
       if (opts.emit) await opts.emit(runtimeEvents.toolRunFailed({ id: state.id, name: state.name, message: String(exc) }))
       return ToolResultObj.fromText(`Error: ${exc}`, { isError: true })
     }
+    throwIfAborted(opts.signal ?? null)
     state.status = result.isError ? 'failed' : 'completed'
     state.result = result
     if (opts.emit) {
       if (result.isError) {
         await opts.emit(runtimeEvents.toolRunFailed({ id: state.id, name: state.name, message: result.summary }))
       } else {
+        const output = runtimeEvents.compactRuntimeToolOutput(result.modelContent)
         await opts.emit(
           runtimeEvents.toolRunCompleted({
             id: state.id,
             name: state.name,
             summary: result.summary,
+            ...output,
             artifacts: result.artifactPayloads().length ? result.artifactPayloads() : null,
             metadata: Object.keys(result.metadata).length ? result.metadata : null,
           }),
@@ -130,6 +143,10 @@ export class ToolExecutionEngine {
     }
     return result
   }
+}
+
+function throwIfAborted(signal: AbortSignal | null | undefined): void {
+  if (signal?.aborted) throw new CancelledTaskError('turn')
 }
 
 function coerceToolResult(value: ToolResultObj | string): ToolResultObj {

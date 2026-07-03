@@ -1,20 +1,31 @@
 import { createHash } from 'node:crypto'
 import { existsSync, mkdirSync, readFileSync, renameSync, statSync, writeFileSync } from 'node:fs'
 import { basename, join, resolve } from 'node:path'
+import {
+  ProjectStateStore,
+  type ProjectStateMetadata,
+} from './state-store'
+import type { MemoryVersionStore } from '../memory/versions'
 
-export const PROJECT_MEMORY_START = '<!-- emperor-agent:project-memory:start -->'
-export const PROJECT_MEMORY_END = '<!-- emperor-agent:project-memory:end -->'
-const DEFAULT_BLOCK = '## Emperor Agent Project Memory\n\n- 尚未记录项目情况。'
+export { PROJECT_MEMORY_END, PROJECT_MEMORY_START } from './state-store'
+
 const VERSION = 1
 
-export interface ProjectEntry {
+export interface ProjectEntry extends ProjectStateMetadata {
   project_id: string
   project_path: string
+  workspace_path: string
   project_name: string
   summary: string
   created_at: string
   updated_at: string
   agents_path: string
+  state_path: string
+  memory_path: string
+  project_json_path: string
+  prompt_overlay_path: string
+  legacy_agents_path: string | null
+  legacy_imported_at: string | null
   version: number
 }
 
@@ -22,11 +33,15 @@ export class ProjectStore {
   readonly root: string
   readonly projectsDir: string
   readonly indexPath: string
+  readonly stateStore: ProjectStateStore
+  private readonly versions: Pick<MemoryVersionStore, 'snapshotPath'> | null
 
-  constructor(root: string) {
+  constructor(root: string, opts: { versions?: Pick<MemoryVersionStore, 'snapshotPath'> | null } = {}) {
     this.root = resolve(root)
-    this.projectsDir = join(this.root, 'memory', 'projects')
+    this.projectsDir = join(this.root, 'projects')
     this.indexPath = join(this.projectsDir, 'index.json')
+    this.stateStore = new ProjectStateStore(this.projectsDir)
+    this.versions = opts.versions ?? null
   }
 
   resolve(path: string): ProjectEntry {
@@ -34,7 +49,6 @@ export class ProjectStore {
     if (!existsSync(projectPath) || !statSync(projectPath).isDirectory()) {
       throw new Error('project path must be an existing directory')
     }
-    this.ensureAgents(projectPath)
     const entry = this.entryForPath(projectPath)
     const loaded = this.load()
     const existing = loaded.find((item) => item.project_id === entry.project_id)
@@ -43,8 +57,9 @@ export class ProjectStore {
       summary: existing?.summary ?? '',
       created_at: existing?.created_at ?? entry.created_at,
     }
-    this.saveSorted([...loaded.filter((item) => item.project_id !== entry.project_id), next])
-    return { ...next }
+    const ensured = this.stateStore.ensureProject(next)
+    this.saveSorted([...loaded.filter((item) => item.project_id !== entry.project_id), ensured])
+    return { ...ensured }
   }
 
   get(projectId: string): ProjectEntry | null {
@@ -58,28 +73,28 @@ export class ProjectStore {
   readAgents(projectId: string): string {
     const entry = this.get(projectId)
     if (!entry) return ''
-    const path = join(entry.project_path, 'AGENTS.md')
-    return existsSync(path) ? readFileSync(path, 'utf8') : ''
+    return this.stateStore.readAgents(entry.project_id)
   }
 
   readManagedMemory(projectId: string): string {
-    return extractBlock(this.readAgents(projectId)) ?? ''
+    return this.stateStore.readManagedMemory(projectId)
   }
 
   updateMemory(projectId: string, content: string): ProjectEntry {
     const entry = this.get(projectId)
     if (!entry) throw new Error(`unknown project: ${projectId}`)
-    this.ensureAgents(entry.project_path)
-    const agentsPath = join(entry.project_path, 'AGENTS.md')
-    const current = readFileSync(agentsPath, 'utf8')
-    const text = replaceBlock(current, content.trim() || DEFAULT_BLOCK)
-    writeFileSync(agentsPath, text.trimEnd() + '\n', 'utf8')
+    this.stateStore.ensureProject(entry)
+    if (this.versions && existsSync(entry.agents_path)) {
+      this.versions.snapshotPath(entry.agents_path, { target: 'project', reason: 'write_project_memory' })
+    }
+    this.stateStore.writeManagedMemory(projectId, content)
 
     const updated: ProjectEntry = {
       ...entry,
       summary: summarize(content),
       updated_at: stamp(),
     }
+    this.stateStore.writeProjectJson(updated)
     this.saveSorted([...this.load().filter((item) => item.project_id !== projectId), updated])
     return { ...updated }
   }
@@ -89,9 +104,8 @@ export class ProjectStore {
     const lines: string[] = []
     for (const item of this.list().slice(0, limit)) {
       const name = item.project_name || item.project_path || 'project'
-      const summary = item.summary.trim()
       const label = item.project_path ? `${name} (${item.project_path})` : name
-      lines.push(`- ${label}: ${summary || '已绑定为 Build 项目'}`)
+      lines.push(`- ${label}: 已绑定为 Build 项目`)
     }
     return lines.join('\n')
   }
@@ -99,44 +113,27 @@ export class ProjectStore {
   private entryForPath(projectPath: string): ProjectEntry {
     const projectId = createHash('sha256').update(projectPath, 'utf8').digest('hex').slice(0, 16)
     const now = stamp()
+    const paths = this.stateStore.paths(projectId)
     return {
       project_id: projectId,
       project_path: projectPath,
+      workspace_path: projectPath,
       project_name: basename(projectPath) || projectPath,
       summary: '',
       created_at: now,
       updated_at: now,
-      agents_path: join(projectPath, 'AGENTS.md'),
+      ...paths,
+      legacy_agents_path: null,
+      legacy_imported_at: null,
       version: VERSION,
     }
-  }
-
-  private ensureAgents(projectPath: string): void {
-    const agentsPath = join(projectPath, 'AGENTS.md')
-    if (!existsSync(agentsPath)) {
-      writeFileSync(
-        agentsPath,
-        '# AGENTS.md\n\n' +
-          '本文件记录该项目给 Agent 的协作规则和项目记忆。\n\n' +
-          `${PROJECT_MEMORY_START}\n${DEFAULT_BLOCK}\n${PROJECT_MEMORY_END}\n`,
-        'utf8',
-      )
-      return
-    }
-    const text = readFileSync(agentsPath, 'utf8')
-    if (text.includes(PROJECT_MEMORY_START) && text.includes(PROJECT_MEMORY_END)) return
-    writeFileSync(
-      agentsPath,
-      text.trimEnd() + '\n\n' + `${PROJECT_MEMORY_START}\n${DEFAULT_BLOCK}\n${PROJECT_MEMORY_END}\n`,
-      'utf8',
-    )
   }
 
   private load(): ProjectEntry[] {
     if (!existsSync(this.indexPath)) return []
     try {
       const data = JSON.parse(readFileSync(this.indexPath, 'utf8') || '[]')
-      return Array.isArray(data) ? data.filter(isObject).map(normalizeProject) : []
+      return Array.isArray(data) ? data.filter(isObject).map((item) => normalizeProject(item, this.projectsDir)) : []
     } catch {
       return []
     }
@@ -149,23 +146,6 @@ export class ProjectStore {
     writeFileSync(tmp, JSON.stringify(items, null, 2) + '\n', 'utf8')
     renameSync(tmp, this.indexPath)
   }
-}
-
-function extractBlock(text: string): string | null {
-  const start = text.indexOf(PROJECT_MEMORY_START)
-  const end = text.indexOf(PROJECT_MEMORY_END)
-  if (start < 0 || end < 0 || end < start) return null
-  return text.slice(start + PROJECT_MEMORY_START.length, end).trim()
-}
-
-function replaceBlock(text: string, content: string): string {
-  const start = text.indexOf(PROJECT_MEMORY_START)
-  const end = text.indexOf(PROJECT_MEMORY_END)
-  if (start < 0 || end < 0 || end < start) {
-    return `${text.trimEnd()}\n\n${PROJECT_MEMORY_START}\n${content.trim()}\n${PROJECT_MEMORY_END}`
-  }
-  const bodyStart = start + PROJECT_MEMORY_START.length
-  return `${text.slice(0, bodyStart).trimEnd()}\n${content.trim()}\n${text.slice(end).trimStart()}`
 }
 
 function summarize(content: string): string {
@@ -185,21 +165,31 @@ function summarize(content: string): string {
     .slice(0, 120)
 }
 
-function normalizeProject(raw: Record<string, unknown>): ProjectEntry {
+function normalizeProject(raw: Record<string, unknown>, projectsDir: string): ProjectEntry {
+  const projectId = String(raw.project_id ?? '')
+  const stateStore = new ProjectStateStore(projectsDir)
+  const paths = stateStore.paths(projectId)
   return {
-    project_id: String(raw.project_id ?? ''),
+    project_id: projectId,
     project_path: String(raw.project_path ?? ''),
+    workspace_path: String(raw.workspace_path ?? raw.project_path ?? ''),
     project_name: String(raw.project_name ?? ''),
     summary: String(raw.summary ?? ''),
     created_at: String(raw.created_at ?? ''),
     updated_at: String(raw.updated_at ?? ''),
-    agents_path: String(raw.agents_path ?? ''),
+    ...paths,
+    legacy_agents_path: nullableText(raw.legacy_agents_path),
+    legacy_imported_at: nullableText(raw.legacy_imported_at),
     version: Number(raw.version ?? VERSION) || VERSION,
   }
 }
 
 function isObject(value: unknown): value is Record<string, unknown> {
   return Boolean(value && typeof value === 'object' && !Array.isArray(value))
+}
+
+function nullableText(value: unknown): string | null {
+  return typeof value === 'string' && value.trim() ? value.trim() : null
 }
 
 function stamp(): string {

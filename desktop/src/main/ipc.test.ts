@@ -55,6 +55,36 @@ describe('core IPC bridge (MIG-IPC-002)', () => {
     )
     errorSpy.mockRestore()
   })
+
+  it('preserves benign turn interruption codes for renderer control flow', async () => {
+    const ipc = new FakeIpcMain()
+    const turnPaused = new Error('turn paused for ask: ask_1')
+    turnPaused.name = 'TurnPaused'
+    const cancelled = new Error('active task cancelled: turn_1')
+    cancelled.name = 'CancelledTaskError'
+    const busy = new Error('Another agent turn is already running')
+    busy.name = 'TurnBusyError'
+    registerCoreIpc(ipc, {
+      chat: {
+        submit: () => { throw turnPaused },
+        stopRuntime: () => { throw cancelled },
+        busy: () => { throw busy },
+      },
+    }, ['chat.submit', 'chat.stopRuntime', 'chat.busy'])
+
+    await expect(ipc.invoke('emperor:core:chat:submit', {})).resolves.toMatchObject({
+      ok: false,
+      error: { code: 'turn_paused', message: 'Turn paused' },
+    })
+    await expect(ipc.invoke('emperor:core:chat:stopRuntime', {})).resolves.toMatchObject({
+      ok: false,
+      error: { code: 'cancelled', message: 'Task cancelled' },
+    })
+    await expect(ipc.invoke('emperor:core:chat:busy', {})).resolves.toMatchObject({
+      ok: false,
+      error: { code: 'turn_busy', message: 'Another agent turn is already running' },
+    })
+  })
 })
 
 type Handler = (_event: unknown, ...args: unknown[]) => unknown

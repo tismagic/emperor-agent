@@ -172,4 +172,25 @@ describe('TeamManager and tools', () => {
     expect(result).toContain('"result":null')
     expect(readFileSync(join(root, '.team', 'inbox', 'lead.jsonl'), 'utf8')).toContain('report')
   })
+
+  it('routes team tool runtime events through the current tool context emitter', async () => {
+    const root = tmp('emperor-team-tools-scoped-events-')
+    const defaultEvents: Array<Record<string, unknown>> = []
+    const scopedEvents: Array<Record<string, unknown>> = []
+    const manager = new TeamManager({
+      root,
+      subagentRegistry: fakeSubagents(),
+      runnerFactory: ({ member }) => ({ step: () => `ok ${member.name}` }),
+      eventSink: async (event) => { defaultEvents.push(event) },
+    })
+    const spawn = new TeamSpawnTool(manager)
+
+    await spawn.execute(
+      { name: 'scoped', role: 'reader', task: '' },
+      { root, workspaceRoot: root, arguments: {}, emit: async (event) => { scopedEvents.push(event) } },
+    )
+
+    expect(scopedEvents.map((event) => event.event)).toContain('team_member_update')
+    expect(defaultEvents.map((event) => event.event)).not.toContain('team_member_update')
+  })
 })

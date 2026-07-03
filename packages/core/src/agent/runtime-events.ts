@@ -4,6 +4,17 @@
  * 返回纯事件 dict，供 emit 透传。
  */
 
+const MAX_RUNTIME_TOOL_OUTPUT_CHARS = 12_000
+
+export function compactRuntimeToolOutput(value: string): { output: string; output_truncated?: boolean } {
+  const text = String(value ?? '')
+  if (text.length <= MAX_RUNTIME_TOOL_OUTPUT_CHARS) return { output: text }
+  return {
+    output: text.slice(0, MAX_RUNTIME_TOOL_OUTPUT_CHARS) + `\n\n[truncated runtime tool output: ${text.length - MAX_RUNTIME_TOOL_OUTPUT_CHARS} chars omitted]`,
+    output_truncated: true,
+  }
+}
+
 export function planEntryDecision(contract: Record<string, unknown>): Record<string, unknown> {
   return { event: 'plan_entry_decision', ...contract }
 }
@@ -79,10 +90,14 @@ export function toolRunCompleted(opts: {
   id: string
   name: string
   summary: string
+  output?: string | null
+  output_truncated?: boolean | null
   artifacts?: Array<Record<string, unknown>> | null
   metadata?: Record<string, unknown> | null
 }): Record<string, unknown> {
   const event: Record<string, unknown> = { event: 'tool_run_completed', id: opts.id, name: opts.name, summary: opts.summary }
+  if (typeof opts.output === 'string') event.output = opts.output
+  if (opts.output_truncated) event.output_truncated = true
   if (opts.artifacts) event.artifacts = opts.artifacts
   if (opts.metadata) event.metadata = opts.metadata
   return event

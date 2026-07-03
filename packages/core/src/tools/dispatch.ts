@@ -1,7 +1,7 @@
 import { Tool, type ToolExecutionContext } from './base'
 import { S, toolParamsSchema, type ParamSchema } from './schema'
 import { ToolRegistry } from './registry'
-import { TaskKind, type TaskRecord } from '../tasks/models'
+import { TaskKind, TaskStatus, type TaskRecord } from '../tasks/models'
 import type { TaskManager } from '../tasks/manager'
 import type { SubagentRegistry } from '../subagents/registry'
 import type { SubagentSpec } from '../subagents/spec'
@@ -17,6 +17,7 @@ export interface DispatchRunnerFactoryArgs {
   spec: SubagentSpec
   subRegistry: ToolRegistry
   task: string
+  workspaceRoot?: string | null
 }
 
 export interface DispatchSubagentToolOptions {
@@ -103,7 +104,7 @@ export class DispatchSubagentTool extends Tool {
       evidenceRequired: asOptional(args.evidence_required),
       scopeLimit: asOptional(args.scope_limit),
     })
-    const runner = this.runnerFactory({ spec, subRegistry, task: subagentTask })
+    const runner = this.runnerFactory({ spec, subRegistry, task: subagentTask, workspaceRoot: ctx?.workspaceRoot ?? ctx?.root ?? null })
     const history = [{ role: 'user', content: subagentTask }]
     let taskRecord: TaskRecord | null = null
 
@@ -128,12 +129,18 @@ export class DispatchSubagentTool extends Tool {
     try {
       const final = await runner.step(history)
       if (this.taskManager && taskRecord) {
+        const terminal = terminalTaskResult(this.taskManager.store.get(taskRecord.id), agentType)
+        if (terminal) return terminal
         this.taskManager.appendSidechain(taskRecord.id, { role: 'assistant', content: final })
         this.taskManager.completeTask(taskRecord.id, { summary: final.slice(0, 500) })
       }
       return final
     } catch (error) {
-      if (this.taskManager && taskRecord) this.taskManager.failTask(taskRecord.id, { error: String(error) })
+      if (this.taskManager && taskRecord) {
+        const terminal = terminalTaskResult(this.taskManager.store.get(taskRecord.id), agentType)
+        if (terminal) return terminal
+        this.taskManager.failTask(taskRecord.id, { error: String(error) })
+      }
       return `Error: subagent '${agentType}' raised: ${error}`
     }
   }
@@ -189,6 +196,18 @@ function missingPlanContract(args: Record<string, unknown>): string[] {
 
 function asOptional(value: unknown): string {
   return String(value ?? '').trim()
+}
+
+function terminalTaskResult(record: TaskRecord | null | undefined, agentType: string): string {
+  if (!record) return ''
+  if (record.status === TaskStatus.CANCELLED) {
+    const reason = String(record.progress.reason ?? 'cancelled')
+    return `Error: subagent '${agentType}' task cancelled: ${reason}`
+  }
+  if (record.status === TaskStatus.COMPLETED || record.status === TaskStatus.FAILED) {
+    return `Error: subagent '${agentType}' task already ${record.status}; result ignored.`
+  }
+  return ''
 }
 
 function dedupe(items: string[]): string[] {

@@ -167,7 +167,12 @@ function formatNumber(value?: number) {
       <div v-if="memoryContext.mode === 'build'">
         <span>项目</span>
         <strong>{{ memoryContext.project?.project_name || memoryContext.session?.project_name || '未绑定项目' }}</strong>
-        <small>{{ memoryContext.project?.project_path || memoryContext.session?.project_path || '项目路径不可用' }}</small>
+        <small>源码 {{ memoryContext.project?.workspace_path || memoryContext.project?.project_path || memoryContext.session?.project_path || '项目路径不可用' }}</small>
+      </div>
+      <div v-if="memoryContext.mode === 'build'">
+        <span>Agent 状态</span>
+        <strong>{{ memoryContext.project?.state_path ? '已隔离' : '未知' }}</strong>
+        <small>{{ memoryContext.project?.memory_path || memoryContext.project?.agents_path || '项目记忆路径不可用' }}</small>
       </div>
       <div v-else>
         <span>项目索引</span>

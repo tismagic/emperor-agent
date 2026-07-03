@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { composerSendDisabled } from './composerControls'
+import { composerModeOptions, composerSendDisabled, currentComposerMode } from './composerControls'
 
 describe('composer control model', () => {
   it('keeps the stop button clickable while a turn is busy', () => {
@@ -10,5 +10,19 @@ describe('composer control model', () => {
     expect(composerSendDisabled({ busy: false, content: '', attachmentCount: 0 })).toBe(true)
     expect(composerSendDisabled({ busy: false, content: 'hi', attachmentCount: 0 })).toBe(false)
     expect(composerSendDisabled({ busy: false, content: '', attachmentCount: 1 })).toBe(false)
+  })
+
+  it('exposes accept_edits as the middle permission mode', () => {
+    expect(composerModeOptions.map((option) => option.value)).toEqual([
+      'ask_before_edit',
+      'accept_edits',
+      'auto',
+      'plan',
+    ])
+    expect(currentComposerMode('accept_edits')).toMatchObject({
+      value: 'accept_edits',
+      short: '编辑',
+    })
+    expect(currentComposerMode('normal').value).toBe('ask_before_edit')
   })
 })

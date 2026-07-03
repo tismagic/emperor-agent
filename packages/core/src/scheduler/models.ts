@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto'
 import { Cron } from 'croner'
 
 export const SCHEMA_VERSION = 1
+export const SCHEDULER_TARGET_SESSION_METADATA_KEY = 'emperor_target_session_id'
 const JOB_ID_RE = /^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,63}$/
 const MAX_RUN_HISTORY = 20
 
@@ -80,6 +81,10 @@ export class SchedulerPayload {
   toDict(): Record<string, unknown> {
     return { kind: this.kind, message: this.message, target: this.target, projectId: this.project_id, deliver: this.deliver, meta: this.meta }
   }
+}
+
+export function schedulerPayloadSessionId(payload: SchedulerPayload): string {
+  return strOrNull(payload.meta[SCHEDULER_TARGET_SESSION_METADATA_KEY]) ?? ''
 }
 
 export class SchedulerRunRecord {

@@ -3,6 +3,7 @@
  * 统一模型调用 + 次模型失败一次性升主；记 _lastModelCall（route_reason/估算输入/fallback）。
  */
 import { parseJsonArgs, type ChatArgs, type ChatStreamArgs, type GenerationSettings, type LLMProvider, type LLMResponse, type ToolCallDelta } from '../providers/base'
+import { classifyProviderError, isContextOverflowProviderError, isRetryableProviderErrorKind, type ProviderErrorKind } from '../providers/errors'
 import * as runtimeEvents from './runtime-events'
 
 export type StreamEmitter = (event: Record<string, unknown>) => void | Promise<void>
@@ -16,6 +17,8 @@ export interface ModelCallMeta {
   estimatedInputTokens: number | null
   usedFallback: boolean
   fallbackReason: string
+  providerRetryCount: number
+  providerErrorKind: string
 }
 
 /** ModelCaller 依赖的 runner 表面。 */
@@ -47,6 +50,7 @@ export class ModelCaller {
     messages: ChatArgs['messages']
     tools: Array<Record<string, unknown>> | null
     emit: StreamEmitter | null
+    signal?: AbortSignal | null
   }): Promise<LLMResponse> {
     const runner = this.runner
     const onDelta = async (delta: string): Promise<void> => {
@@ -57,6 +61,8 @@ export class ModelCaller {
       const event = planDraftDeltaFromToolDelta(delta)
       if (event) await opts.emit(event)
     }
+    let primaryRetryCount = 0
+    let primaryErrorKind = ''
     try {
       runner.lastModelCall = {
         model: runner.model,
@@ -67,10 +73,14 @@ export class ModelCaller {
         estimatedInputTokens: runner.lastEstimatedInputTokens,
         usedFallback: false,
         fallbackReason: '',
+        providerRetryCount: 0,
+        providerErrorKind: '',
       }
-      return await ModelCaller.callProvider({
+      const primary = await ModelCaller.callProviderWithRetries({
         provider: runner.provider,
         model: runner.model,
+        providerName: runner.providerName,
+        usageType: runner.usageType,
         maxTokens: runner.maxTokens,
         temperature: runner.temperature,
         reasoningEffort: runner.reasoningEffort,
@@ -79,8 +89,23 @@ export class ModelCaller {
         emit: opts.emit,
         onDelta,
         onToolCallDelta,
+        signal: opts.signal ?? null,
+        onRetry: (count, kind) => {
+          primaryRetryCount = count
+          primaryErrorKind = kind
+        },
       })
+      primaryRetryCount = primary.retryCount
+      primaryErrorKind = primary.errorKind
+      runner.lastModelCall = {
+        ...runner.lastModelCall,
+        providerRetryCount: primaryRetryCount,
+        providerErrorKind: primaryErrorKind,
+      }
+      return primary.response
     } catch (exc) {
+      primaryErrorKind = classifyProviderError(exc)
+      if (isContextOverflowProviderError(exc)) throw exc
       if (!(runner.fallbackProvider && runner.fallbackModel)) throw exc
       if (opts.emit) {
         await opts.emit(
@@ -102,10 +127,14 @@ export class ModelCaller {
         estimatedInputTokens: runner.lastEstimatedInputTokens,
         usedFallback: true,
         fallbackReason: String(exc),
+        providerRetryCount: primaryRetryCount,
+        providerErrorKind: primaryErrorKind,
       }
-      return await ModelCaller.callProvider({
+      const fallback = await ModelCaller.callProviderWithRetries({
         provider: runner.fallbackProvider,
         model: runner.fallbackModel,
+        providerName: runner.fallbackProviderName,
+        usageType: runner.usageType,
         maxTokens: Math.min(runner.maxTokens, Number(generation?.maxTokens ?? runner.maxTokens) || runner.maxTokens),
         temperature: generation?.temperature ?? runner.temperature,
         reasoningEffort: generation?.reasoningEffort ?? runner.reasoningEffort,
@@ -114,7 +143,60 @@ export class ModelCaller {
         emit: opts.emit,
         onDelta,
         onToolCallDelta,
+        signal: opts.signal ?? null,
       })
+      runner.lastModelCall = {
+        ...runner.lastModelCall,
+        providerRetryCount: primaryRetryCount + fallback.retryCount,
+        providerErrorKind: fallback.errorKind || primaryErrorKind,
+      }
+      return fallback.response
+    }
+  }
+
+  private static async callProviderWithRetries(opts: {
+    provider: LLMProvider
+    model: string
+    providerName: string | null
+    usageType: string
+    maxTokens: number
+    temperature: number
+    reasoningEffort: string | null
+    messages: ChatArgs['messages']
+    tools: Array<Record<string, unknown>> | null
+    emit: StreamEmitter | null
+    onDelta: (delta: string) => Promise<void>
+    onToolCallDelta: (delta: ToolCallDelta) => Promise<void>
+    signal: AbortSignal | null
+    onRetry?: (retryCount: number, errorKind: ProviderErrorKind) => void
+  }): Promise<{ response: LLMResponse; retryCount: number; errorKind: ProviderErrorKind | '' }> {
+    let retryCount = 0
+    let lastKind: ProviderErrorKind | '' = ''
+    while (true) {
+      try {
+        const response = await ModelCaller.callProvider(opts)
+        return { response, retryCount, errorKind: lastKind }
+      } catch (exc) {
+        const kind = classifyProviderError(exc)
+        lastKind = kind
+        if (isContextOverflowProviderError(exc)) throw exc
+        if (!isRetryableProviderErrorKind(kind) || retryCount >= MODEL_CALL_MAX_RETRIES) throw exc
+        retryCount += 1
+        if (opts.emit) {
+          await opts.emit({
+            event: 'model_provider_retry',
+            model: opts.model,
+            provider: opts.providerName,
+            usage_type: opts.usageType,
+            attempt: retryCount,
+            max_retries: MODEL_CALL_MAX_RETRIES,
+            error_kind: kind,
+            reason: String(exc instanceof Error ? exc.message : exc).slice(0, 500),
+          })
+        }
+        opts.onRetry?.(retryCount, kind)
+        await boundedRetryBackoff(retryCount)
+      }
     }
   }
 
@@ -129,6 +211,7 @@ export class ModelCaller {
     emit: StreamEmitter | null
     onDelta: (delta: string) => Promise<void>
     onToolCallDelta: (delta: ToolCallDelta) => Promise<void>
+    signal: AbortSignal | null
   }): Promise<LLMResponse> {
     if (opts.emit) {
       const args: ChatStreamArgs = {
@@ -140,6 +223,7 @@ export class ModelCaller {
         reasoningEffort: opts.reasoningEffort,
         onContentDelta: opts.onDelta,
         onToolCallDelta: opts.onToolCallDelta,
+        signal: opts.signal,
       }
       return opts.provider.chatStream(args)
     }
@@ -150,9 +234,16 @@ export class ModelCaller {
       maxTokens: opts.maxTokens,
       temperature: opts.temperature,
       reasoningEffort: opts.reasoningEffort,
+      signal: opts.signal,
     }
     return opts.provider.chat(args)
   }
+}
+
+const MODEL_CALL_MAX_RETRIES = 2
+
+async function boundedRetryBackoff(retryCount: number): Promise<void> {
+  await new Promise((resolve) => setTimeout(resolve, Math.min(20 * retryCount, 100)))
 }
 
 function planDraftDeltaFromToolDelta(delta: ToolCallDelta): Record<string, unknown> | null {

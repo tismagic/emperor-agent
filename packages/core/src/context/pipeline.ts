@@ -3,10 +3,10 @@
  * 对齐 Python `agent/context_pipeline/microcompact.py` + `pipeline.py`。
  */
 import { type OpenAiMsg, pairToolCalls } from './pairing'
-import { capToolResults, replaceLargeToolResults, shrinkOldToolResults, ToolResultStore } from './tool-results'
+import { capToolResults, replaceAggregateToolResults, replaceLargeToolResults, shrinkOldToolResults, ToolResultStore } from './tool-results'
 
-export { pairToolCalls, capToolResults, replaceLargeToolResults, shrinkOldToolResults, ToolResultStore }
-export { DEFAULT_KEEP_RECENT, DEFAULT_TOOL_RESULT_BUDGET } from './tool-results'
+export { pairToolCalls, capToolResults, replaceAggregateToolResults, replaceLargeToolResults, shrinkOldToolResults, ToolResultStore }
+export { DEFAULT_AGGREGATE_TOOL_RESULT_BUDGET, DEFAULT_KEEP_RECENT, DEFAULT_TOOL_RESULT_BUDGET } from './tool-results'
 
 export const DEFAULT_MICROCOMPACT_KEEP_RECENT = 12
 export const DEFAULT_MICROCOMPACT_MIN_CHARS = 6000
@@ -29,6 +29,7 @@ export class ContextPipeline {
   readonly keepRecent: number
   readonly replacementMinBytes: number
   readonly replacementPreviewChars: number
+  readonly aggregateToolResultBudget: number
   readonly toolResultStore: ToolResultStore | null
   readonly toolResultLimits: Record<string, number>
   readonly planContextProvider: PlanContextProvider | null
@@ -43,6 +44,7 @@ export class ContextPipeline {
     toolResultStore?: ToolResultStore | null
     replacementMinBytes?: number
     replacementPreviewChars?: number
+    aggregateToolResultBudget?: number
     toolResultLimits?: Record<string, number> | null
     planContextProvider?: PlanContextProvider | null
     microcompactKeepRecent?: number
@@ -55,6 +57,7 @@ export class ContextPipeline {
     this.toolResultStore = opts?.toolResultStore ?? null
     this.replacementMinBytes = opts?.replacementMinBytes ?? 8000
     this.replacementPreviewChars = opts?.replacementPreviewChars ?? 1000
+    this.aggregateToolResultBudget = opts?.aggregateToolResultBudget ?? 24_000
     this.toolResultLimits = { ...(opts?.toolResultLimits ?? {}) }
     this.planContextProvider = opts?.planContextProvider ?? null
     this.microcompactKeepRecent = opts?.microcompactKeepRecent ?? DEFAULT_MICROCOMPACT_KEEP_RECENT
@@ -66,7 +69,9 @@ export class ContextPipeline {
   project(history: OpenAiMsg[]): Projection {
     const [paired, filled, dropped] = pairToolCalls(history)
     let prepared = paired
-    let replacements: Array<Record<string, unknown>> = []
+    let perCallReplacements: Array<Record<string, unknown>> = []
+    let aggregateReplacements: Array<Record<string, unknown>> = []
+    let aggregateReports: Array<Record<string, unknown>> = []
     if (this.toolResultStore) {
       const [replaced, records] = replaceLargeToolResults(paired, this.toolResultStore, {
         minBytes: this.replacementMinBytes,
@@ -74,7 +79,14 @@ export class ContextPipeline {
         toolResultLimits: this.toolResultLimits,
       })
       prepared = replaced
-      replacements = records.map((record) => ({ ...record }))
+      perCallReplacements = records.map((record) => ({ ...record, replacement_reason: 'per_call_limit' }))
+      const [aggregatePrepared, aggregateRecords, reports] = replaceAggregateToolResults(prepared, this.toolResultStore, {
+        budgetChars: this.aggregateToolResultBudget,
+        previewChars: this.replacementPreviewChars,
+      })
+      prepared = aggregatePrepared
+      aggregateReplacements = aggregateRecords.map((record) => ({ ...record, replacement_reason: 'aggregate_budget' }))
+      aggregateReports = reports
     }
     const [capped, cappedCount] = capToolResults(prepared, this.perCallLimit)
     const [shrunk, shrunkCount] = shrinkOldToolResults(capped, this.keepRecent)
@@ -85,8 +97,13 @@ export class ContextPipeline {
       paired_missing_tool_results: filled,
       dropped_orphan_tool_results: dropped,
       plan_context_attached: planContext ? 1 : 0,
-      replaced_tool_results: replacements.length,
-      tool_result_replacements: replacements,
+      replaced_tool_results: perCallReplacements.length + aggregateReplacements.length,
+      per_call_replaced_tool_results: perCallReplacements.length,
+      aggregate_replaced_tool_results: aggregateReplacements.length,
+      tool_result_replacements: [...perCallReplacements, ...aggregateReplacements],
+      aggregate_tool_result_replacements: aggregateReplacements,
+      aggregate_tool_result_budget: this.aggregateToolResultBudget,
+      aggregate_tool_result_reports: aggregateReports,
       capped_tool_results: cappedCount,
       shrunk_old_tool_results: shrunkCount,
       microcompacted_messages: microcompactRecords.length,

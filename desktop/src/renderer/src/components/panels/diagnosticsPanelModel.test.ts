@@ -44,6 +44,13 @@ describe('diagnostics panel model', () => {
         archiveFiles: 2,
         needsRotation: false,
       },
+      workspacePolicy: {
+        workspaceRoot: '/repo/project',
+        stateRoot: '/repo/.emperor',
+        allowRoots: [{ path: '/repo/project', label: 'workspace' }],
+        denyRoots: [{ path: '/repo/.emperor', label: 'state' }],
+        outsideWorkspace: 'deny',
+      },
       external: {
         running: true,
         inbox: { pending: 3 },
@@ -83,6 +90,12 @@ describe('diagnostics panel model', () => {
       value: '异常',
       tone: 'error',
       detail: '1 个坏 action 行 · 1 个隔离文件',
+    })
+    expect(rows.find((row) => row.id === 'workspace-policy')).toMatchObject({
+      label: 'Workspace Fence',
+      value: '1 个允许根 / 1 个禁止根',
+      tone: 'ok',
+      detail: 'workspace /repo/project · state /repo/.emperor · outside deny',
     })
     expect(rows.find((row) => row.id === 'desktop-renderer')).toMatchObject({
       label: '桌面 Renderer',

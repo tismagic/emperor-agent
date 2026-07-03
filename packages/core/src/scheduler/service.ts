@@ -1,11 +1,22 @@
 import * as runtimeEvents from '../runtime/events'
-import { computeNextRunMs, SchedulerJob, SchedulerPayload, SchedulerSchedule, SchedulerStatus, nowMs, validateSchedule } from './models'
+import {
+  computeNextRunMs,
+  SchedulerJob,
+  SchedulerPayload,
+  SchedulerSchedule,
+  SchedulerStatus,
+  SCHEDULER_TARGET_SESSION_METADATA_KEY,
+  nowMs,
+  schedulerPayloadSessionId,
+  validateSchedule,
+} from './models'
 import { SchedulerStore, SchedulerStoreCorrupt, SchedulerStoreData } from './store'
 import { defaultSystemJobs } from './system-jobs'
 
 export type SchedulerTimerCallback = () => void | Promise<void>
 export type SchedulerSetTimer = (callback: SchedulerTimerCallback, delayMs: number) => unknown
 export type SchedulerClearTimer = (handle: unknown) => void
+export type SchedulerTargetSession = () => string | null | undefined
 
 export class SchedulerService {
   readonly store: SchedulerStore
@@ -13,6 +24,7 @@ export class SchedulerService {
   eventSink: ((event: Record<string, unknown>) => Promise<void>) | null
   timeFunc: () => number
   maxSleepMs: number
+  private readonly targetSessionId: SchedulerTargetSession
   private readonly setTimer: SchedulerSetTimer
   private readonly clearTimer: SchedulerClearTimer
   private running = false
@@ -23,6 +35,7 @@ export class SchedulerService {
     eventSink?: ((event: Record<string, unknown>) => Promise<void>) | null
     timeFunc?: () => number
     maxSleepMs?: number
+    targetSessionId?: SchedulerTargetSession | null
     setTimer?: SchedulerSetTimer
     clearTimer?: SchedulerClearTimer
   } = {}) {
@@ -31,6 +44,7 @@ export class SchedulerService {
     this.eventSink = opts.eventSink ?? null
     this.timeFunc = opts.timeFunc ?? nowMs
     this.maxSleepMs = Math.max(1, Math.trunc(opts.maxSleepMs ?? 300_000))
+    this.targetSessionId = opts.targetSessionId ?? (() => null)
     this.setTimer = opts.setTimer ?? ((callback, delayMs) => setTimeout(() => { void callback() }, delayMs))
     this.clearTimer = opts.clearTimer ?? ((handle) => { clearTimeout(handle as ReturnType<typeof setTimeout>) })
   }
@@ -68,10 +82,11 @@ export class SchedulerService {
   addJob(opts: { name: string; schedule: SchedulerSchedule; payload: SchedulerPayload; deleteAfterRun?: boolean; protected?: boolean; purpose?: string | null }): SchedulerJob {
     validateSchedule(opts.schedule)
     const current = this.timeFunc()
+    const payload = this.withTargetSession(opts.payload)
     const job = SchedulerJob.create({
       name: opts.name,
       schedule: opts.schedule,
-      payload: opts.payload,
+      payload,
       deleteAfterRun: opts.deleteAfterRun ?? false,
       protected: opts.protected ?? false,
       purpose: opts.purpose ?? null,
@@ -191,7 +206,7 @@ export class SchedulerService {
     job.state.next_run_at_ms = null
     job.updated_at_ms = start
     this.store.appendAction('update', { job })
-    await this.emit(runtimeEvents.schedulerRunStart(job.toDict()))
+    await this.emit(this.withEventSession(runtimeEvents.schedulerRunStart(job.toDict()), job))
     try { if (this.onJob) await this.onJob(job) }
     catch (exc) { status = exc instanceof Error && exc.name === 'CancelledTaskError' ? SchedulerStatus.CANCELLED : SchedulerStatus.ERROR; error = status === SchedulerStatus.CANCELLED ? 'cancelled' : String(exc instanceof Error ? exc.message : exc) }
     const end = this.timeFunc()
@@ -203,9 +218,9 @@ export class SchedulerService {
       else { job.enabled = false; job.state.next_run_at_ms = null }
     } else if (job.enabled) job.state.next_run_at_ms = computeNextRunMs(job.schedule, this.timeFunc())
     this.store.appendAction(deleted ? 'delete' : 'update', deleted ? { jobId: job.id } : { job })
-    if (status === SchedulerStatus.ERROR) await this.emit(runtimeEvents.schedulerRunError(job.toDict(), { error: error || 'unknown error' }))
-    else if (status === SchedulerStatus.CANCELLED) await this.emit(runtimeEvents.schedulerRunCancelled(job.toDict(), { reason: error || 'cancelled' }))
-    else await this.emit(runtimeEvents.schedulerRunDone(job.toDict()))
+    if (status === SchedulerStatus.ERROR) await this.emit(this.withEventSession(runtimeEvents.schedulerRunError(job.toDict(), { error: error || 'unknown error' }), job))
+    else if (status === SchedulerStatus.CANCELLED) await this.emit(this.withEventSession(runtimeEvents.schedulerRunCancelled(job.toDict(), { reason: error || 'cancelled' }), job))
+    else await this.emit(this.withEventSession(runtimeEvents.schedulerRunDone(job.toDict()), job))
   }
 
   private markStaleRunning(data: SchedulerStoreData): void {
@@ -221,6 +236,28 @@ export class SchedulerService {
   private async emit(event: Record<string, unknown>): Promise<void> {
     if (this.eventSink) await this.eventSink(event)
   }
+
+  private withTargetSession(payload: SchedulerPayload): SchedulerPayload {
+    if (schedulerPayloadSessionId(payload)) return payload
+    const sessionId = cleanString(this.targetSessionId())
+    if (!sessionId) return payload
+    return SchedulerPayload.fromDict({
+      ...payload.toDict(),
+      meta: {
+        ...payload.meta,
+        [SCHEDULER_TARGET_SESSION_METADATA_KEY]: sessionId,
+      },
+    })
+  }
+
+  private withEventSession(event: Record<string, unknown>, job: SchedulerJob): Record<string, unknown> {
+    const sessionId = schedulerPayloadSessionId(job.payload)
+    return sessionId ? { ...event, session_id: sessionId } : event
+  }
 }
 
 export { computeNextRunMs, validateSchedule, SchedulerJob, SchedulerPayload, SchedulerSchedule, SchedulerStatus }
+
+function cleanString(value: unknown): string {
+  return String(value ?? '').trim()
+}
