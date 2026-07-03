@@ -92,6 +92,74 @@ export class ToolExecutionEngine {
     }))
   }
 
+  /**
+   * 流式工具执行（Wave5）：边流式边入队。canStartEarly 为真的调用（无条件放行、不会暂停）
+   * 在 enqueue 时立即起跑；其余调用留到 finish() 按最终响应顺序补跑并对账。
+   */
+  createStreamingRun(opts: {
+    emit?: StreamEmitter | null
+    runOne?: (call: ToolCallRequest) => Promise<ToolResultObj>
+    signal?: AbortSignal | null
+    maxConcurrency?: number
+    canStartEarly?: (call: ToolCallRequest) => boolean
+  }): {
+    enqueue: (call: ToolCallRequest) => void
+    finish: (finalCalls: ToolCallRequest[]) => Promise<Array<Record<string, unknown>>>
+  } {
+    const emit = opts.emit ?? null
+    const runOne = opts.runOne
+    const signal = opts.signal ?? null
+    const canStartEarly = opts.canStartEarly ?? (() => false)
+    const acquire = makeSemaphore(Math.max(1, Math.trunc(opts.maxConcurrency ?? DEFAULT_MAX_TOOL_CONCURRENCY)))
+    const started = new Map<string, Promise<ToolResultObj>>()
+    const queuedEmitted = new Set<string>()
+
+    const emitQueued = async (call: ToolCallRequest): Promise<void> => {
+      if (queuedEmitted.has(call.id)) return
+      queuedEmitted.add(call.id)
+      if (emit) await emit(runtimeEvents.toolRunQueued({ id: call.id, name: call.name, arguments: call.arguments }))
+    }
+
+    const runGuarded = (call: ToolCallRequest): Promise<ToolResultObj> => {
+      const state = this.stateForCall(call)
+      return (async () => {
+        const release = await acquire()
+        try {
+          return await this.runState(call, state, { emit, runOne, signal })
+        } finally {
+          release()
+        }
+      })()
+    }
+
+    return {
+      enqueue: (call: ToolCallRequest): void => {
+        void emitQueued(call)
+        if (started.has(call.id)) return
+        if (signal?.aborted || !canStartEarly(call)) return
+        started.set(call.id, runGuarded(call))
+      },
+      finish: async (finalCalls: ToolCallRequest[]): Promise<Array<Record<string, unknown>>> => {
+        throwIfAborted(signal)
+        const resultsById = new Map<string, ToolResultObj>()
+        for (const call of finalCalls) {
+          await emitQueued(call)
+          throwIfAborted(signal)
+          const early = started.get(call.id)
+          // 提前起跑的（只读）并发放行，未起跑的按最终顺序顺序补跑，保留暂停/取消语义
+          const result = early ? await early : await runGuarded(call)
+          resultsById.set(call.id, result)
+        }
+        return finalCalls.map((call) => ({
+          role: 'tool',
+          tool_call_id: call.id,
+          name: call.name,
+          content: (resultsById.get(call.id) ?? ToolResultObj.fromText('')).modelContent,
+        }))
+      },
+    }
+  }
+
   private stateForCall(call: ToolCallRequest): ToolRunState {
     const tool = this.registry.get(call.name)
     const concurrencySafe = Boolean(tool && tool.isConcurrencySafe(call.arguments))

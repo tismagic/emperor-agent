@@ -13,6 +13,7 @@ import {
   type ChatArgs,
   type ChatStreamArgs,
   type OpenAiMessage,
+  type ToolCallCompleteHandler,
   parseJsonArgs,
 } from './base'
 
@@ -73,7 +74,7 @@ export class OpenAICompatProvider extends LLMProvider {
     }
     const contentParts: string[] = []
     const reasoningParts: string[] = []
-    const toolChunks = new Map<number, { id: string; name: string; arguments: string }>()
+    const toolChunks = new Map<number, { id: string; name: string; arguments: string; fired?: boolean }>()
     let finishReason = 'stop'
     let usage: Record<string, number> = {}
     for await (const chunk of stream) {
@@ -91,7 +92,14 @@ export class OpenAICompatProvider extends LLMProvider {
       for (const tc of delta.tool_calls ?? []) {
         const idx = tc.index ?? 0
         let buf = toolChunks.get(idx)
-        if (!buf) { buf = { id: '', name: '', arguments: '' }; toolChunks.set(idx, buf) }
+        if (!buf) {
+          // 新 index 出现 → 上一个 index 的参数已流完，可提前回调（Wave5）
+          for (const [doneIdx, doneBuf] of toolChunks) {
+            if (doneIdx < idx) OpenAICompatProvider.fireCompletedToolChunk(doneBuf, args.onToolCallComplete)
+          }
+          buf = { id: '', name: '', arguments: '' }
+          toolChunks.set(idx, buf)
+        }
         if (tc.id) buf.id += tc.id
         if (tc.function?.name) buf.name += tc.function.name
         if (tc.function?.arguments) buf.arguments += tc.function.arguments
@@ -103,6 +111,8 @@ export class OpenAICompatProvider extends LLMProvider {
         })
       }
     }
+    // 收尾：所有尚未回调的 index 在流结束时补发（Wave5）
+    for (const buf of toolChunks.values()) OpenAICompatProvider.fireCompletedToolChunk(buf, args.onToolCallComplete)
     const toolCalls: ToolCallRequest[] = [...toolChunks.entries()]
       .sort(([a], [b]) => a - b)
       .filter(([, b]) => b.name)
@@ -191,6 +201,16 @@ export class OpenAICompatProvider extends LLMProvider {
     const explicit = !!(reasoningEffort !== null && effort && !['none', 'minimal', 'minimum'].includes(effort) && this.spec?.thinkingStyle)
     const deepseekArg = !!(this.spec?.name === 'deepseek' && effort && !['none', 'minimal', 'minimum'].includes(effort) && ['deepseek-v4', 'deepseek-reasoner'].some((t) => modelName.toLowerCase().includes(t)))
     return explicit || deepseekArg
+  }
+
+  /** 单个已流完的 tool 分片解析为 ToolCallRequest 并回调一次（幂等：拼好名字才发）。 */
+  static fireCompletedToolChunk(
+    buf: { id: string; name: string; arguments: string; fired?: boolean },
+    handler?: ToolCallCompleteHandler,
+  ): void {
+    if (!handler || buf.fired || !buf.name) return
+    buf.fired = true
+    void handler({ id: buf.id || `call_${buf.name}`, name: buf.name, arguments: parseJsonArgs(buf.arguments) })
   }
 
   static parseUsage(usage: any): Record<string, number> {

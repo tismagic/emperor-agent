@@ -48,6 +48,16 @@ export class AnthropicProvider extends LLMProvider {
         void args.onContentDelta?.(text)
       })
     }
+    if (args.onToolCallComplete) {
+      stream.on('contentBlock', (block: any) => {
+        if (block?.type !== 'tool_use') return
+        void args.onToolCallComplete?.({
+          id: block.id,
+          name: block.name,
+          arguments: block.input && typeof block.input === 'object' ? block.input : {},
+        })
+      })
+    }
     const final = await stream.finalMessage()
     return AnthropicProvider.parseResponse(final)
   }

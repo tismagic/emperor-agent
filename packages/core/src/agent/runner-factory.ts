@@ -32,6 +32,7 @@ export function buildRoutedRunner(opts: {
   promptSections?: PromptSectionInput[] | null
   promptSnapshotDir?: string | null
   sessionId?: string | null
+  streamingToolExecution?: boolean
 }): AgentRunner {
   const snapshot = opts.route.snapshot
   const fallback = opts.route.fallback
@@ -68,5 +69,6 @@ export function buildRoutedRunner(opts: {
     promptSections: opts.promptSections ?? null,
     promptSnapshotDir: opts.promptSnapshotDir ?? null,
     sessionId: opts.sessionId ?? null,
+    streamingToolExecution: opts.streamingToolExecution ?? false,
   })
 }

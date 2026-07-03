@@ -143,6 +143,40 @@ class EchoTool extends Tool {
   execute(args: Record<string, unknown>): string { return String(args.value) }
 }
 
+class SafeEchoTool extends Tool {
+  override name = 'safe_echo'
+  override description = 'Read-only concurrency-safe echo.'
+  override parameters = toolParamsSchema({ value: S('value') }, ['value'])
+  override readOnly = true
+  override concurrencySafe = true
+  execute(args: Record<string, unknown>): string { return String(args.value) }
+}
+
+class LatchEchoTool extends Tool {
+  override name = 'latch_echo'
+  override description = 'Read-only echo that signals when it starts.'
+  override parameters = toolParamsSchema({ value: S('value') }, ['value'])
+  override readOnly = true
+  override concurrencySafe = true
+  constructor(private readonly onStart: () => void) { super() }
+  execute(args: Record<string, unknown>): string { this.onStart(); return String(args.value) }
+}
+
+class EarlyToolProvider extends LLMProvider {
+  private streamCalls = 0
+  constructor(private readonly toolCalls: ToolCallRequest[], private readonly gate: Promise<void>) {
+    super({ defaultModel: 'fake' })
+  }
+  async chat(): Promise<LLMResponse> { return makeResponse({ content: 'done' }) }
+  override async chatStream(args: ChatStreamArgs): Promise<LLMResponse> {
+    this.streamCalls += 1
+    if (this.streamCalls > 1) return makeResponse({ content: 'done' })
+    for (const call of this.toolCalls) await args.onToolCallComplete?.(call)
+    await this.gate
+    return makeResponse({ content: '', toolCalls: this.toolCalls, finishReason: 'tool_calls' })
+  }
+}
+
 class BudgetedEchoTool extends Tool {
   override name = 'budgeted_echo'
   override description = 'Echo with a small context budget.'
@@ -468,6 +502,56 @@ describe('AgentRunner turn phases (test_runner_state.py)', () => {
     })
     expect(snapshot.sections[0].hash).toMatch(/^[a-f0-9]{64}$/)
     expect(JSON.stringify(snapshot)).not.toContain('secret bootstrap')
+  })
+
+  it('streaming tool execution produces the same final reply and tool messages as batch (Wave5 golden)', async () => {
+    async function runTurn(streaming: boolean): Promise<{ reply: string; toolContents: string[] }> {
+      const registry = new ToolRegistry()
+      registry.register(new SafeEchoTool())
+      const runner = new AgentRunner({
+        provider: new FakeProvider([
+          makeResponse({ content: '', toolCalls: [toolCall('call_1', 'safe_echo', { value: 'a' }), toolCall('call_2', 'safe_echo', { value: 'b' })], finishReason: 'tool_calls' }),
+          makeResponse({ content: 'done' }),
+        ]),
+        model: 'fake',
+        registry,
+        systemPrompt: 'system',
+        streamingToolExecution: streaming,
+      })
+      const history: Msg[] = [{ role: 'user', content: 'hi' }]
+      const reply = await runner.stepAsync(history)
+      const toolContents = history.filter((m) => m.role === 'tool').map((m) => String(m.content))
+      return { reply, toolContents }
+    }
+    const batch = await runTurn(false)
+    const streamed = await runTurn(true)
+    expect(streamed.reply).toBe(batch.reply)
+    expect(streamed.toolContents).toEqual(batch.toolContents)
+    expect(streamed.toolContents).toEqual(['a', 'b'])
+  })
+
+  it('streaming tool execution starts a read-only tool before the model call resolves (Wave5)', async () => {
+    const registry = new ToolRegistry()
+    let started = false
+    registry.register(new LatchEchoTool(() => { started = true }))
+    let resolveModel: (() => void) | null = null
+    const provider = new EarlyToolProvider(
+      [toolCall('call_1', 'latch_echo', { value: 'x' })],
+      new Promise<void>((resolve) => { resolveModel = resolve }),
+    )
+    const runner = new AgentRunner({
+      provider,
+      model: 'fake',
+      registry,
+      systemPrompt: 'system',
+      streamingToolExecution: true,
+    })
+    const turn = runner.stepAsync([{ role: 'user', content: 'hi' }])
+    // 让 onToolCallComplete 触发的早启动有机会跑起来（模型调用尚未 resolve）
+    await new Promise((resolve) => setTimeout(resolve, 10))
+    expect(started).toBe(true)
+    resolveModel!()
+    await turn
   })
 
   it('emits tool batch phases', async () => {

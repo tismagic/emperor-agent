@@ -2,7 +2,7 @@
  * ModelCaller (MIG-CORE-001)。对齐 Python `agent/runner_model.py`。
  * 统一模型调用 + 次模型失败一次性升主；记 _lastModelCall（route_reason/估算输入/fallback）。
  */
-import { parseJsonArgs, type ChatArgs, type ChatStreamArgs, type GenerationSettings, type LLMProvider, type LLMResponse, type ToolCallDelta } from '../providers/base'
+import { parseJsonArgs, type ChatArgs, type ChatStreamArgs, type GenerationSettings, type LLMProvider, type LLMResponse, type ToolCallDelta, type ToolCallRequest } from '../providers/base'
 import { classifyProviderError, isContextOverflowProviderError, isRetryableProviderErrorKind, type ProviderErrorKind } from '../providers/errors'
 import * as runtimeEvents from './runtime-events'
 
@@ -51,6 +51,7 @@ export class ModelCaller {
     tools: Array<Record<string, unknown>> | null
     emit: StreamEmitter | null
     signal?: AbortSignal | null
+    onToolCallComplete?: ((call: ToolCallRequest) => void | Promise<void>) | null
   }): Promise<LLMResponse> {
     const runner = this.runner
     const onDelta = async (delta: string): Promise<void> => {
@@ -61,6 +62,7 @@ export class ModelCaller {
       const event = planDraftDeltaFromToolDelta(delta)
       if (event) await opts.emit(event)
     }
+    const onToolCallComplete = opts.onToolCallComplete ?? null
     let primaryRetryCount = 0
     let primaryErrorKind = ''
     try {
@@ -89,6 +91,7 @@ export class ModelCaller {
         emit: opts.emit,
         onDelta,
         onToolCallDelta,
+        onToolCallComplete,
         signal: opts.signal ?? null,
         onRetry: (count, kind) => {
           primaryRetryCount = count
@@ -143,6 +146,7 @@ export class ModelCaller {
         emit: opts.emit,
         onDelta,
         onToolCallDelta,
+        onToolCallComplete,
         signal: opts.signal ?? null,
       })
       runner.lastModelCall = {
@@ -167,6 +171,7 @@ export class ModelCaller {
     emit: StreamEmitter | null
     onDelta: (delta: string) => Promise<void>
     onToolCallDelta: (delta: ToolCallDelta) => Promise<void>
+    onToolCallComplete?: ((call: ToolCallRequest) => void | Promise<void>) | null
     signal: AbortSignal | null
     onRetry?: (retryCount: number, errorKind: ProviderErrorKind) => void
   }): Promise<{ response: LLMResponse; retryCount: number; errorKind: ProviderErrorKind | '' }> {
@@ -211,9 +216,10 @@ export class ModelCaller {
     emit: StreamEmitter | null
     onDelta: (delta: string) => Promise<void>
     onToolCallDelta: (delta: ToolCallDelta) => Promise<void>
+    onToolCallComplete?: ((call: ToolCallRequest) => void | Promise<void>) | null
     signal: AbortSignal | null
   }): Promise<LLMResponse> {
-    if (opts.emit) {
+    if (opts.emit || opts.onToolCallComplete) {
       const args: ChatStreamArgs = {
         messages: opts.messages,
         tools: opts.tools,
@@ -223,6 +229,7 @@ export class ModelCaller {
         reasoningEffort: opts.reasoningEffort,
         onContentDelta: opts.onDelta,
         onToolCallDelta: opts.onToolCallDelta,
+        onToolCallComplete: opts.onToolCallComplete ?? undefined,
         signal: opts.signal,
       }
       return opts.provider.chatStream(args)

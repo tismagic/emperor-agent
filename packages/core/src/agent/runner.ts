@@ -163,6 +163,7 @@ export interface AgentRunnerOptions {
   promptSections?: PromptSectionInput[] | null
   promptSnapshotDir?: string | null
   sessionId?: string | null
+  streamingToolExecution?: boolean
 }
 
 export class AgentRunner implements RunnerModelHost {
@@ -197,6 +198,7 @@ export class AgentRunner implements RunnerModelHost {
   promptSections: PromptSectionInput[]
   promptSnapshotDir: string | null
   sessionId: string | null
+  streamingToolExecution: boolean
   lastEstimatedInputTokens: number | null = null
   lastContextProjectionReport: Record<string, unknown> | null = null
   lastModelCall: ModelCallMeta
@@ -233,6 +235,7 @@ export class AgentRunner implements RunnerModelHost {
     this.promptSections = opts.promptSections ? [...opts.promptSections] : []
     this.promptSnapshotDir = opts.promptSnapshotDir ?? null
     this.sessionId = opts.sessionId ?? null
+    this.streamingToolExecution = opts.streamingToolExecution ?? false
     this.lastModelCall = {
       model: this.model,
       provider: this.providerName,
@@ -293,7 +296,8 @@ export class AgentRunner implements RunnerModelHost {
       turnState.startIteration()
 
       await this.emitTurnPhase(turnState, TurnPhase.MODEL_REQUEST, emit)
-      const response = await this.askModel(history, emit, clarification, signal, turnId)
+      const streamingTools = this.streamingToolExecution ? this.beginStreamingTools(emit, clarification, signal) : null
+      const response = await this.askModel(history, emit, clarification, signal, turnId, streamingTools?.onToolCallComplete ?? null)
       throwIfAborted(signal)
       await this.emitTurnPhase(turnState, TurnPhase.MODEL_RESPONSE, emit, {
         finish_reason: response.finishReason,
@@ -389,7 +393,9 @@ export class AgentRunner implements RunnerModelHost {
         let toolMessages: Msg[]
         try {
           const planDecision = this.assessPlanDecision(history)
-          toolMessages = await this.executeToolCalls(response.toolCalls, emit, clarification, planDecision, signal)
+          toolMessages = streamingTools
+            ? await streamingTools.finish(response.toolCalls, planDecision)
+            : await this.executeToolCalls(response.toolCalls, emit, clarification, planDecision, signal)
           throwIfAborted(signal)
         } catch (pause) {
           if (!(pause instanceof TurnPaused)) throw pause
@@ -533,9 +539,9 @@ export class AgentRunner implements RunnerModelHost {
     if (emit) await emit(event.toRuntimeEvent())
   }
 
-  private async askModel(history: Msg[], emit: StreamEmitter | null, clarification: Clarification | null, signal: AbortSignal | null, turnId: string | null): Promise<LLMResponse> {
+  private async askModel(history: Msg[], emit: StreamEmitter | null, clarification: Clarification | null, signal: AbortSignal | null, turnId: string | null, onToolCallComplete?: ((call: ToolCallRequest) => void | Promise<void>) | null): Promise<LLMResponse> {
     try {
-      return await this.callModelWithProjection(history, emit, clarification, signal, turnId, false)
+      return await this.callModelWithProjection(history, emit, clarification, signal, turnId, false, onToolCallComplete)
     } catch (exc) {
       if (!isContextOverflowProviderError(exc)) throw exc
       if (emit) {
@@ -547,7 +553,7 @@ export class AgentRunner implements RunnerModelHost {
         })
       }
       try {
-        return await this.callModelWithProjection(history, emit, clarification, signal, turnId, true)
+        return await this.callModelWithProjection(history, emit, clarification, signal, turnId, true, onToolCallComplete)
       } catch (retryExc) {
         if (!isContextOverflowProviderError(retryExc)) throw retryExc
         const options = retryExc instanceof Error ? { cause: retryExc } : undefined
@@ -566,6 +572,7 @@ export class AgentRunner implements RunnerModelHost {
     signal: AbortSignal | null,
     turnId: string | null,
     emergencyShrink: boolean,
+    onToolCallComplete?: ((call: ToolCallRequest) => void | Promise<void>) | null,
   ): Promise<LLMResponse> {
     const pipeline = emergencyShrink ? this.emergencyContextPipeline() : this.contextPipeline
     const projection = pipeline.project(history as never)
@@ -637,16 +644,21 @@ export class AgentRunner implements RunnerModelHost {
         // Prompt snapshots are diagnostics only; never fail the model call because of them.
       }
     }
-    return new ModelCaller(this).ask({ messages, tools: toolDefinitions as unknown as Array<Record<string, unknown>>, emit, signal })
+    return new ModelCaller(this).ask({ messages, tools: toolDefinitions as unknown as Array<Record<string, unknown>>, emit, signal, onToolCallComplete: onToolCallComplete ?? null })
   }
 
-  private async executeToolCalls(
-    toolCalls: ToolCallRequest[],
-    emit: StreamEmitter | null,
-    clarification: Clarification | null,
-    planDecision: unknown,
-    signal: AbortSignal | null,
-  ): Promise<Msg[]> {
+  /**
+   * 构造单工具执行闭包，供批式（runBatch）与流式（createStreamingRun）两条路径共用。
+   * toolCallsRef/planDecisionRef 为可变引用：流式路径在 finish() 时才知道完整 toolCalls 与 planDecision。
+   */
+  private buildToolRunOne(ctx: {
+    toolCallsRef: { current: ToolCallRequest[] }
+    planDecisionRef: { current: unknown }
+    emit: StreamEmitter | null
+    clarification: Clarification | null
+    signal: AbortSignal | null
+  }): { runOne: (call: ToolCallRequest) => Promise<ToolResultObj>; resultsById: Map<string, ToolResultObj>; planFollowups: Msg[] } {
+    const { emit, clarification, signal } = ctx
     const resultsById = new Map<string, ToolResultObj>()
     const planFollowups: Msg[] = []
 
@@ -657,13 +669,13 @@ export class AgentRunner implements RunnerModelHost {
       if (verificationTarget !== null && emit) {
         await emit(runtimeEvents.planVerificationStart({ planId: verificationTarget.plan_id!, stepId: verificationTarget.step_id!, command: verificationTarget.command! }))
       }
-      let result = await this.runToolResult(call, emit, clarification, planDecision, signal)
+      let result = await this.runToolResult(call, emit, clarification, ctx.planDecisionRef.current, signal)
       throwIfAborted(signal)
       this.recordPlanDiscovery(call, result)
       this.recordPlanStepToolOutput(call, result)
       const content = result.modelContent
       resultsById.set(call.id, result)
-      this.maybePauseForControl(content, toolCalls, resultsById)
+      this.maybePauseForControl(content, ctx.toolCallsRef.current, resultsById)
       const verificationUpdate = this.recordPlanVerification(call, content, verificationTarget)
       if (verificationUpdate !== null && emit) {
         await emit(runtimeEvents.planVerificationDone({ planId: verificationUpdate.target.plan_id!, stepId: verificationUpdate.target.step_id!, result: verificationUpdate.result }))
@@ -691,6 +703,59 @@ export class AgentRunner implements RunnerModelHost {
       return result
     }
 
+    return { runOne, resultsById, planFollowups }
+  }
+
+  /** 某工具能否在流式期间提前起跑：只读 + 并发安全 + 不会触发 Ask/Plan Guard 或权限审批。 */
+  private canStartToolEarly(call: ToolCallRequest, clarification: Clarification | null): boolean {
+    const tool = this.registry.get(call.name)
+    if (!tool || !tool.readOnly || !tool.isConcurrencySafe(call.arguments)) return false
+    if (clarification && clarification.required && this.askGuardBlocksTool(call.name)) return false
+    if (this.controlManager !== null) {
+      const decision = this.controlManager.assessPermission(call.name, call.arguments, this.registry)
+      if (decision.requiresApproval || !decision.allowed) return false
+    }
+    return true
+  }
+
+  /** 流式工具执行会话（Wave5）：onToolCallComplete 边到边入队，finish 对账。 */
+  private beginStreamingTools(emit: StreamEmitter | null, clarification: Clarification | null, signal: AbortSignal | null): {
+    onToolCallComplete: (call: ToolCallRequest) => void
+    finish: (toolCalls: ToolCallRequest[], planDecision: unknown) => Promise<Msg[]>
+  } {
+    const toolCallsRef: { current: ToolCallRequest[] } = { current: [] }
+    const planDecisionRef: { current: unknown } = { current: null }
+    const { runOne, resultsById, planFollowups } = this.buildToolRunOne({ toolCallsRef, planDecisionRef, emit, clarification, signal })
+    const run = this.toolExecutionEngine.createStreamingRun({
+      emit,
+      runOne,
+      signal,
+      canStartEarly: (call) => this.canStartToolEarly(call, clarification),
+    })
+    return {
+      onToolCallComplete: (call) => run.enqueue(call),
+      finish: async (toolCalls, planDecision): Promise<Msg[]> => {
+        toolCallsRef.current = toolCalls
+        planDecisionRef.current = planDecision
+        const toolMessages = await run.finish(toolCalls)
+        throwIfAborted(signal)
+        const resultThought = toolResultSummaryThought(toolCalls, resultsById)
+        if (resultThought) await this.emitAgentThought(resultThought, emit)
+        return [...toolMessages, ...planFollowups]
+      },
+    }
+  }
+
+  private async executeToolCalls(
+    toolCalls: ToolCallRequest[],
+    emit: StreamEmitter | null,
+    clarification: Clarification | null,
+    planDecision: unknown,
+    signal: AbortSignal | null,
+  ): Promise<Msg[]> {
+    const toolCallsRef = { current: toolCalls }
+    const planDecisionRef = { current: planDecision }
+    const { runOne, resultsById, planFollowups } = this.buildToolRunOne({ toolCallsRef, planDecisionRef, emit, clarification, signal })
     const toolMessages = await this.toolExecutionEngine.runBatch(toolCalls, { emit, runOne, signal })
     throwIfAborted(signal)
     const resultThought = toolResultSummaryThought(toolCalls, resultsById)

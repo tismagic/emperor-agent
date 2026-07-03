@@ -179,6 +179,47 @@ describe('AbortSignal forwarding', () => {
   })
 })
 
+// ── Wave5 onToolCallComplete ──
+
+describe('onToolCallComplete streaming (Wave5)', () => {
+  it('AnthropicProvider fires onToolCallComplete for each tool_use content block', async () => {
+    const prov = new AnthropicProvider({ apiKey: 'test', defaultModel: 'claude' })
+    const handlers: Record<string, (arg: unknown) => void> = {}
+    const final = {
+      content: [
+        { type: 'text', text: 'ok' },
+        { type: 'tool_use', id: 'toolu_1', name: 'read_file', input: { path: 'a.ts' } },
+      ],
+      stop_reason: 'tool_use',
+      usage: { input_tokens: 1, output_tokens: 1 },
+    }
+    ;(prov.client as any).messages = {
+      stream: () => ({
+        on: (event: string, cb: (arg: unknown) => void) => { handlers[event] = cb },
+        finalMessage: async () => {
+          handlers.contentBlock?.({ type: 'text', text: 'ok' })
+          handlers.contentBlock?.({ type: 'tool_use', id: 'toolu_1', name: 'read_file', input: { path: 'a.ts' } })
+          return final
+        },
+      }),
+    }
+    const completed: Array<{ id: string; name: string }> = []
+    const resp = await prov.chatStream({
+      messages: [{ role: 'user', content: 'hi' }],
+      onToolCallComplete: (call) => { completed.push({ id: call.id, name: call.name }) },
+    })
+    expect(completed).toEqual([{ id: 'toolu_1', name: 'read_file' }])
+    expect(resp.toolCalls).toHaveLength(1)
+  })
+
+  it('OpenAICompatProvider assembleStreamingToolCall fires a completed call once its index finalizes', () => {
+    const fired: Array<{ id: string; name: string }> = []
+    const buf = { id: 'call_x', name: 'grep', arguments: '{"pattern":"x"}' }
+    OpenAICompatProvider.fireCompletedToolChunk(buf, (call) => { fired.push({ id: call.id, name: call.name }) })
+    expect(fired).toEqual([{ id: 'call_x', name: 'grep' }])
+  })
+})
+
 // ── PROV-006 Factory ──
 
 describe('createProvider', () => {

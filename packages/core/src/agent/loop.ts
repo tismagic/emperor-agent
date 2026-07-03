@@ -380,6 +380,8 @@ export class AgentLoop {
       promptSections,
       promptSnapshotDir: this.activeSessionId ? join(this.sessionStore.sessionDir(this.activeSessionId), 'prompt-snapshots') : null,
       sessionId: this.activeSessionId,
+      // Wave5 灰度开关：默认关闭，行为与批式逐字节一致
+      streamingToolExecution: process.env.EMPEROR_STREAMING_TOOLS === '1',
     })
   }
 

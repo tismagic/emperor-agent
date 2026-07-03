@@ -82,9 +82,13 @@ export interface ChatArgs {
   signal?: AbortSignal | null
 }
 
+export type ToolCallCompleteHandler = (call: ToolCallRequest) => void | Promise<void>
+
 export interface ChatStreamArgs extends ChatArgs {
   onContentDelta?: ContentDelta
   onToolCallDelta?: ToolCallDeltaHandler
+  /** Wave5：某个 tool_use 块参数流式拼完时回调一次；批式结果仍以最终响应为准。 */
+  onToolCallComplete?: ToolCallCompleteHandler
 }
 
 export interface LLMProviderConfig {
