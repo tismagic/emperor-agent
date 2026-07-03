@@ -28,11 +28,12 @@ export class ToolExecutionEngine {
 
   async runBatch(
     toolCalls: ToolCallRequest[],
-    opts?: { emit?: StreamEmitter | null; runOne?: (call: ToolCallRequest) => Promise<ToolResultObj>; signal?: AbortSignal | null },
+    opts?: { emit?: StreamEmitter | null; runOne?: (call: ToolCallRequest) => Promise<ToolResultObj>; signal?: AbortSignal | null; maxConcurrency?: number },
   ): Promise<Array<Record<string, unknown>>> {
     const emit = opts?.emit ?? null
     const runOne = opts?.runOne
     const signal = opts?.signal ?? null
+    const acquire = makeSemaphore(Math.max(1, Math.trunc(opts?.maxConcurrency ?? DEFAULT_MAX_TOOL_CONCURRENCY)))
     const states = toolCalls.map((call) => this.stateForCall(call))
     if (emit) {
       for (const state of states) {
@@ -53,7 +54,14 @@ export class ToolExecutionEngine {
           index += 1
         }
         const gathered = await Promise.allSettled(
-          groupCalls.map((call, i) => this.runState(call, groupStates[i]!, { emit, runOne, signal })),
+          groupCalls.map(async (call, i) => {
+            const release = await acquire()
+            try {
+              return await this.runState(call, groupStates[i]!, { emit, runOne, signal })
+            } finally {
+              release()
+            }
+          }),
         )
         for (let i = 0; i < groupCalls.length; i++) {
           const call = groupCalls[i]!
@@ -147,6 +155,31 @@ export class ToolExecutionEngine {
 
 function throwIfAborted(signal: AbortSignal | null | undefined): void {
   if (signal?.aborted) throw new CancelledTaskError('turn')
+}
+
+const DEFAULT_MAX_TOOL_CONCURRENCY = 6
+
+/** 手写信号量：并发安全组内节流，防止一次吐出几十个并发工具打满本地 IO。 */
+function makeSemaphore(limit: number): () => Promise<() => void> {
+  let active = 0
+  const waiters: Array<() => void> = []
+  const release = (): void => {
+    active -= 1
+    const next = waiters.shift()
+    if (next) next()
+  }
+  return function acquire(): Promise<() => void> {
+    if (active < limit) {
+      active += 1
+      return Promise.resolve(release)
+    }
+    return new Promise((resolve) => {
+      waiters.push(() => {
+        active += 1
+        resolve(release)
+      })
+    })
+  }
 }
 
 function coerceToolResult(value: ToolResultObj | string): ToolResultObj {

@@ -41,7 +41,7 @@ export function planGuardMessage(call: ToolCallRequest, decision: PlanDecisionLi
     `reason: ${reason}`,
     `signals: ${signals}`,
     `readonly_scopes: ${readonlyScopes}`,
-    'Before using write or high-impact tools for this request, enter Plan mode, perform read-only exploration, submit a concrete plan, and wait for user approval.',
+    'Before using write or high-impact tools for this request, call the request_plan_mode tool to ask the user to switch into Plan mode, then perform read-only exploration, submit a concrete plan via propose_plan, and wait for user approval.',
   ].join('\n')
 }
 

@@ -121,6 +121,18 @@ export class ToolResultStore {
     }
     return record
   }
+
+  /** 按 ref（root 相对路径）回读完整输出；路径围栏拒绝逃出 tool-results 目录的 ref。 */
+  readArtifact(ref: string): string {
+    const trimmed = String(ref || '').trim()
+    if (!trimmed) throw new Error('tool result ref is required')
+    const resolved = resolve(this.root, trimmed)
+    if (resolved !== this.dir && !resolved.startsWith(this.dir + '/')) {
+      throw new Error('tool result ref escapes the tool-results directory')
+    }
+    if (!existsSync(resolved)) throw new Error('tool result artifact not found')
+    return readFileSync(resolved, 'utf8')
+  }
 }
 
 export function replaceLargeToolResults(

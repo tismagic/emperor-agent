@@ -14,7 +14,7 @@ import type { PermissionRuleInput } from '../permissions/rules'
 import { loadModelConfig } from '../config/model-config'
 import { ControlManager } from '../control/manager'
 import type { Interaction } from '../control/models'
-import { AskUserTool, ProposePlanTool } from '../control/tools'
+import { AskUserTool, ProposePlanTool, RequestPlanModeTool } from '../control/tools'
 import { MCPClient } from '../mcp/client'
 import { MemoryStore } from '../memory/store'
 import { TokenTracker } from '../memory/token-tracker'
@@ -396,6 +396,7 @@ export class AgentLoop {
     this.registry.register(new SchedulerTool(this.schedulerService))
     this.registry.register(new AskUserTool(this.controlManager))
     this.registry.register(new ProposePlanTool(this.controlManager))
+    this.registry.register(new RequestPlanModeTool(this.controlManager))
     this.registry.register(new UpdateTodos(this.todoStore))
     const controlHost = this.dispatchControlHost()
     this.registry.register(new DispatchSubagentTool({

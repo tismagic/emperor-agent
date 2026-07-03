@@ -16,7 +16,7 @@ import { tmpdir } from 'node:os'
 import { ControlManager } from './manager'
 import { ControlMode } from './models'
 import { PlanDecisionPolicy } from './plan-policy'
-import { AskUserTool, ProposePlanTool, parsePauseResult } from './tools'
+import { AskUserTool, ProposePlanTool, RequestPlanModeTool, parsePauseResult } from './tools'
 import { ReadFileTool, WriteFileTool } from '../tools/filesystem'
 import { Tool } from '../tools/base'
 import { toolParamsSchema, S } from '../tools/schema'
@@ -57,6 +57,7 @@ function makeRegistry(manager: ControlManager): ToolRegistry {
   registry.register(new SchedulerStub())
   registry.register(new AskUserTool(manager))
   registry.register(new ProposePlanTool(manager))
+  registry.register(new RequestPlanModeTool(manager))
   return registry
 }
 
@@ -301,6 +302,45 @@ describe('ControlManager (test_control.py)', () => {
     expect(names).toContain('scheduler')
     expect(names).not.toContain('write_file')
     expect(manager.isToolAllowed('write_file', registry)).toBe(false)
+  })
+
+  it('exposes request_plan_mode outside plan mode and hides it inside plan mode', () => {
+    const manager = new ControlManager(tmp('emperor-ctrl-rpm-expose-'))
+    const registry = makeRegistry(manager)
+
+    const normalNames = manager.toolDefinitions(registry).map((item) => item.name)
+    expect(normalNames).toContain('request_plan_mode')
+    expect(normalNames).not.toContain('propose_plan')
+
+    manager.setMode(ControlMode.PLAN)
+    const planNames = manager.toolDefinitions(registry).map((item) => item.name)
+    expect(planNames).toContain('propose_plan')
+    expect(planNames).not.toContain('request_plan_mode')
+  })
+
+  it('request_plan_mode pauses the turn and switches to plan mode only when the user approves', async () => {
+    const manager = new ControlManager(tmp('emperor-ctrl-rpm-approve-'))
+    const tool = new RequestPlanModeTool(manager)
+
+    const raw = await tool.execute({ reason: '需要重构鉴权架构' }, { root: '/tmp', arguments: {}, parentCallId: 'call_rpm' })
+    const interaction = parsePauseResult(String(raw))
+    expect(interaction).not.toBeNull()
+
+    const resume = manager.answer(String(interaction!.id), { enter_plan_mode: '同意进入计划模式' })
+    expect(manager.mode).toBe(ControlMode.PLAN)
+    expect(resume.resume).toBe(true)
+    expect(String(resume.message)).toContain('计划模式')
+  })
+
+  it('request_plan_mode leaves the mode unchanged when the user declines', async () => {
+    const manager = new ControlManager(tmp('emperor-ctrl-rpm-decline-'))
+    const tool = new RequestPlanModeTool(manager)
+
+    const raw = await tool.execute({ reason: '大规模改动' }, { root: '/tmp', arguments: {}, parentCallId: 'call_rpm2' })
+    const interaction = parsePauseResult(String(raw))
+
+    manager.answer(String(interaction!.id), { enter_plan_mode: '暂不进入' })
+    expect(manager.mode).toBe(ControlMode.ASK_BEFORE_EDIT)
   })
 
   it('clarification: requires ask for ambiguous high-impact work', () => {

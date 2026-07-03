@@ -31,6 +31,7 @@ export class ControlPolicy {
     if (this.manager.mode !== ControlMode.PLAN) {
       return definitions.filter((item) => item.name !== 'propose_plan')
     }
-    return definitions.filter((item) => this.isToolAllowed(String(item.name ?? ''), registry))
+    // 已在计划模式：request_plan_mode 没有意义，与 propose_plan 的可见性互补
+    return definitions.filter((item) => item.name !== 'request_plan_mode' && this.isToolAllowed(String(item.name ?? ''), registry))
   }
 }

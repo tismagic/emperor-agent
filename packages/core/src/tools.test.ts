@@ -5,6 +5,9 @@ import { join } from 'node:path'
 import { beforeEach, describe, expect, it } from 'vitest'
 import { ReadFileTool, WriteFileTool, EditFileTool } from './tools/filesystem'
 import { RunCommand, TodoStore, UpdateTodos } from './tools/builtin'
+import { Tool } from './tools/base'
+import { toolParamsSchema } from './tools/schema'
+import { ToolRegistry } from './tools/registry'
 
 let dir: string
 beforeEach(() => {
@@ -161,6 +164,46 @@ describe('RunCommand cancellation', () => {
 })
 
 // 对齐 Python tests/unit/test_todo_tool.py — update() 返回错误串而非抛错；active_form 渲染。
+describe('ToolRegistry truncation persistence (Wave3.1)', () => {
+  class HugeOutputTool extends Tool {
+    override name = 'huge_output'
+    override description = 'returns a huge string'
+    override parameters = toolParamsSchema({}, [])
+    override maxResultChars = 1_000
+    execute(): string { return 'x'.repeat(5_000) }
+  }
+
+  it('persists the full output to the tool-result store when capping, and links it via metadata', async () => {
+    const registry = new ToolRegistry(dir)
+    registry.register(new HugeOutputTool())
+
+    const result = await registry.executeResult('huge_output', {}, { root: dir, turnId: 'turn_big', parentCallId: 'call_big' })
+
+    expect(result.modelContent).toContain('[truncated')
+    const ref = String(result.metadata.full_output_ref ?? '')
+    expect(ref).toBeTruthy()
+    const artifact = join(dir, ref)
+    expect(existsSync(artifact)).toBe(true)
+    expect(readFileSync(artifact, 'utf8')).toBe('x'.repeat(5_000))
+  })
+
+  it('does not create a ref for outputs under the cap', async () => {
+    class SmallTool extends Tool {
+      override name = 'small_output'
+      override description = 'small'
+      override parameters = toolParamsSchema({}, [])
+      override maxResultChars = 1_000
+      execute(): string { return 'tiny' }
+    }
+    const registry = new ToolRegistry(dir)
+    registry.register(new SmallTool())
+
+    const result = await registry.executeResult('small_output', {}, { root: dir })
+
+    expect(result.metadata.full_output_ref).toBeUndefined()
+  })
+})
+
 describe('TodoStore + UpdateTodos (test_todo_tool.py)', () => {
   it('rejects more than one in_progress with an error string', () => {
     const s = new TodoStore()

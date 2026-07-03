@@ -27,7 +27,7 @@ export function parsePauseResult(value: string): Record<string, unknown> | null 
 
 /** ask_user / propose_plan 调用的 ControlManager 表面。 */
 export interface ToolManagerHost {
-  createAsk(opts: { questions: Array<Record<string, unknown>>; context?: string; parentCallId?: string | null }): Interaction
+  createAsk(opts: { questions: Array<Record<string, unknown>>; context?: string; parentCallId?: string | null; meta?: Record<string, unknown> | null }): Interaction
   createPlan(opts: {
     title: string
     summary: string
@@ -89,6 +89,47 @@ export class AskUserTool extends Tool {
       questions: (args.questions as Array<Record<string, unknown>>) ?? [],
       context: String(args.context ?? ''),
       parentCallId: ctx?.parentCallId ?? null,
+    })
+    return makePauseResult(interactionToDict(interaction))
+  }
+}
+
+export const PLAN_MODE_REQUEST_QUESTION_ID = 'enter_plan_mode'
+export const PLAN_MODE_REQUEST_APPROVE_LABEL = '同意进入计划模式'
+export const PLAN_MODE_REQUEST_DECLINE_LABEL = '暂不进入'
+
+export class RequestPlanModeTool extends Tool {
+  override name = 'request_plan_mode'
+  override exclusive = true
+  override requiresRuntimeContext = true
+  override description =
+    '当任务属于高影响改动（多文件重构、后端/权限/调度变更等）且当前不在计划模式时，' +
+    '用此工具请求用户切换到计划模式并暂停当前回合；用户一键同意后即可开始只读探索并用 propose_plan 提交计划。' +
+    '不要用 ask_user 现场组织措辞来请求切换模式。'
+
+  override parameters = toolParamsSchema(
+    { reason: S('为什么这个任务需要先进入计划模式，单句说明') },
+    ['reason'],
+  )
+
+  private readonly manager: ToolManagerHost
+  constructor(manager: ToolManagerHost) { super(); this.manager = manager }
+
+  execute(args: Record<string, unknown>, ctx?: ToolExecutionContext): string {
+    const reason = String(args.reason ?? '').trim() || '高影响改动需要先规划'
+    const interaction = this.manager.createAsk({
+      questions: [{
+        id: PLAN_MODE_REQUEST_QUESTION_ID,
+        header: '计划模式',
+        question: `模型请求切换到计划模式：${reason}`,
+        options: [
+          { label: PLAN_MODE_REQUEST_APPROVE_LABEL, description: '切换后模型先只读探索并提交计划，批准后才动手改动' },
+          { label: PLAN_MODE_REQUEST_DECLINE_LABEL, description: '保持当前模式，模型将改用澄清提问或缩小改动范围' },
+        ],
+      }],
+      context: reason,
+      parentCallId: ctx?.parentCallId ?? null,
+      meta: { plan_mode_request: true },
     })
     return makePauseResult(interactionToDict(interaction))
   }

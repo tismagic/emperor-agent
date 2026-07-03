@@ -6,6 +6,7 @@ import type { ModelRoute, ProviderSnapshot } from '../model/router'
 import { LLMProvider, type ChatArgs, type LLMResponse } from '../providers/base'
 import { ExternalInbound } from '../external/models'
 import { makePlanRecord } from '../plans/models'
+import { ToolResultStore } from '../context/tool-results'
 import { SchedulerPayload, SchedulerSchedule } from '../scheduler/models'
 import { CoreApi, CORE_API_ROUTE_OPERATIONS } from './core-api'
 import { CoreMutationGuardError } from './mutation-guard'
@@ -82,6 +83,7 @@ const EXPECTED_OPERATIONS = [
   'team.shutdownMember',
   'team.spawnMember',
   'team.wakeMember',
+  'tools.readResult',
 ]
 
 describe('CoreApi (MIG-IPC-001)', () => {
@@ -731,6 +733,20 @@ describe('CoreApi (MIG-IPC-001)', () => {
     expect(planStore.get('plan_doomed')).toBeNull()
     expect(planStore.get('plan_keep')).not.toBeNull()
     expect(existsSync(ownedSidechainDir)).toBe(false)
+
+    await api.close()
+  })
+
+  it('serves persisted full tool outputs and fences path escapes', async () => {
+    const root = tmp('emperor-core-api-toolresult-')
+    const api = await CoreApi.create({ root, templatesDir: TEMPLATES_DIR, modelRouter: fakeRouter(new FakeProvider()) })
+    const store = new ToolResultStore(join(root, '.emperor'))
+    const record = store.persistLargeResult('turn_x', 'call_x', 'huge_output', 'full text content')
+
+    expect(api.tools.readResult({ ref: record.artifact_path })).toEqual({ content: 'full text content' })
+    expect(() => api.tools.readResult({ ref: '../outside.txt' })).toThrow()
+    expect(() => api.tools.readResult({ ref: 'memory/tool-results/../../memory.md' })).toThrow()
+    expect(() => api.tools.readResult({ ref: '/etc/passwd' })).toThrow()
 
     await api.close()
   })

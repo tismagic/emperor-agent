@@ -115,3 +115,9 @@ function shortenTarget(value: string) {
   const tail = normalized.slice(-(MAX_TARGET_LENGTH - head.length - 3)).trimStart()
   return `${head}...${tail}`
 }
+
+/** 截断输出的完整内容 ref（Wave3.1）：仅当输出被截断且后端已落盘时可回看。 */
+export function fullOutputRef(tool: Pick<ToolSegment, 'outputTruncated' | 'metadata'>): string {
+  if (!tool.outputTruncated) return ''
+  return String(tool.metadata?.full_output_ref ?? '')
+}

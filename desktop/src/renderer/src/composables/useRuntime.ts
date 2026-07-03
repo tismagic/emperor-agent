@@ -61,6 +61,7 @@ export function useRuntime(options: {
   // JSON.stringify + localStorage.setItem 全量快照，成本随会话历史线性增长且在
   // 最高频路径上反复重付——debounce 掉中间态，只在安静下来后落一次盘。
   const PERSIST_DEBOUNCE_MS = 400
+  const PERSIST_BUSY_FLUSH_MS = 5000
   watch(
     [messages, currentAssistantId, busy, lastSeq],
     schedulePersist,
@@ -76,6 +77,16 @@ export function useRuntime(options: {
     if (!messages.value.length) {
       cancelScheduledPersist()
       clearRuntimeSnapshot()
+      return
+    }
+    // Wave3.4：流式期间（busy）不逐 delta 重排 debounce，只保留一个 ~5s 的安全 flush
+    // 定时器（崩溃最多丢 5s）；turn 结束由 busy watch 立即 flush。
+    if (busy.value) {
+      if (persistTimer !== undefined) return
+      persistTimer = window.setTimeout(() => {
+        persistTimer = undefined
+        persistRuntimeSnapshot()
+      }, PERSIST_BUSY_FLUSH_MS)
       return
     }
     cancelScheduledPersist()

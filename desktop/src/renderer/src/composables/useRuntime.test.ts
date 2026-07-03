@@ -689,6 +689,50 @@ describe('useRuntime IPC runtime path (MIG-IPC-010)', () => {
     }
   })
 
+  it('throttles persistence to a low-frequency safety flush while a turn is streaming (Wave3.4)', async () => {
+    vi.useFakeTimers()
+    try {
+      const setItem = vi.fn()
+      let listener: ((event: unknown) => void) | null = null
+      g.window = fakeWindow({
+        invokeCore: async (...args: unknown[]) => {
+          if (args[0] === 'chat.submit') {
+            listener?.({ event: 'user_message', seq: 1, turn_id: 'turn-throttle', content: 'hi' })
+            return { turnId: 'turn-throttle', content: 'done' }
+          }
+          return { ok: true }
+        },
+        onCoreEvent: (cb: (event: unknown) => void) => {
+          listener = cb
+          return () => { listener = null }
+        },
+      }, setItem)
+      const runtime = useRuntime(testOptions())
+
+      runtime.connectSocket()
+      runtime.switchSession('s1')
+      runtime.sendMessage('hi')
+      await nextTick()
+
+      // 慢速长流：10 个 delta、每个间隔 1s（共 10s）。busy 期间不应逐 delta 落盘，
+      // 只保留 ~5s 一次的安全 flush（崩溃最多丢 5s）。
+      for (let i = 0; i < 10; i += 1) {
+        listener?.({ event: 'message_delta', seq: 2 + i, turn_id: 'turn-throttle', delta: `chunk${i}` })
+        await nextTick()
+        await vi.advanceTimersByTimeAsync(1000)
+      }
+      expect(setItem.mock.calls.length).toBeGreaterThanOrEqual(1)
+      expect(setItem.mock.calls.length).toBeLessThanOrEqual(3)
+
+      const streamingWrites = setItem.mock.calls.length
+      listener?.({ event: 'assistant_done', seq: 20, turn_id: 'turn-throttle', content: 'done' })
+      await nextTick()
+      expect(setItem.mock.calls.length).toBe(streamingWrites + 1)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('blocks chat submit before local enqueue when the active session id is missing or draft', async () => {
     const calls: unknown[][] = []
     const showToast = vi.fn()

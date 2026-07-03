@@ -1,19 +1,42 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import type { ToolArtifactRef, ToolSegment } from '../../types'
+import { invokeCore } from '../../api/backend'
 import { compactJson } from '../../utils/format'
 import ExpandableText from './ExpandableText.vue'
 import MediaPreviewGrid from './MediaPreviewGrid.vue'
 import SubagentTrail from './SubagentTrail.vue'
+import { fullOutputRef } from './toolDisplay'
 
 const props = defineProps<{ segment: ToolSegment }>()
 
+const fullOutput = ref('')
+const fullOutputLoading = ref(false)
+const fullOutputError = ref('')
+const fullOutputAvailable = computed(() => !fullOutput.value && Boolean(fullOutputRef(props.segment)))
+
 const inputText = computed(() => fullJson(props.segment.arguments))
 const outputText = computed(() => {
+  if (fullOutput.value) return fullOutput.value
   if (props.segment.output) return props.segment.outputTruncated ? `${props.segment.output}\n\n[输出已截断]` : props.segment.output
   if (props.segment.outputMissing && props.segment.summary) return `历史事件仅保存摘要：\n${props.segment.summary}`
   return props.segment.summary || (props.segment.status === 'running' ? '等待结果...' : '已记录执行结果')
 })
+
+async function loadFullOutput() {
+  const refPath = fullOutputRef(props.segment)
+  if (!refPath || fullOutputLoading.value) return
+  fullOutputLoading.value = true
+  fullOutputError.value = ''
+  try {
+    const result = await invokeCore('tools.readResult', { ref: refPath }) as { content?: string }
+    fullOutput.value = String(result?.content ?? '')
+  } catch {
+    fullOutputError.value = '完整输出加载失败'
+  } finally {
+    fullOutputLoading.value = false
+  }
+}
 const artifacts = computed(() => props.segment.artifacts || [])
 const mediaItems = computed(() => artifacts.value.map((artifact) => artifact.media).filter(isImageMedia))
 const metadata = computed(() => props.segment.metadata || {})
@@ -73,6 +96,14 @@ function isImageMedia(media: ToolArtifactRef['media']): media is NonNullable<Too
       <div v-if="hasOutput" class="tool-io-panel">
         <span>{{ props.segment.outputLabel || 'OUT' }}</span>
         <ExpandableText class="tool-summary" :text="outputText" :limit="360" />
+        <button
+          v-if="fullOutputAvailable"
+          type="button"
+          class="tool-full-output-btn"
+          :disabled="fullOutputLoading"
+          @click="loadFullOutput"
+        >{{ fullOutputLoading ? '加载中...' : '查看完整输出' }}</button>
+        <small v-if="fullOutputError" class="tool-full-output-error">{{ fullOutputError }}</small>
       </div>
     </div>
 

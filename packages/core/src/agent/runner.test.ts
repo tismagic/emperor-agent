@@ -975,6 +975,7 @@ describe('AgentRunner control integration (test_control.py::test_runner_*)', () 
     await runner.stepAsync(history)
     const toolMessage = history.find((m) => m.role === 'tool')!
     expect(String(toolMessage.content)).toContain('PLAN_GUARD_REQUIRED')
+    expect(String(toolMessage.content)).toContain('request_plan_mode')
     expect(String(toolMessage.content)).toContain('readonly_scopes:')
     expect(String(toolMessage.content).toLowerCase()).toMatch(/auth|authentication/)
   })

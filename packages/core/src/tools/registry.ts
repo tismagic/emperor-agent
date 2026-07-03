@@ -4,6 +4,7 @@
  */
 import { ToolResultObj, type Tool, type ToolDefinition, type ToolExecutionContext, type ToolResult } from './base'
 import { ingestToolResultMedia } from '../media/ingest'
+import { ToolResultStore } from '../context/tool-results'
 
 export class ToolRegistry {
   #tools = new Map<string, Tool>()
@@ -80,9 +81,15 @@ export class ToolRegistry {
       signal: ctx?.signal ?? null,
     }
     const raw = await tool.execute(casted, execCtx)
-    const mapped = typeof raw === 'string'
-      ? tool.mapResult(capText(raw, tool.maxResultChars), execCtx)
-      : capToolResult(raw, tool.maxResultChars)
+    let mapped: ToolResult
+    if (typeof raw === 'string') {
+      const capped = capText(raw, tool.maxResultChars)
+      mapped = tool.mapResult(capped, execCtx)
+      if (capped !== raw) attachFullOutputRef(mapped, execCtx, name, raw)
+    } else {
+      mapped = capToolResult(raw, tool.maxResultChars)
+      if (raw.modelContent.length > tool.maxResultChars) attachFullOutputRef(mapped, execCtx, name, raw.rawContent || raw.modelContent)
+    }
     return ingestToolResultMedia(ToolResultObj.fromData(mapped), {
       root: execCtx.root,
       workspaceRoot: execCtx.workspaceRoot,
@@ -98,6 +105,22 @@ export class ToolRegistry {
     const limits: Record<string, number> = {}
     for (const [name, tool] of this.#tools) limits[name] = tool.maxResultChars
     return limits
+  }
+}
+
+/** 截断即落盘：完整输出内容寻址存入 tool-result store，metadata 带回可回看 ref。持久化失败不阻塞结果。 */
+function attachFullOutputRef(mapped: ToolResult, execCtx: ToolExecutionContext, toolName: string, fullText: string): void {
+  try {
+    const store = new ToolResultStore(execCtx.root)
+    const record = store.persistLargeResult(
+      String(execCtx.turnId || 'unknown_turn'),
+      String(execCtx.parentCallId || 'unknown_call'),
+      toolName,
+      fullText,
+    )
+    mapped.metadata = { ...(mapped.metadata ?? {}), full_output_ref: record.artifact_path }
+  } catch {
+    // 落盘失败时保持原截断行为
   }
 }
 

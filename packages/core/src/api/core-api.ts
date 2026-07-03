@@ -22,6 +22,7 @@ import { CoreSkillService } from './services/skill-service'
 import { CoreTeamService } from './services/team-service'
 import { planToDict } from '../plans/models'
 import { SidechainTranscript } from '../tasks/sidechain'
+import { ToolResultStore } from '../context/tool-results'
 import { WatchlistService } from '../watchlist/service'
 
 type StreamEmitter = (event: Record<string, unknown>) => void | Promise<void>
@@ -81,6 +82,7 @@ export const CORE_API_ROUTE_OPERATIONS: RouteOperation[] = [
   op('tasks.list', 'GET', '/api/tasks'),
   op('tasks.get', 'GET', '/api/tasks/{task_id}'),
   op('tasks.transcript', 'GET', '/api/tasks/{task_id}/transcript'),
+  op('tools.readResult', 'GET', '/api/tools/results/{ref}'),
   op('memory.get', 'GET', '/api/memory'),
   op('memory.save', 'POST', '/api/memory'),
   op('memory.getEpisode', 'GET', '/api/memory/episode'),
@@ -433,6 +435,13 @@ export class CoreApi {
     },
     get: (taskId: string): Dict | null => this.loop.taskManager.store.get(taskId)?.toDict() as unknown as Dict ?? null,
     transcript: (taskId: string, opts: { offset?: number; limit?: number } = {}): Dict => new SidechainTranscript(this.paths.stateRoot, taskId).read(opts),
+  }
+
+  readonly tools = {
+    readResult: (opts: { ref: string }): Dict => {
+      const content = new ToolResultStore(this.paths.stateRoot).readArtifact(String(opts?.ref ?? ''))
+      return { content }
+    },
   }
 
   readonly memory = {

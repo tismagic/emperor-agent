@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { ToolSegment } from '../../types'
-import { toolTargetLabel, toolTitle } from './toolDisplay'
+import { fullOutputRef, toolTargetLabel, toolTitle } from './toolDisplay'
 
 function tool(name: string, extra: Partial<ToolSegment> = {}): ToolSegment {
   return {
@@ -47,5 +47,21 @@ describe('tool display helpers', () => {
     }))
 
     expect(url).toBe('.../that/keeps/going/reference.html')
+  })
+})
+
+describe('fullOutputRef (Wave3.1)', () => {
+  it('returns the persisted ref only for truncated outputs that carry one', () => {
+    expect(fullOutputRef(tool('run_command', {
+      outputTruncated: true,
+      metadata: { full_output_ref: 'memory/tool-results/abc.txt' },
+    }))).toBe('memory/tool-results/abc.txt')
+
+    expect(fullOutputRef(tool('run_command', {
+      outputTruncated: false,
+      metadata: { full_output_ref: 'memory/tool-results/abc.txt' },
+    }))).toBe('')
+
+    expect(fullOutputRef(tool('run_command', { outputTruncated: true }))).toBe('')
   })
 })

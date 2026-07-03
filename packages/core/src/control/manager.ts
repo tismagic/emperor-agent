@@ -32,7 +32,7 @@ import { PlanVerificationManager } from './plan-verification'
 import { ControlPolicy } from './policy'
 import { ControlStore } from './store'
 import type { ControlManagerHost, ControlRuntimeScope, TaskManagerLike, TodoStoreLike } from './host'
-import type { ToolManagerHost } from './tools'
+import { PLAN_MODE_REQUEST_APPROVE_LABEL, PLAN_MODE_REQUEST_QUESTION_ID, type ToolManagerHost } from './tools'
 
 export interface ControlResume {
   interaction: Record<string, unknown>
@@ -213,6 +213,7 @@ export class ControlManager implements ControlManagerHost, ToolManagerHost {
     this.drafting.recordPlanResolvedQuestions(updated)
     this.cancelExecutablePlanIfRequested(updated)
     this.complete(updated)
+    this.maybeEnterPlanModeFromAnswer(updated)
     const message = this.answerMessage(updated)
     return {
       interaction: interactionToDict(updated),
@@ -220,6 +221,16 @@ export class ControlManager implements ControlManagerHost, ToolManagerHost {
       event: { event: 'ask_answered', interaction: interactionToDict(updated) },
       resume: true,
     }
+  }
+
+  /** request_plan_mode 的一键批准：用户选择同意时由后端直接切入计划模式。 */
+  private maybeEnterPlanModeFromAnswer(interaction: Interaction): void {
+    if (!interaction.meta?.plan_mode_request) return
+    const answer = (interaction.answers ?? {})[PLAN_MODE_REQUEST_QUESTION_ID] as Record<string, unknown> | undefined
+    const choice = String(answer?.choice ?? '').trim()
+    if (choice !== PLAN_MODE_REQUEST_APPROVE_LABEL) return
+    if (this.mode === ControlMode.PLAN) return
+    this.setMode(ControlMode.PLAN)
   }
 
   comment(interactionId: string, comment: string): ControlResume {
@@ -469,7 +480,8 @@ export class ControlManager implements ControlManagerHost, ToolManagerHost {
       '- 当用户目标存在高影响歧义且无法通过读文件/搜索等方式确定时，调用 `ask_user` 提出结构化问题。\n' +
       '- 高影响歧义包括范围/验收不清的大改动、架构/重构/UI 取舍、提交推送、删除覆盖、发布部署、成本/权限/安全边界。\n' +
       '- 可通过只读探索确认的事实先探索；但在写入、高影响操作或最终答复前仍有关键取舍时，必须提问。\n' +
-      '- 只有在用户显式开启 Plan 模式后，才使用 `propose_plan` 提交等待批准的计划。'
+      '- 只有在进入 Plan 模式后，才使用 `propose_plan` 提交等待批准的计划。\n' +
+      '- 当任务属于高影响改动且当前不在 Plan 模式时，调用 `request_plan_mode` 请求用户一键切换到计划模式，不要用 `ask_user` 现场组织措辞。'
     )
   }
 
