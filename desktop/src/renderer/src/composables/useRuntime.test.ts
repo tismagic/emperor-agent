@@ -939,7 +939,7 @@ describe('useRuntime IPC runtime path (MIG-IPC-010)', () => {
     }
   })
 
-  it('blocks chat submit before local enqueue when the active session id is missing or draft', async () => {
+  it('blocks chat submit before local enqueue when the active session id is missing', async () => {
     const calls: unknown[][] = []
     const showToast = vi.fn()
     g.window = fakeWindow({
@@ -953,13 +953,48 @@ describe('useRuntime IPC runtime path (MIG-IPC-010)', () => {
 
     runtime.connectSocket()
     expect(runtime.sendMessage('hello without session')).toBe(false)
-    runtime.switchSession('draft:local')
-    expect(runtime.sendMessage('hello draft')).toBe(false)
 
     expect(calls).toEqual([])
     expect(runtime.messages.value).toEqual([])
     expect(runtime.busy.value).toBe(false)
-    expect(showToast).toHaveBeenCalledWith('正在创建会话，请稍后再试')
+  })
+
+  it('submits a draft first message with client draft id and project metadata (P1-6)', async () => {
+    const calls: unknown[][] = []
+    g.window = fakeWindow({
+      invokeCore: async (...args: unknown[]) => {
+        calls.push(args)
+        return { ok: true }
+      },
+      onCoreEvent: () => () => {},
+    })
+    const runtime = useRuntime({
+      ...testOptions(),
+      resolveDraftSession: (id: string) => id === 'draft:local-1'
+        ? {
+            id: 'draft:local-1', title: '新会话', created_at: '', updated_at: '', preview: '',
+            mode: 'build' as const, project_id: 'p1', project_path: '/tmp/p', project_name: 'P',
+            message_count: 0, title_status: 'draft', control_pending: null, version: 1, draft: true,
+          }
+        : undefined,
+    })
+
+    runtime.connectSocket()
+    runtime.switchSession('draft:local-1')
+    expect(runtime.sendMessage('第一条消息')).toBe(true)
+    await flushPromises()
+
+    const submit = calls.find((call) => call[0] === 'chat.submit')
+    expect(submit).toBeTruthy()
+    expect(submit![1]).toMatchObject({
+      sessionId: 'draft:local-1',
+      clientDraftId: 'draft:local-1',
+      draftSession: {
+        mode: 'build',
+        project: { project_id: 'p1', project_path: '/tmp/p', project_name: 'P' },
+      },
+    })
+    expect(runtime.messages.value.some((message) => message.role === 'user')).toBe(true)
   })
 })
 

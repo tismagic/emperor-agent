@@ -4,6 +4,7 @@ import type { ControlInteraction, ProjectInfo, SessionControlPending, SessionInf
 import {
   applySessionCreated,
   applySessionTitleUpdated,
+  createDraftSession,
   isDraftSessionId,
 } from '../runtime/sessionDrafts'
 
@@ -39,34 +40,23 @@ export function useSession() {
     return api<SessionInfo[]>('/api/sessions?archived=1')
   }
 
+  /**
+   * P1-6 懒创建：只建本地隐藏 draft，不 POST、不落盘。
+   * 首条消息提交时由 Core 创建真实 session 并通过 session_created 事件晋升。
+   */
   async function create(options: string | CreateSessionDraftOptions = '新会话'): Promise<SessionInfo> {
     const opts = typeof options === 'string' ? { title: options } : options
     const mode: SessionMode = opts.mode === 'build' ? 'build' : 'chat'
-    const previousActiveId = activeId.value
-    creating.value = true
-    try {
-      const created = normalizeSessionInfo(await api<SessionInfo>('/api/sessions', {
-        method: 'POST',
-        body: JSON.stringify({
-          title: (opts.title || '').trim() || '新会话',
-          mode,
-          project: mode === 'build' ? opts.project ?? null : null,
-        }),
-      }))
-      sessions.value = [
-        created,
-        ...sessions.value.filter((session) => session.id !== created.id && !session.draft),
-      ]
-      activeId.value = created.id
-      await activate(created.id)
-      return created
-    } catch (err) {
-      activeId.value = previousActiveId
-      sessions.value = sessions.value.filter((session) => !session.draft)
-      throw err
-    } finally {
-      creating.value = false
-    }
+    const draft = createDraftSession({
+      title: opts.title,
+      mode,
+      projectId: opts.project?.project_id,
+      projectPath: opts.project?.project_path,
+      projectName: opts.project?.project_name,
+    })
+    sessions.value = [draft, ...sessions.value.filter((session) => !session.draft)]
+    activeId.value = draft.id
+    return draft
   }
 
   async function resolveProject(path: string): Promise<ProjectInfo> {
@@ -225,18 +215,4 @@ function sessionControlPendingFromInteraction(interaction?: ControlInteraction |
     }
   }
   return null
-}
-
-function normalizeSessionInfo(value: SessionInfo): SessionInfo {
-  return {
-    ...value,
-    id: String(value.id),
-    title: String(value.title || '新会话'),
-    mode: value.mode === 'build' ? 'build' : 'chat',
-    project_id: value.project_id ?? null,
-    project_path: value.project_path ?? null,
-    project_name: value.project_name ?? null,
-    control_pending: value.control_pending ?? null,
-    draft: undefined,
-  }
 }

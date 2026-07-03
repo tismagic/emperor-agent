@@ -69,7 +69,8 @@ export function normalizeSidebarState(value: Partial<SidebarState> | null | unde
 
 export function buildSidebarGroups(sessions: SessionInfo[], stateInput: Partial<SidebarState> | null | undefined): SidebarGroups {
   const state = normalizeSidebarState(stateInput)
-  const visible = sessions.filter((session) => !session.archived_at)
+  // P1-6：draft 会话未发首条消息前不出现在侧边栏
+  const visible = sessions.filter((session) => !session.archived_at && !session.draft)
   const chats = sortSessions(
     visible.filter((session) => session.mode !== 'build'),
     state.chat_sort,
@@ -113,7 +114,7 @@ export function searchSidebarSessions(sessions: SessionInfo[], query: string): S
   const needle = query.trim().toLowerCase()
   if (!needle) return []
   return sessions
-    .filter((session) => !session.archived_at)
+    .filter((session) => !session.archived_at && !session.draft)
     .filter((session) => searchableText(session).includes(needle))
     .slice(0, 12)
     .map((session) => ({

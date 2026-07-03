@@ -258,6 +258,53 @@ describe('CoreApi (MIG-IPC-001)', () => {
     await api.close()
   })
 
+  it('promotes a draft submit into a real session with one-shot title generation (P1-6)', async () => {
+    const provider = new FakeProvider()
+    const api = await CoreApi.create({
+      root: tmp('emperor-core-api-draft-submit-'),
+      templatesDir: TEMPLATES_DIR,
+      modelRouter: fakeRouter(provider),
+    })
+    const events: Array<Record<string, unknown>> = []
+    const draftId = 'draft:local-abc'
+
+    const result = await api.chat.submit({
+      content: '搭一个终端动画项目',
+      sessionId: draftId,
+      clientDraftId: draftId,
+      draftSession: { mode: 'build', project: { project_id: 'proj_1', project_path: '/tmp/proj', project_name: 'Proj' } },
+      emit: async (event) => { events.push(event) },
+    })
+
+    const created = events.find((event) => event.event === 'session_created') as any
+    expect(created).toBeTruthy()
+    expect(created.client_draft_id).toBe(draftId)
+    expect(created.session).toMatchObject({ title: '新会话', mode: 'build', project_id: 'proj_1', title_status: 'pending' })
+    const newSessionId = String(created.session.id)
+    expect(result.activeSessionId).toBe(newSessionId)
+
+    const createdIndex = events.findIndex((event) => event.event === 'session_created')
+    const userIndex = events.findIndex((event) => event.event === 'user_message')
+    expect(userIndex).toBeGreaterThan(createdIndex)
+
+    const titleEvent = events.find((event) => event.event === 'session_title_updated') as any
+    expect(titleEvent).toBeTruthy()
+    expect(titleEvent.session.id).toBe(newSessionId)
+    const entry = api.loop.sessionStore.get(newSessionId)!
+    expect(entry.title_status).toBe('generated')
+    expect(entry.title).toBe('pong')
+
+    // 第二条消息走真实 session，不再创建、不再生成标题
+    const callsAfterFirst = provider.calls.length
+    const secondEvents: Array<Record<string, unknown>> = []
+    await api.chat.submit({ content: '继续', sessionId: newSessionId, emit: async (event) => { secondEvents.push(event) } })
+    expect(secondEvents.find((event) => event.event === 'session_created')).toBeUndefined()
+    expect(secondEvents.find((event) => event.event === 'session_title_updated')).toBeUndefined()
+    expect(provider.calls.length).toBe(callsAfterFirst + 1)
+
+    await api.close()
+  })
+
   it('matches session route response shapes for IPC callers', async () => {
     const api = await CoreApi.create({
       root: tmp('emperor-core-api-'),

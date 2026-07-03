@@ -215,11 +215,13 @@ export function useRuntime(options: {
   }
 
   function sendMessageViaCore(opts: { text: string; displayText: string; attachments: AttachmentRef[]; requestedSkills: RequestedSkill[] }) {
-    if (!sessionId.value || isDraftSessionId(sessionId.value)) {
-      updatePending('正在创建会话', '请稍后再试', 'running', 3000)
-      options.showToast('正在创建会话，请稍后再试')
+    const activeSessionId = sessionId.value
+    if (!activeSessionId) {
+      updatePending('尚无会话', '请先创建会话', 'running', 3000)
       return false
     }
+    // P1-6：draft 首条提交带上 client_draft_id 与项目元数据，由 Core 创建真实 session
+    const draftPayload = isDraftSessionId(activeSessionId) ? draftSubmitPayload(activeSessionId) : null
     const userMsg = enqueueLocalTurn(opts.displayText || opts.text, opts.attachments)
     status.value = 'ready'
     void invokeCore('chat.submit', {
@@ -228,11 +230,27 @@ export function useRuntime(options: {
       attachments: opts.attachments.map((item) => item.id),
       requestedSkills: opts.requestedSkills,
       clientMessageId: userMsg.id,
-      sessionId: sessionId.value,
+      sessionId: activeSessionId,
+      ...(draftPayload ?? {}),
     }).catch((err) => {
       handleChatSubmitError(err)
     })
     return true
+  }
+
+  function draftSubmitPayload(draftId: string): Record<string, unknown> {
+    const draft = options.resolveDraftSession?.(draftId)
+    return {
+      clientDraftId: draftId,
+      draftSession: {
+        mode: draft?.mode === 'build' ? 'build' : 'chat',
+        project: {
+          project_id: draft?.project_id ?? null,
+          project_path: draft?.project_path ?? null,
+          project_name: draft?.project_name ?? null,
+        },
+      },
+    }
   }
 
   function sendInteractionAnswer(interactionId: string, answers: Record<string, unknown>) {

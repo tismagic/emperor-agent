@@ -33,7 +33,7 @@ import {
   sessionRuntimeIndicator,
   type SidebarProjectGroup,
 } from '../../runtime/sidebarModel'
-import type { SessionInfo, SidebarSortMode, SidebarState } from '../../types'
+import type { ProjectInfo, SessionInfo, SidebarSortMode, SidebarState } from '../../types'
 
 const emit = defineEmits<{ activate: [id: string] }>()
 const router = useRouter()
@@ -109,6 +109,21 @@ async function activateAndEmit(id: string) {
 async function doCreateChat() {
   closeMenus()
   const s = await create({ mode: 'chat', title: '新会话' })
+  await activateAndEmit(s.id)
+}
+
+// P1-6：项目行的「新建该项目会话」——继承项目元数据的隐藏 build draft
+async function doCreateProjectSession(project: SidebarProjectGroup) {
+  closeMenus()
+  const s = await create({
+    mode: 'build',
+    title: '新会话',
+    project: {
+      project_id: project.id,
+      project_path: project.path,
+      project_name: project.name,
+    } as ProjectInfo,
+  })
   await activateAndEmit(s.id)
 }
 
@@ -406,6 +421,9 @@ onMounted(async () => {
                 <span>{{ project.name }}</span>
               </button>
               <span class="project-count">{{ project.sessions.length }}</span>
+              <button class="sidebar-icon-button project-add-session" title="新建该项目会话" @click.stop="doCreateProjectSession(project)">
+                <Plus :size="13" />
+              </button>
               <span v-if="sidebarState.project_sort === 'manual'" class="row-move-actions">
                 <button title="上移项目" @click.stop="moveProject(project.id, -1)"><ArrowUp :size="12" /></button>
                 <button title="下移项目" @click.stop="moveProject(project.id, 1)"><ArrowDown :size="12" /></button>

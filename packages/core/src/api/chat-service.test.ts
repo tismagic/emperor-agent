@@ -53,8 +53,8 @@ describe('MainlineTurnService (MIG-IPC-005)', () => {
     const activeSessionId = String(api.loop.activeSessionId)
 
     await expect(api.chat.submit({ content: 'missing session' })).rejects.toThrow(/session/i)
-    await expect(api.chat.submit({ content: 'draft session', sessionId: 'draft:new-chat' })).rejects.toThrow(/draft/i)
     await expect(api.chat.submit({ content: 'unknown session', sessionId: 'not-real' })).rejects.toThrow(/unknown|session/i)
+    // P1-6 起 draft 提交不再被拒，而是晋升为真实 session（见 core-api.test 的 draft submit 用例）
 
     const historyPath = join(root, '.emperor', 'sessions', activeSessionId, 'history.jsonl')
     expect(existsSync(historyPath) ? readFileSync(historyPath, 'utf8').trim() : '').toBe('')

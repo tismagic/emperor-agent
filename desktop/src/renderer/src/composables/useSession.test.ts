@@ -30,21 +30,13 @@ describe('useSession IPC session routes (MIG-IPC-010)', () => {
     expect(session.activeId.value).toBe('s1')
   })
 
-  it('creates new sessions through Core IPC instead of persistent local drafts', async () => {
+  it('creates a hidden local draft without POSTing to Core (P1-6)', async () => {
     const calls: unknown[][] = []
     g.window = {
       emperor: {
         invokeCore: async (...args: unknown[]) => {
           calls.push(args)
-          if (args[0] === 'sessions.create') {
-            return {
-              id: 'real-session-1',
-              title: '新会话',
-              updated_at: '2026-01-01T00:00:00+08:00',
-              mode: 'chat',
-            }
-          }
-          return { active: 'real-session-1', complete: true }
+          return { ok: true }
         },
       },
     }
@@ -52,128 +44,57 @@ describe('useSession IPC session routes (MIG-IPC-010)', () => {
 
     const created = await session.create({ mode: 'chat', title: '新会话' })
 
-    expect(calls).toEqual([
-      ['sessions.create', { title: '新会话', mode: 'chat', project: null }],
-      ['sessions.activate', 'real-session-1'],
-    ])
-    expect(created.id).toBe('real-session-1')
-    expect(created.draft).toBeUndefined()
-    expect(session.activeId.value).toBe('real-session-1')
-    expect(session.sessions.value[0]).toMatchObject({ id: 'real-session-1', draft: undefined })
-    expect(session.sessions.value.some((item) => item.draft)).toBe(false)
+    expect(calls).toEqual([])
+    expect(created.draft).toBe(true)
+    expect(created.id.startsWith('draft:')).toBe(true)
+    expect(session.activeId.value).toBe(created.id)
+    expect(session.getSession(created.id)).toMatchObject({ draft: true, mode: 'chat' })
   })
 
-  it('creates a real Core session when loading an empty session list', async () => {
+  it('creates a local draft when loading an empty session list (P1-6)', async () => {
     const calls: unknown[][] = []
     g.window = {
       emperor: {
         invokeCore: async (...args: unknown[]) => {
           calls.push(args)
           if (args[0] === 'sessions.list') return []
-          if (args[0] === 'sessions.create') {
-            return {
-              id: 'real-default',
-              title: '新会话',
-              updated_at: '2026-01-01T00:00:00+08:00',
-              mode: 'chat',
-            }
-          }
-          return { active: 'real-default', complete: true }
-        },
-      },
-    }
-    const session = useSession()
-
-    await session.load()
-
-    expect(calls).toEqual([
-      ['sessions.list', { includeArchived: false }],
-      ['sessions.create', { title: '新会话', mode: 'chat', project: null }],
-      ['sessions.activate', 'real-default'],
-    ])
-    expect(session.activeId.value).toBe('real-default')
-    expect(session.sessions.value).toEqual([expect.objectContaining({ id: 'real-default', draft: undefined })])
-  })
-
-  it('preserves previous active session when Core session creation fails', async () => {
-    const calls: unknown[][] = []
-    g.window = {
-      emperor: {
-        invokeCore: async (...args: unknown[]) => {
-          calls.push(args)
-          if (args[0] === 'sessions.list') {
-            return [{ id: 'existing', title: 'Existing', updated_at: '2026-01-01T00:00:00+08:00' }]
-          }
-          if (args[0] === 'sessions.create') throw new Error('create failed')
           return { ok: true }
         },
       },
     }
     const session = useSession()
+
     await session.load()
 
-    await expect(session.create({ mode: 'chat', title: 'Broken' })).rejects.toThrow('create failed')
-
-    expect(calls.map((call) => call[0])).toEqual(['sessions.list', 'sessions.create'])
-    expect(session.activeId.value).toBe('existing')
-    expect(session.sessions.value.map((item) => item.id)).toEqual(['existing'])
+    expect(calls).toEqual([['sessions.list', { includeArchived: false }]])
+    expect(session.activeId.value.startsWith('draft:')).toBe(true)
   })
 
-  it('sends build session project metadata to Core when creating a build session', async () => {
+  it('keeps build project metadata on the draft for the first submit (P1-6)', async () => {
     const calls: unknown[][] = []
     g.window = {
       emperor: {
         invokeCore: async (...args: unknown[]) => {
           calls.push(args)
-          if (args[0] === 'sessions.create') {
-            return {
-              id: 'build-session',
-              title: '构建 demo',
-              updated_at: '2026-01-01T00:00:00+08:00',
-              mode: 'build',
-              project_id: 'project_1',
-              project_path: '/tmp/demo',
-              project_name: 'demo',
-            }
-          }
-          return { active: 'build-session', complete: true }
+          return { ok: true }
         },
       },
     }
     const session = useSession()
 
-    await session.create({
+    const created = await session.create({
       mode: 'build',
       title: '构建 demo',
       project: {
         project_id: 'project_1',
         project_path: '/tmp/demo',
-        workspace_path: '/tmp/demo',
         project_name: 'demo',
-        state_path: '/state/projects/project_1',
-        memory_path: '/state/projects/project_1/AGENTS.local.md',
-        legacy_agents_path: null,
       },
     })
 
-    expect(calls[0]).toEqual([
-      'sessions.create',
-      {
-        title: '构建 demo',
-        mode: 'build',
-        project: {
-          project_id: 'project_1',
-          project_path: '/tmp/demo',
-          workspace_path: '/tmp/demo',
-          project_name: 'demo',
-          state_path: '/state/projects/project_1',
-          memory_path: '/state/projects/project_1/AGENTS.local.md',
-          legacy_agents_path: null,
-        },
-      },
-    ])
-    expect(session.sessions.value[0]).toMatchObject({
-      id: 'build-session',
+    expect(calls).toEqual([])
+    expect(created).toMatchObject({
+      draft: true,
       mode: 'build',
       project_id: 'project_1',
       project_path: '/tmp/demo',

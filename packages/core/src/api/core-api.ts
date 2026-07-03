@@ -12,7 +12,7 @@ import { AgentLoop, type AgentLoopCreateOptions, type LoopModelRouter } from '..
 import type { RuntimePaths } from '../runtime/paths'
 import { RuntimeEventStore } from '../runtime/store'
 import { assertCoreMutationAllowed } from './mutation-guard'
-import { ChatService, InvalidSessionError, MainlineTurnService } from './chat-service'
+import { ChatService, InvalidSessionError, MainlineTurnService, type DraftSessionInput } from './chat-service'
 import { CoreConfigService, type UserConfigPayload } from './services/config-service'
 import { CoreDiagnosticsService } from './services/diagnostics-service'
 import { CoreDesktopPetService } from './services/desktop-pet-service'
@@ -250,6 +250,8 @@ export class CoreApi {
       clientMessageId?: string | null
       sessionId?: string | null
       uiHidden?: boolean | null
+      clientDraftId?: string | null
+      draftSession?: DraftSessionInput | null
     }): Promise<Dict> => {
       const result = await this.chatService.submit({
         content: String(opts.content ?? ''),
@@ -259,6 +261,8 @@ export class CoreApi {
         clientMessageId: opts.clientMessageId ?? null,
         sessionId: opts.sessionId ?? null,
         uiHidden: opts.uiHidden ?? false,
+        clientDraftId: opts.clientDraftId ?? null,
+        draftSession: opts.draftSession ?? null,
       })
       return result as unknown as Dict
     },

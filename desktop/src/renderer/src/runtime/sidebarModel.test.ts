@@ -111,3 +111,20 @@ describe('sessionRuntimeIndicator (P1-7)', () => {
     expect(sessionRuntimeIndicator(undefined, pendingTag)).toBe('pending')
   })
 })
+
+describe('sidebar hides draft sessions (P1-6)', () => {
+  it('excludes drafts from groups and search until first message promotes them', async () => {
+    const { buildSidebarGroups, searchSidebarSessions } = await import('./sidebarModel')
+    const items = [
+      session({ id: 'real-1', title: '正式会话' }),
+      { ...session({ id: 'draft:x', title: '新会话' }), draft: true },
+      { ...session({ id: 'draft:y', title: '新会话', mode: 'build', project_id: 'p1', project_path: '/tmp/p', project_name: 'P' }), draft: true },
+    ]
+
+    const grouped = buildSidebarGroups(items, null)
+
+    expect(grouped.chats.map((item) => item.id)).toEqual(['real-1'])
+    expect(grouped.projects).toEqual([])
+    expect(searchSidebarSessions(items, '新会话')).toEqual([])
+  })
+})
