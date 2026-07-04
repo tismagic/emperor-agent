@@ -1,5 +1,6 @@
 import type { AssistantMessage, ChatMessage, ControlInteraction, RuntimeEventEnvelope, ThoughtSegment, ToolSegment, WsEvent } from '../types'
 import { toolDisplayName } from '../components/chat/toolDisplay'
+import { schedulerMessageMeta } from './schedulerMeta'
 import { sortRuntimeEvents } from './events'
 import { applyToolResultToSegment, applyToolRunUpdateToSegment, settleRunningToolSegments } from './toolStatus'
 
@@ -9,7 +10,7 @@ export interface ChatProjectionState {
   lastSeq: number
 }
 
-interface ProjectionRuntime {
+export interface ProjectionRuntime {
   seenSeqs: Set<number>
   turnClock: Map<string, number>
   resumeTurnTargets: Map<string, string>
@@ -91,6 +92,7 @@ export function applyChatProjectionEvent(
 
   if (event.event === 'agent_thought') {
     const assistant = assistantForEvent(state, event, runtime)!
+    finishActiveThought(assistant, event)
     upsertThoughtSegment(assistant, event)
     return state
   }
@@ -159,7 +161,15 @@ export function applyChatProjectionEvent(
     if (!event.interaction) return state
     const assistant = assistantForEvent(state, event, runtime)!
     finishActiveThought(assistant, event)
-    upsertControlSegment(assistant, 'plan', event.interaction)
+    const interaction = {
+      ...event.interaction,
+      meta: {
+        ...(event.interaction.meta || {}),
+        plan_stream_id: controlInteractionStreamId(event.interaction, event.tool_call_id),
+        provisional: true,
+      },
+    }
+    upsertControlSegment(assistant, 'plan', interaction)
     return state
   }
 
@@ -187,7 +197,11 @@ export function applyChatProjectionEvent(
       syncAssistantDoneContent(assistant, event.content || '')
       assistant.streaming = false
     }
-    if (event.turn_id) runtime.resumeTurnTargets.delete(event.turn_id)
+    if (event.turn_id) {
+      runtime.resumeTurnTargets.delete(event.turn_id)
+      runtime.turnClock.delete(event.turn_id)
+    }
+    if (assistant?.turn_id) runtime.turnClock.delete(assistant.turn_id)
     state.currentAssistantId = null
     return state
   }
@@ -201,7 +215,11 @@ export function applyChatProjectionEvent(
       settleRunningToolSegments(assistant, { endedAt, summary: '回合已暂停' })
       assistant.streaming = false
     }
-    if (event.turn_id) runtime.resumeTurnTargets.delete(event.turn_id)
+    if (event.turn_id) {
+      runtime.resumeTurnTargets.delete(event.turn_id)
+      runtime.turnClock.delete(event.turn_id)
+    }
+    if (assistant?.turn_id) runtime.turnClock.delete(assistant.turn_id)
     state.currentAssistantId = null
     return state
   }
@@ -220,7 +238,7 @@ export function applyChatProjectionEvent(
   return state
 }
 
-function createProjectionRuntime(): ProjectionRuntime {
+export function createProjectionRuntime(): ProjectionRuntime {
   return {
     seenSeqs: new Set(),
     turnClock: new Map(),
@@ -237,6 +255,7 @@ function applyUserMessage(state: ChatProjectionState, event: Extract<WsEvent, { 
     bindControlResumeTurn(state, runtime, turnId)
     return
   }
+  const meta = schedulerMessageMeta(event.content || '', clientId, event.source, event.scheduler)
   const existing = state.messages.find((message) =>
     message.role === 'user' && (
       (clientId && message.id === clientId) ||
@@ -247,8 +266,8 @@ function applyUserMessage(state: ChatProjectionState, event: Extract<WsEvent, { 
     existing.turn_id = turnId || existing.turn_id
     existing.content = event.content || existing.content
     existing.attachments = event.attachments || existing.attachments
-    if (event.source) existing.source = event.source
-    if (event.scheduler) existing.scheduler = event.scheduler
+    if (meta.source) existing.source = meta.source
+    if (meta.scheduler) existing.scheduler = meta.scheduler
     return
   }
   state.messages.push({
@@ -257,8 +276,8 @@ function applyUserMessage(state: ChatProjectionState, event: Extract<WsEvent, { 
     content: event.content || '',
     turn_id: turnId || undefined,
     attachments: event.attachments?.length ? event.attachments : undefined,
-    source: event.source || undefined,
-    scheduler: event.scheduler || undefined,
+    source: meta.source || undefined,
+    scheduler: meta.scheduler || undefined,
   })
 }
 
@@ -287,6 +306,18 @@ function assistantForEvent(
     if (existing) {
       state.currentAssistantId = existing.id
       return existing
+    }
+    // live 路径：本地发送时预建的无 turn_id 助手在第一个带 turn 的事件到达时被收养
+    const current = currentAssistant(state)
+    if (current && !current.turn_id) {
+      current.turn_id = turnId
+      const startedAt = runtime.turnClock.get(turnId)
+      if (startedAt && (!current.startedAt || current.startedAt > startedAt)) {
+        current.startedAt = startedAt
+        const first = current.segments[0]
+        if (first?.type === 'thought' && first.status === 'running') first.startedAt = startedAt
+      }
+      return current
     }
   }
   if (!create) return undefined
@@ -328,7 +359,7 @@ function currentAssistant(state: ChatProjectionState): AssistantMessage | undefi
 }
 
 function upsertThoughtSegment(assistant: AssistantMessage, event: Extract<WsEvent, { event: 'agent_thought' }>): void {
-  const id = `thought-${event.turn_id || 'global'}-${event.stage || event.seq || assistant.segments.length + 1}`
+  const id = `thought-${event.turn_id || 'global'}-${event.stage || 'stage'}-${event.seq ?? assistant.segments.length + 1}`
   const existing = assistant.segments.find((segment): segment is ThoughtSegment => segment.type === 'thought' && segment.id === id)
   const target = existing || {
     id,
@@ -439,7 +470,7 @@ function mergeControlInteraction(previous: ControlInteraction, next: ControlInte
   return { ...previous, ...next, meta }
 }
 
-function finishActiveThought(assistant: AssistantMessage | undefined, event?: { ts?: number }): void {
+export function finishActiveThought(assistant: AssistantMessage | undefined, event?: { ts?: number }): void {
   if (!assistant) return
   const last = assistant.segments[assistant.segments.length - 1]
   if (last?.type !== 'thought' || last.status !== 'running') return
@@ -447,7 +478,7 @@ function finishActiveThought(assistant: AssistantMessage | undefined, event?: { 
   last.status = 'done'
 }
 
-function syncAssistantDoneContent(assistant: AssistantMessage, content: string): void {
+export function syncAssistantDoneContent(assistant: AssistantMessage, content: string): void {
   const text = content.trimEnd()
   if (!text) return
   const textSegments = assistant.segments.filter((segment) => segment.type === 'text')
@@ -467,13 +498,13 @@ function segmentId(type: string, event: { turn_id?: string; seq?: number }): str
   return `${type}-${event.turn_id || 'global'}-${event.seq || 'next'}`
 }
 
-function eventTimeMs(data?: { ts?: number }): number {
+export function eventTimeMs(data?: { ts?: number }): number {
   const raw = typeof data?.ts === 'number' ? data.ts : 0
   if (!raw) return 0
   return raw < 1_000_000_000_000 ? Math.round(raw * 1000) : Math.round(raw)
 }
 
-function finishTimedState(state: { startedAt?: number; endedAt?: number; durationMs?: number }, endedAt = 0): void {
+export function finishTimedState(state: { startedAt?: number; endedAt?: number; durationMs?: number }, endedAt = 0): void {
   state.endedAt = endedAt
   if (state.startedAt) state.durationMs = Math.max(0, endedAt - state.startedAt)
 }

@@ -6,7 +6,8 @@
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./sessions/constants": "./src/sessions/constants.ts"
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",

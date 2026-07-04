@@ -4,7 +4,17 @@ import {
   clearRuntimeSnapshotRaw,
   writeRuntimeSnapshotRaw,
 } from '../runtime/persistence'
-import { isChatProjectionEvent, projectChatEvents } from '../runtime/chatProjection'
+import {
+  applyChatProjectionEvent,
+  createProjectionRuntime,
+  finishActiveThought,
+  finishTimedState as finishTimedStateAt,
+  isChatProjectionEvent,
+  syncAssistantDoneContent,
+  type ChatProjectionState,
+} from '../runtime/chatProjection'
+import { sortRuntimeEvents } from '../runtime/events'
+import { toolDisplayName } from '../components/chat/toolDisplay'
 import { replayRuntimeEvents } from '../runtime/reducer'
 import { findSubagent, findSubagentTool, findToolSegment } from '../runtime/selectors'
 import { applyPlanEvent, type PlanProjection } from '../runtime/handlers/plans'
@@ -53,9 +63,20 @@ export function useRuntime(options: {
   let pendingVersion = 0
   let rehydrating = false
   let bridgeUnavailableToastShown = false
-  const turnClock = new Map<string, number>()
-  const controlResumeTurnTargets = new Map<string, string>()
-  let pendingControlResumeAssistantId: string | null = null
+  // W2：live 与 replay 共用 chatProjection reducer；此 adapter 把 reducer 的 state 桥到响应式 refs
+  let projectionRuntime = createProjectionRuntime()
+  const liveProjection: ChatProjectionState = {
+    get messages() { return messages.value },
+    set messages(value) { messages.value = value },
+    get currentAssistantId() { return currentAssistantId.value },
+    set currentAssistantId(value) { currentAssistantId.value = value },
+    get lastSeq() { return lastSeq.value },
+    set lastSeq(value) { lastSeq.value = value },
+  }
+  // live 侧计时语义：缺省 endedAt 取当前时刻（reducer 版缺省为 0）
+  function finishTimedState(state: { startedAt?: number; endedAt?: number; durationMs?: number }, endedAt = Date.now()) {
+    finishTimedStateAt(state, endedAt)
+  }
 
   const currentAssistant = computed(() => messages.value.find((message) => message.id === currentAssistantId.value && message.role === 'assistant') as AssistantMessage | undefined)
 
@@ -338,7 +359,7 @@ export function useRuntime(options: {
     if (expectAssistant) {
       const resumeAssistant = assistantForControlInteraction(interactionId)
       if (resumeAssistant) {
-        pendingControlResumeAssistantId = resumeAssistant.id
+        projectionRuntime.pendingControlResumeAssistantId = resumeAssistant.id
         currentAssistantId.value = resumeAssistant.id
       } else {
         const assistantId = nextId('assistant')
@@ -554,9 +575,7 @@ export function useRuntime(options: {
     messages.value = []
     currentAssistantId.value = null
     busy.value = false
-    turnClock.clear()
-    controlResumeTurnTargets.clear()
-    pendingControlResumeAssistantId = null
+    projectionRuntime = createProjectionRuntime()
     updatePending()
     clearRuntimeSnapshot()
     options.showToast('当前屏幕已清空')
@@ -632,15 +651,15 @@ export function useRuntime(options: {
     busy.value = false
     updatePending()
     lastSeq.value = 0
-    turnClock.clear()
-    controlResumeTurnTargets.clear()
-    pendingControlResumeAssistantId = null
+    projectionRuntime = createProjectionRuntime()
     rehydrating = true
     try {
-      const projection = projectChatEvents(events, { sessionId: sessionId.value || options.boot.value?.runtime?.sessionId || null })
-      messages.value = projection.messages
-      currentAssistantId.value = projection.currentAssistantId
-      lastSeq.value = projection.lastSeq
+      const scope = sessionId.value || options.boot.value?.runtime?.sessionId || null
+      for (const event of sortRuntimeEvents(events)) {
+        if (isChatProjectionEvent(event)) {
+          applyChatProjectionEvent(liveProjection, event as WsEvent, projectionRuntime, { sessionId: scope })
+        }
+      }
       replayRuntimeEvents(
         events.filter((event) => !isChatProjectionEvent(event)),
         ({ event }) => handleSocketEvent(JSON.stringify(event)),
@@ -688,8 +707,10 @@ export function useRuntime(options: {
       return
     }
 
-    if (data.event === 'user_message') {
-      handleUserMessageEvent(data)
+    if (isChatProjectionEvent(data as RuntimeEventEnvelope)) {
+      const assistantBefore = currentAssistant.value
+      applyChatProjectionEvent(liveProjection, data, projectionRuntime)
+      applyLiveChatSideEffects(data, assistantBefore)
       return
     }
 
@@ -703,28 +724,6 @@ export function useRuntime(options: {
 
     if (data.event === 'session_title_updated') {
       options.onSessionTitleUpdated?.(data)
-      return
-    }
-
-    if (data.event === 'message_delta') {
-      const assistant = assistantForEvent(data)
-      if (assistant) {
-        finishActiveThought(assistant, data)
-        const delta = data.delta || ''
-        assistant.content += delta
-        const last = assistant.segments[assistant.segments.length - 1]
-        if (last?.type === 'text') {
-          last.content += delta
-        } else {
-          assistant.segments.push({ id: nextId('segment'), type: 'text', content: delta })
-        }
-      }
-      updatePending('AI 正在思量...', '')
-      return
-    }
-
-    if (data.event === 'agent_thought') {
-      handleAgentThoughtEvent(data)
       return
     }
 
@@ -756,188 +755,14 @@ export function useRuntime(options: {
       return
     }
 
-    if (data.event === 'tool_run_queued' || data.event === 'tool_run_started') {
-      const assistant = assistantForEvent(data)
-      if (assistant) {
-        finishActiveThought(assistant, data)
-        const seg = ensureToolSegment(assistant, data)
-        seg.status = data.event === 'tool_run_queued' ? 'queued' : 'running'
-        if (data.event === 'tool_run_queued' && !seg.summary) seg.summary = '等待执行'
-      }
-      updatePending(
-        data.event === 'tool_run_queued' ? `等待执行: ${data.name}` : `正在执行: ${data.name}`,
-        data.event === 'tool_run_queued' ? compactJson(data.arguments, 180) : '',
-      )
-      return
-    }
-
-    if (data.event === 'tool_call') {
-      const assistant = assistantForEvent(data)
-      if (assistant) {
-        finishActiveThought(assistant, data)
-        ensureToolSegment(assistant, data)
-      }
-      updatePending(`正在执行: ${data.name}`, compactJson(data.arguments, 180))
-      return
-    }
-
-    if (data.event === 'tool_result') {
-      const assistant = assistantForEvent(data)
-      const seg = assistant ? ensureToolSegment(assistant, data) : undefined
-      if (seg) {
-        applyToolResultToSegment(seg, {
-          summary: data.summary,
-          output: data.output,
-          outputTruncated: Boolean(data.output_truncated),
-          artifacts: data.artifacts,
-          metadata: data.metadata,
-          todos: data.todos,
-          isError: Boolean(data.is_error),
-          endedAt: eventTimeMs(data),
-        })
-        if ((data.name === 'update_todos' || seg.name === 'update_todos') && data.todos) {
-          assistant!.todos = data.todos
-        }
-      }
-      const running = (assistant?.segments || []).filter((seg): seg is ToolSegment => seg.type === 'tool' && (seg.status === 'running' || seg.status === 'queued'))
-      if (running.length) updatePending(`正在执行: ${running[0].name}`, `剩余 ${running.length} 个工具`)
-      else if (assistant?.streaming) startThought(assistant, data, '整理工具结果')
-      return
-    }
-
-    if (
-      data.event === 'tool_run_completed' ||
-      data.event === 'tool_run_failed' ||
-      data.event === 'tool_run_cancelled'
-    ) {
-      const assistant = assistantForEvent(data)
-      const seg = assistant ? ensureToolSegment(assistant, data) : undefined
-      if (seg) {
-        applyToolRunUpdateToSegment(seg, {
-          status: data.event === 'tool_run_completed' ? 'done' : data.event === 'tool_run_failed' ? 'error' : 'error_aborted',
-          summary: data.event === 'tool_run_completed' ? data.summary : data.event === 'tool_run_failed' ? data.message : data.reason,
-          output: data.event === 'tool_run_completed' ? data.output : undefined,
-          outputTruncated: data.event === 'tool_run_completed' ? Boolean(data.output_truncated) : false,
-          artifacts: data.event === 'tool_run_completed' ? data.artifacts : undefined,
-          metadata: data.event === 'tool_run_completed' ? data.metadata : undefined,
-          endedAt: eventTimeMs(data),
-        })
-      }
-      return
-    }
-
-    if (data.event === 'tool_error') {
-      const assistant = assistantForEvent(data, false)
-      const seg = findToolSegment(assistant, data.id)
-      if (seg) {
-        finishTimedState(seg, eventTimeMs(data))
-        seg.status = 'error'
-        seg.summary = data.message || '工具执行出错'
-      }
-      if (assistant?.streaming) startThought(assistant, data, '处理工具错误')
-      updatePending(`工具 ${data.name || ''} 执行出错`, data.message || '', 'error')
-      return
-    }
-
-    if (data.event === 'assistant_done') {
-      const assistant = assistantForEvent(data, false) || currentAssistant.value
-      if (assistant) {
-        const endedAt = eventTimeMs(data)
-        finishActiveThought(assistant, data)
-        finishTimedState(assistant, endedAt)
-        settleRunningToolSegments(assistant, { endedAt, summary: '工具未返回结束事件' })
-        assistant.content = data.content || assistant.content
-        syncAssistantDoneContent(assistant, data.content || '')
-        assistant.streaming = false
-        if (data.turn_id) {
-          turnClock.delete(data.turn_id)
-          controlResumeTurnTargets.delete(data.turn_id)
-        }
-        if (assistant.turn_id) turnClock.delete(assistant.turn_id)
-      }
-      currentAssistantId.value = null
-      busy.value = false
-      status.value = 'ready'
-      updatePending()
-      if (!rehydrating) void options.refreshMemory(false)
-      return
-    }
-
     if (data.event === 'control_mode_update') {
       if (options.boot.value && data.control) options.boot.value.control = data.control
-      return
-    }
-
-    if (data.event === 'ask_request' || data.event === 'plan_draft') {
-      handleControlDraft(data)
-      return
-    }
-
-    if (data.event === 'plan_draft_delta') {
-      handlePlanDraftDelta(data)
-      return
-    }
-
-    if (
-      data.event === 'ask_answered' ||
-      data.event === 'plan_comment_added' ||
-      data.event === 'plan_approved' ||
-      data.event === 'interaction_cancelled'
-    ) {
-      if ('control' in data && data.control && options.boot.value) options.boot.value.control = data.control
-      const ownerSessionId = eventOwnerSessionId(data) || sessionId.value
-      if (ownerSessionId) options.onSessionControlPendingChanged?.(ownerSessionId, null)
-      const resumeAssistantId = data.interaction ? updateControlSegment(data.interaction) : null
-      if (data.event === 'interaction_cancelled') pendingControlResumeAssistantId = null
-      else if (resumeAssistantId) pendingControlResumeAssistantId = resumeAssistantId
-      if (data.event === 'plan_approved') {
-        const next = applyPlanEvent(
-          { plans: planProjection.plans, entryDecisions: planProjection.entryDecisions },
-          data,
-        )
-        planProjection.plans.splice(0, planProjection.plans.length, ...next.plans)
-        planProjection.entryDecisions.splice(0, planProjection.entryDecisions.length, ...next.entryDecisions)
-        updatePending('计划已批准，开始执行', '', 'done')
-      }
-      if (data.event === 'interaction_cancelled') updatePending('已取消等待', '', 'done')
-      return
-    }
-
-    if (data.event === 'turn_paused') {
-      const assistant = assistantForEvent(data, false) || currentAssistant.value
-      if (assistant) {
-        const endedAt = eventTimeMs(data)
-        finishActiveThought(assistant, data)
-        finishTimedState(assistant, endedAt)
-        settleRunningToolSegments(assistant, { endedAt, summary: '回合已暂停' })
-        assistant.streaming = false
-        if (data.turn_id) {
-          turnClock.delete(data.turn_id)
-          controlResumeTurnTargets.delete(data.turn_id)
-        }
-        if (assistant.turn_id) turnClock.delete(assistant.turn_id)
-      }
-      currentAssistantId.value = null
-      busy.value = false
-      status.value = 'ready'
-      updatePending('等待你定夺', data.interaction?.kind === 'plan' ? '计划待预览' : '问题待回答', 'done')
       return
     }
 
     if (data.event === 'error') {
       updatePending()
       handleChatError(data.message || '未知错误')
-      return
-    }
-
-    if (data.event === 'runtime_task_cancelled') {
-      const cancelledTurnId = data.turn_id || data.task?.turnId
-      const assistant = assistantForEvent({ turn_id: cancelledTurnId }, false) || currentAssistant.value
-      if (assistant) finishInterruptedAssistant(assistant, '（任务已停止。）')
-      if (cancelledTurnId) controlResumeTurnTargets.delete(cancelledTurnId)
-      currentAssistantId.value = null
-      busy.value = false
-      updatePending('任务已停止', data.task?.label || data.reason || '', 'done')
       return
     }
 
@@ -987,108 +812,112 @@ export function useRuntime(options: {
     handleSubagentEvent(data)
   }
 
-  function handleUserMessageEvent(data: Extract<WsEvent, { event: 'user_message' }>) {
-    const turnId = data.turn_id || ''
-    const clientId = data.client_message_id || ''
-    const content = data.content || ''
-    if (turnId) turnClock.set(turnId, eventTimeMs(data))
-    if (data.ui_hidden || data.source === 'control') {
-      bindControlResumeTurn(turnId)
+  /** live 专属副作用（pending 条/busy/boot 同步/装饰性 thought）；投影本体已由 reducer 完成。 */
+  function applyLiveChatSideEffects(data: WsEvent, assistantBefore?: AssistantMessage) {
+    if (data.event === 'user_message') {
+      if ((data.ui_hidden || data.source === 'control') && currentAssistant.value?.streaming) busy.value = true
       return
     }
-    const meta = schedulerMessageMeta(content, clientId, data.source, data.scheduler)
-    const existing = messages.value.find((message) =>
-      message.role === 'user' && (
-        (clientId && message.id === clientId) ||
-        (turnId && message.turn_id === turnId)
+    if (data.event === 'message_delta') {
+      updatePending('AI 正在思量...', '')
+      return
+    }
+    if (data.event === 'agent_thought') {
+      updatePending(data.label || '思考参考', data.summary || '')
+      return
+    }
+    if (data.event === 'tool_run_queued' || data.event === 'tool_run_started') {
+      updatePending(
+        data.event === 'tool_run_queued' ? `等待执行: ${data.name}` : `正在执行: ${data.name}`,
+        data.event === 'tool_run_queued' ? compactJson(data.arguments, 180) : '',
       )
-    )
-    if (existing && existing.role === 'user') {
-      existing.turn_id = turnId || existing.turn_id
-      existing.content = content || existing.content
-      existing.attachments = data.attachments || existing.attachments
-      if (meta.source) existing.source = meta.source
-      if (meta.scheduler) existing.scheduler = meta.scheduler
       return
     }
-    const msg: ChatMessage = {
-      id: clientId || nextId('user'),
-      role: 'user',
-      content,
-      turn_id: turnId || undefined,
+    if (data.event === 'tool_call') {
+      updatePending(`正在执行: ${data.name}`, compactJson(data.arguments, 180))
+      return
     }
-    if (data.attachments?.length) msg.attachments = data.attachments
-    if (meta.source) msg.source = meta.source
-    if (meta.scheduler) msg.scheduler = meta.scheduler
-    messages.value.push(msg)
-  }
-
-  function assistantForEvent(data?: { turn_id?: string; ts?: number }, create = true): AssistantMessage | undefined {
-    const turnId = data?.turn_id || ''
-    if (turnId) {
-      const resumeAssistantId = controlResumeTurnTargets.get(turnId)
-      if (resumeAssistantId) {
-        const resumed = messages.value.find((message): message is AssistantMessage =>
-          message.role === 'assistant' && message.id === resumeAssistantId
+    if (data.event === 'tool_result') {
+      const assistant = assistantForTurn(data.turn_id)
+      const running = (assistant?.segments || []).filter((seg): seg is ToolSegment => seg.type === 'tool' && (seg.status === 'running' || seg.status === 'queued'))
+      if (running.length) updatePending(`正在执行: ${running[0].name}`, `剩余 ${running.length} 个工具`)
+      else if (assistant?.streaming) startThought(assistant, data, '整理工具结果')
+      return
+    }
+    if (data.event === 'tool_error') {
+      const assistant = assistantForTurn(data.turn_id)
+      if (assistant?.streaming) startThought(assistant, data, '处理工具错误')
+      updatePending(`工具 ${data.name || ''} 执行出错`, data.message || '', 'error')
+      return
+    }
+    if (data.event === 'assistant_done') {
+      busy.value = false
+      status.value = 'ready'
+      updatePending()
+      if (!rehydrating) void options.refreshMemory(false)
+      return
+    }
+    if (data.event === 'turn_paused') {
+      busy.value = false
+      status.value = 'ready'
+      updatePending('等待你定夺', data.interaction?.kind === 'plan' ? '计划待预览' : '问题待回答', 'done')
+      return
+    }
+    if (data.event === 'ask_request' || data.event === 'plan_draft') {
+      if (!data.interaction) return
+      setBootControlPending(data.interaction)
+      const ownerSessionId = eventOwnerSessionId(data) || sessionId.value
+      if (ownerSessionId) options.onSessionControlPendingChanged?.(ownerSessionId, data.interaction)
+      updatePending(data.event === 'plan_draft' ? '计划待预览' : '等待你回答', data.interaction.title || data.interaction.context || '', 'done')
+      return
+    }
+    if (data.event === 'plan_draft_delta') {
+      updatePending('正在生成计划...', data.interaction?.title || data.interaction?.summary || '', 'running')
+      return
+    }
+    if (
+      data.event === 'ask_answered' ||
+      data.event === 'plan_comment_added' ||
+      data.event === 'plan_approved' ||
+      data.event === 'interaction_cancelled'
+    ) {
+      if ('control' in data && data.control && options.boot.value) options.boot.value.control = data.control
+      const ownerSessionId = eventOwnerSessionId(data) || sessionId.value
+      if (ownerSessionId) options.onSessionControlPendingChanged?.(ownerSessionId, null)
+      if (data.event === 'plan_approved') {
+        const next = applyPlanEvent(
+          { plans: planProjection.plans, entryDecisions: planProjection.entryDecisions },
+          data,
         )
-        if (resumed) {
-          currentAssistantId.value = resumed.id
-          return resumed
-        }
-        controlResumeTurnTargets.delete(turnId)
+        planProjection.plans.splice(0, planProjection.plans.length, ...next.plans)
+        planProjection.entryDecisions.splice(0, planProjection.entryDecisions.length, ...next.entryDecisions)
+        updatePending('计划已批准，开始执行', '', 'done')
       }
-      const existing = messages.value.find((message): message is AssistantMessage =>
-        message.role === 'assistant' && message.turn_id === turnId
-      )
-      if (existing) {
-        currentAssistantId.value = existing.id
-        return existing
-      }
-      const current = currentAssistant.value
-      if (current && !current.turn_id) {
-        current.turn_id = turnId
-        const startedAt = turnClock.get(turnId)
-        if (startedAt && (!current.startedAt || current.startedAt > startedAt)) {
-          current.startedAt = startedAt
-          const first = current.segments[0]
-          if (first?.type === 'thought' && first.status === 'running') first.startedAt = startedAt
-        }
-        return current
-      }
-      if (!create) return undefined
-      return createAssistantForIncomingControl(turnId, turnClock.get(turnId) || eventTimeMs(data))
+      if (data.event === 'interaction_cancelled') updatePending('已取消等待', '', 'done')
+      return
     }
-    return create ? (currentAssistant.value || createAssistantForIncomingControl('', eventTimeMs(data))) : currentAssistant.value
+    if (data.event === 'runtime_task_cancelled') {
+      const assistant = assistantForTurn(data.turn_id || data.task?.turnId) || assistantBefore
+      if (assistant) appendInterruptionNotice(assistant, '（任务已停止。）')
+      busy.value = false
+      updatePending('任务已停止', data.task?.label || data.reason || '', 'done')
+      return
+    }
   }
 
-  function ensureToolSegment(assistant: AssistantMessage, data: { id?: string; name?: string; arguments?: unknown; ts?: number }): ToolSegment {
-    const existing = findToolSegment(assistant, data.id)
-    const name = typeof data.name === 'string' && data.name ? data.name : existing?.name || 'unknown_tool'
-    const args = data.arguments && typeof data.arguments === 'object' && !Array.isArray(data.arguments)
-      ? data.arguments as Record<string, unknown>
-      : existing?.arguments || {}
-    if (existing) {
-      existing.name = name
-      existing.displayName ||= toolDisplayName(name)
-      existing.arguments = args
-      return existing
+  function assistantForTurn(turnId?: string): AssistantMessage | undefined {
+    if (turnId) {
+      const resumeId = projectionRuntime.resumeTurnTargets.get(turnId)
+      const byResume = resumeId
+        ? messages.value.find((message): message is AssistantMessage => message.role === 'assistant' && message.id === resumeId)
+        : undefined
+      if (byResume) return byResume
+      const byTurn = messages.value.find((message): message is AssistantMessage => message.role === 'assistant' && message.turn_id === turnId)
+      if (byTurn) return byTurn
+      const current = currentAssistant.value
+      return current && !current.turn_id ? current : undefined
     }
-    const segment: ToolSegment = {
-      id: nextId('segment'),
-      type: 'tool',
-      toolId: data.id,
-      name,
-      displayName: toolDisplayName(name),
-      inputLabel: 'IN',
-      outputLabel: 'OUT',
-      arguments: args,
-      status: 'running',
-      summary: '',
-      subagents: [],
-      startedAt: eventTimeMs(data),
-    }
-    assistant.segments.push(segment)
-    return segment
+    return currentAssistant.value
   }
 
   function handleReadyEvent(data: Extract<WsEvent, { event: 'ready' }>) {
@@ -1120,80 +949,6 @@ export function useRuntime(options: {
     }
   }
 
-  function handleControlDraft(data: Extract<WsEvent, { event: 'ask_request' | 'plan_draft' }>) {
-    if (!data.interaction) return
-    if (options.boot.value) {
-      options.boot.value.control ||= { mode: 'ask_before_edit', pending: null }
-      options.boot.value.control.pending = data.interaction
-    }
-    const ownerSessionId = eventOwnerSessionId(data) || sessionId.value
-    if (ownerSessionId) options.onSessionControlPendingChanged?.(ownerSessionId, data.interaction)
-    const assistant = assistantForEvent(data)
-    if (!assistant) return
-    finishActiveThought(assistant, data)
-    const type = data.event === 'ask_request' ? 'ask' : 'plan'
-    const existing = findControlSegment(assistant, type, data.interaction)
-    if (existing && (existing.type === 'ask' || existing.type === 'plan')) {
-      existing.interaction = mergeControlInteraction(existing.interaction, data.interaction)
-    } else {
-      assistant.segments.push({ id: nextId(type), type, interaction: data.interaction })
-    }
-    updatePending(type === 'plan' ? '计划待预览' : '等待你回答', data.interaction.title || data.interaction.context || '', 'done')
-  }
-
-  function handlePlanDraftDelta(data: Extract<WsEvent, { event: 'plan_draft_delta' }>) {
-    if (!data.interaction) return
-    const assistant = assistantForEvent(data)
-    if (!assistant) return
-    finishActiveThought(assistant, data)
-    const interaction = {
-      ...data.interaction,
-      meta: {
-        ...(data.interaction.meta || {}),
-        plan_stream_id: controlInteractionStreamId(data.interaction, data.tool_call_id),
-        provisional: true,
-      },
-    }
-    const existing = findControlSegment(assistant, 'plan', interaction)
-    if (existing && existing.type === 'plan') {
-      existing.interaction = mergeControlInteraction(existing.interaction, interaction)
-    } else {
-      assistant.segments.push({ id: nextId('plan'), type: 'plan', interaction })
-    }
-    updatePending('正在生成计划...', interaction.title || interaction.summary || '', 'running')
-  }
-
-  function handleAgentThoughtEvent(data: Extract<WsEvent, { event: 'agent_thought' }>) {
-    const assistant = assistantForEvent(data)
-    if (!assistant) return
-    finishActiveThought(assistant, data)
-    const at = eventTimeMs(data)
-    assistant.segments.push({
-      id: nextId('thought'),
-      type: 'thought',
-      status: data.status === 'running' ? 'running' : 'done',
-      label: data.label || '思考参考',
-      stage: data.stage,
-      source: data.source || 'audit',
-      summary: data.summary || '',
-      toolIds: Array.isArray(data.tool_call_ids) ? data.tool_call_ids.map(String) : [],
-      toolNames: Array.isArray(data.tool_names) ? data.tool_names.map(String) : [],
-      startedAt: at,
-      endedAt: data.status === 'running' ? undefined : at,
-      durationMs: data.status === 'running' ? undefined : 0,
-    })
-    updatePending(data.label || '思考参考', data.summary || '')
-  }
-
-  function createAssistantForIncomingControl(turnId = '', startedAt = Date.now()) {
-    const assistantId = nextId('assistant')
-    const assistant = createStreamingAssistant(assistantId, startedAt)
-    if (turnId) assistant.turn_id = turnId
-    messages.value.push(assistant)
-    currentAssistantId.value = assistantId
-    return assistant
-  }
-
   function assistantForControlInteraction(interactionId: string): AssistantMessage | undefined {
     if (!interactionId) return undefined
     return messages.value.find((message): message is AssistantMessage =>
@@ -1203,22 +958,6 @@ export function useRuntime(options: {
         segment.interaction.id === interactionId,
       )
     )
-  }
-
-  function bindControlResumeTurn(turnId: string): void {
-    if (!turnId || !pendingControlResumeAssistantId) return
-    const assistant = messages.value.find((message): message is AssistantMessage =>
-      message.role === 'assistant' && message.id === pendingControlResumeAssistantId
-    )
-    if (!assistant) {
-      pendingControlResumeAssistantId = null
-      return
-    }
-    controlResumeTurnTargets.set(turnId, assistant.id)
-    pendingControlResumeAssistantId = null
-    assistant.streaming = true
-    currentAssistantId.value = assistant.id
-    busy.value = true
   }
 
   function createStreamingAssistant(assistantId: string, startedAt: number): AssistantMessage {
@@ -1249,98 +988,14 @@ export function useRuntime(options: {
     assistant.segments.push(createThoughtSegment(eventTimeMs(data), label))
   }
 
-  function finishActiveThought(assistant: AssistantMessage, data?: { ts?: number }) {
-    const last = assistant.segments[assistant.segments.length - 1]
-    if (last?.type !== 'thought' || last.status !== 'running') return
-    finishTimedState(last, eventTimeMs(data))
-    last.status = 'done'
-  }
-
-  function syncAssistantDoneContent(assistant: AssistantMessage, content: string) {
-    const text = content.trimEnd()
-    if (!text) return
-    const textSegments = assistant.segments.filter((segment) => segment.type === 'text')
-    const current = textSegments.map((segment) => segment.content).join('')
-    if (!current) {
-      assistant.segments.push({ id: nextId('segment'), type: 'text', content: text })
-      return
-    }
-    if (text.startsWith(current)) {
-      const rest = text.slice(current.length)
-      const lastText = [...assistant.segments].reverse().find((segment) => segment.type === 'text')
-      if (rest && lastText?.type === 'text') lastText.content += rest
-    }
-  }
-
   function eventTimeMs(data?: { ts?: number }) {
     const raw = typeof data?.ts === 'number' ? data.ts : 0
     if (!raw) return Date.now()
     return raw < 1_000_000_000_000 ? Math.round(raw * 1000) : Math.round(raw)
   }
 
-  function toolDisplayName(name: string) {
-    const names: Record<string, string> = {
-      dispatch_subagent: 'Agent',
-      edit_file: 'Edit',
-      glob: 'Glob',
-      grep: 'Search',
-      load_skill: 'Skill',
-      read_file: 'Read',
-      run_command: 'Bash',
-      scheduler: 'Scheduler',
-      update_todos: 'Update Todos',
-      web_fetch: 'Fetch',
-      write_file: 'Write',
-    }
-    return names[name] || name
-  }
-
-  function updateControlSegment(interaction: ControlInteraction): string | null {
-    const streamId = controlInteractionStreamId(interaction)
-    let assistantId: string | null = null
-    for (const message of messages.value) {
-      if (message.role !== 'assistant') continue
-      for (const segment of message.segments) {
-        if ((segment.type === 'ask' || segment.type === 'plan') && (
-          segment.interaction.id === interaction.id ||
-          (segment.type === 'plan' && streamId && controlInteractionStreamId(segment.interaction) === streamId)
-        )) {
-          segment.interaction = mergeControlInteraction(segment.interaction, interaction)
-          assistantId ||= message.id
-        }
-      }
-    }
-    return assistantId
-  }
-
-  function findControlSegment(assistant: AssistantMessage, type: 'ask' | 'plan', interaction: ControlInteraction) {
-    const streamId = type === 'plan' ? controlInteractionStreamId(interaction) : ''
-    return assistant.segments.find((segment) => {
-      if (type === 'ask') return segment.type === 'ask' && segment.interaction.id === interaction.id
-      return segment.type === 'plan' && (
-        segment.interaction.id === interaction.id ||
-        (streamId && controlInteractionStreamId(segment.interaction) === streamId)
-      )
-    })
-  }
-
-  function controlInteractionStreamId(interaction: ControlInteraction, fallback?: string): string {
-    const metaId = interaction.meta?.plan_stream_id
-    if (typeof metaId === 'string' && metaId.trim()) return metaId.trim()
-    if (interaction.parent_call_id) return interaction.parent_call_id
-    return String(fallback || '').trim()
-  }
-
-  function mergeControlInteraction(previous: ControlInteraction, next: ControlInteraction): ControlInteraction {
-    const streamId = controlInteractionStreamId(next) || controlInteractionStreamId(previous)
-    const meta = { ...(previous.meta || {}), ...(next.meta || {}) }
-    if (streamId) meta.plan_stream_id = streamId
-    if (!next.meta?.provisional) delete meta.provisional
-    return { ...previous, ...next, meta }
-  }
-
   function handleSubagentEvent(data: WsEvent) {
-    const assistant = assistantForEvent(data, false)
+    const assistant = assistantForTurn((data as { turn_id?: string }).turn_id)
     if (!assistant) return
 
     if (data.event === 'subagent_start') {
@@ -1424,7 +1079,7 @@ export function useRuntime(options: {
 
   function handleTeamEvent(data: WsEvent) {
     updateTeamBootstrap(data)
-    const assistant = assistantForEvent(data, false)
+    const assistant = assistantForTurn((data as { turn_id?: string }).turn_id)
 
     if (data.event === 'team_member_update') {
       updatePending(data.member?.status === 'working' ? `队友 ${data.member.name} 正在办差` : '', '')
@@ -1684,11 +1339,6 @@ export function useRuntime(options: {
     }
   }
 
-  function finishTimedState(state: { startedAt?: number; endedAt?: number; durationMs?: number }, endedAt = Date.now()) {
-    state.endedAt = endedAt
-    if (state.startedAt) state.durationMs = Math.max(0, endedAt - state.startedAt)
-  }
-
   function persistRuntimeSnapshot() {
     if (!messages.value.length) {
       clearRuntimeSnapshot()
@@ -1735,7 +1385,7 @@ export function useRuntime(options: {
       currentAssistantId.value = null
       busy.value = false
       lastSeq.value = 0
-      turnClock.clear()
+      projectionRuntime = createProjectionRuntime()
       updatePending()
       clearRuntimeSnapshot()
       if (coreUnsubscribe) {
