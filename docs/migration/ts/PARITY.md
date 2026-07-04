@@ -71,7 +71,7 @@ Frozen source inventory:
 | `tests/unit/test_run_command_readonly.py` | `packages/core/src/tools.test.ts`, `packages/core/src/permissions/permissions.test.ts` |
 | `tests/unit/test_runner_behavior_contract.py` | `packages/core/src/agent/runner.test.ts` |
 | `tests/unit/test_runner_state.py` | `packages/core/src/agent/runner.test.ts` |
-| `tests/unit/test_runtime_events.py` | `packages/core/src/runtime/runtime.test.ts`, `desktop/src/renderer/src/runtime/snapshot.test.ts` |
+| `tests/unit/test_runtime_events.py` | `packages/core/src/runtime/runtime.test.ts`, `desktop/src/renderer/src/runtime/chatProjection.test.ts`, `desktop/src/renderer/src/composables/useRuntime.test.ts` |
 | `tests/unit/test_scheduler_api.py` | `packages/core/src/api/core-api.test.ts`, `desktop/src/renderer/src/api/http.test.ts` |
 | `tests/unit/test_scheduler_executor.py` | `packages/core/src/scheduler/executor.test.ts` |
 | `tests/unit/test_scheduler_service.py` | `packages/core/src/scheduler/scheduler.test.ts` |
