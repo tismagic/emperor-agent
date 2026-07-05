@@ -273,6 +273,8 @@ export class AgentRunner implements RunnerModelHost {
     const signal = opts?.signal ?? null
     throwIfAborted(signal)
     this.denyRefusalCounts.clear()
+    // B3（2026-07-05）：turn 内每次投影都冻结在此边界，防止压缩/裁剪回头改写本 turn 已发给模型过的字节
+    const turnStartLength = history.length
     const turnState = new TurnState({ turnId })
     await this.emitTurnPhase(turnState, TurnPhase.STARTED, emit, { history_length: history.length })
     const entryPlanDecision = this.assessPlanDecision(history)
@@ -318,7 +320,7 @@ export class AgentRunner implements RunnerModelHost {
 
       await this.emitTurnPhase(turnState, TurnPhase.MODEL_REQUEST, emit)
       const streamingTools = this.streamingToolExecution ? this.beginStreamingTools(emit, clarification, signal) : null
-      const response = await this.askModel(history, emit, clarification, signal, turnId, streamingTools?.onToolCallComplete ?? null)
+      const response = await this.askModel(history, emit, clarification, signal, turnId, turnStartLength, streamingTools?.onToolCallComplete ?? null)
       throwIfAborted(signal)
       await this.emitTurnPhase(turnState, TurnPhase.MODEL_RESPONSE, emit, {
         finish_reason: response.finishReason,
@@ -544,9 +546,9 @@ export class AgentRunner implements RunnerModelHost {
     if (emit) await emit(event.toRuntimeEvent())
   }
 
-  private async askModel(history: Msg[], emit: StreamEmitter | null, clarification: Clarification | null, signal: AbortSignal | null, turnId: string | null, onToolCallComplete?: ((call: ToolCallRequest) => void | Promise<void>) | null): Promise<LLMResponse> {
+  private async askModel(history: Msg[], emit: StreamEmitter | null, clarification: Clarification | null, signal: AbortSignal | null, turnId: string | null, stableBoundary: number, onToolCallComplete?: ((call: ToolCallRequest) => void | Promise<void>) | null): Promise<LLMResponse> {
     try {
-      return await this.callModelWithProjection(history, emit, clarification, signal, turnId, false, onToolCallComplete)
+      return await this.callModelWithProjection(history, emit, clarification, signal, turnId, false, stableBoundary, onToolCallComplete)
     } catch (exc) {
       if (!isContextOverflowProviderError(exc)) throw exc
       if (emit) {
@@ -558,7 +560,8 @@ export class AgentRunner implements RunnerModelHost {
         })
       }
       try {
-        return await this.callModelWithProjection(history, emit, clarification, signal, turnId, true, onToolCallComplete)
+        // 紧急收缩重试：优先保证挤进上下文窗口，不冻结边界（放弃本次缓存换正确性）
+        return await this.callModelWithProjection(history, emit, clarification, signal, turnId, true, undefined, onToolCallComplete)
       } catch (retryExc) {
         if (!isContextOverflowProviderError(retryExc)) throw retryExc
         const options = retryExc instanceof Error ? { cause: retryExc } : undefined
@@ -577,10 +580,11 @@ export class AgentRunner implements RunnerModelHost {
     signal: AbortSignal | null,
     turnId: string | null,
     emergencyShrink: boolean,
+    stableBoundary: number | undefined,
     onToolCallComplete?: ((call: ToolCallRequest) => void | Promise<void>) | null,
   ): Promise<LLMResponse> {
     const pipeline = emergencyShrink ? this.emergencyContextPipeline() : this.contextPipeline
-    const projection = pipeline.project(history as never)
+    const projection = pipeline.project(history as never, { stableBoundary })
     const governed = projection.messages
     const report = emergencyShrink
       ? { ...projection.report, context_overflow_retry: 1, emergency_context_shrink: 1 }

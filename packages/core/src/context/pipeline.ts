@@ -66,7 +66,11 @@ export class ContextPipeline {
     this.microcompactTailChars = opts?.microcompactTailChars ?? DEFAULT_MICROCOMPACT_TAIL_CHARS
   }
 
-  project(history: OpenAiMsg[]): Projection {
+  project(history: OpenAiMsg[], opts?: { stableBoundary?: number }): Projection {
+    // B3（2026-07-05）：turn 内每次调用都用同一个冻结边界，防止 shrink/微压缩/聚合裁剪
+    // 随历史增长而回头改写「本 turn 内已经发给模型过」的早前消息字节，击穿前缀缓存。
+    // 不传时保持旧的「相对当前长度」行为，历史调用点/测试不受影响。
+    const stableBoundary = opts?.stableBoundary
     const [paired, filled, dropped] = pairToolCalls(history)
     let prepared = paired
     let perCallReplacements: Array<Record<string, unknown>> = []
@@ -89,10 +93,10 @@ export class ContextPipeline {
       aggregateReports = reports
     }
     const [capped, cappedCount] = capToolResults(prepared, this.perCallLimit)
-    const [shrunk, shrunkCount] = shrinkOldToolResults(capped, this.keepRecent)
-    const [microed, microcompactRecords] = this.microcompact(shrunk)
+    const [shrunk, shrunkCount] = shrinkOldToolResults(capped, this.keepRecent, undefined, stableBoundary)
+    const [microed, microcompactRecords] = this.microcompact(shrunk, stableBoundary)
     const planContext = this.planContextProvider ? this.planContextProvider(history) : null
-    const messages = planContext ? [planContext, ...microed] : microed
+    const messages = planContext ? [...microed, planContext] : microed
     const report = {
       paired_missing_tool_results: filled,
       dropped_orphan_tool_results: dropped,
@@ -118,8 +122,9 @@ export class ContextPipeline {
   }
 
   /** 超阈值时压缩更早历史。对齐 `microcompact`。 */
-  private microcompact(history: OpenAiMsg[]): [OpenAiMsg[], Array<Record<string, unknown>>] {
-    const cutoff = Math.max(0, history.length - this.microcompactKeepRecent)
+  private microcompact(history: OpenAiMsg[], stableBoundary?: number): [OpenAiMsg[], Array<Record<string, unknown>>] {
+    const boundary = stableBoundary ?? history.length
+    const cutoff = Math.max(0, boundary - this.microcompactKeepRecent)
     if (cutoff <= 0) return [history.slice(), []]
     const records: Array<Record<string, unknown>> = []
     const out = history.map((msg, index) => {

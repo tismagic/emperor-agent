@@ -320,13 +320,44 @@ describe('context_pipeline', () => {
     expect((preserved.messages[0]!.tool_calls as Array<Record<string, unknown>>)[0]!.id).toBe('call_1')
   })
 
-  it('injects plan runtime context before projected history', () => {
+  it('injects plan runtime context after projected history (2026-07-05 B3: tail, not head)', () => {
+    // 计划上下文随状态频繁变化；放在数组开头会让每次调用整条前缀都不稳定，
+    // DeepSeek 等按前缀字节匹配的缓存因此被逐字节击穿。放尾部只影响最后一条消息。
     const projection = new ContextPipeline({
       planContextProvider: () => ({ role: 'system', content: '[PLAN_RUNTIME_CONTEXT]\nplan_id: plan_1' }),
     }).project([{ role: 'user', content: 'continue' }])
 
-    expect(String(projection.messages[0]!.content)).toMatch(/^\[PLAN_RUNTIME_CONTEXT\]/)
-    expect(projection.messages[1]).toEqual({ role: 'user', content: 'continue' })
+    expect(projection.messages[0]).toEqual({ role: 'user', content: 'continue' })
+    expect(String(projection.messages[1]!.content)).toMatch(/^\[PLAN_RUNTIME_CONTEXT\]/)
     expect(projection.report.plan_context_attached).toBe(1)
   })
+
+  it('freezes the shrink/microcompact boundary at a caller-provided stableBoundary (2026-07-05 B3)', () => {
+    const longText = 'x'.repeat(2000)
+    const history = [
+      { role: 'user', content: 'go' },
+      { role: 'assistant', content: '', tool_calls: [{ id: 'c1', type: 'function', function: { name: 'echo', arguments: '{}' } }] },
+      { role: 'tool', tool_call_id: 'c1', name: 'echo', content: longText },
+    ]
+    const pipeline = new ContextPipeline({ keepRecent: 2 })
+
+    // turnStartLength=1（只有最初的 user 消息）；后续增长过程中 stableBoundary 冻结在 1
+    const call2 = pipeline.project(history as never, { stableBoundary: 1 })
+    const grown = [
+      ...history,
+      { role: 'assistant', content: '', tool_calls: [{ id: 'c2', type: 'function', function: { name: 'echo', arguments: '{}' } }] },
+      { role: 'tool', tool_call_id: 'c2', name: 'echo', content: longText },
+    ]
+    const call3 = pipeline.project(grown as never, { stableBoundary: 1 })
+
+    // 不加 stableBoundary 时，call3 的 cutoff 会随 history.length 增长追上 tool1，把它从 call2 的原文变成 [shrunk]——
+    // 这正是审计会话里 shrunk_old_tool_results 在几乎每次调用都命中的机制。冻结后 tool1 在两次调用间逐字节相同。
+    expect(call3.messages[2]!.content).toBe(call2.messages[2]!.content)
+    expect(call3.messages[2]!.content).toBe(longText)
+
+    // 不传 stableBoundary 时保持旧行为（cutoff 随当前长度滑动），existing 测试的默认路径不受影响
+    const withoutBoundary = pipeline.project(grown as never)
+    expect(String(withoutBoundary.messages[2]!.content)).toContain('[shrunk]')
+  })
 })
+

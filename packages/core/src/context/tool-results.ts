@@ -69,11 +69,13 @@ export function shrinkOldToolResults(
   history: OpenAiMsg[],
   keepRecent: number = DEFAULT_KEEP_RECENT,
   replacementMinBytes: number = DEFAULT_MIN_BYTES,
+  stableBoundary?: number,
 ): [OpenAiMsg[], number] {
-  if (history.length <= keepRecent) return [history.slice(), 0]
+  const boundary = stableBoundary ?? history.length
+  if (boundary <= keepRecent) return [history.slice(), 0]
   const toolIndices: number[] = []
   history.forEach((m, i) => { if (m.role === 'tool') toolIndices.push(i) })
-  const cutoff = history.length - keepRecent
+  const cutoff = boundary - keepRecent
   let shrunk = 0
   const out = history.map((msg, i) => {
     if (msg.role !== 'tool' || i >= cutoff) return msg
@@ -240,6 +242,10 @@ export function replaceAggregateToolResults(
     if (group.total <= budgetChars) continue
     let currentTotal = group.total
     const replacedCallIds: string[] = []
+    // 注：聚合预算是「按 turn_id 累加的组总量」决策，天然非单调（新批次挤入同一组会让
+    // 早前已经不需要替换的条目重新变得需要替换）。冻结边界只对 shrink/microcompact 这类
+    // 逐条独立、单调判定的机制生效；聚合替换的 turn 内缓存稳定性留作已知限制（未在
+    // 2026-07-05 审计会话中实测触发，非本轮 stableBoundary 覆盖范围）。
     const candidates = group.entries
       .filter((entry) => entry.replaceable)
       .sort((a, b) => (b.size - a.size) || (a.index - b.index))

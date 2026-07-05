@@ -10,6 +10,7 @@ import { existsSync, mkdtempSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { AgentRunner, type MemoryStoreLike } from './runner'
+import { ContextPipeline } from '../context/pipeline'
 import { TurnPhase, TurnState } from './turn-state'
 import { LLMProvider, type ChatArgs, type ChatStreamArgs, type LLMResponse, type ToolCallRequest } from '../providers/base'
 import { Tool } from '../tools/base'
@@ -1075,6 +1076,46 @@ describe('AgentRunner turn phases (test_runner_state.py)', () => {
     const reply = await runner.stepAsync([{ role: 'user', content: '继续' }])
 
     expect(reply).toBe('完成')
+  })
+
+  it('freezes the shrink boundary end-to-end so the prefix stays byte-stable across a turn\'s model calls (2026-07-05 B3)', async () => {
+    class BigEchoTool extends Tool {
+      override name = 'big_echo'
+      override description = 'returns a long fixed result'
+      override parameters = toolParamsSchema({}, [])
+      execute(): string { return 'x'.repeat(2000) }
+    }
+    const registry = new ToolRegistry()
+    registry.register(new BigEchoTool())
+    const provider = new FakeProvider([
+      makeResponse({ content: '', toolCalls: [toolCall('c1', 'big_echo', {})], finishReason: 'tool_calls' }),
+      makeResponse({ content: '', toolCalls: [toolCall('c2', 'big_echo', {})], finishReason: 'tool_calls' }),
+      makeResponse({ content: '', toolCalls: [toolCall('c3', 'big_echo', {})], finishReason: 'tool_calls' }),
+      makeResponse({ content: 'done' }),
+    ])
+    // keepRecent 很小，逼迫 shrink 的 cutoff 在几次迭代内就会追上第一条大结果——
+    // 这正是 2026-07-05 会话里 shrunk_old_tool_results 在几乎每次调用都命中的复现条件。
+    const runner = new AgentRunner({
+      provider,
+      model: 'fake',
+      registry,
+      systemPrompt: 'system',
+      contextPipeline: new ContextPipeline({ keepRecent: 2 }),
+    })
+
+    await runner.stepAsync([{ role: 'user', content: 'go' }])
+
+    // messages = [system, user, ...(assistant/tool 对)...]；第一条工具结果固定在 index 3
+    expect(provider.seenMessages.length).toBe(4)
+    const firstToolResultAcrossCalls = provider.seenMessages
+      .filter((call) => call.length > 3)
+      .map((call) => call[3]!.content)
+    expect(firstToolResultAcrossCalls.length).toBeGreaterThanOrEqual(2)
+    // 没有 stableBoundary 时，这条消息会在某次调用从原文变成 [shrunk]，字节不再相同；
+    // 冻结后它在 turn 内的每次调用里都逐字节相同。
+    const distinct = new Set(firstToolResultAcrossCalls)
+    expect(distinct.size).toBe(1)
+    expect(String([...distinct][0])).not.toContain('[shrunk]')
   })
 
   it('final reply excludes interim tool-batch narration fragments (2026-07-05 B8)', async () => {
