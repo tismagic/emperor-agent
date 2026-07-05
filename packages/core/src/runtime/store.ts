@@ -78,6 +78,12 @@ export interface RuntimeStats {
   needsRotation: boolean
 }
 
+const INDEX_WRITE_INTERVAL_MS = 500
+const INDEX_FORCE_WRITE_EVENTS = new Set([
+  'assistant_done', 'turn_paused', 'runtime_task_cancelled', 'error',
+  'plan_draft', 'plan_approved', 'interaction_cancelled', 'session_created',
+])
+
 export class RuntimeEventStore {
   readonly root: string
   readonly runtimeDir: string
@@ -86,6 +92,7 @@ export class RuntimeEventStore {
   readonly indexFile: string
   private readonly sessionId: string | null
   private _latestSeq = 0
+  private lastIndexWriteMs = 0
 
   constructor(root: string, opts: { sessionDirOverride?: boolean } = {}) {
     this.root = root
@@ -115,7 +122,13 @@ export class RuntimeEventStore {
     const receipt = ownerReceipt(payload.owner ?? opts.owner ?? null, { sessionId, turnId })
     if (receipt) payload.owner = receipt
     appendFileSync(this.eventsFile, JSON.stringify(payload) + '\n', 'utf8')
-    this.writeIndex(this.statsFromIndex(this.loadIndex()))
+    // B6：index 重建是 O(全部事件) 的全量扫描，高频 delta 期间按时间窗节流；
+    // 终态事件强制落盘，保证崩溃后 index 至多落后一个窗口。
+    const now = Date.now()
+    if (INDEX_FORCE_WRITE_EVENTS.has(String(payload.event)) || now - this.lastIndexWriteMs >= INDEX_WRITE_INTERVAL_MS) {
+      this.lastIndexWriteMs = now
+      this.writeIndex(this.statsFromIndex(this.loadIndex()))
+    }
     return payload
   }
 

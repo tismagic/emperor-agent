@@ -57,11 +57,9 @@ export class ModelCaller {
     const onDelta = async (delta: string): Promise<void> => {
       if (opts.emit) await opts.emit({ event: 'message_delta', delta })
     }
-    const onToolCallDelta = async (delta: ToolCallDelta): Promise<void> => {
-      if (!opts.emit) return
-      const event = planDraftDeltaFromToolDelta(delta)
-      if (event) await opts.emit(event)
-    }
+    // B6：plan 起草 delta 是全量快照，按时间窗合并落盘（实测 27 秒 1421 条 → 约每 100ms 一条）
+    const planDeltaThrottle = createPlanDeltaThrottle(opts.emit, PLAN_DELTA_INTERVAL_MS)
+    const onToolCallDelta = planDeltaThrottle.onDelta
     const onToolCallComplete = opts.onToolCallComplete ?? null
     let primaryRetryCount = 0
     let primaryErrorKind = ''
@@ -105,6 +103,7 @@ export class ModelCaller {
         providerRetryCount: primaryRetryCount,
         providerErrorKind: primaryErrorKind,
       }
+      await planDeltaThrottle.flush()
       return primary.response
     } catch (exc) {
       primaryErrorKind = classifyProviderError(exc)
@@ -154,6 +153,7 @@ export class ModelCaller {
         providerRetryCount: primaryRetryCount + fallback.retryCount,
         providerErrorKind: fallback.errorKind || primaryErrorKind,
       }
+      await planDeltaThrottle.flush()
       return fallback.response
     }
   }
@@ -251,6 +251,41 @@ const MODEL_CALL_MAX_RETRIES = 2
 
 async function boundedRetryBackoff(retryCount: number): Promise<void> {
   await new Promise((resolve) => setTimeout(resolve, Math.min(20 * retryCount, 100)))
+}
+
+const PLAN_DELTA_INTERVAL_MS = 100
+
+/**
+ * plan_draft_delta 节流（B6）：每条 delta 都携带全量快照，窗口内只保留最新一条，
+ * 流结束时 trailing flush 保证终态不丢。
+ */
+export function createPlanDeltaThrottle(
+  emit: StreamEmitter | null,
+  intervalMs = PLAN_DELTA_INTERVAL_MS,
+): { onDelta: (delta: ToolCallDelta) => Promise<void>; flush: () => Promise<void> } {
+  let lastEmitMs = 0
+  let pending: Record<string, unknown> | null = null
+  return {
+    async onDelta(delta: ToolCallDelta): Promise<void> {
+      if (!emit) return
+      const event = planDraftDeltaFromToolDelta(delta)
+      if (!event) return
+      const now = Date.now()
+      if (now - lastEmitMs >= intervalMs) {
+        lastEmitMs = now
+        pending = null
+        await emit(event)
+        return
+      }
+      pending = event
+    },
+    async flush(): Promise<void> {
+      if (pending === null || !emit) return
+      const event = pending
+      pending = null
+      await emit(event)
+    },
+  }
 }
 
 function planDraftDeltaFromToolDelta(delta: ToolCallDelta): Record<string, unknown> | null {

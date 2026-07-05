@@ -285,3 +285,34 @@ describe('compactReplayEvents (P1-5 replay compaction)', () => {
     expect(readFileSync(eventsFile, 'utf8').trim().split('\n')).toHaveLength(7)
   })
 })
+
+describe('index write throttle (2026-07-05 B6)', () => {
+  it('does not rewrite index.json on every append; terminal events force a write', async () => {
+    const { mkdtempSync, readFileSync, statSync } = await import('node:fs')
+    const { tmpdir } = await import('node:os')
+    const { join } = await import('node:path')
+    const { RuntimeEventStore } = await import('./store')
+    const root = mkdtempSync(join(tmpdir(), 'emperor-index-throttle-'))
+    const store = new RuntimeEventStore(root)
+
+    let indexWrites = 0
+    let lastMtime = 0
+    const indexPath = store.indexFile
+    const mtime = () => { try { return statSync(indexPath).mtimeMs + statSync(indexPath).size / 1e9 } catch { return 0 } }
+    lastMtime = mtime()
+    for (let i = 0; i < 100; i++) {
+      store.append({ event: 'message_delta', delta: 'x', turn_id: 't1' })
+      const m = mtime()
+      if (m !== lastMtime) { indexWrites++; lastMtime = m }
+    }
+    // 100 条高频 delta 期间 index 重写次数远小于 append 次数
+    expect(indexWrites).toBeLessThan(10)
+    expect(store.latestSeq).toBe(100)
+
+    store.append({ event: 'assistant_done', content: 'done', turn_id: 't1' })
+    const index = JSON.parse(readFileSync(indexPath, 'utf8'))
+    // 终态事件强制落盘，index 追平真实计数
+    expect(Number(index.events)).toBe(101)
+    expect(Number(index.latestSeq)).toBe(101)
+  })
+})
