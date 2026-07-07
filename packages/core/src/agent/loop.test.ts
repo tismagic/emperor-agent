@@ -76,6 +76,46 @@ describe('AgentLoop (MIG-CORE-011)', () => {
     expect(existsSync(join(root, '.emperor', 'sessions', loop.activeSessionId!, 'history.jsonl'))).toBe(true)
   })
 
+  it('applies configured PreToolUse hooks through the real loop runtime', async () => {
+    const root = tmp('emperor-agent-loop-hooks-')
+    const stateRoot = join(root, '.emperor')
+    mkdirSync(stateRoot, { recursive: true })
+    writeFileSync(join(root, 'hello.txt'), 'secret content\n', 'utf8')
+    writeFileSync(join(stateRoot, 'hooks_config.json'), JSON.stringify({
+      hooks: {
+        PreToolUse: [{
+          id: 'deny-read',
+          matcher: 'read_file',
+          handler: {
+            type: 'command',
+            command: process.execPath,
+            args: ['-e', 'process.stdout.write(JSON.stringify({decision:"deny",reason:"blocked read"}))'],
+          },
+        }],
+      },
+    }))
+    const provider = new FakeProvider()
+    const loop = await AgentLoop.create({
+      root,
+      stateRoot,
+      templatesDir: TEMPLATES_DIR,
+      modelRouter: fakeRouter(provider),
+    })
+    const events: Array<Record<string, unknown>> = []
+
+    await loop.runUserTurn('读取 hello.txt', {
+      turnId: 'turn_hooks',
+      emit: async (event) => { events.push(event) },
+    })
+
+    const secondCall = provider.calls[1]!
+    const toolMessage = secondCall.messages.find((message) => message.role === 'tool')
+    expect(String(toolMessage?.content ?? '')).toContain('blocked read')
+    expect(String(toolMessage?.content ?? '')).not.toContain('secret content')
+    expect(events.map((event) => event.event)).toContain('hook_run_started')
+    expect(readFileSync(join(stateRoot, 'hooks', 'audit.jsonl'), 'utf8')).toContain('deny-read')
+  })
+
   it('rejects an unavailable model before recording user history', async () => {
     const root = tmp('emperor-agent-loop-no-model-')
     const provider = new FakeProvider()

@@ -839,6 +839,66 @@ describe('AgentRunner turn phases (test_runner_state.py)', () => {
     expect(phases.filter((e) => e.phase === 'model_request').map((e) => e.iteration)).toEqual([1, 2])
   })
 
+  it('applies PreToolUse deny before executing the tool', async () => {
+    class CountingTool extends Tool {
+      override name = 'counting_echo'
+      override description = 'Counts executions.'
+      override parameters = toolParamsSchema({}, [])
+      execute(): string { executed += 1; return 'executed' }
+    }
+    let executed = 0
+    const registry = new ToolRegistry()
+    registry.register(new CountingTool())
+    const provider = new FakeProvider([
+      makeResponse({ content: '', toolCalls: [toolCall('call_1', 'counting_echo', {})], finishReason: 'tool_calls' }),
+      makeResponse({ content: 'done' }),
+    ])
+    const runner = new AgentRunner({
+      provider,
+      model: 'fake',
+      registry,
+      systemPrompt: 'system',
+      hooks: {
+        run: async (eventName) => eventName === 'PreToolUse'
+          ? { decision: 'deny', reason: 'blocked by hook', results: [], additionalContext: '' }
+          : { decision: 'passthrough', reason: '', results: [], additionalContext: '' },
+      },
+    })
+
+    await runner.stepAsync([{ role: 'user', content: 'hi' }])
+
+    expect(executed).toBe(0)
+    const secondCallMessages = provider.seenMessages[1] ?? []
+    const toolMessage = secondCallMessages.find((message) => message.role === 'tool')
+    expect(String(toolMessage?.content ?? '')).toContain('blocked by hook')
+  })
+
+  it('adds PostToolUse hook context to the next model call', async () => {
+    const registry = new ToolRegistry()
+    registry.register(new EchoTool())
+    const provider = new FakeProvider([
+      makeResponse({ content: '', toolCalls: [toolCall('call_1', 'echo', { value: 'ok' })], finishReason: 'tool_calls' }),
+      makeResponse({ content: 'done' }),
+    ])
+    const runner = new AgentRunner({
+      provider,
+      model: 'fake',
+      registry,
+      systemPrompt: 'system',
+      hooks: {
+        run: async (eventName) => eventName === 'PostToolUse'
+          ? { decision: 'passthrough', reason: '', results: [], additionalContext: '[policy] remember this' }
+          : { decision: 'passthrough', reason: '', results: [], additionalContext: '' },
+      },
+    })
+
+    await runner.stepAsync([{ role: 'user', content: 'hi' }])
+
+    const secondCallMessages = provider.seenMessages[1] ?? []
+    const toolMessage = secondCallMessages.find((message) => message.role === 'tool')
+    expect(String(toolMessage?.content ?? '')).toContain('[policy] remember this')
+  })
+
   it('emits audit thoughts before and after tool batches', async () => {
     const registry = new ToolRegistry()
     registry.register(new EchoTool())

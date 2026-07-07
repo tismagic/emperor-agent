@@ -423,6 +423,7 @@ export function useRuntime(options: {
   const SESSION_RUNNING_EVENTS = new Set([
     'user_message', 'message_delta', 'agent_thought', 'plan_draft_delta',
     'tool_call', 'tool_run_queued', 'tool_run_started', 'tool_result', 'tool_run_completed', 'tool_run_failed',
+    'hook_run_started', 'hook_run_progress',
   ])
   const SESSION_TERMINAL_EVENTS = new Set(['assistant_done', 'turn_paused', 'runtime_task_cancelled', 'error'])
 
@@ -799,6 +800,14 @@ export function useRuntime(options: {
     }
     if (data.event === 'tool_call') {
       updatePending(`正在执行: ${data.name}`, compactJson(data.arguments, 180))
+      return
+    }
+    if (data.event === 'hook_run_started' || data.event === 'hook_run_progress') {
+      updatePending(`Hook: ${data.event_name || data.hook_id || 'running'}`, data.hook_id || '')
+      return
+    }
+    if (data.event === 'hook_run_failed') {
+      updatePending(`Hook 失败: ${data.event_name || data.hook_id || ''}`, data.reason || '', 'error', 4000)
       return
     }
     if (data.event === 'tool_result') {

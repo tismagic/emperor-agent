@@ -45,6 +45,7 @@ import { ModelCaller, type ModelCallMeta, type RunnerModelHost } from './model-c
 import { CancelledTaskError } from '../runtime/active'
 import { ContextOverflowError } from '../errors'
 import { isContextOverflowProviderError } from '../providers/errors'
+import type { HookAggregateDecision, HookEventName, HookRuntimeRunOptions } from '../hooks'
 import * as runtimeEvents from './runtime-events'
 import {
   applyRepeatedRefusalNudge,
@@ -176,6 +177,11 @@ export interface AgentRunnerOptions {
   promptSnapshotDir?: string | null
   sessionId?: string | null
   streamingToolExecution?: boolean
+  hooks?: AgentRunnerHookHost | null
+}
+
+export interface AgentRunnerHookHost {
+  run(eventName: HookEventName, opts: HookRuntimeRunOptions, emit?: StreamEmitter | null): Promise<HookAggregateDecision> | HookAggregateDecision
 }
 
 export class AgentRunner implements RunnerModelHost {
@@ -213,6 +219,7 @@ export class AgentRunner implements RunnerModelHost {
   promptSnapshotDir: string | null
   sessionId: string | null
   streamingToolExecution: boolean
+  hooks: AgentRunnerHookHost | null
   lastEstimatedInputTokens: number | null = null
   lastContextProjectionReport: Record<string, unknown> | null = null
   lastModelCall: ModelCallMeta
@@ -252,6 +259,7 @@ export class AgentRunner implements RunnerModelHost {
     this.promptSnapshotDir = opts.promptSnapshotDir ?? null
     this.sessionId = opts.sessionId ?? null
     this.streamingToolExecution = opts.streamingToolExecution ?? false
+    this.hooks = opts.hooks ?? null
     this.lastModelCall = {
       model: this.model,
       provider: this.providerName,
@@ -290,6 +298,7 @@ export class AgentRunner implements RunnerModelHost {
     let queryState: QueryState = makeQueryState({ turnId, maxTurns: this.maxTurns })
     const finalParts: string[] = []
     let honestyNudged = false
+    let stopHookNudged = false
     const clarification = this.assessClarification(history)
     if (this.memoryStore !== null) {
       this.memoryStore.writeCheckpoint(history, { turnId, phase: 'user_received' })
@@ -533,6 +542,19 @@ export class AgentRunner implements RunnerModelHost {
           await this.emitTurnPhase(turnState, TurnPhase.PLAN_FOLLOWUP, emit, { honesty: 'verification_unrecorded' })
           continue
         }
+      }
+
+      const stopDecision = await this.runHookEvent('Stop', {
+        sessionId: this.sessionId ?? '',
+        cwd: this.workspaceRoot ?? process.cwd(),
+        source: 'assistant_final',
+        finalReply,
+      }, emit)
+      if ((stopDecision.decision === 'deny' || stopDecision.decision === 'ask') && !stopHookNudged) {
+        stopHookNudged = true
+        history.push({ role: 'user', content: `[Stop hook] ${stopDecision.reason || 'Continue until the stop hook passes.'}` })
+        await this.emitTurnPhase(turnState, TurnPhase.PLAN_FOLLOWUP, emit, { hook: 'Stop', decision: stopDecision.decision })
+        continue
       }
 
       if (this.memoryStore !== null) {
@@ -805,24 +827,80 @@ export class AgentRunner implements RunnerModelHost {
     if (this.planGuardBlocksTool(call, planDecision)) {
       return ToolResultObj.fromText(planGuardMessage(call, planDecision as never), { isError: true })
     }
+    const preTool = await this.runHookEvent('PreToolUse', this.toolHookInput(call), emit)
+    if (preTool.decision === 'deny') {
+      return ToolResultObj.fromText(`Error: hook denied ${call.name}: ${preTool.reason}`, { isError: true, meta: { hook_decision: preTool.decision } })
+    }
+    const effectiveCall = preTool.updatedInput ? { ...call, arguments: preTool.updatedInput } : call
     if (this.controlManager !== null) {
-      const decision = this.controlManager.assessPermission(call.name, call.arguments, this.registry)
+      const decision = this.controlManager.assessPermission(effectiveCall.name, effectiveCall.arguments, this.registry)
       if (decision.requiresApproval) {
-        return ToolResultObj.fromText(this.controlManager.permissionApprovalResult(decision, { parentCallId: call.id }))
+        const hookDecision = await this.runHookEvent('PermissionRequest', {
+          ...this.toolHookInput(effectiveCall),
+          permission: { allowed: decision.allowed, requiresApproval: decision.requiresApproval, reason: decision.reason },
+        }, emit)
+        if (hookDecision.decision === 'deny') {
+          return ToolResultObj.fromText(`Error: hook denied permission for ${effectiveCall.name}: ${hookDecision.reason}`, { isError: true, meta: { hook_decision: hookDecision.decision } })
+        }
+        if (hookDecision.decision !== 'allow') {
+          return ToolResultObj.fromText(this.controlManager.permissionApprovalResult(decision, { parentCallId: call.id }))
+        }
       }
       if (!decision.allowed) {
-        return ToolResultObj.fromText(`Error: permission denied for ${call.name}: ${decision.reason}`, { isError: true })
+        await this.runHookEvent('PermissionDenied', {
+          ...this.toolHookInput(effectiveCall),
+          permission: { allowed: decision.allowed, requiresApproval: decision.requiresApproval, reason: decision.reason },
+        }, emit)
+        return ToolResultObj.fromText(`Error: permission denied for ${effectiveCall.name}: ${decision.reason}`, { isError: true })
       }
     }
-    const tool = this.registry.get(call.name)
+    const tool = this.registry.get(effectiveCall.name)
     const ctx = {
       ...(this.workspaceRoot ? { workspaceRoot: this.workspaceRoot } : {}),
       ...(emit && tool && tool.requiresRuntimeContext ? { emit } : {}),
-      parentCallId: call.id,
+      parentCallId: effectiveCall.id,
       sessionId: this.sessionId,
       signal,
     }
-    return this.registry.executeResult(call.name, call.arguments, ctx)
+    const result = await this.registry.executeResult(effectiveCall.name, effectiveCall.arguments, ctx)
+    const postDecision = await this.runHookEvent(result.isError ? 'PostToolUseFailure' : 'PostToolUse', {
+      ...this.toolHookInput(effectiveCall),
+      toolResult: {
+        summary: result.summary,
+        content: result.modelContent,
+        isError: result.isError,
+        metadata: result.metadata,
+      },
+    }, emit)
+    return postDecision.additionalContext ? appendHookContext(result, postDecision.additionalContext) : result
+  }
+
+  private toolHookInput(call: ToolCallRequest): HookRuntimeRunOptions {
+    return {
+      sessionId: this.sessionId ?? '',
+      cwd: this.workspaceRoot ?? process.cwd(),
+      projectRoot: this.workspaceRoot ?? null,
+      toolName: call.name,
+      toolInput: call.arguments,
+    }
+  }
+
+  private async runHookEvent(eventName: HookEventName, opts: HookRuntimeRunOptions, emit: StreamEmitter | null): Promise<HookAggregateDecision> {
+    if (!this.hooks) return emptyHookDecision()
+    try {
+      return await this.hooks.run(eventName, opts, emit)
+    } catch (error) {
+      if (emit) {
+        await emit({
+          event: 'hook_run_failed',
+          event_name: eventName,
+          status: 'failed',
+          decision: 'passthrough',
+          reason: error instanceof Error ? error.message : String(error),
+        })
+      }
+      return emptyHookDecision()
+    }
   }
 
   private assessPlanDecision(history: Msg[]): unknown {
@@ -1053,4 +1131,21 @@ function throwIfAborted(signal: AbortSignal | null | undefined): void {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value && typeof value === 'object' && !Array.isArray(value))
+}
+
+function emptyHookDecision(): HookAggregateDecision {
+  return { decision: 'passthrough', reason: '', results: [], additionalContext: '' }
+}
+
+function appendHookContext(result: ToolResultObj, context: string): ToolResultObj {
+  const trimmed = context.trim()
+  if (!trimmed) return result
+  return new ToolResultObj({
+    modelContent: `${result.modelContent}\n\n[Hook additional context]\n${trimmed}`,
+    displaySummary: result.displaySummary,
+    rawContent: result.rawContent,
+    artifacts: result.artifacts,
+    metadata: { ...result.metadata, hook_additional_context: true },
+    isError: result.isError,
+  })
 }

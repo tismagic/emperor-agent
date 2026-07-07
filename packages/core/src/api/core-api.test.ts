@@ -32,6 +32,10 @@ const EXPECTED_OPERATIONS = [
   'desktopPet.setEnabled',
   'diagnostics.get',
   'external.get',
+  'hooks.getAudit',
+  'hooks.getConfig',
+  'hooks.saveConfig',
+  'hooks.testRun',
   'mcp.getConfig',
   'mcp.saveConfig',
   'memory.checkWatchlist',
@@ -47,6 +51,7 @@ const EXPECTED_OPERATIONS = [
   'memory.saveEpisode',
   'memory.saveWatchlist',
   'memory.tokens',
+  'model.discoverModels',
   'model.getConfig',
   'model.saveConfig',
   'model.saveOnboardingConfig',
@@ -154,6 +159,42 @@ describe('CoreApi (MIG-IPC-001)', () => {
       turnId: 'turn_state_1',
     })
     expect((diagnostics as any).promptSnapshots.recent[0].sections.map((section: any) => section.name)).toContain('bootstrap')
+
+    await api.close()
+  })
+
+  it('manages hooks config, audit, and test runs through CoreApi', async () => {
+    const root = tmp('emperor-core-api-hooks-')
+    const api = await CoreApi.create({ root, stateRoot: join(root, '.emperor'), templatesDir: TEMPLATES_DIR, modelRouter: fakeRouter(new FakeProvider()) })
+
+    const saved = await api.hooks.saveConfig({
+      hooks: {
+        PreToolUse: [{
+          id: 'api-deny',
+          matcher: 'write_file',
+          handler: {
+            type: 'command',
+            command: process.execPath,
+            args: ['-e', 'process.stdout.write(JSON.stringify({decision:"deny",reason:"api blocked"}))'],
+          },
+        }],
+      },
+    }) as any
+    const loaded = await api.hooks.getConfig() as any
+    const testRun = await api.hooks.testRun({
+      eventName: 'PreToolUse',
+      toolName: 'write_file',
+      toolInput: { path: 'x.txt' },
+    }) as any
+    const audit = await api.hooks.getAudit({ limit: 5 }) as any
+    const boot = await api.bootstrap() as any
+
+    expect(saved.config.hooks.PreToolUse[0].id).toBe('api-deny')
+    expect(loaded.config.hooks.PreToolUse[0].source).toMatchObject({ kind: 'global', readonly: false })
+    expect(testRun.decision).toBe('deny')
+    expect(testRun.reason).toBe('api blocked')
+    expect(audit.records.some((record: any) => record.hookId === 'api-deny')).toBe(true)
+    expect(boot.hooks.summary.total).toBe(1)
 
     await api.close()
   })
@@ -612,7 +653,7 @@ describe('CoreApi (MIG-IPC-001)', () => {
       expect.objectContaining({ path: join(stateRoot, 'emperor.local.json.corrupt-1') }),
     ])
     expect(diagnostics).toHaveProperty('dependencies.desktopRenderer')
-    expect(diagnostics).toHaveProperty('dependencies.desktopPetNodeModules')
+    expect(diagnostics).toHaveProperty('dependencies.desktopPetModules')
 
     await api.close()
   })
@@ -982,7 +1023,7 @@ describe('CoreApi (MIG-IPC-001)', () => {
     await api.close()
   })
 
-  it('manages desktop pet preference and reports missing dependency', async () => {
+  it('manages desktop pet preference without spawning a separate process', async () => {
     const api = await CoreApi.create({
       root: tmp('emperor-core-api-'),
       stateRoot: tmp('emperor-core-api-state-'),
@@ -991,8 +1032,7 @@ describe('CoreApi (MIG-IPC-001)', () => {
     })
 
     const enabled = await api.desktopPet.setEnabled(true)
-    expect(enabled).toMatchObject({ enabled: true, running: false })
-    expect(String(enabled.lastError)).toContain('Electron dependency missing')
+    expect(enabled).toMatchObject({ enabled: true, running: true, lastError: null, available: true })
     expect((await api.desktopPet.get()).enabled).toBe(true)
 
     const disabled = await api.desktopPet.setEnabled(false)

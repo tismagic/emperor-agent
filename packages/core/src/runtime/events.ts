@@ -250,3 +250,52 @@ export function recordDegraded(opts: { kind: string; reason: string; taskId?: st
     taskId: opts.taskId ?? null,
   })
 }
+
+export function hookRunStarted(opts: { hookId: string; eventName: string; handlerType: string; source?: EventPayload | null }): EventPayload {
+  return runtimeEvent('hook_run_started', {
+    hook_id: opts.hookId,
+    event_name: opts.eventName,
+    handler_type: opts.handlerType,
+    hook_source: opts.source ?? null,
+  })
+}
+
+export function hookRunProgress(opts: { hookId: string; eventName: string; status: string; message?: string | null }): EventPayload {
+  return runtimeEvent('hook_run_progress', {
+    hook_id: opts.hookId,
+    event_name: opts.eventName,
+    status: opts.status,
+    message: opts.message ?? null,
+  })
+}
+
+export function hookRunCompleted(opts: { hookId: string; eventName: string; status: string; decision: string; reason: string; durationMs: number }): EventPayload {
+  return runtimeEvent('hook_run_completed', {
+    hook_id: opts.hookId,
+    event_name: opts.eventName,
+    status: opts.status,
+    decision: opts.decision,
+    reason: opts.reason,
+    duration_ms: opts.durationMs,
+  })
+}
+
+export function hookRunFailed(opts: { hookId: string; eventName: string; status: string; decision: string; reason: string; durationMs: number }): EventPayload {
+  return runtimeEvent('hook_run_failed', {
+    hook_id: opts.hookId,
+    event_name: opts.eventName,
+    status: opts.status,
+    decision: opts.decision,
+    reason: opts.reason,
+    duration_ms: opts.durationMs,
+  })
+}
+
+export function hookDecisionApplied(opts: { eventName: string; decision: string; reason: string; hookIds: string[] }): EventPayload {
+  return runtimeEvent('hook_decision_applied', {
+    event_name: opts.eventName,
+    decision: opts.decision,
+    reason: opts.reason,
+    hook_ids: opts.hookIds,
+  })
+}

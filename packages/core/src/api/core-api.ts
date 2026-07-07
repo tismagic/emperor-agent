@@ -17,6 +17,7 @@ import { ChatService, InvalidSessionError, MainlineTurnService, type DraftSessio
 import { CoreConfigService, type UserConfigPayload } from './services/config-service'
 import { CoreDiagnosticsService } from './services/diagnostics-service'
 import { CoreDesktopPetService } from './services/desktop-pet-service'
+import { CoreHooksService } from './services/hooks-service'
 import { CoreMemoryService } from './services/memory-service'
 import { CoreModelService } from './services/model-service'
 import { CoreSkillService } from './services/skill-service'
@@ -49,6 +50,7 @@ export const CORE_API_ROUTE_OPERATIONS: RouteOperation[] = [
   op('attachments.rawPath', 'GET', '/api/attachments/{id}/raw'),
   op('mcp.getConfig', 'GET', '/api/mcp-config'),
   op('mcp.saveConfig', 'POST', '/api/mcp-config'),
+  op('model.discoverModels', 'IPC', 'model.discoverModels'),
   op('model.getConfig', 'GET', '/api/model-config'),
   op('model.saveConfig', 'POST', '/api/model-config'),
   op('model.saveOnboardingConfig', 'IPC', 'model.saveOnboardingConfig'),
@@ -80,6 +82,10 @@ export const CORE_API_ROUTE_OPERATIONS: RouteOperation[] = [
   op('team.wakeMember', 'POST', '/api/team/members/{name}/wake'),
   op('team.shutdownMember', 'POST', '/api/team/members/{name}/shutdown'),
   op('external.get', 'GET', '/api/external'),
+  op('hooks.getConfig', 'GET', '/api/hooks'),
+  op('hooks.saveConfig', 'POST', '/api/hooks'),
+  op('hooks.getAudit', 'GET', '/api/hooks/audit'),
+  op('hooks.testRun', 'POST', '/api/hooks/test-run'),
   op('tasks.list', 'GET', '/api/tasks'),
   op('tasks.get', 'GET', '/api/tasks/{task_id}'),
   op('tasks.transcript', 'GET', '/api/tasks/{task_id}/transcript'),
@@ -125,6 +131,7 @@ export class CoreApi {
   readonly configService: CoreConfigService
   readonly desktopPetService: CoreDesktopPetService
   readonly diagnosticsService: CoreDiagnosticsService
+  readonly hooksService: CoreHooksService
   readonly memoryService: CoreMemoryService
   readonly modelService: CoreModelService
   readonly skillService: CoreSkillService
@@ -147,6 +154,12 @@ export class CoreApi {
     this.modelService = new CoreModelService(this.paths.stateRoot, {
       router: () => this.loop.modelRouter,
       refreshModelConfig: () => this.loop.refreshModelConfig(),
+    })
+    this.hooksService = new CoreHooksService(this.paths.stateRoot, {
+      activeSessionId: () => this.loop.activeSessionId,
+      activeWorkspaceRoot: () => this.loop.workspacePolicyDiagnostics().workspaceRoot as string || this.root,
+      activeProjectRoot: () => this.loop.activeSession?.mode === 'build' ? this.loop.activeSession.project_path ?? null : null,
+      assertMutation: (area, action) => this.assertMutation(area, action),
     })
     this.memoryService = new CoreMemoryService(this.paths.stateRoot, {
       loop: this.loop,
@@ -236,6 +249,7 @@ export class CoreApi {
       team: this.team.get(),
       scheduler: this.scheduler.get(),
       control: this.control.get(),
+      hooks: await this.hooks.getConfig(),
       desktopPet: await this.desktopPet.get(),
       context_used: this.loop.tokenTracker.lastInputTokensValue(),
       unarchivedHistory: this.loop.activeMemoryStore.loadUnarchivedHistory(),
@@ -312,7 +326,9 @@ export class CoreApi {
     get: (): UserConfigPayload => this.configService.getUserConfig(),
     save: (body: { content?: unknown } | string = {}): UserConfigPayload => {
       this.assertMutation('config', 'save')
-      return this.configService.saveUserConfig(typeof body === 'string' ? body : String(body.content ?? ''))
+      const result = this.configService.saveUserConfig(typeof body === 'string' ? body : String(body.content ?? ''))
+      void this.hooksService.notifyConfigChange('config.save').catch(() => {})
+      return result
     },
   }
 
@@ -330,20 +346,34 @@ export class CoreApi {
       // mcp.saveConfig 落盘后会经 MCPClient 以 servers.*.command 起子进程（stdio transport）；
       // 未经审批就能被 renderer 一条 IPC 写任意 command/args 是一条进程执行 pivot（审计 P0-5）。
       this.assertMutation('mcp', 'saveConfig')
-      return this.configService.saveMcpConfig(raw) as unknown as Dict
+      const result = await this.configService.saveMcpConfig(raw) as unknown as Dict
+      await this.hooksService.notifyConfigChange('mcp.saveConfig')
+      return result
     },
+  }
+
+  readonly hooks = {
+    getConfig: async (opts: Dict = {}): Promise<Dict> => this.hooksService.getConfig(opts),
+    saveConfig: async (raw: unknown): Promise<Dict> => this.hooksService.saveConfig(raw),
+    getAudit: async (opts: { limit?: number | string | null } = {}): Promise<Dict> => this.hooksService.getAudit(opts),
+    testRun: async (input: Dict): Promise<Dict> => this.hooksService.testRun(input),
   }
 
   readonly model = {
     getConfig: async (): Promise<Dict> => this.modelService.getConfig() as unknown as Dict,
     saveConfig: async (raw: Dict): Promise<Dict> => {
       this.assertMutation('model', 'saveConfig')
-      return this.modelService.saveConfig(raw) as unknown as Dict
+      const result = await this.modelService.saveConfig(raw) as unknown as Dict
+      await this.hooksService.notifyConfigChange('model.saveConfig')
+      return result
     },
     saveOnboardingConfig: async (settings: Dict): Promise<Dict> => {
       this.assertMutation('model', 'saveOnboardingConfig')
-      return this.modelService.saveOnboardingConfig(settings) as unknown as Dict
+      const result = await this.modelService.saveOnboardingConfig(settings) as unknown as Dict
+      await this.hooksService.notifyConfigChange('model.saveOnboardingConfig')
+      return result
     },
+    discoverModels: async (body: Dict): Promise<Dict> => this.modelService.discoverModels(body) as unknown as Dict,
     test: async (body: Dict): Promise<Dict> => this.modelService.test(body),
   }
 

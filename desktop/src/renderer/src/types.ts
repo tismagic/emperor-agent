@@ -30,6 +30,64 @@ export interface McpConfigPayload {
   }
 }
 
+export interface HookSourcePayload {
+  kind?: 'global' | 'project' | 'test' | string
+  path?: string
+  readonly?: boolean
+  enabled?: boolean
+  diagnostics?: HookDiagnosticPayload[]
+}
+
+export interface HookDiagnosticPayload {
+  code?: string
+  path?: string
+  message?: string
+}
+
+export interface HookHandlerPayload {
+  type?: 'command' | 'http' | string
+  command?: string
+  args?: string[]
+  url?: string
+  timeoutMs?: number
+  headers?: Record<string, string>
+  async?: boolean
+  allowedEnv?: string[]
+}
+
+export interface HookDefinitionPayload {
+  id?: string
+  eventName?: string
+  enabled?: boolean
+  matcher?: string
+  condition?: string
+  handler?: HookHandlerPayload
+  source?: HookSourcePayload | null
+}
+
+export interface HooksConfigPayload {
+  version?: number
+  enabled?: boolean
+  projectHooks?: { enabled?: boolean }
+  hooks?: Record<string, HookDefinitionPayload[]>
+}
+
+export interface HooksPayload {
+  config?: HooksConfigPayload
+  globalConfig?: HooksConfigPayload
+  diagnostics?: HookDiagnosticPayload[]
+  sources?: HookSourcePayload[]
+  summary?: {
+    total?: number
+    events?: Array<{ eventName?: string; count?: number }>
+  }
+}
+
+export interface HookAuditPayload {
+  records?: Array<Record<string, unknown>>
+  badLines?: Array<{ line?: number; raw?: string }>
+}
+
 export interface SkillInfo {
   name: string
   description?: string
@@ -266,6 +324,9 @@ export interface ProviderOption {
   displayName?: string
   display_name?: string
   backend?: string
+  websiteUrl?: string
+  apiKeyUrl?: string
+  modelDiscovery?: string
   defaultApiBase?: string
   region?: ProviderRegion
   isGateway?: boolean
@@ -323,6 +384,22 @@ export interface ModelTestResult {
   finishReason?: string
   error?: string
   visionMarked?: boolean           // 视觉测试通过且后端已持久化 supportsVision
+}
+
+export interface DiscoveredModel {
+  id: string
+  ownedBy?: string
+  created?: number | string
+}
+
+export interface ModelDiscoveryResult {
+  ok: boolean
+  provider?: string
+  apiBase?: string | null
+  source?: string
+  models: DiscoveredModel[]
+  code?: string
+  message?: string
 }
 
 export interface AgentDefaults {
@@ -450,7 +527,7 @@ export interface ExternalDiagnosticsPayload {
 export interface DiagnosticsDependencyPayload {
   nodeRuntime?: boolean
   desktopRenderer?: boolean
-  desktopPetNodeModules?: boolean
+  desktopPetModules?: boolean
   [key: string]: unknown
 }
 
@@ -1046,6 +1123,11 @@ type WsEventVariants = (
   | { event: 'tool_run_completed'; id?: string; name: string; summary?: string; output?: string; output_truncated?: boolean; artifacts?: ToolArtifactRef[]; metadata?: Record<string, unknown> }
   | { event: 'tool_run_failed'; id?: string; name: string; message?: string; reason_kind?: 'safety_refusal' | 'error' | string }
   | { event: 'tool_run_cancelled'; id?: string; name: string; reason?: string }
+  | { event: 'hook_run_started'; hook_id?: string; event_name?: string; handler_type?: string; hook_source?: Record<string, unknown> | null }
+  | { event: 'hook_run_progress'; hook_id?: string; event_name?: string; status?: string; message?: string | null }
+  | { event: 'hook_run_completed'; hook_id?: string; event_name?: string; status?: string; decision?: string; reason?: string; duration_ms?: number }
+  | { event: 'hook_run_failed'; hook_id?: string; event_name?: string; status?: string; decision?: string; reason?: string; duration_ms?: number }
+  | { event: 'hook_decision_applied'; event_name?: string; decision?: string; reason?: string; hook_ids?: string[] }
   | { event: 'turn_phase'; phase?: string; sequence?: number; iteration?: number; detail?: Record<string, unknown> }
   | { event: 'turn_scope'; mode?: string; workspace_root?: string; state_root?: string; session_root?: string; project_id?: string | null; project_state_root?: string | null; active_memory_binding?: Record<string, unknown> }
   | { event: 'assistant_done'; content?: string }

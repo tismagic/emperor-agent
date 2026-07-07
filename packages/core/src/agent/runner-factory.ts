@@ -10,6 +10,7 @@ import {
   AgentRunner,
   type CompactorLike,
   type ControlManagerRunnerHost,
+  type AgentRunnerHookHost,
   type MemoryStoreLike,
   type TodoStoreLike,
   type TokenTrackerLike,
@@ -34,6 +35,7 @@ export function buildRoutedRunner(opts: {
   promptSnapshotDir?: string | null
   sessionId?: string | null
   streamingToolExecution?: boolean
+  hooks?: AgentRunnerHookHost | null
 }): AgentRunner {
   const snapshot = opts.route.snapshot
   const fallback = opts.route.fallback
@@ -72,5 +74,6 @@ export function buildRoutedRunner(opts: {
     promptSnapshotDir: opts.promptSnapshotDir ?? null,
     sessionId: opts.sessionId ?? null,
     streamingToolExecution: opts.streamingToolExecution ?? false,
+    hooks: opts.hooks ?? null,
   })
 }

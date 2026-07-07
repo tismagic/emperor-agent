@@ -25,6 +25,7 @@ import { TokenTracker } from '../memory/token-tracker'
 import { todayUtc8 } from '../memory/time-utc8'
 import { type ModelRoute, ModelRouter } from '../model/router'
 import { assertModelAvailable, type ModelAvailability } from '../model/availability'
+import { HookRuntime, type HookAggregateDecision, type HookEventName, type HookRuntimeRunOptions } from '../hooks'
 import { WorkspacePolicy } from '../permissions/workspace-policy'
 import { ProjectStore } from '../projects/store'
 import { ActiveTaskRegistry, TurnBusyError } from '../runtime/active'
@@ -161,6 +162,7 @@ export class AgentLoop {
   private controlPendingSessionId: string | null = null
   private readonly todosBySession = new Map<string, Array<Record<string, unknown>>>()
   private readonly teamManagersByProject = new Map<string, TeamManager>()
+  private readonly sessionStartHooksRun = new Set<string>()
 
   private constructor(
     opts: AgentLoopCreateOptions,
@@ -394,12 +396,30 @@ export class AgentLoop {
     if (!session || !runner || !runtimeStore) throw new Error('active session is not initialized')
     this.controlManager.setRuntimeScope(this.controlRuntimeScopeForSession(session))
     const scope = this.turnScope(session, turnId)
-    const displayContent = opts.displayContent ?? content
-    const userMessage: Msg = { role: 'user', content }
+    if (!this.sessionStartHooksRun.has(sessionId)) {
+      this.sessionStartHooksRun.add(sessionId)
+      await this.runLoopHook('SessionStart', {
+        sessionId,
+        cwd: scope.workspaceRoot,
+        source: session.mode,
+      }, { turnId, emit: opts.emit ?? null, runtimeStore, scope })
+    }
+    const promptDecision = await this.runLoopHook('UserPromptSubmit', {
+      sessionId,
+      cwd: scope.workspaceRoot,
+      source: opts.source ?? null,
+      prompt: content,
+    }, { turnId, emit: opts.emit ?? null, runtimeStore, scope })
+    if (promptDecision.decision === 'deny') throw new Error(`UserPromptSubmit hook denied prompt: ${promptDecision.reason}`)
+    const updatedPrompt = promptDecision.updatedInput && typeof promptDecision.updatedInput.content === 'string'
+      ? promptDecision.updatedInput.content
+      : content
+    const displayContent = opts.displayContent ?? updatedPrompt
+    const userMessage: Msg = { role: 'user', content: updatedPrompt }
     if (turnId) userMessage.turn_id = turnId
     if (displayContent !== content) userMessage.displayContent = displayContent
     history.push(userMessage)
-    memoryStore.appendHistory('user', content, {
+    memoryStore.appendHistory('user', updatedPrompt, {
       extra: {
         ...(opts.memoryExtra ?? {}),
         turn_id: turnId,
@@ -465,6 +485,21 @@ export class AgentLoop {
       sessionId: this.activeSessionId,
       // Wave5 灰度开关：默认关闭，行为与批式逐字节一致
       streamingToolExecution: process.env.EMPEROR_STREAMING_TOOLS === '1',
+      hooks: session ? {
+        run: async (eventName, hookOpts, emit) => {
+          const runtime = new HookRuntime({
+            stateRoot: this.paths.stateRoot,
+            emit: emit ? async (event) => { await emit(event) } : null,
+          })
+          return runtime.run(eventName, {
+            ...hookOpts,
+            sessionId: hookOpts.sessionId || session.id,
+            cwd: hookOpts.cwd || this.workspaceRootForSession(session),
+            projectRoot: session.mode === 'build' ? session.project_path ?? null : null,
+            stateRoot: this.paths.stateRoot,
+          })
+        },
+      } : null,
     })
   }
 
@@ -475,6 +510,13 @@ export class AgentLoop {
         const snapshot = route.snapshot
         const mode = session.mode === 'build' ? 'build' : 'chat'
         const projectId = mode === 'build' ? String(session.project_id || '') : null
+        await this.runBackgroundHook('PreCompact', {
+          sessionId: session.id,
+          cwd: this.workspaceRootForSession(session),
+          source: 'token_threshold',
+          currentTokens,
+          maxContext,
+        })
         const result = await compactSession({
           sessionId: session.id,
           mode,
@@ -509,8 +551,20 @@ export class AgentLoop {
           memoryStore.appendCompactMarker(retainedHistory, cursorStore.archiveGate(session.id))
           result.compaction.cursor = cursorStore.readOrInit(session.id)
           this.refreshRuntimeContext()
+          await this.runBackgroundHook('PostCompact', {
+            sessionId: session.id,
+            cwd: this.workspaceRootForSession(session),
+            source: 'token_threshold',
+            result: { status: result.status, compaction: result.compaction },
+          })
           return { ...result, retainedHistory }
         }
+        await this.runBackgroundHook('PostCompact', {
+          sessionId: session.id,
+          cwd: this.workspaceRootForSession(session),
+          source: 'token_threshold',
+          result: { status: result.status, message: result.message, error: result.error ?? null },
+        })
         return result
       },
     }
@@ -741,6 +795,36 @@ export class AgentLoop {
       session_root: scope.sessionRoot,
       project_state_root: scope.projectStateRoot,
     }
+  }
+
+  private async runLoopHook(
+    eventName: HookEventName,
+    opts: HookRuntimeRunOptions,
+    ctx: { turnId?: string | null; emit?: StreamEmitter | null; runtimeStore?: RuntimeEventStore | null; scope?: TurnScope | null },
+  ): Promise<HookAggregateDecision> {
+    const session = this.activeSession ?? (this.activeSessionId ? this.sessionStore.get(this.activeSessionId) : null)
+    const runtime = new HookRuntime({
+      stateRoot: this.paths.stateRoot,
+      emit: async (event) => { await this.emit(event, ctx) },
+    })
+    return runtime.run(eventName, {
+      ...opts,
+      sessionId: opts.sessionId || session?.id || '',
+      cwd: opts.cwd || this.workspaceRootForSession(session),
+      projectRoot: session?.mode === 'build' ? session.project_path ?? null : null,
+      stateRoot: this.paths.stateRoot,
+    })
+  }
+
+  private async runBackgroundHook(eventName: HookEventName, opts: HookRuntimeRunOptions): Promise<HookAggregateDecision> {
+    const runtime = new HookRuntime({
+      stateRoot: this.paths.stateRoot,
+      emit: async (event) => { await this.emit(event) },
+    })
+    return runtime.run(eventName, {
+      ...opts,
+      stateRoot: this.paths.stateRoot,
+    })
   }
 
   private activeMemoryBindingForSession(session: SessionEntry): ActiveMemoryBinding {
