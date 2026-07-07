@@ -4,6 +4,7 @@
  */
 import { parseJsonArgs, type ChatArgs, type ChatStreamArgs, type GenerationSettings, type LLMProvider, type LLMResponse, type ToolCallDelta, type ToolCallRequest } from '../providers/base'
 import { classifyProviderError, isContextOverflowProviderError, isRetryableProviderErrorKind, type ProviderErrorKind } from '../providers/errors'
+import { ModelProviderError, type ModelProviderErrorKind } from '../errors'
 import * as runtimeEvents from './runtime-events'
 
 export type StreamEmitter = (event: Record<string, unknown>) => void | Promise<void>
@@ -185,7 +186,9 @@ export class ModelCaller {
         const kind = classifyProviderError(exc)
         lastKind = kind
         if (isContextOverflowProviderError(exc)) throw exc
-        if (!isRetryableProviderErrorKind(kind) || retryCount >= MODEL_CALL_MAX_RETRIES) throw exc
+        if (!isRetryableProviderErrorKind(kind) || retryCount >= MODEL_CALL_MAX_RETRIES) {
+          throw new ModelProviderError(modelProviderErrorKind(kind), { cause: exc })
+        }
         retryCount += 1
         if (opts.emit) {
           await opts.emit({
@@ -245,6 +248,11 @@ export class ModelCaller {
     }
     return opts.provider.chat(args)
   }
+}
+
+function modelProviderErrorKind(kind: ProviderErrorKind): ModelProviderErrorKind {
+  if (kind === 'rate_limit' || kind === 'auth' || kind === 'transient' || kind === 'permanent') return kind
+  return 'unknown'
 }
 
 const MODEL_CALL_MAX_RETRIES = 2

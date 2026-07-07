@@ -9,6 +9,7 @@ import { activeEntry, findEntry, type ModelConfig, type ModelEntry, resolveProvi
 import { createProvider } from '../providers/factory'
 import { findByName, type ProviderSpec } from '../providers/registry'
 import { type GenerationSettings, type LLMProvider } from '../providers/base'
+import { modelAvailability, type ModelAvailability } from './availability'
 
 export type ModelRole = 'main' | 'secondary'
 
@@ -45,12 +46,14 @@ const WRITING_AGENT_TYPES = new Set(['neiguan_yingzao'])
 export class ModelRouter {
   readonly root: string
   readonly modelOverride: string | null
+  readonly availability: ModelAvailability
   readonly main: ProviderSnapshot
   readonly secondary: ProviderSnapshot
 
   constructor(root: string, config: ModelConfig, modelOverride?: string | null) {
     this.root = resolve(root)
     this.modelOverride = modelOverride ?? null
+    this.availability = modelAvailability(config)
     this.main = buildProviderSnapshot(config, { modelOverride: this.modelOverride, role: MAIN })
     this.secondary = buildProviderSnapshot(config, { modelOverride: this.modelOverride, role: SECONDARY })
   }

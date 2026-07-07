@@ -575,9 +575,26 @@ describe('AgentRunner turn phases (test_runner_state.py)', () => {
     const provider = new FlakyProvider(1, () => Object.assign(new Error('invalid api key'), { status: 401, code: 'invalid_api_key' }))
     const runner = new AgentRunner({ provider, model: 'fake', registry: new ToolRegistry(), systemPrompt: 'system' })
 
-    await expect(runner.stepAsync([{ role: 'user', content: 'hi' }])).rejects.toMatchObject({ status: 401 })
+    await expect(runner.stepAsync([{ role: 'user', content: 'hi' }])).rejects.toMatchObject({
+      code: 'model_provider_auth',
+      action: 'open_model_settings',
+    })
 
     expect(provider.calls).toBe(1)
+  })
+
+  it('returns a safe retry-later provider error after retryable failures are exhausted', async () => {
+    const provider = new FlakyProvider(3, () => Object.assign(new Error('temporarily unavailable'), { status: 503 }))
+    const runner = new AgentRunner({ provider, model: 'fake', registry: new ToolRegistry(), systemPrompt: 'system' })
+    const emitted: Msg[] = []
+
+    await expect(runner.stepAsync([{ role: 'user', content: 'hi' }], { emit: (event) => { emitted.push(event) } })).rejects.toMatchObject({
+      code: 'model_provider_transient',
+      action: 'retry_later',
+    })
+
+    expect(provider.calls).toBe(3)
+    expect(emitted.filter((event) => event.event === 'model_provider_retry')).toHaveLength(2)
   })
 
   it('degrades to a configured fallback provider without mutating the main route', async () => {

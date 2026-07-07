@@ -76,6 +76,40 @@ describe('AgentLoop (MIG-CORE-011)', () => {
     expect(existsSync(join(root, '.emperor', 'sessions', loop.activeSessionId!, 'history.jsonl'))).toBe(true)
   })
 
+  it('rejects an unavailable model before recording user history', async () => {
+    const root = tmp('emperor-agent-loop-no-model-')
+    const provider = new FakeProvider()
+    const loop = await AgentLoop.create({
+      root,
+      stateRoot: join(root, '.emperor'),
+      templatesDir: TEMPLATES_DIR,
+      modelRouter: Object.assign(fakeRouter(provider), {
+        availability: {
+          usable: false,
+          code: 'model_configuration_required' as const,
+          message: '请先配置模型',
+          action: 'open_model_settings' as const,
+          provider: 'deepseek',
+          entryName: null,
+        },
+      }),
+    })
+    const events: Array<Record<string, unknown>> = []
+
+    await expect(loop.runUserTurn('hi', {
+      turnId: 'turn_no_model',
+      emit: async (event) => { events.push(event) },
+    })).rejects.toMatchObject({
+      code: 'model_configuration_required',
+      action: 'open_model_settings',
+    })
+
+    expect(provider.calls).toHaveLength(0)
+    expect(loop.history).toEqual([])
+    expect(loop.activeMemoryStore.loadUnarchivedHistory()).toEqual([])
+    expect(events.map((event) => event.event)).not.toContain('user_message')
+  })
+
   it('runs build session file tools inside the bound project workspace', async () => {
     const root = tmp('emperor-agent-loop-core-root-')
     const projectRoot = tmp('emperor-agent-loop-project-')

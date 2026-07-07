@@ -42,7 +42,7 @@ export type RuntimeEvent = RuntimeEventEnvelope & (
   | { event: 'turn_phase'; phase?: string; sequence?: number; iteration?: number; detail?: RuntimeEventPayload }
   | { event: 'turn_scope'; mode?: string; workspace_root?: string; state_root?: string; session_root?: string; project_id?: string | null; project_state_root?: string | null; active_memory_binding?: RuntimeEventPayload }
   | { event: 'assistant_done'; content?: string }
-  | { event: 'error'; message?: string; partial?: boolean }
+  | { event: 'error'; message?: string; code?: string; action?: string; partial?: boolean }
   | { event: 'control_mode_update'; control?: RuntimeEventPayload }
   | { event: 'ask_request'; interaction?: RuntimeEventPayload }
   | { event: 'ask_answered'; interaction?: RuntimeEventPayload }

@@ -369,9 +369,19 @@ export interface CurrentModelConfig {
   modelRole?: string | null
 }
 
+export interface ModelAvailability {
+  usable: boolean
+  code?: 'model_configuration_required' | string | null
+  message: string
+  action?: 'open_model_settings' | string | null
+  provider?: string | null
+  entryName?: string | null
+}
+
 export interface ModelConfigPayload {
   current?: CurrentModelConfig
   secondary?: CurrentModelConfig | null
+  availability?: ModelAvailability
   routing?: {
     secondaryEnabled?: boolean
     fallbackToMain?: boolean
@@ -1039,7 +1049,7 @@ type WsEventVariants = (
   | { event: 'turn_phase'; phase?: string; sequence?: number; iteration?: number; detail?: Record<string, unknown> }
   | { event: 'turn_scope'; mode?: string; workspace_root?: string; state_root?: string; session_root?: string; project_id?: string | null; project_state_root?: string | null; active_memory_binding?: Record<string, unknown> }
   | { event: 'assistant_done'; content?: string }
-  | { event: 'error'; message?: string; partial?: boolean }
+  | { event: 'error'; message?: string; code?: string; action?: string; partial?: boolean }
   | { event: 'control_mode_update'; control?: ControlPayload }
   | { event: 'ask_request'; interaction?: ControlInteraction }
   | { event: 'ask_answered'; interaction?: ControlInteraction }

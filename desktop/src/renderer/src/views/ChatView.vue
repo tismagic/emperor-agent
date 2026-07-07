@@ -15,6 +15,12 @@ const ctx = useAppContext()
 const sessionStore = useSession()
 const modelEntries = computed(() => ctx.boot.value?.modelConfig?.config?.models || [])
 const currentModel = computed(() => ctx.boot.value?.modelConfig?.current || null)
+const sendBlockedReason = computed(() => {
+  const availability = ctx.boot.value?.modelConfig?.availability
+  return availability?.usable === false
+    ? availability.message || '还没有可用模型，请先配置模型。'
+    : ''
+})
 const activeBottomControl = computed(() => activeBottomControlPanel(ctx.boot.value?.control || null, sessionStore.active.value || null))
 
 function switchModel(entryName: string) {
@@ -87,6 +93,7 @@ function normalizeReasoningEffort(value?: string | null) {
             :current-model="currentModel"
             :model-entries="modelEntries"
             :supports-vision="ctx.boot.value?.modelConfig?.current?.supportsVision ?? false"
+            :send-blocked-reason="sendBlockedReason"
             @set-mode="ctx.setControlMode"
             @switch-model="switchModel"
             @set-reasoning-effort="setReasoningEffort"

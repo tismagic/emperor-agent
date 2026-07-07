@@ -133,6 +133,98 @@ describe('useRuntime IPC runtime path (MIG-IPC-010)', () => {
     expect(runtime.busy.value).toBe(false)
   })
 
+  it('settles the active session spinner and keeps transport ready when model configuration submit fails', async () => {
+    let listener: ((event: unknown) => void) | null = null
+    g.window = fakeWindow({
+      invokeCore: async (...args: unknown[]) => {
+        if (args[0] === 'chat.submit') {
+          const payload = args[1] as Record<string, unknown>
+          listener?.({
+            event: 'user_message',
+            seq: 1,
+            session_id: 's1',
+            turn_id: 'turn-no-model',
+            client_message_id: payload.clientMessageId,
+            content: payload.displayContent || payload.content,
+          })
+          return {
+            ok: false,
+            error: {
+              message: '还没有可用模型，请先配置模型。',
+              code: 'model_configuration_required',
+              action: 'open_model_settings',
+            },
+          }
+        }
+        return { ok: true }
+      },
+      onCoreEvent: (cb: (event: unknown) => void) => {
+        listener = cb
+        return () => { listener = null }
+      },
+    })
+    const runtime = useRuntime(testOptions())
+
+    runtime.switchSession('s1')
+    expect(runtime.sendMessage('hi')).toBe(true)
+    await flushPromises()
+
+    expect(runtime.busy.value).toBe(false)
+    expect(runtime.status.value).toBe('ready')
+    expect(runtime.sessionRuntimeStates['s1']).toMatchObject({ running: false, attention: false })
+    expect(runtime.messages.value.map((message) => message.content).join('\n')).toContain('还没有可用模型，请先配置模型。')
+  })
+
+  it('deduplicates a runtime error event followed by the matching submit rejection', async () => {
+    let listener: ((event: unknown) => void) | null = null
+    g.window = fakeWindow({
+      invokeCore: async (...args: unknown[]) => {
+        if (args[0] === 'chat.submit') {
+          const payload = args[1] as Record<string, unknown>
+          listener?.({
+            event: 'user_message',
+            seq: 1,
+            session_id: 's1',
+            turn_id: 'turn-error',
+            client_message_id: payload.clientMessageId,
+            content: payload.displayContent || payload.content,
+          })
+          listener?.({
+            event: 'error',
+            seq: 2,
+            session_id: 's1',
+            turn_id: 'turn-error',
+            message: '还没有可用模型，请先配置模型。',
+            code: 'model_configuration_required',
+            action: 'open_model_settings',
+          })
+          return {
+            ok: false,
+            error: {
+              message: '还没有可用模型，请先配置模型。',
+              code: 'model_configuration_required',
+              action: 'open_model_settings',
+            },
+          }
+        }
+        return { ok: true }
+      },
+      onCoreEvent: (cb: (event: unknown) => void) => {
+        listener = cb
+        return () => { listener = null }
+      },
+    })
+    const runtime = useRuntime(testOptions())
+
+    runtime.switchSession('s1')
+    expect(runtime.sendMessage('hi')).toBe(true)
+    await flushPromises()
+
+    const rendered = runtime.messages.value.map((message) => message.content).join('\n')
+    expect(rendered.match(/出错了：还没有可用模型，请先配置模型。/g)).toHaveLength(1)
+    expect(runtime.sessionRuntimeStates['s1']).toMatchObject({ running: false, attention: false })
+  })
+
   it('ignores live runtime events from another session without advancing the active replay cursor', async () => {
     let listener: ((event: unknown) => void) | null = null
     g.window = fakeWindow({

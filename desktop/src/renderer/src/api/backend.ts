@@ -34,9 +34,10 @@ export async function invokeCore(operationKey: string, ...args: unknown[]): Prom
   const result = await invoke(operationKey, ...args)
   const safeError = safeCoreIpcError(result)
   if (safeError) {
-    const error = new Error(safeError.message) as Error & { errorId?: string; code?: string }
+    const error = new Error(safeError.message) as Error & { errorId?: string; code?: string; action?: string }
     if (safeError.errorId) error.errorId = safeError.errorId
     if (safeError.code) error.code = safeError.code
+    if (safeError.action) error.action = safeError.action
     throw error
   }
   return result
@@ -52,7 +53,7 @@ export function onCoreEvent(listener: (event: unknown) => void): () => void {
   return subscribe(listener)
 }
 
-function safeCoreIpcError(value: unknown): { message: string; errorId?: string; code?: string } | null {
+function safeCoreIpcError(value: unknown): { message: string; errorId?: string; code?: string; action?: string } | null {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return null
   const payload = value as Record<string, unknown>
   if (payload.ok !== false) return null
@@ -64,5 +65,6 @@ function safeCoreIpcError(value: unknown): { message: string; errorId?: string; 
     message,
     errorId: typeof error.errorId === 'string' ? error.errorId : undefined,
     code: typeof error.code === 'string' ? error.code : undefined,
+    action: typeof error.action === 'string' ? error.action : undefined,
   }
 }

@@ -32,7 +32,9 @@ export function shouldShowOnboarding(
   payload: BootstrapPayload | null | undefined,
   options: { requested?: boolean } = {},
 ): boolean {
-  return Boolean(options.requested && payload)
+  if (!payload) return false
+  if (payload.modelConfig?.availability?.usable === false) return true
+  return Boolean(options.requested)
 }
 
 export function createOnboardingDraft(payload: BootstrapPayload | null | undefined): OnboardingDraft {

@@ -11,6 +11,7 @@ import {
   type WizardModelSettings,
 } from '../../config/model-config'
 import { buildProviderSnapshot, type ModelRole, type ModelRoute, type ProviderSnapshot } from '../../model/router'
+import { modelAvailability, type ModelAvailability } from '../../model/availability'
 import type { OpenAiMessage } from '../../providers/base'
 import { providerOptions } from '../../providers/registry'
 
@@ -46,6 +47,7 @@ export interface CurrentModelPayload {
 export interface ModelConfigPayload {
   current: CurrentModelPayload
   secondary: CurrentModelPayload | null
+  availability: ModelAvailability
   routing: Record<string, unknown>
   config: Dict
   providerOptions: Array<Record<string, unknown>>
@@ -70,6 +72,7 @@ export class CoreModelService {
     return {
       current: this.snapshotPayload(current, entry),
       secondary,
+      availability: modelAvailability(config),
       routing: this.router().payload?.() ?? { secondaryEnabled: Boolean(entry?.secondaryModelId), fallbackToMain: true },
       config: redactApiKeys(config.raw),
       providerOptions: providerOptions(),

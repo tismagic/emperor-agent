@@ -1,5 +1,6 @@
-export function composerSendDisabled(opts: { busy: boolean; content: string; attachmentCount: number }): boolean {
+export function composerSendDisabled(opts: { busy: boolean; content: string; attachmentCount: number; sendBlockedReason?: string | null }): boolean {
   if (opts.busy) return false
+  if (opts.sendBlockedReason) return true
   return !opts.content.trim() && opts.attachmentCount === 0
 }
 

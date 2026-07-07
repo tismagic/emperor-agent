@@ -155,12 +155,25 @@ export function useRuntime(options: {
     const attachments = normalized.attachments
     if (busy.value) return false
     if (!text && attachments.length === 0) return false
+    const blockedReason = modelSendBlockedReason()
+    if (blockedReason) {
+      updatePending('需要配置模型', blockedReason, 'error', 6000)
+      options.showToast(blockedReason)
+      return false
+    }
     if (hasCoreBridge()) {
       connectCoreEvents()
       return sendMessageViaCore({ text, displayText, attachments, requestedSkills: normalized.requestedSkills })
     }
     markCoreBridgeUnavailable(true)
     return false
+  }
+
+  function modelSendBlockedReason(): string {
+    const availability = options.boot.value?.modelConfig?.availability
+    return availability?.usable === false
+      ? availability.message || '还没有可用模型，请先配置模型。'
+      : ''
   }
 
   function enqueueLocalTurn(content: string, attachments: AttachmentRef[]) {
@@ -270,6 +283,7 @@ export function useRuntime(options: {
     const count = Array.isArray(data.cancelled) ? data.cancelled.length : 0
     if (!count) {
       const staleCleared = settleStaleStreamingAssistant('（后端没有正在运行的任务，上次回复已中断。）')
+      settleSessionRuntime(sessionId.value, false)
       updatePending('没有正在运行的任务', '', 'done')
       options.showToast('当前没有可停止的任务')
       return staleCleared
@@ -278,6 +292,7 @@ export function useRuntime(options: {
     if (assistant) finishInterruptedAssistant(assistant, '（已请求停止当前任务。）')
     currentAssistantId.value = null
     busy.value = false
+    settleSessionRuntime(sessionId.value, false)
     updatePending('已请求停止', `已取消 ${count} 个任务`, 'done')
     return true
   }
@@ -365,6 +380,7 @@ export function useRuntime(options: {
   function handleBenignTurnInterruption(error: unknown): boolean {
     const code = interruptionCode(error)
     if (!code) return false
+    settleSessionRuntime(sessionId.value, false)
     status.value = hasCoreBridge() ? 'ready' : 'error'
     if (code === 'turn_busy') {
       const assistant = currentAssistant.value
@@ -428,6 +444,20 @@ export function useRuntime(options: {
   function sessionRuntimeStateFor(id: string): { running: boolean; attention: boolean } {
     if (!sessionRuntimeStates[id]) sessionRuntimeStates[id] = { running: false, attention: false }
     return sessionRuntimeStates[id]!
+  }
+
+  function settleSessionRuntime(id: string | null | undefined, attention: boolean): void {
+    const owner = String(id || '').trim()
+    if (!owner) return
+    const state = sessionRuntimeStateFor(owner)
+    state.running = false
+    state.attention = owner === String(sessionId.value || '').trim() ? false : attention
+  }
+
+  function clearAllSessionRunning(): void {
+    for (const state of Object.values(sessionRuntimeStates)) {
+      state.running = false
+    }
   }
 
   function clearSessionAttention(id: string): void {
@@ -602,6 +632,7 @@ export function useRuntime(options: {
     if (assistant?.streaming && options.boot.value?.runtime?.busy === false) {
       settleStaleStreamingAssistant('（后端没有正在运行的任务，上次回复已中断。）')
     }
+    if (options.boot.value?.runtime?.busy === false) clearAllSessionRunning()
   }
 
   function handleSocketEvent(raw: string) {
@@ -609,7 +640,7 @@ export function useRuntime(options: {
     try {
       data = JSON.parse(raw) as WsEvent
     } catch {
-      handleChatError('事件通道返回了无法解析的数据')
+      handleChatError('事件通道返回了无法解析的数据', { transport: true })
       return
     }
 
@@ -691,7 +722,11 @@ export function useRuntime(options: {
 
     if (data.event === 'error') {
       updatePending()
-      handleChatError(data.message || '未知错误')
+      handleChatError(data.message || '未知错误', {
+        code: data.code,
+        action: data.action,
+        ownerSessionId: eventOwnerSessionId(data) || sessionId.value,
+      })
       return
     }
 
@@ -867,6 +902,7 @@ export function useRuntime(options: {
     } else if (currentAssistant.value?.streaming && !data.busy) {
       settleStaleStreamingAssistant('（连接已恢复，但后端没有正在运行的回复，请重新发送。）')
     }
+    if (!data.busy) clearAllSessionRunning()
 
     if (options.boot.value) {
       options.boot.value.model = data.model || options.boot.value.model
@@ -1141,37 +1177,56 @@ export function useRuntime(options: {
     applySchedulerEventToBootstrap(boot, data)
   }
 
-  function handleChatError(message: string) {
+  function handleChatError(message: string, opts: { code?: string; action?: string; ownerSessionId?: string; transport?: boolean } = {}) {
     const assistant = currentAssistant.value
+    const content = `出错了：${message}`
     if (assistant) {
       if (!assistant.content) {
-        const content = `出错了：${message}`
         assistant.content = content
         assistant.segments.push({ id: nextId('segment'), type: 'text', content })
       }
       assistant.streaming = false
       markRunningAsAborted(assistant)
-    } else {
-      messages.value.push({ id: nextId('assistant'), role: 'assistant', content: `出错了：${message}`, segments: [{ id: nextId('segment'), type: 'text', content: `出错了：${message}` }], streaming: false })
+    } else if (!lastAssistantAlreadyShows(content)) {
+      messages.value.push({ id: nextId('assistant'), role: 'assistant', content, segments: [{ id: nextId('segment'), type: 'text', content }], streaming: false })
     }
     currentAssistantId.value = null
     busy.value = false
-    status.value = 'error'
+    status.value = opts.transport ? 'error' : (hasCoreBridge() ? 'ready' : 'error')
+    settleSessionRuntime(opts.ownerSessionId || sessionId.value, false)
   }
 
   function handleChatSubmitError(error: unknown) {
     if (handleBenignTurnInterruption(error)) return
-    const message = error instanceof Error ? error.message : String(error)
+    const info = runtimeErrorInfo(error)
+    const message = info.message
     if (isRuntimeCancellationError(message)) {
       const assistant = currentAssistant.value
       if (assistant) finishInterruptedAssistant(assistant, '（已停止当前任务。）')
       currentAssistantId.value = null
       busy.value = false
       status.value = hasCoreBridge() ? 'ready' : 'error'
+      settleSessionRuntime(sessionId.value, false)
       updatePending('已停止当前任务', '', 'done', 2000)
       return
     }
-    handleChatError(message)
+    handleChatError(message, { code: info.code, action: info.action, ownerSessionId: sessionId.value })
+  }
+
+  function runtimeErrorInfo(error: unknown): { message: string; code?: string; action?: string } {
+    const message = error instanceof Error ? error.message : String(error)
+    if (!error || typeof error !== 'object') return { message }
+    const record = error as { code?: unknown; action?: unknown }
+    return {
+      message,
+      code: typeof record.code === 'string' ? record.code : undefined,
+      action: typeof record.action === 'string' ? record.action : undefined,
+    }
+  }
+
+  function lastAssistantAlreadyShows(content: string): boolean {
+    const last = messages.value[messages.value.length - 1]
+    return Boolean(last?.role === 'assistant' && !last.streaming && last.content.includes(content))
   }
 
   function isRuntimeCancellationError(message: string) {
@@ -1234,6 +1289,7 @@ export function useRuntime(options: {
     assistant.streaming = false
     currentAssistantId.value = null
     busy.value = false
+    settleSessionRuntime(sessionId.value, false)
     updatePending()
     return true
   }

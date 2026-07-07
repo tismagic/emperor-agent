@@ -29,6 +29,7 @@ const props = defineProps<{
   currentModel?: CurrentModelConfig | null
   modelEntries: ModelEntry[]
   supportsVision?: boolean
+  sendBlockedReason?: string | null
 }>()
 const emit = defineEmits<{
   send: [payload: ChatSendPayload]
@@ -234,6 +235,10 @@ function syncHighlightScroll() {
 
 function submit() {
   if (props.busy) return
+  if (props.sendBlockedReason) {
+    emit('error', props.sendBlockedReason)
+    return
+  }
   const normalized = normalizeComposerCapabilityInput(value.value.trim())
   const content = normalized.content.trim()
   if (!content && drafts.value.length === 0) return
@@ -462,6 +467,7 @@ const sendDisabled = computed(() => composerSendDisabled({
   busy: props.busy,
   content: value.value,
   attachmentCount: drafts.value.length,
+  sendBlockedReason: props.sendBlockedReason || null,
 }))
 
 onBeforeUnmount(() => {
@@ -532,7 +538,7 @@ onBeforeUnmount(() => {
             v-model="value"
             rows="2"
             :disabled="props.busy"
-            :placeholder="props.busy ? '正在生成回复...' : '描述要推进的任务。可用 / 调用命令，拖入图片或文档'"
+            :placeholder="props.busy ? '正在生成回复...' : (props.sendBlockedReason || '描述要推进的任务。可用 / 调用命令，拖入图片或文档')"
             @focus="closeComposerMenus"
             @input="resize"
             @scroll="syncHighlightScroll"
@@ -638,7 +644,7 @@ onBeforeUnmount(() => {
           <button
             class="send-button"
             :disabled="sendDisabled"
-            :title="props.busy ? '停止当前任务' : '发送'"
+            :title="props.busy ? '停止当前任务' : (props.sendBlockedReason || '发送')"
             :type="props.busy ? 'button' : 'submit'"
             @click="props.busy ? emit('stop') : undefined"
           >

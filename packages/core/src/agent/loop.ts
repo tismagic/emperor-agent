@@ -24,6 +24,7 @@ import type { ActiveMemoryBinding } from '../memory/compaction-models'
 import { TokenTracker } from '../memory/token-tracker'
 import { todayUtc8 } from '../memory/time-utc8'
 import { type ModelRoute, ModelRouter } from '../model/router'
+import { assertModelAvailable, type ModelAvailability } from '../model/availability'
 import { WorkspacePolicy } from '../permissions/workspace-policy'
 import { ProjectStore } from '../projects/store'
 import { ActiveTaskRegistry, TurnBusyError } from '../runtime/active'
@@ -86,6 +87,7 @@ export interface TurnScope {
 export interface LoopModelRouter {
   route(useCase: string, agentType?: string | null, task?: string | null): ModelRoute
   payload?(): Record<string, unknown>
+  availability?: ModelAvailability
 }
 
 export interface AgentLoopCreateOptions {
@@ -313,6 +315,7 @@ export class AgentLoop {
     const targetSessionId = String(opts.sessionId ?? '').trim()
     const previousSessionId = this.activeSessionId
     if (targetSessionId && this.activeSessionId !== targetSessionId) this.activateSession(targetSessionId)
+    assertModelAvailable(this.modelRouter.availability)
     const turnId = opts.turnId || randomUUID().replace(/-/g, '').slice(0, 16)
     const taskId = opts.taskId || `turn:${turnId}`
     const abortController = new AbortController()
@@ -418,9 +421,21 @@ export class AgentLoop {
       { turnId, emit: opts.emit ?? null, runtimeStore, scope },
     )
 
-    const reply = await runner.stepStream(history, async (event) => {
-      await this.emit(event, { turnId, emit: opts.emit ?? null, runtimeStore, scope })
-    }, { turnId, signal })
+    let reply: string
+    try {
+      reply = await runner.stepStream(history, async (event) => {
+        await this.emit(event, { turnId, emit: opts.emit ?? null, runtimeStore, scope })
+      }, { turnId, signal })
+    } catch (error) {
+      if (!isBenignTurnInterruption(error)) {
+        const safe = safeRuntimeError(error)
+        await this.emit(runtimeEvents.error(safe.message, {
+          code: safe.code,
+          action: safe.action,
+        }), { turnId, emit: opts.emit ?? null, runtimeStore, scope })
+      }
+      throw error
+    }
     this.sessionStore.touch(sessionId, reply, { incrementMessages: true })
     return reply
   }
@@ -952,6 +967,34 @@ class FileSkillsLoader implements SkillsLoaderLike, ToolSkillsLoader {
 
 function existingPath(path: string): string | null {
   return existsSync(path) ? path : null
+}
+
+function isBenignTurnInterruption(error: unknown): boolean {
+  const name = error && typeof error === 'object' && 'name' in error ? String((error as { name?: unknown }).name || '') : ''
+  return name === 'TurnPaused' || name === 'CancelledTaskError' || name === 'TurnBusyError'
+}
+
+function safeRuntimeError(error: unknown): { code: string; message: string; action?: string } {
+  const safe = safeErrorFromToSafe(error)
+  if (safe) return safe
+  return { code: 'internal_error', message: '发生内部错误，请查看日志。' }
+}
+
+function safeErrorFromToSafe(error: unknown): { code: string; message: string; action?: string } | null {
+  if (!error || typeof error !== 'object') return null
+  const toSafe = (error as { toSafe?: unknown }).toSafe
+  if (typeof toSafe !== 'function') return null
+  const payload = toSafe.call(error)
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) return null
+  const record = payload as Record<string, unknown>
+  const code = typeof record.code === 'string' && record.code ? record.code : ''
+  const message = typeof record.message === 'string' && record.message ? record.message : ''
+  if (!code || !message) return null
+  return {
+    code,
+    message,
+    ...(typeof record.action === 'string' && record.action ? { action: record.action } : {}),
+  }
 }
 
 function scopeLabel(scope: unknown): string | null {

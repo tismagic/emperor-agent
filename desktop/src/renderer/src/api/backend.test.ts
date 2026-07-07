@@ -47,6 +47,27 @@ describe('with an injected Core IPC bridge', () => {
     })
   })
 
+  it('preserves safe Core IPC error codes and actions', async () => {
+    g.window = {
+      emperor: {
+        invokeCore: async () => ({
+          ok: false,
+          error: {
+            message: '还没有可用模型，请先配置模型。',
+            code: 'model_configuration_required',
+            action: 'open_model_settings',
+          },
+        }),
+      },
+    }
+
+    await expect(invokeCore('chat.submit')).rejects.toMatchObject({
+      message: '还没有可用模型，请先配置模型。',
+      code: 'model_configuration_required',
+      action: 'open_model_settings',
+    })
+  })
+
   it('delegates onCoreEvent to the preload bridge', () => {
     const events: unknown[] = []
     const unsubscribe = () => { events.push('off') }

@@ -50,8 +50,13 @@ export function controlModeUpdate(control: EventPayload): EventPayload {
   return runtimeEvent('control_mode_update', { control })
 }
 
-export function error(message: string, opts: { partial?: boolean } = {}): EventPayload {
-  return runtimeEvent('error', { message, partial: opts.partial ?? true })
+export function error(message: string, opts: { partial?: boolean; code?: string | null; action?: string | null } = {}): EventPayload {
+  return runtimeEvent('error', {
+    message,
+    code: opts.code ?? null,
+    action: opts.action ?? null,
+    partial: opts.partial ?? true,
+  })
 }
 
 export function modelRouteFallback(opts: { fromModel: string; toModel: string; reason: string; usageType: string }): EventPayload {

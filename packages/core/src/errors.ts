@@ -5,19 +5,36 @@
  * PlanQualityError、PlanEvidenceError、CompactionParseError 等）。所有错误可被 IPC 边界
  * 序列化为「安全错误」——只暴露 code/message，不泄内部细节。
  */
+export interface SafeErrorPayload {
+  code: string
+  message: string
+  action?: string
+}
+
+export interface EmperorErrorOptions extends ErrorOptions {
+  action?: string | null
+}
+
 export class EmperorError extends Error {
   /** 稳定的机器可读错误码，用于 IPC/日志关联。 */
   readonly code: string
+  /** 可选的前端动作提示，例如打开模型配置页。 */
+  readonly action?: string
 
-  constructor(message: string, code = 'emperor_error', options?: ErrorOptions) {
+  constructor(message: string, code = 'emperor_error', options?: EmperorErrorOptions) {
     super(message, options)
     this.name = new.target.name
     this.code = code
+    if (options?.action) this.action = options.action
   }
 
   /** IPC 边界用：只回 code+message，绝不带内部栈。 */
-  toSafe(): { code: string; message: string } {
-    return { code: this.code, message: this.message }
+  toSafe(): SafeErrorPayload {
+    return {
+      code: this.code,
+      message: this.message,
+      ...(this.action ? { action: this.action } : {}),
+    }
   }
 }
 
@@ -46,6 +63,33 @@ export class ValidationError extends EmperorError {
   }
 }
 
+/** 模型尚未配置到可用状态。 */
+export class ModelConfigurationError extends EmperorError {
+  constructor(message = '还没有可用模型，请先配置模型。', options?: ErrorOptions) {
+    super(message, 'model_configuration_required', { ...options, action: 'open_model_settings' })
+  }
+}
+
+export type ModelProviderErrorKind =
+  | 'rate_limit'
+  | 'auth'
+  | 'transient'
+  | 'permanent'
+  | 'unknown'
+
+/** Provider 最终失败，但可展示为用户可处理的安全错误。 */
+export class ModelProviderError extends EmperorError {
+  readonly providerErrorKind: ModelProviderErrorKind
+
+  constructor(kind: ModelProviderErrorKind, options: { cause?: unknown } = {}) {
+    super(providerErrorMessage(kind), `model_provider_${kind}`, {
+      ...(options.cause instanceof Error ? { cause: options.cause } : {}),
+      action: providerErrorAction(kind),
+    })
+    this.providerErrorKind = kind
+  }
+}
+
 /** 模型输入超过上下文窗口。 */
 export class ContextOverflowError extends EmperorError {
   constructor(message: string, options?: ErrorOptions) {
@@ -58,4 +102,18 @@ export function toSafeError(err: unknown): { code: string; message: string } {
   if (err instanceof EmperorError) return err.toSafe()
   if (err instanceof Error) return { code: 'internal_error', message: err.message }
   return { code: 'internal_error', message: String(err) }
+}
+
+function providerErrorAction(kind: ModelProviderErrorKind): string | null {
+  if (kind === 'auth') return 'open_model_settings'
+  if (kind === 'rate_limit' || kind === 'transient') return 'retry_later'
+  return null
+}
+
+function providerErrorMessage(kind: ModelProviderErrorKind): string {
+  if (kind === 'auth') return '模型认证失败：API Key 无效或没有权限。请到模型配置检查 Provider、API Key 和模型 ID。'
+  if (kind === 'rate_limit') return '模型服务触发限流。请稍后重试，或切换到可用额度更高的模型配置。'
+  if (kind === 'transient') return '模型服务暂时不可用或网络超时。请稍后重试。'
+  if (kind === 'permanent') return '模型请求失败。请检查模型 ID、API Base 和 Provider 配置。'
+  return '模型调用失败。请检查模型配置或稍后重试。'
 }

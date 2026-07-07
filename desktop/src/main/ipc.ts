@@ -39,6 +39,9 @@ function safeIpcError(error: unknown, operationKey: string): Record<string, unkn
   const interruption = benignTurnInterruption(error)
   if (interruption) return { ok: false, error: interruption }
 
+  const domain = safeDomainError(error)
+  if (domain) return { ok: false, error: domain }
+
   const errorId = `ipc_${randomUUID().replace(/-/g, '').slice(0, 12)}`
   if (process.env.NODE_ENV !== 'production') {
     console.error(`[core-ipc] ${operationKey} failed (${errorId})`, error)
@@ -49,6 +52,23 @@ function safeIpcError(error: unknown, operationKey: string): Record<string, unkn
       message: 'Internal error',
       errorId,
     },
+  }
+}
+
+function safeDomainError(error: unknown): { message: string; code: string; action?: string } | null {
+  if (!error || typeof error !== 'object') return null
+  const toSafe = (error as { toSafe?: unknown }).toSafe
+  if (typeof toSafe !== 'function') return null
+  const payload = toSafe.call(error)
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) return null
+  const record = payload as Record<string, unknown>
+  const message = typeof record.message === 'string' && record.message ? record.message : ''
+  const code = typeof record.code === 'string' && record.code ? record.code : ''
+  if (!message || !code) return null
+  return {
+    message,
+    code,
+    ...(typeof record.action === 'string' && record.action ? { action: record.action } : {}),
   }
 }
 

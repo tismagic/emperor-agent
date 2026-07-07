@@ -56,6 +56,29 @@ describe('core IPC bridge (MIG-IPC-002)', () => {
     errorSpy.mockRestore()
   })
 
+  it('passes safe domain errors through the IPC boundary', async () => {
+    const ipc = new FakeIpcMain()
+    const error = Object.assign(new Error('还没有可用模型，请先配置模型。'), {
+      code: 'model_configuration_required',
+      action: 'open_model_settings',
+      toSafe: () => ({
+        code: 'model_configuration_required',
+        message: '还没有可用模型，请先配置模型。',
+        action: 'open_model_settings',
+      }),
+    })
+    registerCoreIpc(ipc, { chat: { submit: () => { throw error } } }, ['chat.submit'])
+
+    await expect(ipc.invoke('emperor:core:chat:submit', {})).resolves.toMatchObject({
+      ok: false,
+      error: {
+        code: 'model_configuration_required',
+        message: '还没有可用模型，请先配置模型。',
+        action: 'open_model_settings',
+      },
+    })
+  })
+
   it('preserves benign turn interruption codes for renderer control flow', async () => {
     const ipc = new FakeIpcMain()
     const turnPaused = new Error('turn paused for ask: ask_1')

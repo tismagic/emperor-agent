@@ -8,9 +8,17 @@ import {
 } from './onboardingModel'
 
 describe('onboarding model flow (MIG-APP-001)', () => {
-  it('does not auto-open the wizard for a fresh default model config', () => {
+  it('auto-opens the wizard for a fresh unavailable model config', () => {
     const payload = boot({
       current: { provider: 'deepseek', model: 'deepseek-chat', mainModelId: 'deepseek-chat', secondaryModelId: '' },
+      availability: {
+        usable: false,
+        code: 'model_configuration_required',
+        message: '请先配置模型',
+        action: 'open_model_settings',
+        provider: null,
+        entryName: null,
+      },
       config: {
         agents: { defaults: { model: '', provider: 'auto', maxTokens: 8192, temperature: 0.1, contextWindowTokens: 128000 } },
         models: [],
@@ -19,7 +27,7 @@ describe('onboarding model flow (MIG-APP-001)', () => {
       providerOptions: [{ name: 'deepseek', displayName: 'DeepSeek', defaultApiBase: 'https://api.deepseek.com', region: 'cn' }],
     })
 
-    expect(shouldShowOnboarding(payload)).toBe(false)
+    expect(shouldShowOnboarding(payload)).toBe(true)
     expect(shouldShowOnboarding(payload, { requested: true })).toBe(true)
     expect(createOnboardingDraft(payload)).toMatchObject({
       provider: 'deepseek',
@@ -36,6 +44,7 @@ describe('onboarding model flow (MIG-APP-001)', () => {
   it('does not interrupt an existing complete model entry with a saved key', () => {
     const payload = boot({
       current: { provider: 'openai', model: 'gpt-main', mainModelId: 'gpt-main', secondaryModelId: 'gpt-mini' },
+      availability: { usable: true, message: '模型已配置', provider: 'openai', entryName: 'work' },
       config: {
         agents: { defaults: { model: 'work', provider: 'auto' } },
         models: [{

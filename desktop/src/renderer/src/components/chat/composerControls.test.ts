@@ -12,6 +12,12 @@ describe('composer control model', () => {
     expect(composerSendDisabled({ busy: false, content: '', attachmentCount: 1 })).toBe(false)
   })
 
+  it('blocks idle sending when the model is unavailable without disabling the busy stop button', () => {
+    expect(composerSendDisabled({ busy: false, content: 'hi', attachmentCount: 0, sendBlockedReason: '请先配置模型' })).toBe(true)
+    expect(composerSendDisabled({ busy: false, content: '', attachmentCount: 1, sendBlockedReason: '请先配置模型' })).toBe(true)
+    expect(composerSendDisabled({ busy: true, content: 'hi', attachmentCount: 0, sendBlockedReason: '请先配置模型' })).toBe(false)
+  })
+
   it('exposes accept_edits as the middle permission mode', () => {
     expect(composerModeOptions.map((option) => option.value)).toEqual([
       'ask_before_edit',

@@ -1,9 +1,10 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import SessionSidebar from './components/layout/SessionSidebar.vue'
+import ModelSetupRequiredDialog from './components/onboarding/ModelSetupRequiredDialog.vue'
 import OnboardingWizard from './components/onboarding/OnboardingWizard.vue'
-import type { WizardModelSettings } from './components/onboarding/onboardingModel'
+import { shouldShowOnboarding, type WizardModelSettings } from './components/onboarding/onboardingModel'
 import { runInitialStartup } from './appStartup'
 import { buildSlashPaletteItems } from './commands'
 import { useBootstrap } from './composables/useBootstrap'
@@ -22,6 +23,8 @@ const toast = ref('')
 let toastTimer: number | undefined
 const hideAppSidebar = computed(() => router.currentRoute.value.meta?.hideAppSidebar === true)
 const onboardingOpen = ref(false)
+const modelSetupPromptOpen = ref(false)
+const modelSetupDismissed = ref(false)
 
 function showToast(message: string) {
   toast.value = message
@@ -30,11 +33,18 @@ function showToast(message: string) {
 }
 
 function openOnboarding() {
+  modelSetupDismissed.value = true
+  modelSetupPromptOpen.value = false
   onboardingOpen.value = true
 }
 
 function closeOnboarding() {
   onboardingOpen.value = false
+}
+
+function closeModelSetupPrompt() {
+  modelSetupDismissed.value = true
+  modelSetupPromptOpen.value = false
 }
 
 const bootstrap = useBootstrap(showToast)
@@ -113,6 +123,9 @@ async function onSessionActivate(id: string) {
 const tokensClient = useTokens(showToast)
 const { data: tokensData, loading: tokensLoading, load: loadTokens } = tokensClient
 const slashPaletteItems = computed(() => buildSlashPaletteItems(boot.value?.skills || []))
+const modelSetupMessage = computed(() =>
+  boot.value?.modelConfig?.availability?.message || '还没有可用模型，请先配置模型。',
+)
 
 onMounted(async () => {
   await runInitialStartup({
@@ -147,6 +160,24 @@ async function completeOnboarding(settings: WizardModelSettings) {
     showToast('模型配置已保存')
   }
 }
+
+async function configureModelFromPrompt() {
+  modelSetupDismissed.value = true
+  modelSetupPromptOpen.value = false
+  await router.push('/model').catch(() => undefined)
+  openOnboarding()
+}
+
+watch(() => [boot.value?.modelConfig?.availability?.usable, onboardingOpen.value] as const, () => {
+  if (!boot.value) return
+  const shouldPrompt = shouldShowOnboarding(boot.value)
+  if (!shouldPrompt) {
+    modelSetupPromptOpen.value = false
+    modelSetupDismissed.value = false
+    return
+  }
+  if (!modelSetupDismissed.value && !onboardingOpen.value) modelSetupPromptOpen.value = true
+})
 
 async function runSafely(task: () => Promise<void>) {
   try {
@@ -254,6 +285,12 @@ provideAppContext({
         </keep-alive>
       </router-view>
     </div>
+    <ModelSetupRequiredDialog
+      :open="modelSetupPromptOpen && !onboardingOpen"
+      :message="modelSetupMessage"
+      @close="closeModelSetupPrompt"
+      @configure="configureModelFromPrompt"
+    />
     <OnboardingWizard :payload="boot" :open="onboardingOpen" :save="completeOnboarding" @close="closeOnboarding" />
   </template>
 

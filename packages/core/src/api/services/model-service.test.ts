@@ -66,6 +66,73 @@ describe('CoreModelService (MIG-IPC-007)', () => {
     expect(payload.config.providers?.openai?.apiKey).toBe('***9876')
     expect(payload.config.models?.[0]?.apiKey).toBe('***1234')
     expect(payload.providerOptions.some((option) => option.name === 'openai' && option.displayName === 'OpenAI')).toBe(true)
+    expect(payload.availability).toMatchObject({ usable: true })
+  })
+
+  it('reports a fresh default config as unavailable until a usable model is configured', async () => {
+    const root = tmp('emperor-model-service-fresh-')
+    const service = new CoreModelService(root, {
+      router: new ModelRouter(root, await loadModelConfig(root)),
+    })
+
+    const payload = await service.getConfig()
+
+    expect(payload.availability).toMatchObject({
+      usable: false,
+      code: 'model_configuration_required',
+      action: 'open_model_settings',
+      provider: null,
+      entryName: null,
+    })
+    expect(payload.availability.message).toContain('配置模型')
+  })
+
+  it('allows local providers without an API key but rejects remote providers without one', async () => {
+    const localRoot = tmp('emperor-model-service-local-')
+    writeModelConfig(localRoot, {
+      agents: { defaults: { model: 'local', provider: 'auto', maxTokens: 8192, temperature: 0.1, reasoningEffort: null, contextWindowTokens: 128000 } },
+      models: [{
+        name: 'local',
+        mainModelId: 'llama3',
+        secondaryModelId: '',
+        provider: 'ollama',
+        apiKey: '',
+      }],
+      providers: { ollama: { apiKey: '', apiBase: 'http://localhost:11434/v1', extraHeaders: null, extraBody: null } },
+    })
+    const local = new CoreModelService(localRoot, {
+      router: new ModelRouter(localRoot, await loadModelConfig(localRoot)),
+    })
+
+    await expect(local.getConfig()).resolves.toMatchObject({
+      availability: { usable: true, provider: 'ollama', entryName: 'local' },
+    })
+
+    const remoteRoot = tmp('emperor-model-service-remote-missing-key-')
+    writeModelConfig(remoteRoot, {
+      agents: { defaults: { model: 'remote', provider: 'auto', maxTokens: 8192, temperature: 0.1, reasoningEffort: null, contextWindowTokens: 128000 } },
+      models: [{
+        name: 'remote',
+        mainModelId: 'deepseek-chat',
+        secondaryModelId: '',
+        provider: 'deepseek',
+        apiKey: '',
+      }],
+      providers: { deepseek: { apiKey: '', apiBase: 'https://api.deepseek.com', extraHeaders: null, extraBody: null } },
+    })
+    const remote = new CoreModelService(remoteRoot, {
+      router: new ModelRouter(remoteRoot, await loadModelConfig(remoteRoot)),
+    })
+
+    await expect(remote.getConfig()).resolves.toMatchObject({
+      availability: {
+        usable: false,
+        code: 'model_configuration_required',
+        action: 'open_model_settings',
+        provider: 'deepseek',
+        entryName: 'remote',
+      },
+    })
   })
 
   it('restores masked keys on save, validates complete entries, and refreshes the host model config', async () => {
