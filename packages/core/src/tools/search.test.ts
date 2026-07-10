@@ -71,7 +71,10 @@ async function grep(
 
 describe('GlobTool node-native traversal', () => {
   it('keeps search code independent from child processes and shell execution', async () => {
-    const searchSource = await readFile(new URL('./search.ts', import.meta.url), 'utf8')
+    const searchSource = await readFile(
+      new URL('./search.ts', import.meta.url),
+      'utf8',
+    )
     const builtinSource = await readFile(
       new URL('./builtin.ts', import.meta.url),
       'utf8',
@@ -79,6 +82,17 @@ describe('GlobTool node-native traversal', () => {
 
     expect(searchSource).not.toMatch(/node:child_process|\bexec(?:Sync)?\s*\(/)
     expect(builtinSource).not.toContain('execSync')
+  })
+
+  it('opens canonical targets and enforces the byte limit while streaming', async () => {
+    const searchSource = await readFile(
+      new URL('./search.ts', import.meta.url),
+      'utf8',
+    )
+
+    expect(searchSource).toContain('opendir(physicalDirectory)')
+    expect(searchSource).toContain('createReadStream(entry.realPath')
+    expect(searchSource).toContain('bytesRead += chunk.length')
   })
 
   it('recursively matches entries and skips runtime noise directories', async () => {
@@ -142,9 +156,9 @@ describe('GlobTool node-native traversal', () => {
     await glob(root, '*; touch canary-semicolon; #')
 
     for (const canary of canaries) {
-      await expect(writeFile(join(root, canary), '', { flag: 'wx' })).resolves.toBe(
-        undefined,
-      )
+      await expect(
+        writeFile(join(root, canary), '', { flag: 'wx' }),
+      ).resolves.toBe(undefined)
     }
   })
 
@@ -189,7 +203,9 @@ describe('GlobTool node-native traversal', () => {
       await mkdir(denied)
       await chmod(denied, 0)
       try {
-        expect(await glob(root, '**/*')).toMatch(/^\[ERR\].*(EACCES|permission)/i)
+        expect(await glob(root, '**/*')).toMatch(
+          /^\[ERR\].*(EACCES|permission)/i,
+        )
       } finally {
         await chmod(denied, 0o700)
       }
@@ -217,9 +233,9 @@ describe('GrepTool node-native search', () => {
     const root = await workspace()
     await put(root, 'a.txt', 'needle\nother\nneedle again\n')
 
-    expect(
-      await grep(root, { pattern: 'needle', output_mode: 'count' }),
-    ).toBe('a.txt: 2')
+    expect(await grep(root, { pattern: 'needle', output_mode: 'count' })).toBe(
+      'a.txt: 2',
+    )
   })
 
   it('supports content mode with before and after context', async () => {
@@ -331,9 +347,9 @@ describe('GrepTool node-native search', () => {
     await grep(root, { pattern: 'plain', glob: '$(touch grep-glob)' })
 
     for (const canary of canaries) {
-      await expect(writeFile(join(root, canary), '', { flag: 'wx' })).resolves.toBe(
-        undefined,
-      )
+      await expect(
+        writeFile(join(root, canary), '', { flag: 'wx' }),
+      ).resolves.toBe(undefined)
     }
   })
 

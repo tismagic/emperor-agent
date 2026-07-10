@@ -55,6 +55,8 @@ class SearchDiagnostic extends Error {}
 
 class BinaryFile extends Error {}
 
+class OversizedFile extends Error {}
+
 /** Node-native recursive glob implementation shared by all agent entry points. */
 export class GlobTool extends Tool {
   override name = 'glob'
@@ -96,6 +98,7 @@ export class GlobTool extends Tool {
       const matches: Array<{ path: string; mtimeMs: number }> = []
       for await (const entry of walkDirectory(
         root.logicalPath,
+        root.realPath,
         root.workspacePath,
         policy,
         signal,
@@ -253,6 +256,7 @@ async function resolveSearchRoot(
   assertPolicyAllowed(decision)
   const entry = await inspectEntry(
     decision.resolvedPath,
+    decision.resolvedPath,
     workspacePath,
     policy,
     signal,
@@ -262,13 +266,14 @@ async function resolveSearchRoot(
 
 async function inspectEntry(
   logicalPath: string,
+  physicalPath: string,
   workspacePath: string,
   policy: WorkspacePolicy,
   signal?: AbortSignal,
 ): Promise<SearchEntry> {
   throwIfCancelled(signal)
-  const linkStats = await lstat(logicalPath)
-  const canonicalPath = await realpath(logicalPath)
+  const linkStats = await lstat(physicalPath)
+  const canonicalPath = await realpath(physicalPath)
   const decision = policy.resolvePath(logicalPath, 'read')
   assertPolicyAllowed(decision)
   if (resolve(decision.realPath) !== resolve(canonicalPath)) {
@@ -290,13 +295,14 @@ async function inspectEntry(
 
 async function* walkDirectory(
   logicalDirectory: string,
+  physicalDirectory: string,
   workspacePath: string,
   policy: WorkspacePolicy,
   signal: AbortSignal | undefined,
   ancestors: Set<string>,
 ): AsyncGenerator<SearchEntry> {
   throwIfCancelled(signal)
-  const directory = await opendir(logicalDirectory)
+  const directory = await opendir(physicalDirectory)
   const names: string[] = []
   for await (const directoryEntry of directory) {
     if (!IGNORED_DIRECTORIES.has(directoryEntry.name)) {
@@ -309,6 +315,7 @@ async function* walkDirectory(
     throwIfCancelled(signal)
     const entry = await inspectEntry(
       join(logicalDirectory, name),
+      join(physicalDirectory, name),
       workspacePath,
       policy,
       signal,
@@ -324,6 +331,7 @@ async function* walkDirectory(
     nextAncestors.add(entry.realPath)
     yield* walkDirectory(
       entry.logicalPath,
+      entry.realPath,
       workspacePath,
       policy,
       signal,
@@ -343,6 +351,7 @@ async function* walkFiles(
   }
   for await (const entry of walkDirectory(
     root.logicalPath,
+    root.realPath,
     root.workspacePath,
     policy,
     signal,
@@ -366,6 +375,7 @@ async function scanTextFile(
   let count = 0
   let lineNumber = 0
   let remainder = ''
+  let bytesRead = 0
   let sampleBytes = 0
   let sampleControlBytes = 0
   const decoder = new TextDecoder('utf-8', { fatal: true })
@@ -414,15 +424,15 @@ async function scanTextFile(
   }
 
   try {
-    const stream = createReadStream(entry.logicalPath, {
+    const stream = createReadStream(entry.realPath, {
       highWaterMark: 64 * 1024,
       signal,
     })
     for await (const rawChunk of stream) {
       throwIfCancelled(signal)
-      const chunk = Buffer.isBuffer(rawChunk)
-        ? rawChunk
-        : Buffer.from(rawChunk)
+      const chunk = Buffer.isBuffer(rawChunk) ? rawChunk : Buffer.from(rawChunk)
+      bytesRead += chunk.length
+      if (bytesRead > MAX_FILE_BYTES) throw new OversizedFile()
       if (chunk.includes(0)) throw new BinaryFile()
       if (sampleBytes < 4096) {
         const sample = chunk.subarray(0, 4096 - sampleBytes)
@@ -446,11 +456,13 @@ async function scanTextFile(
       throw new BinaryFile()
     }
   } catch (error) {
-    if (error instanceof BinaryFile) return null
+    if (error instanceof BinaryFile || error instanceof OversizedFile)
+      return null
     throw error
   }
 
-  if (remainder) processLine(remainder.endsWith('\r') ? remainder.slice(0, -1) : remainder)
+  if (remainder)
+    processLine(remainder.endsWith('\r') ? remainder.slice(0, -1) : remainder)
   blocks.push(...pending)
   blocks.sort((left, right) => left.matchLine - right.matchLine)
   return { count, blocks: blocks.slice(0, maxBlocks) }
@@ -493,7 +505,9 @@ function assertWorkspaceRelative(path: string, label: string): void {
 }
 
 function isPortableAbsolute(path: string): boolean {
-  return path.startsWith('/') || /^[A-Za-z]:\//.test(path) || path.startsWith('//')
+  return (
+    path.startsWith('/') || /^[A-Za-z]:\//.test(path) || path.startsWith('//')
+  )
 }
 
 function displayPath(path: string, workspacePath: string): string {
