@@ -22,7 +22,9 @@ describe('core IPC wrapper (W4: fake REST route table removed)', () => {
     const fetchSpy = vi.spyOn(globalThis, 'fetch')
 
     await expect(core('memory.tokens')).resolves.toEqual({ totals: {} })
-    await expect(core('sessions.rename', 's1', { title: '新标题' })).resolves.toEqual({ totals: {} })
+    await expect(
+      core('sessions.rename', 's1', { title: '新标题' }),
+    ).resolves.toEqual({ totals: {} })
 
     expect(calls).toEqual([
       ['memory.tokens'],

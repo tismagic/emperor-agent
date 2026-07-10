@@ -19,7 +19,7 @@ export const HOOK_EVENT_NAMES = [
   'TeammateIdle',
 ] as const
 
-export type HookEventName = typeof HOOK_EVENT_NAMES[number]
+export type HookEventName = (typeof HOOK_EVENT_NAMES)[number]
 
 export type HookHandlerType = 'command' | 'http' | 'prompt' | 'agent'
 export type HookFailureMode = 'open' | 'closed'
@@ -37,24 +37,92 @@ const COMMAND_HTTP_PROMPT = ['command', 'http', 'prompt'] as const
 const ALL_HANDLERS = ['command', 'http', 'prompt', 'agent'] as const
 
 export const HOOK_EVENT_SPECS = {
-  SessionStart: { matcherField: 'source', mode: 'observe', allowedHandlers: COMMAND },
-  SessionEnd: { matcherField: 'reason', mode: 'observe', allowedHandlers: COMMAND },
-  UserPromptSubmit: { matcherField: null, mode: 'transform', allowedHandlers: COMMAND_HTTP_PROMPT },
-  PreToolUse: { matcherField: 'tool_name', mode: 'transform', allowedHandlers: COMMAND_HTTP_PROMPT },
-  PostToolUse: { matcherField: 'tool_name', mode: 'transform', allowedHandlers: COMMAND_HTTP_PROMPT },
-  PostToolUseFailure: { matcherField: 'tool_name', mode: 'observe', allowedHandlers: COMMAND_HTTP_PROMPT },
-  PermissionRequest: { matcherField: 'tool_name', mode: 'transform', allowedHandlers: COMMAND_HTTP_PROMPT },
-  PermissionDenied: { matcherField: 'tool_name', mode: 'observe', allowedHandlers: COMMAND_HTTP_PROMPT },
+  SessionStart: {
+    matcherField: 'source',
+    mode: 'observe',
+    allowedHandlers: COMMAND,
+  },
+  SessionEnd: {
+    matcherField: 'reason',
+    mode: 'observe',
+    allowedHandlers: COMMAND,
+  },
+  UserPromptSubmit: {
+    matcherField: null,
+    mode: 'transform',
+    allowedHandlers: COMMAND_HTTP_PROMPT,
+  },
+  PreToolUse: {
+    matcherField: 'tool_name',
+    mode: 'transform',
+    allowedHandlers: COMMAND_HTTP_PROMPT,
+  },
+  PostToolUse: {
+    matcherField: 'tool_name',
+    mode: 'transform',
+    allowedHandlers: COMMAND_HTTP_PROMPT,
+  },
+  PostToolUseFailure: {
+    matcherField: 'tool_name',
+    mode: 'observe',
+    allowedHandlers: COMMAND_HTTP_PROMPT,
+  },
+  PermissionRequest: {
+    matcherField: 'tool_name',
+    mode: 'transform',
+    allowedHandlers: COMMAND_HTTP_PROMPT,
+  },
+  PermissionDenied: {
+    matcherField: 'tool_name',
+    mode: 'observe',
+    allowedHandlers: COMMAND_HTTP_PROMPT,
+  },
   Stop: { matcherField: null, mode: 'continue', allowedHandlers: ALL_HANDLERS },
-  StopFailure: { matcherField: 'error_kind', mode: 'observe', allowedHandlers: COMMAND_HTTP },
-  SubagentStart: { matcherField: 'agent_type', mode: 'observe', allowedHandlers: COMMAND_HTTP_PROMPT },
-  SubagentStop: { matcherField: 'agent_type', mode: 'continue', allowedHandlers: ALL_HANDLERS },
-  PreCompact: { matcherField: 'trigger', mode: 'transform', allowedHandlers: COMMAND_HTTP_PROMPT },
-  PostCompact: { matcherField: 'trigger', mode: 'observe', allowedHandlers: COMMAND_HTTP },
-  ConfigChange: { matcherField: 'source', mode: 'block', allowedHandlers: COMMAND_HTTP },
-  TaskCreated: { matcherField: 'task_kind', mode: 'block', allowedHandlers: COMMAND_HTTP_PROMPT },
-  TaskCompleted: { matcherField: 'task_kind', mode: 'block', allowedHandlers: ALL_HANDLERS },
-  TeammateIdle: { matcherField: 'agent_type', mode: 'continue', allowedHandlers: ALL_HANDLERS },
+  StopFailure: {
+    matcherField: 'error_kind',
+    mode: 'observe',
+    allowedHandlers: COMMAND_HTTP,
+  },
+  SubagentStart: {
+    matcherField: 'agent_type',
+    mode: 'observe',
+    allowedHandlers: COMMAND_HTTP_PROMPT,
+  },
+  SubagentStop: {
+    matcherField: 'agent_type',
+    mode: 'continue',
+    allowedHandlers: ALL_HANDLERS,
+  },
+  PreCompact: {
+    matcherField: 'trigger',
+    mode: 'transform',
+    allowedHandlers: COMMAND_HTTP_PROMPT,
+  },
+  PostCompact: {
+    matcherField: 'trigger',
+    mode: 'observe',
+    allowedHandlers: COMMAND_HTTP,
+  },
+  ConfigChange: {
+    matcherField: 'source',
+    mode: 'block',
+    allowedHandlers: COMMAND_HTTP,
+  },
+  TaskCreated: {
+    matcherField: 'task_kind',
+    mode: 'block',
+    allowedHandlers: COMMAND_HTTP_PROMPT,
+  },
+  TaskCompleted: {
+    matcherField: 'task_kind',
+    mode: 'block',
+    allowedHandlers: ALL_HANDLERS,
+  },
+  TeammateIdle: {
+    matcherField: 'agent_type',
+    mode: 'continue',
+    allowedHandlers: ALL_HANDLERS,
+  },
 } as const satisfies Record<HookEventName, HookEventSpec>
 
 export interface HookSource {
@@ -123,7 +191,11 @@ export interface HookAgentHandlerV2 extends HookHandlerBaseV2 {
   maxTurns: number
 }
 
-export type HookHandlerV2 = HookCommandHandlerV2 | HookHttpHandlerV2 | HookPromptHandlerV2 | HookAgentHandlerV2
+export type HookHandlerV2 =
+  | HookCommandHandlerV2
+  | HookHttpHandlerV2
+  | HookPromptHandlerV2
+  | HookAgentHandlerV2
 
 export interface HookGroup {
   id: string
@@ -224,24 +296,62 @@ export type HookInputByEvent = {
   SessionStart: { source: string }
   SessionEnd: { reason: string }
   UserPromptSubmit: { prompt: string }
-  PreToolUse: { tool_name: string; tool_input: Record<string, unknown>; tool_use_id: string }
-  PostToolUse: { tool_name: string; tool_input: Record<string, unknown>; tool_use_id: string; tool_result: unknown }
-  PostToolUseFailure: { tool_name: string; tool_input: Record<string, unknown>; tool_use_id: string; error: string }
-  PermissionRequest: { tool_name: string; tool_input: Record<string, unknown>; tool_use_id: string; permission: Record<string, unknown> }
-  PermissionDenied: { tool_name: string; tool_input: Record<string, unknown>; tool_use_id: string; permission: Record<string, unknown> }
+  PreToolUse: {
+    tool_name: string
+    tool_input: Record<string, unknown>
+    tool_use_id: string
+  }
+  PostToolUse: {
+    tool_name: string
+    tool_input: Record<string, unknown>
+    tool_use_id: string
+    tool_result: unknown
+  }
+  PostToolUseFailure: {
+    tool_name: string
+    tool_input: Record<string, unknown>
+    tool_use_id: string
+    error: string
+  }
+  PermissionRequest: {
+    tool_name: string
+    tool_input: Record<string, unknown>
+    tool_use_id: string
+    permission: Record<string, unknown>
+  }
+  PermissionDenied: {
+    tool_name: string
+    tool_input: Record<string, unknown>
+    tool_use_id: string
+    permission: Record<string, unknown>
+  }
   Stop: { last_assistant_message: string; stop_hook_active: boolean }
   StopFailure: { error_kind: string; error: string }
   SubagentStart: { agent_id: string; agent_type: string }
-  SubagentStop: { agent_id: string; agent_type: string; last_assistant_message: string; stop_hook_active: boolean }
+  SubagentStop: {
+    agent_id: string
+    agent_type: string
+    last_assistant_message: string
+    stop_hook_active: boolean
+  }
   PreCompact: { trigger: 'manual' | 'auto' | 'emergency' }
-  PostCompact: { trigger: 'manual' | 'auto' | 'emergency'; result: Record<string, unknown> }
+  PostCompact: {
+    trigger: 'manual' | 'auto' | 'emergency'
+    result: Record<string, unknown>
+  }
   ConfigChange: { source: string; candidate_revision: string }
   TaskCreated: { task_kind: string; task: Record<string, unknown> }
   TaskCompleted: { task_kind: string; task: Record<string, unknown> }
-  TeammateIdle: { agent_id: string; agent_type: string; teammate_name: string; stop_hook_active: boolean }
+  TeammateIdle: {
+    agent_id: string
+    agent_type: string
+    teammate_name: string
+    stop_hook_active: boolean
+  }
 }
 
-export type HookInputV2<E extends HookEventName = HookEventName> = HookCommonInputV2 & { hook_event_name: E } & HookInputByEvent[E]
+export type HookInputV2<E extends HookEventName = HookEventName> =
+  HookCommonInputV2 & { hook_event_name: E } & HookInputByEvent[E]
 
 export interface HookDefinition {
   id: string

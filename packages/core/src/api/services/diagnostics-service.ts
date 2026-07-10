@@ -1,7 +1,13 @@
 import { existsSync } from 'node:fs'
 import { join, resolve } from 'node:path'
-import { localConfigDiagnostics, type LocalConfigDiagnostics } from '../../config/local-config'
-import { loadModelConfig, validateCompleteModelEntries } from '../../config/model-config'
+import {
+  localConfigDiagnostics,
+  type LocalConfigDiagnostics,
+} from '../../config/local-config'
+import {
+  loadModelConfig,
+  validateCompleteModelEntries,
+} from '../../config/model-config'
 import { listRecentPromptSnapshots } from '../../prompts/manifest'
 import type { RuntimePaths } from '../../runtime/paths'
 import type { LegacyStateMigrationResult } from '../../runtime/migrate-state-root'
@@ -13,7 +19,11 @@ export interface CoreDiagnosticsServiceDeps {
   legacyStateMigration?: LegacyStateMigrationResult | null
   /** Detects private `.emperor/sessions`|`.emperor/memory` already sitting inside the
    * active project's own source tree. Returns null when there is no bound project. */
-  activeProjectLegacyPrivateData?: () => { projectPath: string; sessions: boolean; memory: boolean } | null
+  activeProjectLegacyPrivateData?: () => {
+    projectPath: string
+    sessions: boolean
+    memory: boolean
+  } | null
   schedulerDiagnostics?: () => Dict
   runtimeStats?: () => Dict
   workspacePolicy?: () => Dict
@@ -62,7 +72,7 @@ export class CoreDiagnosticsService {
       promptSnapshots: this.promptSnapshotsPayload(),
       external: this.deps.externalPayload?.() ?? {},
       activeTasks: this.deps.activeTasks?.() ?? [],
-      desktopPet: await this.deps.desktopPetPayload?.() ?? {},
+      desktopPet: (await this.deps.desktopPetPayload?.()) ?? {},
       dependencies: this.dependencies(),
     }
   }
@@ -91,9 +101,15 @@ export class CoreDiagnosticsService {
 
   dependencies(): Dict {
     return {
-      nodeRuntime: typeof process.versions.node === 'string' && process.versions.node.length > 0,
-      desktopRenderer: existsSync(join(this.root, 'desktop', 'out', 'renderer', 'index.html')),
-      desktopPetModules: existsSync(join(this.root, 'desktop', 'src', 'pet', 'preload.js')),
+      nodeRuntime:
+        typeof process.versions.node === 'string' &&
+        process.versions.node.length > 0,
+      desktopRenderer: existsSync(
+        join(this.root, 'desktop', 'out', 'renderer', 'index.html'),
+      ),
+      desktopPetModules: existsSync(
+        join(this.root, 'desktop', 'src', 'pet', 'preload.js'),
+      ),
     }
   }
 

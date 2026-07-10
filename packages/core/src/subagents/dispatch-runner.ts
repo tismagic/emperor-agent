@@ -1,8 +1,18 @@
 import { buildRoutedRunner } from '../agent/runner-factory'
-import type { AgentRunnerHookHost, CompactorLike, ControlManagerRunnerHost, MemoryStoreLike, TodoStoreLike, TokenTrackerLike } from '../agent/runner'
+import type {
+  AgentRunnerHookHost,
+  CompactorLike,
+  ControlManagerRunnerHost,
+  MemoryStoreLike,
+  TodoStoreLike,
+  TokenTrackerLike,
+} from '../agent/runner'
 import type { ModelRouter } from '../model/router'
 import type { ToolRegistry } from '../tools/registry'
-import type { DispatchRunner, DispatchRunnerFactoryArgs } from '../tools/dispatch'
+import type {
+  DispatchRunner,
+  DispatchRunnerFactoryArgs,
+} from '../tools/dispatch'
 
 export interface RoutedDispatchRunnerFactoryOptions {
   modelRouter: Pick<ModelRouter, 'route'>
@@ -13,14 +23,20 @@ export interface RoutedDispatchRunnerFactoryOptions {
   controlManager?: ControlManagerRunnerHost | null
   maxTokensCap?: number | null
   maxContext?: number | null
-  hooks?: ((args: DispatchRunnerFactoryArgs) => AgentRunnerHookHost | null) | null
+  hooks?:
+    ((args: DispatchRunnerFactoryArgs) => AgentRunnerHookHost | null) | null
 }
 
-export function buildDispatchRunnerFactory(opts: RoutedDispatchRunnerFactoryOptions): (args: DispatchRunnerFactoryArgs) => DispatchRunner {
+export function buildDispatchRunnerFactory(
+  opts: RoutedDispatchRunnerFactoryOptions,
+): (args: DispatchRunnerFactoryArgs) => DispatchRunner {
   return (args) => buildDispatchRunner(args, opts)
 }
 
-export function buildDispatchRunner(args: DispatchRunnerFactoryArgs, opts: RoutedDispatchRunnerFactoryOptions): DispatchRunner {
+export function buildDispatchRunner(
+  args: DispatchRunnerFactoryArgs,
+  opts: RoutedDispatchRunnerFactoryOptions,
+): DispatchRunner {
   const route = opts.modelRouter.route('subagent', args.spec.name, args.task)
   const runner = buildRoutedRunner({
     route,

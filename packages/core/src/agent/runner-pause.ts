@@ -28,11 +28,18 @@ export async function pauseForClarification(
   turnId: string | null,
 ): Promise<void> {
   if (host.controlManager === null) return
-  const interaction = host.controlManager.createAsk({ questions: clarification.questions, context: `Ask Guard: ${clarification.reason}` })
-  const message: Msg = { role: 'assistant', content: '需要先确认关键取舍，已触发 Ask Guard。' }
+  const interaction = host.controlManager.createAsk({
+    questions: clarification.questions,
+    context: `Ask Guard: ${clarification.reason}`,
+  })
+  const message: Msg = {
+    role: 'assistant',
+    content: '需要先确认关键取舍，已触发 Ask Guard。',
+  }
   if (turnId) message.turn_id = turnId
   history.push(message)
-  if (host.memoryStore !== null) host.memoryStore.writeCheckpoint(history, pauseCheckpointOpts(turnId))
+  if (host.memoryStore !== null)
+    host.memoryStore.writeCheckpoint(history, pauseCheckpointOpts(turnId))
   const payload = interactionToDict(interaction)
   if (emit) {
     await emit(controlInteractionEvent(payload))
@@ -53,7 +60,8 @@ export async function pauseForPlan(
   const message: Msg = { role: 'assistant', content: reply }
   if (turnId) message.turn_id = turnId
   history.push(message)
-  if (host.memoryStore !== null) host.memoryStore.writeCheckpoint(history, pauseCheckpointOpts(turnId))
+  if (host.memoryStore !== null)
+    host.memoryStore.writeCheckpoint(history, pauseCheckpointOpts(turnId))
   const payload = interactionToDict(interaction)
   if (emit) {
     await emit(controlInteractionEvent(payload))
@@ -66,25 +74,39 @@ function pauseCheckpointOpts(turnId: string | null): CheckpointWriteOptions {
   return { turnId, phase: 'assistant_response_pending' }
 }
 
-export function maybePauseForControl(content: string, toolCalls: ToolCallRequest[], resultsById: Map<string, ToolResultObj>): void {
+export function maybePauseForControl(
+  content: string,
+  toolCalls: ToolCallRequest[],
+  resultsById: Map<string, ToolResultObj>,
+): void {
   const interaction = parsePauseResult(content)
   if (interaction === null) return
   const toolMessages = toolMessagesForPause(toolCalls, resultsById, interaction)
   throw new TurnPaused(interaction, toolMessages)
 }
 
-export function toolMessagesForPause(toolCalls: ToolCallRequest[], resultsById: Map<string, ToolResultObj>, interaction: Record<string, unknown>): Msg[] {
+export function toolMessagesForPause(
+  toolCalls: ToolCallRequest[],
+  resultsById: Map<string, ToolResultObj>,
+  interaction: Record<string, unknown>,
+): Msg[] {
   const messages: Msg[] = []
   let currentId = String(interaction.parent_call_id ?? '')
   for (const call of toolCalls) {
     const result = resultsById.get(call.id)
-    let content: string | null = result !== undefined ? result.modelContent : null
+    let content: string | null =
+      result !== undefined ? result.modelContent : null
     if (content && parsePauseResult(content)) {
       content = `waiting for user (${interaction.kind}:${interaction.id})`
     } else if (content === null) {
       content = 'skipped because the turn paused for user input'
     }
-    messages.push({ role: 'tool', tool_call_id: call.id, name: call.name, content })
+    messages.push({
+      role: 'tool',
+      tool_call_id: call.id,
+      name: call.name,
+      content,
+    })
     if (currentId && call.id === currentId) currentId = ''
   }
   return messages

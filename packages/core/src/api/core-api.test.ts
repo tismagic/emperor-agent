@@ -1,4 +1,11 @@
-import { existsSync, mkdtempSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs'
+import {
+  existsSync,
+  mkdtempSync,
+  mkdirSync,
+  readFileSync,
+  realpathSync,
+  writeFileSync,
+} from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
@@ -107,7 +114,9 @@ describe('CoreApi (MIG-IPC-001)', () => {
       modelRouter: fakeRouter(new FakeProvider()),
     })
 
-    expect(CORE_API_ROUTE_OPERATIONS.map((op) => op.key).sort()).toEqual(EXPECTED_OPERATIONS)
+    expect(CORE_API_ROUTE_OPERATIONS.map((op) => op.key).sort()).toEqual(
+      EXPECTED_OPERATIONS,
+    )
     for (const key of EXPECTED_OPERATIONS) {
       expect(resolveMethod(api, key), key).toBeTypeOf('function')
     }
@@ -117,40 +126,101 @@ describe('CoreApi (MIG-IPC-001)', () => {
   it('boots, submits a chat turn, and persists session runtime state without HTTP', async () => {
     const root = tmp('emperor-core-api-')
     const provider = new FakeProvider()
-    const api = await CoreApi.create({ root, stateRoot: join(root, '.emperor'), templatesDir: TEMPLATES_DIR, modelRouter: fakeRouter(provider) })
+    const api = await CoreApi.create({
+      root,
+      stateRoot: join(root, '.emperor'),
+      templatesDir: TEMPLATES_DIR,
+      modelRouter: fakeRouter(provider),
+    })
     const events: Array<Record<string, unknown>> = []
 
     const boot = await api.bootstrap()
     const session = api.sessions.create({ title: 'API Chat' })
-    const reply = await api.chat.submit({ content: 'ping', turnId: 'turn_api_1', sessionId: String(session.id), emit: async (event) => { events.push(event) } })
+    const reply = await api.chat.submit({
+      content: 'ping',
+      turnId: 'turn_api_1',
+      sessionId: String(session.id),
+      emit: async (event) => {
+        events.push(event)
+      },
+    })
     const tools = boot.tools as Array<Record<string, unknown>>
     const activeSessionId = String(api.loop.activeSessionId ?? '')
 
     expect(boot.app).toBe('Emperor Agent')
-    expect(boot).toMatchObject({ sessionIndexSource: expect.any(String), repairedSessions: expect.any(Number) })
+    expect(boot).toMatchObject({
+      sessionIndexSource: expect.any(String),
+      repairedSessions: expect.any(Number),
+    })
     expect(tools.some((tool) => tool.name === 'read_file')).toBe(true)
     expect(reply.content).toBe('pong')
     expect(events.map((event) => event.event)).toContain('assistant_done')
     expect(activeSessionId).toBeTruthy()
-    expect(existsSync(join(root, '.emperor', 'sessions', activeSessionId, 'history.jsonl'))).toBe(true)
+    expect(
+      existsSync(
+        join(root, '.emperor', 'sessions', activeSessionId, 'history.jsonl'),
+      ),
+    ).toBe(true)
 
     await api.close()
   })
 
   it('stores new private runtime state under .emperor and reports effective paths', async () => {
     const root = tmp('emperor-core-api-state-root-')
-    const api = await CoreApi.create({ root, stateRoot: join(root, '.emperor'), templatesDir: TEMPLATES_DIR, modelRouter: fakeRouter(new FakeProvider()) })
+    const api = await CoreApi.create({
+      root,
+      stateRoot: join(root, '.emperor'),
+      templatesDir: TEMPLATES_DIR,
+      modelRouter: fakeRouter(new FakeProvider()),
+    })
 
     const session = api.sessions.create({ title: 'State Root Chat' })
-    await api.chat.submit({ content: 'ping', turnId: 'turn_state_1', sessionId: String(session.id), emit: async () => {} })
+    await api.chat.submit({
+      content: 'ping',
+      turnId: 'turn_state_1',
+      sessionId: String(session.id),
+      emit: async () => {},
+    })
     const diagnostics = await api.diagnostics.get()
 
-    expect(existsSync(join(root, '.emperor', 'memory', 'MEMORY.local.md'))).toBe(true)
-    expect(existsSync(join(root, '.emperor', 'sessions', String(session.id), 'history.jsonl'))).toBe(true)
-    expect(existsSync(join(root, '.emperor', 'sessions', String(session.id), 'runtime', 'events.jsonl'))).toBe(true)
-    expect(existsSync(join(root, '.emperor', 'sessions', String(session.id), 'prompt-snapshots', 'turn_state_1.json'))).toBe(true)
-    expect(existsSync(join(root, '.emperor', 'control', 'state.json'))).toBe(true)
-    expect(existsSync(join(root, '.emperor', '.team', 'config.json'))).toBe(false)
+    expect(
+      existsSync(join(root, '.emperor', 'memory', 'MEMORY.local.md')),
+    ).toBe(true)
+    expect(
+      existsSync(
+        join(root, '.emperor', 'sessions', String(session.id), 'history.jsonl'),
+      ),
+    ).toBe(true)
+    expect(
+      existsSync(
+        join(
+          root,
+          '.emperor',
+          'sessions',
+          String(session.id),
+          'runtime',
+          'events.jsonl',
+        ),
+      ),
+    ).toBe(true)
+    expect(
+      existsSync(
+        join(
+          root,
+          '.emperor',
+          'sessions',
+          String(session.id),
+          'prompt-snapshots',
+          'turn_state_1.json',
+        ),
+      ),
+    ).toBe(true)
+    expect(existsSync(join(root, '.emperor', 'control', 'state.json'))).toBe(
+      true,
+    )
+    expect(existsSync(join(root, '.emperor', '.team', 'config.json'))).toBe(
+      false,
+    )
     expect(existsSync(join(root, 'memory'))).toBe(false)
     expect(existsSync(join(root, 'sessions'))).toBe(false)
     expect(diagnostics.paths).toMatchObject({
@@ -163,50 +233,74 @@ describe('CoreApi (MIG-IPC-001)', () => {
       sessionId: String(session.id),
       turnId: 'turn_state_1',
     })
-    expect((diagnostics as any).promptSnapshots.recent[0].sections.map((section: any) => section.name)).toContain('bootstrap')
+    expect(
+      (diagnostics as any).promptSnapshots.recent[0].sections.map(
+        (section: any) => section.name,
+      ),
+    ).toContain('bootstrap')
 
     await api.close()
   })
 
   it('manages hooks config, audit, and test runs through CoreApi', async () => {
     const root = tmp('emperor-core-api-hooks-')
-    const api = await CoreApi.create({ root, stateRoot: join(root, '.emperor'), templatesDir: TEMPLATES_DIR, modelRouter: fakeRouter(new FakeProvider()) })
+    const api = await CoreApi.create({
+      root,
+      stateRoot: join(root, '.emperor'),
+      templatesDir: TEMPLATES_DIR,
+      modelRouter: fakeRouter(new FakeProvider()),
+    })
 
-    const before = await api.hooks.getConfig() as any
-    const saved = await api.hooks.saveConfig({
+    const before = (await api.hooks.getConfig()) as any
+    const saved = (await api.hooks.saveConfig({
       revision: before.revision,
       config: {
         version: 2,
         hooks: {
-          PreToolUse: [{
-            id: 'api-deny',
-            matcher: 'write_file',
-            handlers: [{
-              id: 'api-deny-command',
-              type: 'command',
-              command: process.execPath,
-              args: ['-e', 'process.stdout.write(JSON.stringify({decision:"deny",reason:"api blocked"}))'],
-            }],
-          }],
+          PreToolUse: [
+            {
+              id: 'api-deny',
+              matcher: 'write_file',
+              handlers: [
+                {
+                  id: 'api-deny-command',
+                  type: 'command',
+                  command: process.execPath,
+                  args: [
+                    '-e',
+                    'process.stdout.write(JSON.stringify({decision:"deny",reason:"api blocked"}))',
+                  ],
+                },
+              ],
+            },
+          ],
         },
       },
-    }) as any
-    const loaded = await api.hooks.getConfig() as any
-    const match = await api.hooks.testMatch({
+    })) as any
+    const loaded = (await api.hooks.getConfig()) as any
+    const match = (await api.hooks.testMatch({
       revision: loaded.revision,
       eventName: 'PreToolUse',
-      input: { tool_name: 'write_file', tool_input: { path: 'x.txt' }, tool_use_id: 'api-call' },
-    }) as any
-    const testRun = await api.hooks.testRun({
+      input: {
+        tool_name: 'write_file',
+        tool_input: { path: 'x.txt' },
+        tool_use_id: 'api-call',
+      },
+    })) as any
+    const testRun = (await api.hooks.testRun({
       revision: loaded.revision,
       eventName: 'PreToolUse',
       groupId: 'api-deny',
       handlerId: 'api-deny-command',
       confirmExecution: true,
-      input: { tool_name: 'write_file', tool_input: { path: 'x.txt' }, tool_use_id: 'api-call' },
-    }) as any
-    const audit = await api.hooks.getAudit({ limit: 5 }) as any
-    const boot = await api.bootstrap() as any
+      input: {
+        tool_name: 'write_file',
+        tool_input: { path: 'x.txt' },
+        tool_use_id: 'api-call',
+      },
+    })) as any
+    const audit = (await api.hooks.getAudit({ limit: 5 })) as any
+    const boot = (await api.bootstrap()) as any
 
     expect(saved).toMatchObject({ saved: true, config: { version: 2 } })
     expect(loaded.effectiveGroups[0]).toMatchObject({
@@ -214,10 +308,21 @@ describe('CoreApi (MIG-IPC-001)', () => {
       group: { id: 'api-deny', handlers: [{ id: 'api-deny-command' }] },
       source: { kind: 'global', readonly: false },
     })
-    expect(match.items).toEqual([expect.objectContaining({ groupId: 'api-deny', handlerId: 'api-deny-command' })])
+    expect(match.items).toEqual([
+      expect.objectContaining({
+        groupId: 'api-deny',
+        handlerId: 'api-deny-command',
+      }),
+    ])
     expect(testRun.decision).toBe('deny')
     expect(testRun.reason).toBe('api blocked')
-    expect(audit.records.some((record: any) => record.groupId === 'api-deny' && record.handlerId === 'api-deny-command')).toBe(true)
+    expect(
+      audit.records.some(
+        (record: any) =>
+          record.groupId === 'api-deny' &&
+          record.handlerId === 'api-deny-command',
+      ),
+    ).toBe(true)
     expect(boot.hooks.summary.total).toBe(1)
 
     await api.close()
@@ -225,48 +330,119 @@ describe('CoreApi (MIG-IPC-001)', () => {
 
   it('publishes hooks metadata, pure validation, matching, and optimistic revisions', async () => {
     const root = tmp('emperor-core-api-hooks-contract-')
-    const api = await CoreApi.create({ root, stateRoot: join(root, '.emperor'), templatesDir: TEMPLATES_DIR, modelRouter: fakeRouter(new FakeProvider()) })
-    const initial = await api.hooks.getConfig() as any
+    const api = await CoreApi.create({
+      root,
+      stateRoot: join(root, '.emperor'),
+      templatesDir: TEMPLATES_DIR,
+      modelRouter: fakeRouter(new FakeProvider()),
+    })
+    const initial = (await api.hooks.getConfig()) as any
     const metadata = api.hooks.getMetadata() as any
     const validated = api.hooks.validateConfig({
       config: {
         version: 2,
-        hooks: { Stop: [{ id: 'check', handlers: [{ id: 'prompt', type: 'prompt', prompt: 'Check completion.' }] }] },
+        hooks: {
+          Stop: [
+            {
+              id: 'check',
+              handlers: [
+                { id: 'prompt', type: 'prompt', prompt: 'Check completion.' },
+              ],
+            },
+          ],
+        },
       },
     }) as any
     const invalid = api.hooks.validateConfig({
-      config: { version: 2, hooks: { Stop: [{ id: 'duplicate', handlers: [{ id: 'same', type: 'command', command: 'true' }, { id: 'same', type: 'command', command: 'true' }] }] } },
+      config: {
+        version: 2,
+        hooks: {
+          Stop: [
+            {
+              id: 'duplicate',
+              handlers: [
+                { id: 'same', type: 'command', command: 'true' },
+                { id: 'same', type: 'command', command: 'true' },
+              ],
+            },
+          ],
+        },
+      },
     }) as any
-    const auditBefore = await api.hooks.getAudit() as any
-    const match = await api.hooks.testMatch({ revision: initial.revision, eventName: 'Stop', input: { reason: 'done' } }) as any
-    const auditAfter = await api.hooks.getAudit() as any
+    const auditBefore = (await api.hooks.getAudit()) as any
+    const match = (await api.hooks.testMatch({
+      revision: initial.revision,
+      eventName: 'Stop',
+      input: { reason: 'done' },
+    })) as any
+    const auditAfter = (await api.hooks.getAudit()) as any
 
     expect(metadata.events).toHaveLength(18)
-    expect(metadata.handlers).toEqual(expect.objectContaining({ command: expect.any(Object), http: expect.any(Object), prompt: expect.any(Object), agent: expect.any(Object) }))
+    expect(metadata.handlers).toEqual(
+      expect.objectContaining({
+        command: expect.any(Object),
+        http: expect.any(Object),
+        prompt: expect.any(Object),
+        agent: expect.any(Object),
+      }),
+    )
     expect(validated).toMatchObject({ valid: true, config: { version: 2 } })
     expect(invalid.valid).toBe(false)
-    expect(invalid.diagnostics).toEqual(expect.arrayContaining([expect.objectContaining({ code: 'duplicate_handler_id' })]))
-    expect(match).toMatchObject({ revision: initial.revision, eventName: 'Stop', items: [] })
+    expect(invalid.diagnostics).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ code: 'duplicate_handler_id' }),
+      ]),
+    )
+    expect(match).toMatchObject({
+      revision: initial.revision,
+      eventName: 'Stop',
+      items: [],
+    })
     expect(auditAfter.records).toEqual(auditBefore.records)
-    await expect(api.hooks.saveConfig({ revision: 'stale-revision', config: validated.config })).rejects.toThrow(/stale hooks revision/i)
-    expect((await api.hooks.getConfig() as any).revision).toBe(initial.revision)
+    await expect(
+      api.hooks.saveConfig({
+        revision: 'stale-revision',
+        config: validated.config,
+      }),
+    ).rejects.toThrow(/stale hooks revision/i)
+    expect(((await api.hooks.getConfig()) as any).revision).toBe(
+      initial.revision,
+    )
 
     await api.close()
   })
 
   it('requires confirmation and exact matching selection for hook test execution', async () => {
     const root = tmp('emperor-core-api-hook-test-run-')
-    const api = await CoreApi.create({ root, stateRoot: join(root, '.emperor'), templatesDir: TEMPLATES_DIR, modelRouter: fakeRouter(new FakeProvider()) })
-    const initial = await api.hooks.getConfig() as any
-    const saved = await api.hooks.saveConfig({
+    const api = await CoreApi.create({
+      root,
+      stateRoot: join(root, '.emperor'),
+      templatesDir: TEMPLATES_DIR,
+      modelRouter: fakeRouter(new FakeProvider()),
+    })
+    const initial = (await api.hooks.getConfig()) as any
+    const saved = (await api.hooks.saveConfig({
       revision: initial.revision,
       config: {
         version: 2,
         hooks: {
-          Stop: [{ id: 'stop-check', matcher: 'done', handlers: [{ id: 'stop-command', type: 'command', command: process.execPath, args: ['-e', 'process.stdout.write("{}")'] }] }],
+          Stop: [
+            {
+              id: 'stop-check',
+              matcher: 'done',
+              handlers: [
+                {
+                  id: 'stop-command',
+                  type: 'command',
+                  command: process.execPath,
+                  args: ['-e', 'process.stdout.write("{}")'],
+                },
+              ],
+            },
+          ],
         },
       },
-    }) as any
+    })) as any
     const request = {
       revision: saved.revision,
       eventName: 'Stop',
@@ -275,9 +451,23 @@ describe('CoreApi (MIG-IPC-001)', () => {
       input: { reason: 'done' },
     }
 
-    await expect(api.hooks.testRun(request)).rejects.toThrow(/confirmExecution=true/)
-    await expect(api.hooks.testRun({ ...request, confirmExecution: true, handlerId: 'missing' })).rejects.toThrow(/does not match/)
-    await expect(api.hooks.testRun({ ...request, confirmExecution: true, input: { reason: 'different' } })).rejects.toThrow(/does not match/)
+    await expect(api.hooks.testRun(request)).rejects.toThrow(
+      /confirmExecution=true/,
+    )
+    await expect(
+      api.hooks.testRun({
+        ...request,
+        confirmExecution: true,
+        handlerId: 'missing',
+      }),
+    ).rejects.toThrow(/does not match/)
+    await expect(
+      api.hooks.testRun({
+        ...request,
+        confirmExecution: true,
+        input: { reason: 'different' },
+      }),
+    ).rejects.toThrow(/does not match/)
 
     await api.close()
   })
@@ -287,48 +477,118 @@ describe('CoreApi (MIG-IPC-001)', () => {
     const stateRoot = join(root, '.emperor-state')
     const projectRoot = join(root, 'project')
     mkdirSync(join(projectRoot, '.emperor'), { recursive: true })
-    writeFileSync(join(projectRoot, '.emperor', 'settings.json'), JSON.stringify({
-      version: 2,
-      hooks: {
-        Stop: [{ id: 'project-stop', handlers: [{ id: 'project-command', type: 'command', command: 'true' }] }],
-      },
-    }))
-    const api = await CoreApi.create({ root, stateRoot, templatesDir: TEMPLATES_DIR, modelRouter: fakeRouter(new FakeProvider()) })
-    const initial = await api.hooks.getConfig() as any
-    await api.hooks.saveConfig({ revision: initial.revision, config: { version: 2, projectHooks: { enabled: true }, hooks: {} } })
-    const build = api.sessions.create({ title: 'Hook Project', mode: 'build', project_path: projectRoot }) as any
+    writeFileSync(
+      join(projectRoot, '.emperor', 'settings.json'),
+      JSON.stringify({
+        version: 2,
+        hooks: {
+          Stop: [
+            {
+              id: 'project-stop',
+              handlers: [
+                { id: 'project-command', type: 'command', command: 'true' },
+              ],
+            },
+          ],
+        },
+      }),
+    )
+    const api = await CoreApi.create({
+      root,
+      stateRoot,
+      templatesDir: TEMPLATES_DIR,
+      modelRouter: fakeRouter(new FakeProvider()),
+    })
+    const initial = (await api.hooks.getConfig()) as any
+    await api.hooks.saveConfig({
+      revision: initial.revision,
+      config: { version: 2, projectHooks: { enabled: true }, hooks: {} },
+    })
+    const build = api.sessions.create({
+      title: 'Hook Project',
+      mode: 'build',
+      project_path: projectRoot,
+    }) as any
     api.sessions.activate(build.id)
-    const untrusted = await api.hooks.getConfig() as any
+    const untrusted = (await api.hooks.getConfig()) as any
 
-    expect(untrusted.projectTrust).toMatchObject({ canonicalRoot: realpathSync(projectRoot), status: 'untrusted', digest: expect.any(String) })
-    expect(untrusted.sources.find((source: any) => source.id === 'project')).toMatchObject({ active: false, blockedReason: 'project_untrusted' })
-    await expect(api.hooks.setProjectTrust({ projectRoot: root, expectedDigest: untrusted.projectTrust.digest, trusted: true })).rejects.toThrow(/active project/)
-    await expect(api.hooks.setProjectTrust({ projectRoot, expectedDigest: 'stale-digest', trusted: true })).rejects.toThrow(/digest changed/)
+    expect(untrusted.projectTrust).toMatchObject({
+      canonicalRoot: realpathSync(projectRoot),
+      status: 'untrusted',
+      digest: expect.any(String),
+    })
+    expect(
+      untrusted.sources.find((source: any) => source.id === 'project'),
+    ).toMatchObject({ active: false, blockedReason: 'project_untrusted' })
+    await expect(
+      api.hooks.setProjectTrust({
+        projectRoot: root,
+        expectedDigest: untrusted.projectTrust.digest,
+        trusted: true,
+      }),
+    ).rejects.toThrow(/active project/)
+    await expect(
+      api.hooks.setProjectTrust({
+        projectRoot,
+        expectedDigest: 'stale-digest',
+        trusted: true,
+      }),
+    ).rejects.toThrow(/digest changed/)
 
-    const trusted = await api.hooks.setProjectTrust({ projectRoot, expectedDigest: untrusted.projectTrust.digest, trusted: true }) as any
-    const loaded = await api.hooks.getConfig() as any
+    const trusted = (await api.hooks.setProjectTrust({
+      projectRoot,
+      expectedDigest: untrusted.projectTrust.digest,
+      trusted: true,
+    })) as any
+    const loaded = (await api.hooks.getConfig()) as any
     expect(trusted.status).toBe('trusted')
     expect(loaded.projectTrust.status).toBe('trusted')
-    expect(loaded.effectiveGroups).toEqual(expect.arrayContaining([
-      expect.objectContaining({ eventName: 'Stop', group: expect.objectContaining({ id: 'project-stop' }), source: expect.objectContaining({ kind: 'project', active: true }) }),
-    ]))
+    expect(loaded.effectiveGroups).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          eventName: 'Stop',
+          group: expect.objectContaining({ id: 'project-stop' }),
+          source: expect.objectContaining({ kind: 'project', active: true }),
+        }),
+      ]),
+    )
 
     await api.close()
   })
 
   it('filters and pages hook audit records and reports missing cancellation targets', async () => {
     const root = tmp('emperor-core-api-hook-audit-')
-    const api = await CoreApi.create({ root, stateRoot: join(root, '.emperor'), templatesDir: TEMPLATES_DIR, modelRouter: fakeRouter(new FakeProvider()) })
-    const initial = await api.hooks.getConfig() as any
-    const saved = await api.hooks.saveConfig({
+    const api = await CoreApi.create({
+      root,
+      stateRoot: join(root, '.emperor'),
+      templatesDir: TEMPLATES_DIR,
+      modelRouter: fakeRouter(new FakeProvider()),
+    })
+    const initial = (await api.hooks.getConfig()) as any
+    const saved = (await api.hooks.saveConfig({
       revision: initial.revision,
       config: {
         version: 2,
         hooks: {
-          Stop: [{ id: 'audit-stop', handlers: [{ id: 'audit-command', type: 'command', command: process.execPath, args: ['-e', 'process.stdout.write(JSON.stringify({continue:false}))'] }] }],
+          Stop: [
+            {
+              id: 'audit-stop',
+              handlers: [
+                {
+                  id: 'audit-command',
+                  type: 'command',
+                  command: process.execPath,
+                  args: [
+                    '-e',
+                    'process.stdout.write(JSON.stringify({continue:false}))',
+                  ],
+                },
+              ],
+            },
+          ],
         },
       },
-    }) as any
+    })) as any
     const request = {
       revision: saved.revision,
       eventName: 'Stop',
@@ -340,54 +600,103 @@ describe('CoreApi (MIG-IPC-001)', () => {
     await api.hooks.testRun(request)
     await api.hooks.testRun(request)
 
-    const first = await api.hooks.getAudit({ eventName: 'Stop', outcome: 'passthrough', sourceId: 'global', limit: 1 }) as any
-    const second = await api.hooks.getAudit({ eventName: 'Stop', outcome: 'passthrough', sourceId: 'global', limit: 1, cursor: first.nextCursor }) as any
-    const excluded = await api.hooks.getAudit({ eventName: 'PreToolUse', limit: 10 }) as any
-    expect(first).toMatchObject({ total: 2, cursor: '0', nextCursor: '1', records: [expect.objectContaining({ eventName: 'Stop', handlerId: 'audit-command' })] })
-    expect(second).toMatchObject({ total: 2, cursor: '1', nextCursor: null, records: [expect.objectContaining({ eventName: 'Stop' })] })
+    const first = (await api.hooks.getAudit({
+      eventName: 'Stop',
+      outcome: 'passthrough',
+      sourceId: 'global',
+      limit: 1,
+    })) as any
+    const second = (await api.hooks.getAudit({
+      eventName: 'Stop',
+      outcome: 'passthrough',
+      sourceId: 'global',
+      limit: 1,
+      cursor: first.nextCursor,
+    })) as any
+    const excluded = (await api.hooks.getAudit({
+      eventName: 'PreToolUse',
+      limit: 10,
+    })) as any
+    expect(first).toMatchObject({
+      total: 2,
+      cursor: '0',
+      nextCursor: '1',
+      records: [
+        expect.objectContaining({
+          eventName: 'Stop',
+          handlerId: 'audit-command',
+        }),
+      ],
+    })
+    expect(second).toMatchObject({
+      total: 2,
+      cursor: '1',
+      nextCursor: null,
+      records: [expect.objectContaining({ eventName: 'Stop' })],
+    })
     expect(excluded.records).toEqual([])
-    await expect(api.hooks.cancelRun({ runId: 'missing-run' })).resolves.toEqual({ runId: 'missing-run', cancelled: false })
+    await expect(
+      api.hooks.cancelRun({ runId: 'missing-run' }),
+    ).resolves.toEqual({ runId: 'missing-run', cancelled: false })
 
     await api.close()
   })
 
   it('returns an async hook run id that can be cancelled exactly once', async () => {
     const root = tmp('emperor-core-api-hook-cancel-')
-    const api = await CoreApi.create({ root, stateRoot: join(root, '.emperor'), templatesDir: TEMPLATES_DIR, modelRouter: fakeRouter(new FakeProvider()) })
-    const initial = await api.hooks.getConfig() as any
-    const saved = await api.hooks.saveConfig({
+    const api = await CoreApi.create({
+      root,
+      stateRoot: join(root, '.emperor'),
+      templatesDir: TEMPLATES_DIR,
+      modelRouter: fakeRouter(new FakeProvider()),
+    })
+    const initial = (await api.hooks.getConfig()) as any
+    const saved = (await api.hooks.saveConfig({
       revision: initial.revision,
       config: {
         version: 2,
         hooks: {
-          Stop: [{
-            id: 'async-stop',
-            handlers: [{
-              id: 'async-command',
-              type: 'command',
-              command: process.execPath,
-              args: ['-e', 'setTimeout(() => process.stdout.write("{}"), 5000)'],
-              async: true,
-              asyncRewake: true,
-              timeoutMs: 10_000,
-            }],
-          }],
+          Stop: [
+            {
+              id: 'async-stop',
+              handlers: [
+                {
+                  id: 'async-command',
+                  type: 'command',
+                  command: process.execPath,
+                  args: [
+                    '-e',
+                    'setTimeout(() => process.stdout.write("{}"), 5000)',
+                  ],
+                  async: true,
+                  asyncRewake: true,
+                  timeoutMs: 10_000,
+                },
+              ],
+            },
+          ],
         },
       },
-    }) as any
-    const started = await api.hooks.testRun({
+    })) as any
+    const started = (await api.hooks.testRun({
       revision: saved.revision,
       eventName: 'Stop',
       groupId: 'async-stop',
       handlerId: 'async-command',
       confirmExecution: true,
       input: { reason: 'completed' },
-    }) as any
+    })) as any
     const runId = started.results[0]?.hookRunId
 
     expect(runId).toMatch(/^hook_run_/)
-    await expect(api.hooks.cancelRun({ runId })).resolves.toEqual({ runId, cancelled: true })
-    await expect(api.hooks.cancelRun({ runId })).resolves.toEqual({ runId, cancelled: false })
+    await expect(api.hooks.cancelRun({ runId })).resolves.toEqual({
+      runId,
+      cancelled: true,
+    })
+    await expect(api.hooks.cancelRun({ runId })).resolves.toEqual({
+      runId,
+      cancelled: false,
+    })
 
     await api.close()
   })
@@ -395,30 +704,50 @@ describe('CoreApi (MIG-IPC-001)', () => {
   it('runs ConfigChange before config, MCP, and model writes', async () => {
     const root = tmp('emperor-core-api-config-change-')
     const stateRoot = join(root, '.emperor')
-    const api = await CoreApi.create({ root, stateRoot, templatesDir: TEMPLATES_DIR, modelRouter: fakeRouter(new FakeProvider()) })
-    const initialHooks = await api.hooks.getConfig() as any
+    const api = await CoreApi.create({
+      root,
+      stateRoot,
+      templatesDir: TEMPLATES_DIR,
+      modelRouter: fakeRouter(new FakeProvider()),
+    })
+    const initialHooks = (await api.hooks.getConfig()) as any
     await api.hooks.saveConfig({
       revision: initialHooks.revision,
       config: {
         version: 2,
         hooks: {
-          ConfigChange: [{
-            id: 'deny-config',
-            handlers: [{
-              id: 'deny-command',
-              type: 'command',
-              command: process.execPath,
-              args: ['-e', 'process.stdout.write(JSON.stringify({decision:"deny",reason:"locked"}))'],
-            }],
-          }],
+          ConfigChange: [
+            {
+              id: 'deny-config',
+              handlers: [
+                {
+                  id: 'deny-command',
+                  type: 'command',
+                  command: process.execPath,
+                  args: [
+                    '-e',
+                    'process.stdout.write(JSON.stringify({decision:"deny",reason:"locked"}))',
+                  ],
+                },
+              ],
+            },
+          ],
         },
       },
     })
     const userBefore = api.config.get().content
 
-    await expect(Promise.resolve(api.config.save({ content: '## Stable Preferences\n\n- forbidden\n' }))).rejects.toThrow(/ConfigChange hook denied config\.save/)
-    await expect(api.mcp.saveConfig({ servers: {}, defaults: { read_only: false } })).rejects.toThrow(/ConfigChange hook denied mcp\.saveConfig/)
-    await expect(api.model.saveConfig({ config: validModelConfig('forbidden-model') })).rejects.toThrow(/ConfigChange hook denied model\.saveConfig/)
+    await expect(
+      Promise.resolve(
+        api.config.save({ content: '## Stable Preferences\n\n- forbidden\n' }),
+      ),
+    ).rejects.toThrow(/ConfigChange hook denied config\.save/)
+    await expect(
+      api.mcp.saveConfig({ servers: {}, defaults: { read_only: false } }),
+    ).rejects.toThrow(/ConfigChange hook denied mcp\.saveConfig/)
+    await expect(
+      api.model.saveConfig({ config: validModelConfig('forbidden-model') }),
+    ).rejects.toThrow(/ConfigChange hook denied model\.saveConfig/)
     expect(api.config.get().content).toBe(userBefore)
     expect(existsSync(join(stateRoot, 'mcp_config.json'))).toBe(false)
     expect(existsSync(join(stateRoot, 'model_config.json'))).toBe(false)
@@ -429,7 +758,12 @@ describe('CoreApi (MIG-IPC-001)', () => {
   it('saves model config through stateRoot rather than runtimeRoot', async () => {
     const root = tmp('emperor-core-api-model-runtime-')
     const stateRoot = tmp('emperor-core-api-model-state-')
-    const api = await CoreApi.create({ root, stateRoot, templatesDir: TEMPLATES_DIR, modelRouter: fakeRouter(new FakeProvider()) })
+    const api = await CoreApi.create({
+      root,
+      stateRoot,
+      templatesDir: TEMPLATES_DIR,
+      modelRouter: fakeRouter(new FakeProvider()),
+    })
 
     await api.model.saveConfig({
       config: validModelConfig('state-root-model'),
@@ -437,7 +771,10 @@ describe('CoreApi (MIG-IPC-001)', () => {
 
     expect(existsSync(join(stateRoot, 'model_config.json'))).toBe(true)
     expect(existsSync(join(root, 'model_config.json'))).toBe(false)
-    expect(JSON.parse(readFileSync(join(stateRoot, 'model_config.json'), 'utf8')).models[0].name).toBe('state-root-model')
+    expect(
+      JSON.parse(readFileSync(join(stateRoot, 'model_config.json'), 'utf8'))
+        .models[0].name,
+    ).toBe('state-root-model')
 
     await api.close()
   })
@@ -451,7 +788,9 @@ describe('CoreApi (MIG-IPC-001)', () => {
     })
     const activeSessionId = api.loop.activeSessionId
 
-    await expect(api.bootstrap({ sessionId: 'draft:new-chat' })).rejects.toThrow(/draft/i)
+    await expect(
+      api.bootstrap({ sessionId: 'draft:new-chat' }),
+    ).rejects.toThrow(/draft/i)
     expect(api.loop.activeSessionId).toBe(activeSessionId)
 
     await api.close()
@@ -459,14 +798,32 @@ describe('CoreApi (MIG-IPC-001)', () => {
 
   it('replays runtime events for the requested session only', async () => {
     const root = tmp('emperor-core-api-runtime-replay-')
-    const api = await CoreApi.create({ root, stateRoot: join(root, '.emperor'), templatesDir: TEMPLATES_DIR, modelRouter: fakeRouter(new FakeProvider()) })
+    const api = await CoreApi.create({
+      root,
+      stateRoot: join(root, '.emperor'),
+      templatesDir: TEMPLATES_DIR,
+      modelRouter: fakeRouter(new FakeProvider()),
+    })
     const firstSessionId = String(api.loop.activeSessionId)
     const second = api.sessions.create({ title: 'Second Chat' })
 
-    await api.chat.submit({ content: 'first', turnId: 'turn_first', sessionId: firstSessionId, emit: async () => {} })
-    await api.chat.submit({ content: 'second', turnId: 'turn_second', sessionId: String(second.id), emit: async () => {} })
+    await api.chat.submit({
+      content: 'first',
+      turnId: 'turn_first',
+      sessionId: firstSessionId,
+      emit: async () => {},
+    })
+    await api.chat.submit({
+      content: 'second',
+      turnId: 'turn_second',
+      sessionId: String(second.id),
+      emit: async () => {},
+    })
 
-    const replay = api.runtime.replay({ sessionId: firstSessionId, afterSeq: 0 }) as any
+    const replay = api.runtime.replay({
+      sessionId: firstSessionId,
+      afterSeq: 0,
+    }) as any
     const turnIds = replay.events.map((event: any) => event.turn_id)
 
     expect(replay).toMatchObject({
@@ -476,10 +833,14 @@ describe('CoreApi (MIG-IPC-001)', () => {
     })
     expect(turnIds).toContain('turn_first')
     expect(turnIds).not.toContain('turn_second')
-    expect(replay.events.every((event: any) => event.session_id === firstSessionId)).toBe(true)
+    expect(
+      replay.events.every((event: any) => event.session_id === firstSessionId),
+    ).toBe(true)
 
     const boot = await api.bootstrap({ sessionId: firstSessionId })
-    const bootTurnIds = ((boot.runtime as any).events as any[]).map((event) => event.turn_id)
+    const bootTurnIds = ((boot.runtime as any).events as any[]).map(
+      (event) => event.turn_id,
+    )
     expect(bootTurnIds).toContain('turn_first')
     expect(bootTurnIds).not.toContain('turn_second')
 
@@ -488,28 +849,64 @@ describe('CoreApi (MIG-IPC-001)', () => {
 
   it('compacts high-frequency delta events in replay by default without touching disk', async () => {
     const root = tmp('emperor-core-api-replay-compact-')
-    const api = await CoreApi.create({ root, stateRoot: join(root, '.emperor'), templatesDir: TEMPLATES_DIR, modelRouter: fakeRouter(new FakeProvider()) })
+    const api = await CoreApi.create({
+      root,
+      stateRoot: join(root, '.emperor'),
+      templatesDir: TEMPLATES_DIR,
+      modelRouter: fakeRouter(new FakeProvider()),
+    })
     const sessionId = String(api.loop.activeSessionId)
-    const store = new RuntimeEventStore(api.loop.sessionStore.sessionDir(sessionId), { sessionDirOverride: true })
-    store.append({ event: 'user_message', content: 'go' }, { turnId: 't1', sessionId })
+    const store = new RuntimeEventStore(
+      api.loop.sessionStore.sessionDir(sessionId),
+      { sessionDirOverride: true },
+    )
+    store.append(
+      { event: 'user_message', content: 'go' },
+      { turnId: 't1', sessionId },
+    )
     for (let index = 0; index < 20; index += 1) {
-      store.append({
-        event: 'plan_draft_delta',
-        tool_call_id: 'c1',
-        interaction: { id: 'p', title: 'T'.repeat(index + 1), meta: { plan_stream_id: 'c1' } },
-      }, { turnId: 't1', sessionId })
+      store.append(
+        {
+          event: 'plan_draft_delta',
+          tool_call_id: 'c1',
+          interaction: {
+            id: 'p',
+            title: 'T'.repeat(index + 1),
+            meta: { plan_stream_id: 'c1' },
+          },
+        },
+        { turnId: 't1', sessionId },
+      )
     }
-    store.append({ event: 'assistant_done', content: 'done' }, { turnId: 't1', sessionId })
+    store.append(
+      { event: 'assistant_done', content: 'done' },
+      { turnId: 't1', sessionId },
+    )
 
     const replay = api.runtime.replay({ sessionId, afterSeq: 0 }) as any
-    expect(replay.events.filter((event: any) => event.event === 'plan_draft_delta')).toHaveLength(1)
-    expect(replay.events.find((event: any) => event.event === 'plan_draft_delta').interaction.title).toBe('T'.repeat(20))
+    expect(
+      replay.events.filter((event: any) => event.event === 'plan_draft_delta'),
+    ).toHaveLength(1)
+    expect(
+      replay.events.find((event: any) => event.event === 'plan_draft_delta')
+        .interaction.title,
+    ).toBe('T'.repeat(20))
 
-    const full = api.runtime.replay({ sessionId, afterSeq: 0, compact: false }) as any
-    expect(full.events.filter((event: any) => event.event === 'plan_draft_delta')).toHaveLength(20)
+    const full = api.runtime.replay({
+      sessionId,
+      afterSeq: 0,
+      compact: false,
+    }) as any
+    expect(
+      full.events.filter((event: any) => event.event === 'plan_draft_delta'),
+    ).toHaveLength(20)
 
     const boot = await api.bootstrap({ sessionId })
-    expect(((boot.runtime as any).events as any[]).filter((event) => event.event === 'plan_draft_delta')).toHaveLength(1)
+    expect(
+      ((boot.runtime as any).events as any[]).filter(
+        (event) => event.event === 'plan_draft_delta',
+      ),
+    ).toHaveLength(1)
 
     await api.close()
   })
@@ -517,7 +914,9 @@ describe('CoreApi (MIG-IPC-001)', () => {
   it('stamps active turn tasks with their session id and exposes them at bootstrap', async () => {
     class LatchedProvider extends FakeProvider {
       release: () => void = () => {}
-      private readonly gate = new Promise<void>((resolve) => { this.release = resolve })
+      private readonly gate = new Promise<void>((resolve) => {
+        this.release = resolve
+      })
       override async chat(args: ChatArgs): Promise<LLMResponse> {
         await this.gate
         return super.chat(args)
@@ -535,11 +934,20 @@ describe('CoreApi (MIG-IPC-001)', () => {
     const idle = await api.bootstrap()
     expect((idle.runtime as any).active_tasks).toEqual([])
 
-    const turn = api.chat.submit({ content: 'hi', turnId: 'turn_active', sessionId, emit: async () => {} })
+    const turn = api.chat.submit({
+      content: 'hi',
+      turnId: 'turn_active',
+      sessionId,
+      emit: async () => {},
+    })
     await new Promise((resolve) => setTimeout(resolve, 10))
     const active = api.loop.activeTasks.list()
     expect(active).toHaveLength(1)
-    expect(active[0]).toMatchObject({ kind: 'turn', turn_id: 'turn_active', session_id: sessionId })
+    expect(active[0]).toMatchObject({
+      kind: 'turn',
+      turn_id: 'turn_active',
+      session_id: sessionId,
+    })
 
     provider.release()
     await turn
@@ -561,22 +969,44 @@ describe('CoreApi (MIG-IPC-001)', () => {
       content: '搭一个终端动画项目',
       sessionId: draftId,
       clientDraftId: draftId,
-      draftSession: { mode: 'build', project: { project_id: 'proj_1', project_path: '/tmp/proj', project_name: 'Proj' } },
-      emit: async (event) => { events.push(event) },
+      draftSession: {
+        mode: 'build',
+        project: {
+          project_id: 'proj_1',
+          project_path: '/tmp/proj',
+          project_name: 'Proj',
+        },
+      },
+      emit: async (event) => {
+        events.push(event)
+      },
     })
 
-    const created = events.find((event) => event.event === 'session_created') as any
+    const created = events.find(
+      (event) => event.event === 'session_created',
+    ) as any
     expect(created).toBeTruthy()
     expect(created.client_draft_id).toBe(draftId)
-    expect(created.session).toMatchObject({ title: '新会话', mode: 'build', project_id: 'proj_1', title_status: 'pending' })
+    expect(created.session).toMatchObject({
+      title: '新会话',
+      mode: 'build',
+      project_id: 'proj_1',
+      title_status: 'pending',
+    })
     const newSessionId = String(created.session.id)
     expect(result.activeSessionId).toBe(newSessionId)
 
-    const createdIndex = events.findIndex((event) => event.event === 'session_created')
-    const userIndex = events.findIndex((event) => event.event === 'user_message')
+    const createdIndex = events.findIndex(
+      (event) => event.event === 'session_created',
+    )
+    const userIndex = events.findIndex(
+      (event) => event.event === 'user_message',
+    )
     expect(userIndex).toBeGreaterThan(createdIndex)
 
-    const titleEvent = events.find((event) => event.event === 'session_title_updated') as any
+    const titleEvent = events.find(
+      (event) => event.event === 'session_title_updated',
+    ) as any
     expect(titleEvent).toBeTruthy()
     expect(titleEvent.session.id).toBe(newSessionId)
     const entry = api.loop.sessionStore.get(newSessionId)!
@@ -586,9 +1016,19 @@ describe('CoreApi (MIG-IPC-001)', () => {
     // 第二条消息走真实 session，不再创建、不再生成标题
     const callsAfterFirst = provider.calls.length
     const secondEvents: Array<Record<string, unknown>> = []
-    await api.chat.submit({ content: '继续', sessionId: newSessionId, emit: async (event) => { secondEvents.push(event) } })
-    expect(secondEvents.find((event) => event.event === 'session_created')).toBeUndefined()
-    expect(secondEvents.find((event) => event.event === 'session_title_updated')).toBeUndefined()
+    await api.chat.submit({
+      content: '继续',
+      sessionId: newSessionId,
+      emit: async (event) => {
+        secondEvents.push(event)
+      },
+    })
+    expect(
+      secondEvents.find((event) => event.event === 'session_created'),
+    ).toBeUndefined()
+    expect(
+      secondEvents.find((event) => event.event === 'session_title_updated'),
+    ).toBeUndefined()
     expect(provider.calls.length).toBe(callsAfterFirst + 1)
 
     await api.close()
@@ -604,13 +1044,25 @@ describe('CoreApi (MIG-IPC-001)', () => {
     })
     const draftId = 'draft:short-hi'
 
-    await api.chat.submit({ content: 'hi', sessionId: draftId, clientDraftId: draftId, draftSession: { mode: 'chat' }, emit: async () => {} })
+    await api.chat.submit({
+      content: 'hi',
+      sessionId: draftId,
+      clientDraftId: draftId,
+      draftSession: { mode: 'chat' },
+      emit: async () => {},
+    })
 
     // 标题调用（命名 system prompt）必须发生在回合之后，且材料里带上助手回复
     const titleCall = provider.calls.find((call) =>
-      call.messages.some((message) => String(message.content ?? '').includes('命名')))
+      call.messages.some((message) =>
+        String(message.content ?? '').includes('命名'),
+      ),
+    )
     expect(titleCall).toBeTruthy()
-    const userPrompt = String(titleCall!.messages.find((message) => message.role === 'user')?.content ?? '')
+    const userPrompt = String(
+      titleCall!.messages.find((message) => message.role === 'user')?.content ??
+        '',
+    )
     expect(userPrompt).toContain('pong')
     const session = api.loop.sessionStore.get(String(api.loop.activeSessionId))!
     expect(session.title).not.toBe('hi')
@@ -629,7 +1081,9 @@ describe('CoreApi (MIG-IPC-001)', () => {
 
     const created = api.sessions.create({ title: 'Work' })
     const items = api.sessions.list()
-    const renamed = api.sessions.rename(String(created.id), { title: 'Renamed' })
+    const renamed = api.sessions.rename(String(created.id), {
+      title: 'Renamed',
+    })
     const archived = api.sessions.rename(String(created.id), { archived: true })
     const all = api.sessions.list({ includeArchived: true })
     const activated = api.sessions.activate(String(api.loop.activeSessionId))
@@ -640,7 +1094,10 @@ describe('CoreApi (MIG-IPC-001)', () => {
     expect(archived).toMatchObject({ id: created.id })
     expect(String(archived.archived_at || '')).toBeTruthy()
     expect(all.some((item) => item.id === created.id)).toBe(true)
-    expect(activated).toMatchObject({ active: api.loop.activeSessionId, complete: true })
+    expect(activated).toMatchObject({
+      active: api.loop.activeSessionId,
+      complete: true,
+    })
 
     await api.close()
   })
@@ -648,7 +1105,12 @@ describe('CoreApi (MIG-IPC-001)', () => {
   it('returns distinct workspace and agent state paths for resolved projects', async () => {
     const root = tmp('emperor-core-api-project-paths-')
     const projectDir = tmp('emperor-core-api-project-workspace-')
-    const api = await CoreApi.create({ root, stateRoot: join(root, '.emperor'), templatesDir: TEMPLATES_DIR, modelRouter: fakeRouter(new FakeProvider()) })
+    const api = await CoreApi.create({
+      root,
+      stateRoot: join(root, '.emperor'),
+      templatesDir: TEMPLATES_DIR,
+      modelRouter: fakeRouter(new FakeProvider()),
+    })
 
     const project = api.projects.resolve(projectDir) as any
 
@@ -656,8 +1118,20 @@ describe('CoreApi (MIG-IPC-001)', () => {
       project_path: resolve(projectDir),
       workspace_path: resolve(projectDir),
       state_path: join(root, '.emperor', 'projects', project.project_id),
-      memory_path: join(root, '.emperor', 'projects', project.project_id, 'AGENTS.local.md'),
-      agents_path: join(root, '.emperor', 'projects', project.project_id, 'AGENTS.local.md'),
+      memory_path: join(
+        root,
+        '.emperor',
+        'projects',
+        project.project_id,
+        'AGENTS.local.md',
+      ),
+      agents_path: join(
+        root,
+        '.emperor',
+        'projects',
+        project.project_id,
+        'AGENTS.local.md',
+      ),
       legacy_agents_path: null,
       legacy_imported_at: null,
     })
@@ -669,7 +1143,12 @@ describe('CoreApi (MIG-IPC-001)', () => {
   it('keeps chat and build project contexts isolated in provider prompts', async () => {
     const root = tmp('emperor-core-api-context-isolation-')
     const provider = new FakeProvider()
-    const api = await CoreApi.create({ root, stateRoot: join(root, '.emperor'), templatesDir: TEMPLATES_DIR, modelRouter: fakeRouter(provider) })
+    const api = await CoreApi.create({
+      root,
+      stateRoot: join(root, '.emperor'),
+      templatesDir: TEMPLATES_DIR,
+      modelRouter: fakeRouter(provider),
+    })
     const chatSessionId = String(api.loop.activeSessionId)
     const projectAPath = join(root, 'project-a')
     const projectBPath = join(root, 'project-b')
@@ -677,17 +1156,45 @@ describe('CoreApi (MIG-IPC-001)', () => {
     mkdirSync(projectBPath, { recursive: true })
     const projectA = api.projects.resolve(projectAPath) as any
     const projectB = api.projects.resolve(projectBPath) as any
-    api.loop.projectStore.updateMemory(String(projectA.project_id), '## Architecture Notes\n\n- PROJECT_A_PRIVATE_MEMORY')
-    api.loop.projectStore.updateMemory(String(projectB.project_id), '## Architecture Notes\n\n- PROJECT_B_PRIVATE_MEMORY')
-    const buildA = api.sessions.create({ title: 'Build A', mode: 'build', project_path: projectAPath })
-    const buildB = api.sessions.create({ title: 'Build B', mode: 'build', project_path: projectBPath })
+    api.loop.projectStore.updateMemory(
+      String(projectA.project_id),
+      '## Architecture Notes\n\n- PROJECT_A_PRIVATE_MEMORY',
+    )
+    api.loop.projectStore.updateMemory(
+      String(projectB.project_id),
+      '## Architecture Notes\n\n- PROJECT_B_PRIVATE_MEMORY',
+    )
+    const buildA = api.sessions.create({
+      title: 'Build A',
+      mode: 'build',
+      project_path: projectAPath,
+    })
+    const buildB = api.sessions.create({
+      title: 'Build B',
+      mode: 'build',
+      project_path: projectBPath,
+    })
     api.control.setMode('auto')
 
-    await api.chat.submit({ content: 'ping', turnId: 'turn_chat_iso', sessionId: chatSessionId })
-    await api.chat.submit({ content: 'ping', turnId: 'turn_a_iso', sessionId: String(buildA.id) })
-    await api.chat.submit({ content: 'ping', turnId: 'turn_b_iso', sessionId: String(buildB.id) })
+    await api.chat.submit({
+      content: 'ping',
+      turnId: 'turn_chat_iso',
+      sessionId: chatSessionId,
+    })
+    await api.chat.submit({
+      content: 'ping',
+      turnId: 'turn_a_iso',
+      sessionId: String(buildA.id),
+    })
+    await api.chat.submit({
+      content: 'ping',
+      turnId: 'turn_b_iso',
+      sessionId: String(buildB.id),
+    })
 
-    const prompts = provider.calls.slice(-3).map((call) => JSON.stringify(call.messages))
+    const prompts = provider.calls
+      .slice(-3)
+      .map((call) => JSON.stringify(call.messages))
     const chatPrompt = prompts[0] ?? ''
     const promptA = prompts[1] ?? ''
     const promptB = prompts[2] ?? ''
@@ -700,9 +1207,24 @@ describe('CoreApi (MIG-IPC-001)', () => {
     expect(promptB).toContain(projectBPath)
     expect(promptB).toContain('PROJECT_B_PRIVATE_MEMORY')
     expect(promptB).not.toContain('PROJECT_A_PRIVATE_MEMORY')
-    expect(readFileSync(join(root, '.emperor', 'sessions', chatSessionId, 'history.jsonl'), 'utf8')).toContain('turn_chat_iso')
-    expect(readFileSync(join(root, '.emperor', 'sessions', String(buildA.id), 'history.jsonl'), 'utf8')).toContain('turn_a_iso')
-    expect(readFileSync(join(root, '.emperor', 'sessions', String(buildB.id), 'history.jsonl'), 'utf8')).toContain('turn_b_iso')
+    expect(
+      readFileSync(
+        join(root, '.emperor', 'sessions', chatSessionId, 'history.jsonl'),
+        'utf8',
+      ),
+    ).toContain('turn_chat_iso')
+    expect(
+      readFileSync(
+        join(root, '.emperor', 'sessions', String(buildA.id), 'history.jsonl'),
+        'utf8',
+      ),
+    ).toContain('turn_a_iso')
+    expect(
+      readFileSync(
+        join(root, '.emperor', 'sessions', String(buildB.id), 'history.jsonl'),
+        'utf8',
+      ),
+    ).toContain('turn_b_iso')
 
     await api.close()
   })
@@ -752,29 +1274,54 @@ describe('CoreApi (MIG-IPC-001)', () => {
 
     const sessions = api.sessions.list() as Array<Record<string, unknown>>
 
-    expect(api.loop.sessionStore.get(active.id)?.control_pending).toMatchObject({ interaction_id: pending.id })
+    expect(api.loop.sessionStore.get(active.id)?.control_pending).toMatchObject(
+      { interaction_id: pending.id },
+    )
     expect(api.loop.sessionStore.get(stale.id)?.control_pending).toBeNull()
-    expect(sessions.find((item) => item.id === active.id)?.control_pending).toMatchObject({ interaction_id: pending.id })
-    expect(sessions.find((item) => item.id === stale.id)?.control_pending).toBeNull()
+    expect(
+      sessions.find((item) => item.id === active.id)?.control_pending,
+    ).toMatchObject({ interaction_id: pending.id })
+    expect(
+      sessions.find((item) => item.id === stale.id)?.control_pending,
+    ).toBeNull()
 
     await api.close()
   })
 
   it('serves USER.local.md through the config route parity surface', async () => {
     const root = tmp('emperor-core-api-config-')
-    const api = await CoreApi.create({ root, stateRoot: join(root, '.emperor'), templatesDir: TEMPLATES_DIR, modelRouter: fakeRouter(new FakeProvider()) })
+    const api = await CoreApi.create({
+      root,
+      stateRoot: join(root, '.emperor'),
+      templatesDir: TEMPLATES_DIR,
+      modelRouter: fakeRouter(new FakeProvider()),
+    })
 
     const initial = api.config.get()
 
     expect(initial).toMatchObject({ path: 'memory/profile/USER.local.md' })
-    expect(readFileSync(join(root, '.emperor', 'memory', 'profile', 'USER.local.md'), 'utf8')).toBe((initial as any).content)
+    expect(
+      readFileSync(
+        join(root, '.emperor', 'memory', 'profile', 'USER.local.md'),
+        'utf8',
+      ),
+    ).toBe((initial as any).content)
     expect(existsSync(join(root, 'emperor.local.json'))).toBe(false)
 
-    const saved = await api.config.save({ content: '## Stable Preferences\n\n- 偏好更新\n' })
+    const saved = await api.config.save({
+      content: '## Stable Preferences\n\n- 偏好更新\n',
+    })
 
     expect(saved).toMatchObject({ path: 'memory/profile/USER.local.md' })
-    expect((saved as any).content).toContain('## Stable Preferences\n\n- 偏好更新')
-    expect(readFileSync(join(root, '.emperor', 'memory', 'profile', 'USER.local.md'), 'utf8')).toContain('## Stable Preferences\n\n- 偏好更新')
+    expect((saved as any).content).toContain(
+      '## Stable Preferences\n\n- 偏好更新',
+    )
+    expect(
+      readFileSync(
+        join(root, '.emperor', 'memory', 'profile', 'USER.local.md'),
+        'utf8',
+      ),
+    ).toContain('## Stable Preferences\n\n- 偏好更新')
     expect(existsSync(join(root, 'emperor.local.json'))).toBe(false)
 
     await api.close()
@@ -806,9 +1353,15 @@ describe('CoreApi (MIG-IPC-001)', () => {
 
     // mcp.saveConfig 能触发 StdioClientTransport spawn 子进程 —— 审计 P0-5 点名的高危 pivot，
     // 必须和 scheduler/team 一样受 mutation guard 约束，不能在 renderer 发一条 IPC 就无条件执行。
-    await expect(api.mcp.saveConfig({ servers: {} })).rejects.toThrow(CoreMutationGuardError)
-    await expect(api.model.saveConfig({})).rejects.toThrow(CoreMutationGuardError)
-    await expect(api.model.saveOnboardingConfig({})).rejects.toThrow(CoreMutationGuardError)
+    await expect(api.mcp.saveConfig({ servers: {} })).rejects.toThrow(
+      CoreMutationGuardError,
+    )
+    await expect(api.model.saveConfig({})).rejects.toThrow(
+      CoreMutationGuardError,
+    )
+    await expect(api.model.saveOnboardingConfig({})).rejects.toThrow(
+      CoreMutationGuardError,
+    )
     expect(() => api.config.save('x')).toThrow(CoreMutationGuardError)
 
     await api.close()
@@ -816,7 +1369,12 @@ describe('CoreApi (MIG-IPC-001)', () => {
 
   it('normalizes missing and legacy sidebar state before returning it', async () => {
     const root = tmp('emperor-core-api-sidebar-')
-    const api = await CoreApi.create({ root, stateRoot: join(root, '.emperor'), templatesDir: TEMPLATES_DIR, modelRouter: fakeRouter(new FakeProvider()) })
+    const api = await CoreApi.create({
+      root,
+      stateRoot: join(root, '.emperor'),
+      templatesDir: TEMPLATES_DIR,
+      modelRouter: fakeRouter(new FakeProvider()),
+    })
 
     expect(api.sidebar.get()).toEqual({
       section_order: ['projects', 'chats'],
@@ -829,12 +1387,16 @@ describe('CoreApi (MIG-IPC-001)', () => {
     })
 
     mkdirSync(join(root, 'memory'), { recursive: true })
-    writeFileSync(join(root, 'memory', 'sidebar_state.json'), JSON.stringify({
-      project_sort: 'manual',
-      section_order: ['chats'],
-      collapsed_project_ids: 'legacy-bad-value',
-      project_session_order: { p1: ['s1', 2] },
-    }), 'utf8')
+    writeFileSync(
+      join(root, 'memory', 'sidebar_state.json'),
+      JSON.stringify({
+        project_sort: 'manual',
+        section_order: ['chats'],
+        collapsed_project_ids: 'legacy-bad-value',
+        project_session_order: { p1: ['s1', 2] },
+      }),
+      'utf8',
+    )
 
     expect(api.sidebar.get()).toEqual({
       section_order: ['chats', 'projects'],
@@ -853,8 +1415,16 @@ describe('CoreApi (MIG-IPC-001)', () => {
     const root = tmp('emperor-core-api-')
     const stateRoot = join(root, '.emperor')
     mkdirSync(stateRoot, { recursive: true })
-    writeFileSync(join(stateRoot, 'emperor.local.json'), '{not valid json', 'utf8')
-    writeFileSync(join(stateRoot, 'emperor.local.json.corrupt-1'), '{old broken json', 'utf8')
+    writeFileSync(
+      join(stateRoot, 'emperor.local.json'),
+      '{not valid json',
+      'utf8',
+    )
+    writeFileSync(
+      join(stateRoot, 'emperor.local.json.corrupt-1'),
+      '{old broken json',
+      'utf8',
+    )
     const api = await CoreApi.create({
       root,
       stateRoot,
@@ -877,7 +1447,9 @@ describe('CoreApi (MIG-IPC-001)', () => {
       status: 'corrupt',
     })
     expect((diagnostics.localConfig as any).corruptBackups).toEqual([
-      expect.objectContaining({ path: join(stateRoot, 'emperor.local.json.corrupt-1') }),
+      expect.objectContaining({
+        path: join(stateRoot, 'emperor.local.json.corrupt-1'),
+      }),
     ])
     expect(diagnostics).toHaveProperty('dependencies.desktopRenderer')
     expect(diagnostics).toHaveProperty('dependencies.desktopPetModules')
@@ -888,18 +1460,31 @@ describe('CoreApi (MIG-IPC-001)', () => {
   it('reports legacy private data found inside a bound project source tree, without touching it (diagnostics-only)', async () => {
     const root = tmp('emperor-core-api-project-legacy-')
     const projectDir = tmp('emperor-core-api-project-legacy-src-')
-    const api = await CoreApi.create({ root, stateRoot: join(root, '.emperor'), templatesDir: TEMPLATES_DIR, modelRouter: fakeRouter(new FakeProvider()) })
+    const api = await CoreApi.create({
+      root,
+      stateRoot: join(root, '.emperor'),
+      templatesDir: TEMPLATES_DIR,
+      modelRouter: fakeRouter(new FakeProvider()),
+    })
 
     const clean = await api.diagnostics.get()
     expect(clean.projectLegacyPrivateData).toBeNull()
 
-    const build = api.sessions.create({ title: 'Build', mode: 'build', project_path: projectDir })
+    const build = api.sessions.create({
+      title: 'Build',
+      mode: 'build',
+      project_path: projectDir,
+    })
     api.sessions.activate(String(build.id))
     const stillClean = await api.diagnostics.get()
     expect(stillClean.projectLegacyPrivateData).toBeNull()
 
     mkdirSync(join(projectDir, '.emperor', 'sessions'), { recursive: true })
-    writeFileSync(join(projectDir, '.emperor', 'sessions', 'index.json'), '[]', 'utf8')
+    writeFileSync(
+      join(projectDir, '.emperor', 'sessions', 'index.json'),
+      '[]',
+      'utf8',
+    )
 
     const withLegacy = await api.diagnostics.get()
     expect(withLegacy.projectLegacyPrivateData).toMatchObject({
@@ -908,7 +1493,9 @@ describe('CoreApi (MIG-IPC-001)', () => {
       memory: false,
     })
     // Diagnostics-only: detecting it must never delete or move it.
-    expect(existsSync(join(projectDir, '.emperor', 'sessions', 'index.json'))).toBe(true)
+    expect(
+      existsSync(join(projectDir, '.emperor', 'sessions', 'index.json')),
+    ).toBe(true)
 
     await api.close()
   })
@@ -922,33 +1509,45 @@ describe('CoreApi (MIG-IPC-001)', () => {
     })
     const events: Array<Record<string, unknown>> = []
     const interaction = api.loop.controlManager.createAsk({
-      questions: [{
-        id: 'scope',
-        header: '范围',
-        question: '本次范围怎么定',
-        options: [
-          { label: '完整', description: 'full' },
-          { label: '最小', description: 'small' },
-        ],
-      }],
+      questions: [
+        {
+          id: 'scope',
+          header: '范围',
+          question: '本次范围怎么定',
+          options: [
+            { label: '完整', description: 'full' },
+            { label: '最小', description: 'small' },
+          ],
+        },
+      ],
       context: 'need scope',
     })
 
     const result = await api.control.answerInteraction(
       interaction.id,
       { scope: { choice: '完整', freeform: '' } },
-      { clientMessageId: 'control-msg-1', uiHidden: true, emit: async (event: Record<string, unknown>) => { events.push(event) } },
+      {
+        clientMessageId: 'control-msg-1',
+        uiHidden: true,
+        emit: async (event: Record<string, unknown>) => {
+          events.push(event)
+        },
+      },
     )
 
     expect(result).toMatchObject({ resume: true, result: { content: 'pong' } })
     expect(events.map((event) => event.event)).toContain('ask_answered')
     expect(events.map((event) => event.event)).toContain('assistant_done')
-    expect(events.find((event) => event.event === 'user_message')).toMatchObject({
+    expect(
+      events.find((event) => event.event === 'user_message'),
+    ).toMatchObject({
       source: 'control',
       ui_hidden: true,
       client_message_id: 'control-msg-1',
     })
-    expect(JSON.stringify(api.loop.activeMemoryStore.loadUnarchivedHistory())).toContain('[CONTROL:ASK_ANSWERED]')
+    expect(
+      JSON.stringify(api.loop.activeMemoryStore.loadUnarchivedHistory()),
+    ).toContain('[CONTROL:ASK_ANSWERED]')
 
     await api.close()
   })
@@ -964,15 +1563,17 @@ describe('CoreApi (MIG-IPC-001)', () => {
     const ownerSessionId = String(api.loop.activeSessionId)
     const other = api.sessions.create({ title: 'Other Session' })
     const interaction = api.loop.controlManager.createAsk({
-      questions: [{
-        id: 'scope',
-        header: '范围',
-        question: '范围怎么定',
-        options: [
-          { label: '完整', description: 'full' },
-          { label: '最小', description: 'small' },
-        ],
-      }],
+      questions: [
+        {
+          id: 'scope',
+          header: '范围',
+          question: '范围怎么定',
+          options: [
+            { label: '完整', description: 'full' },
+            { label: '最小', description: 'small' },
+          ],
+        },
+      ],
       context: 'need scope',
     })
     api.sessions.activate(String(other.id))
@@ -984,16 +1585,54 @@ describe('CoreApi (MIG-IPC-001)', () => {
     )
 
     expect(api.loop.activeSessionId).toBe(ownerSessionId)
-    expect(api.loop.sessionStore.get(ownerSessionId)?.control_pending).toBeNull()
-    expect(api.loop.sessionStore.get(String(other.id))?.control_pending).toBeNull()
-    expect(readFileSync(join(root, '.emperor', 'sessions', ownerSessionId, 'history.jsonl'), 'utf8')).toContain('[CONTROL:ASK_ANSWERED]')
-    const ownerEvents = readFileSync(join(root, '.emperor', 'sessions', ownerSessionId, 'runtime', 'events.jsonl'), 'utf8')
+    expect(
+      api.loop.sessionStore.get(ownerSessionId)?.control_pending,
+    ).toBeNull()
+    expect(
+      api.loop.sessionStore.get(String(other.id))?.control_pending,
+    ).toBeNull()
+    expect(
+      readFileSync(
+        join(root, '.emperor', 'sessions', ownerSessionId, 'history.jsonl'),
+        'utf8',
+      ),
+    ).toContain('[CONTROL:ASK_ANSWERED]')
+    const ownerEvents = readFileSync(
+      join(
+        root,
+        '.emperor',
+        'sessions',
+        ownerSessionId,
+        'runtime',
+        'events.jsonl',
+      ),
+      'utf8',
+    )
     expect(ownerEvents).toContain('"event":"ask_answered"')
     expect(ownerEvents).toContain(`"session_id":"${ownerSessionId}"`)
-    const otherHistoryPath = join(root, '.emperor', 'sessions', String(other.id), 'history.jsonl')
-    expect(existsSync(otherHistoryPath) ? readFileSync(otherHistoryPath, 'utf8') : '').not.toContain('[CONTROL:ASK_ANSWERED]')
-    const otherEventsPath = join(root, '.emperor', 'sessions', String(other.id), 'runtime', 'events.jsonl')
-    expect(existsSync(otherEventsPath) ? readFileSync(otherEventsPath, 'utf8') : '').not.toContain('"event":"ask_answered"')
+    const otherHistoryPath = join(
+      root,
+      '.emperor',
+      'sessions',
+      String(other.id),
+      'history.jsonl',
+    )
+    expect(
+      existsSync(otherHistoryPath)
+        ? readFileSync(otherHistoryPath, 'utf8')
+        : '',
+    ).not.toContain('[CONTROL:ASK_ANSWERED]')
+    const otherEventsPath = join(
+      root,
+      '.emperor',
+      'sessions',
+      String(other.id),
+      'runtime',
+      'events.jsonl',
+    )
+    expect(
+      existsSync(otherEventsPath) ? readFileSync(otherEventsPath, 'utf8') : '',
+    ).not.toContain('"event":"ask_answered"')
 
     await api.close()
   })
@@ -1009,28 +1648,53 @@ describe('CoreApi (MIG-IPC-001)', () => {
     const ownerSessionId = String(api.loop.activeSessionId)
     const other = api.sessions.create({ title: 'Other Session' })
     const interaction = api.loop.controlManager.createAsk({
-      questions: [{
-        id: 'scope',
-        header: '范围',
-        question: '范围怎么定',
-        options: [
-          { label: '完整', description: 'full' },
-          { label: '最小', description: 'small' },
-        ],
-      }],
+      questions: [
+        {
+          id: 'scope',
+          header: '范围',
+          question: '范围怎么定',
+          options: [
+            { label: '完整', description: 'full' },
+            { label: '最小', description: 'small' },
+          ],
+        },
+      ],
       context: 'need scope',
     })
     api.sessions.activate(String(other.id))
 
     await api.control.cancelInteraction(interaction.id)
 
-    expect(api.loop.sessionStore.get(ownerSessionId)?.control_pending).toBeNull()
-    expect(api.loop.sessionStore.get(String(other.id))?.control_pending).toBeNull()
-    const ownerEvents = readFileSync(join(root, '.emperor', 'sessions', ownerSessionId, 'runtime', 'events.jsonl'), 'utf8')
+    expect(
+      api.loop.sessionStore.get(ownerSessionId)?.control_pending,
+    ).toBeNull()
+    expect(
+      api.loop.sessionStore.get(String(other.id))?.control_pending,
+    ).toBeNull()
+    const ownerEvents = readFileSync(
+      join(
+        root,
+        '.emperor',
+        'sessions',
+        ownerSessionId,
+        'runtime',
+        'events.jsonl',
+      ),
+      'utf8',
+    )
     expect(ownerEvents).toContain('"event":"interaction_cancelled"')
     expect(ownerEvents).toContain(`"session_id":"${ownerSessionId}"`)
-    const otherEventsPath = join(root, '.emperor', 'sessions', String(other.id), 'runtime', 'events.jsonl')
-    expect(existsSync(otherEventsPath) ? readFileSync(otherEventsPath, 'utf8') : '').not.toContain('"event":"interaction_cancelled"')
+    const otherEventsPath = join(
+      root,
+      '.emperor',
+      'sessions',
+      String(other.id),
+      'runtime',
+      'events.jsonl',
+    )
+    expect(
+      existsSync(otherEventsPath) ? readFileSync(otherEventsPath, 'utf8') : '',
+    ).not.toContain('"event":"interaction_cancelled"')
 
     await api.close()
   })
@@ -1046,24 +1710,28 @@ describe('CoreApi (MIG-IPC-001)', () => {
     const ownerSessionId = String(api.loop.activeSessionId)
     const other = api.sessions.create({ title: 'Other Session' })
     const pending = api.loop.controlManager.createAsk({
-      questions: [{
-        id: 'scope',
-        header: '范围',
-        question: '范围怎么定',
-        options: [
-          { label: '完整', description: 'full' },
-          { label: '最小', description: 'small' },
-        ],
-      }],
+      questions: [
+        {
+          id: 'scope',
+          header: '范围',
+          question: '范围怎么定',
+          options: [
+            { label: '完整', description: 'full' },
+            { label: '最小', description: 'small' },
+          ],
+        },
+      ],
       context: 'busy owner session',
     })
 
-    const queued = await api.externalBridge.ingest(new ExternalInbound({
-      platform: 'slack',
-      sender_id: 'u1',
-      external_message_id: 'm-owner',
-      content: 'external hello',
-    }))
+    const queued = await api.externalBridge.ingest(
+      new ExternalInbound({
+        platform: 'slack',
+        sender_id: 'u1',
+        external_message_id: 'm-owner',
+        content: 'external hello',
+      }),
+    )
     api.sessions.activate(String(other.id))
     await api.control.cancelInteraction(pending.id)
 
@@ -1071,15 +1739,47 @@ describe('CoreApi (MIG-IPC-001)', () => {
 
     expect(queued.status).toBe('queued')
     expect(drained[0]).toMatchObject({ status: 'dispatched' })
-    const ownerHistory = readFileSync(join(root, '.emperor', 'sessions', ownerSessionId, 'history.jsonl'), 'utf8')
+    const ownerHistory = readFileSync(
+      join(root, '.emperor', 'sessions', ownerSessionId, 'history.jsonl'),
+      'utf8',
+    )
     expect(ownerHistory).toContain('external hello')
-    const ownerEvents = readFileSync(join(root, '.emperor', 'sessions', ownerSessionId, 'runtime', 'events.jsonl'), 'utf8')
+    const ownerEvents = readFileSync(
+      join(
+        root,
+        '.emperor',
+        'sessions',
+        ownerSessionId,
+        'runtime',
+        'events.jsonl',
+      ),
+      'utf8',
+    )
     expect(ownerEvents).toContain('"event":"external_queued"')
     expect(ownerEvents).toContain(`"session_id":"${ownerSessionId}"`)
-    const otherHistoryPath = join(root, '.emperor', 'sessions', String(other.id), 'history.jsonl')
-    expect(existsSync(otherHistoryPath) ? readFileSync(otherHistoryPath, 'utf8') : '').not.toContain('external hello')
-    const otherEventsPath = join(root, '.emperor', 'sessions', String(other.id), 'runtime', 'events.jsonl')
-    expect(existsSync(otherEventsPath) ? readFileSync(otherEventsPath, 'utf8') : '').not.toContain('"event":"external_queued"')
+    const otherHistoryPath = join(
+      root,
+      '.emperor',
+      'sessions',
+      String(other.id),
+      'history.jsonl',
+    )
+    expect(
+      existsSync(otherHistoryPath)
+        ? readFileSync(otherHistoryPath, 'utf8')
+        : '',
+    ).not.toContain('external hello')
+    const otherEventsPath = join(
+      root,
+      '.emperor',
+      'sessions',
+      String(other.id),
+      'runtime',
+      'events.jsonl',
+    )
+    expect(
+      existsSync(otherEventsPath) ? readFileSync(otherEventsPath, 'utf8') : '',
+    ).not.toContain('"event":"external_queued"')
 
     await api.close()
   })
@@ -1097,21 +1797,59 @@ describe('CoreApi (MIG-IPC-001)', () => {
     const job = api.loop.schedulerService.addJob({
       name: 'Owner scheduled turn',
       schedule: new SchedulerSchedule({ kind: 'every', every_ms: 60_000 }),
-      payload: new SchedulerPayload({ kind: 'agent_turn', message: 'scheduled hello', deliver: false }),
+      payload: new SchedulerPayload({
+        kind: 'agent_turn',
+        message: 'scheduled hello',
+        deliver: false,
+      }),
     })
     api.sessions.activate(String(other.id))
 
-    await expect(api.loop.schedulerService.runJob(job.id, { force: true })).resolves.toBe(true)
+    await expect(
+      api.loop.schedulerService.runJob(job.id, { force: true }),
+    ).resolves.toBe(true)
 
-    const ownerHistory = readFileSync(join(root, '.emperor', 'sessions', ownerSessionId, 'history.jsonl'), 'utf8')
+    const ownerHistory = readFileSync(
+      join(root, '.emperor', 'sessions', ownerSessionId, 'history.jsonl'),
+      'utf8',
+    )
     expect(ownerHistory).toContain('scheduled hello')
-    const ownerEvents = readFileSync(join(root, '.emperor', 'sessions', ownerSessionId, 'runtime', 'events.jsonl'), 'utf8')
+    const ownerEvents = readFileSync(
+      join(
+        root,
+        '.emperor',
+        'sessions',
+        ownerSessionId,
+        'runtime',
+        'events.jsonl',
+      ),
+      'utf8',
+    )
     expect(ownerEvents).toContain('"event":"scheduler_run_start"')
     expect(ownerEvents).toContain(`"session_id":"${ownerSessionId}"`)
-    const otherHistoryPath = join(root, '.emperor', 'sessions', String(other.id), 'history.jsonl')
-    expect(existsSync(otherHistoryPath) ? readFileSync(otherHistoryPath, 'utf8') : '').not.toContain('scheduled hello')
-    const otherEventsPath = join(root, '.emperor', 'sessions', String(other.id), 'runtime', 'events.jsonl')
-    expect(existsSync(otherEventsPath) ? readFileSync(otherEventsPath, 'utf8') : '').not.toContain('"event":"scheduler_run_start"')
+    const otherHistoryPath = join(
+      root,
+      '.emperor',
+      'sessions',
+      String(other.id),
+      'history.jsonl',
+    )
+    expect(
+      existsSync(otherHistoryPath)
+        ? readFileSync(otherHistoryPath, 'utf8')
+        : '',
+    ).not.toContain('scheduled hello')
+    const otherEventsPath = join(
+      root,
+      '.emperor',
+      'sessions',
+      String(other.id),
+      'runtime',
+      'events.jsonl',
+    )
+    expect(
+      existsSync(otherEventsPath) ? readFileSync(otherEventsPath, 'utf8') : '',
+    ).not.toContain('"event":"scheduler_run_start"')
 
     await api.close()
   })
@@ -1128,15 +1866,31 @@ describe('CoreApi (MIG-IPC-001)', () => {
       templatesDir: TEMPLATES_DIR,
       modelRouter: fakeRouter(new FakeProvider()),
     })
-    const buildA = api.sessions.create({ title: 'Build A', mode: 'build', project_path: projectAPath })
-    const buildB = api.sessions.create({ title: 'Build B', mode: 'build', project_path: projectBPath })
+    const buildA = api.sessions.create({
+      title: 'Build A',
+      mode: 'build',
+      project_path: projectAPath,
+    })
+    const buildB = api.sessions.create({
+      title: 'Build B',
+      mode: 'build',
+      project_path: projectBPath,
+    })
 
     api.sessions.activate(String(buildA.id))
     await api.team.spawnMember({ name: 'alice', role: 'reader' })
-    expect((api.team.get().members as Array<Record<string, unknown>>).map((member) => member.name)).toContain('alice')
+    expect(
+      (api.team.get().members as Array<Record<string, unknown>>).map(
+        (member) => member.name,
+      ),
+    ).toContain('alice')
 
     api.sessions.activate(String(buildB.id))
-    expect((api.team.get().members as Array<Record<string, unknown>>).map((member) => member.name)).not.toContain('alice')
+    expect(
+      (api.team.get().members as Array<Record<string, unknown>>).map(
+        (member) => member.name,
+      ),
+    ).not.toContain('alice')
 
     await api.close()
   })
@@ -1150,7 +1904,9 @@ describe('CoreApi (MIG-IPC-001)', () => {
       modelRouter: fakeRouter(provider),
     })
 
-    await expect(api.model.test({ entryName: 'fake', kind: 'text', role: 'main' })).resolves.toMatchObject({
+    await expect(
+      api.model.test({ entryName: 'fake', kind: 'text', role: 'main' }),
+    ).resolves.toMatchObject({
       ok: true,
       kind: 'text',
       model: 'fake-main',
@@ -1158,36 +1914,86 @@ describe('CoreApi (MIG-IPC-001)', () => {
       modelRole: 'main',
       sample: 'pong',
     })
-    expect(provider.calls.at(-1)?.messages.at(-1)?.content).toBe('Reply with exactly one word: pong')
+    expect(provider.calls.at(-1)?.messages.at(-1)?.content).toBe(
+      'Reply with exactly one word: pong',
+    )
 
     await api.close()
   })
 
   it('cascades session deletion to owned tasks and plans, sparing legacy and other sessions', async () => {
     const root = tmp('emperor-core-api-cascade-')
-    const api = await CoreApi.create({ root, stateRoot: join(root, '.emperor'), templatesDir: TEMPLATES_DIR, modelRouter: fakeRouter(new FakeProvider()) })
+    const api = await CoreApi.create({
+      root,
+      stateRoot: join(root, '.emperor'),
+      templatesDir: TEMPLATES_DIR,
+      modelRouter: fakeRouter(new FakeProvider()),
+    })
     await api.bootstrap()
     const keep = api.sessions.create({ title: 'Keep' })
     const doomed = api.sessions.create({ title: 'Doomed' })
     const keepId = String(keep.id)
     const doomedId = String(doomed.id)
 
-    const ownedTask = api.loop.taskManager.startTask({ kind: 'subagent', title: 'owned', source: 'test', sessionId: doomedId })
-    const keepTask = api.loop.taskManager.startTask({ kind: 'subagent', title: 'kept', source: 'test', sessionId: keepId })
-    const legacyTask = api.loop.taskManager.startTask({ kind: 'subagent', title: 'legacy', source: 'test' })
+    const ownedTask = api.loop.taskManager.startTask({
+      kind: 'subagent',
+      title: 'owned',
+      source: 'test',
+      sessionId: doomedId,
+    })
+    const keepTask = api.loop.taskManager.startTask({
+      kind: 'subagent',
+      title: 'kept',
+      source: 'test',
+      sessionId: keepId,
+    })
+    const legacyTask = api.loop.taskManager.startTask({
+      kind: 'subagent',
+      title: 'legacy',
+      source: 'test',
+    })
     const planStore = api.loop.controlManager.planStore
-    planStore.save(makePlanRecord({ id: 'plan_doomed', title: 'd', summary: 's', status: 'draft', createdAt: 1, updatedAt: 1, sessionId: doomedId }))
-    planStore.save(makePlanRecord({ id: 'plan_keep', title: 'k', summary: 's', status: 'draft', createdAt: 1, updatedAt: 1, sessionId: keepId }))
-    api.loop.taskManager.appendSidechain(ownedTask.id, { role: 'user', content: 'owned work' })
+    planStore.save(
+      makePlanRecord({
+        id: 'plan_doomed',
+        title: 'd',
+        summary: 's',
+        status: 'draft',
+        createdAt: 1,
+        updatedAt: 1,
+        sessionId: doomedId,
+      }),
+    )
+    planStore.save(
+      makePlanRecord({
+        id: 'plan_keep',
+        title: 'k',
+        summary: 's',
+        status: 'draft',
+        createdAt: 1,
+        updatedAt: 1,
+        sessionId: keepId,
+      }),
+    )
+    api.loop.taskManager.appendSidechain(ownedTask.id, {
+      role: 'user',
+      content: 'owned work',
+    })
     const ownedSidechainDir = join(root, '.emperor', 'tasks', ownedTask.id)
     expect(existsSync(ownedSidechainDir)).toBe(true)
 
-    expect(api.tasks.list({ sessionId: keepId }).map((t) => t.id)).toEqual([keepTask.id])
+    expect(api.tasks.list({ sessionId: keepId }).map((t) => t.id)).toEqual([
+      keepTask.id,
+    ])
     expect(api.tasks.list().length).toBe(3)
 
     const result = await api.sessions.delete(doomedId)
 
-    expect(result).toMatchObject({ deleted: true, removedTasks: 1, removedPlans: 1 })
+    expect(result).toMatchObject({
+      deleted: true,
+      removedTasks: 1,
+      removedPlans: 1,
+    })
     expect(api.loop.taskManager.store.get(ownedTask.id)).toBeNull()
     expect(api.loop.taskManager.store.get(keepTask.id)).not.toBeNull()
     expect(api.loop.taskManager.store.get(legacyTask.id)).not.toBeNull()
@@ -1200,13 +2006,27 @@ describe('CoreApi (MIG-IPC-001)', () => {
 
   it('serves persisted full tool outputs and fences path escapes', async () => {
     const root = tmp('emperor-core-api-toolresult-')
-    const api = await CoreApi.create({ root, stateRoot: join(root, '.emperor'), templatesDir: TEMPLATES_DIR, modelRouter: fakeRouter(new FakeProvider()) })
+    const api = await CoreApi.create({
+      root,
+      stateRoot: join(root, '.emperor'),
+      templatesDir: TEMPLATES_DIR,
+      modelRouter: fakeRouter(new FakeProvider()),
+    })
     const store = new ToolResultStore(join(root, '.emperor'))
-    const record = store.persistLargeResult('turn_x', 'call_x', 'huge_output', 'full text content')
+    const record = store.persistLargeResult(
+      'turn_x',
+      'call_x',
+      'huge_output',
+      'full text content',
+    )
 
-    expect(api.tools.readResult({ ref: record.artifact_path })).toEqual({ content: 'full text content' })
+    expect(api.tools.readResult({ ref: record.artifact_path })).toEqual({
+      content: 'full text content',
+    })
     expect(() => api.tools.readResult({ ref: '../outside.txt' })).toThrow()
-    expect(() => api.tools.readResult({ ref: 'memory/tool-results/../../memory.md' })).toThrow()
+    expect(() =>
+      api.tools.readResult({ ref: 'memory/tool-results/../../memory.md' }),
+    ).toThrow()
     expect(() => api.tools.readResult({ ref: '/etc/passwd' })).toThrow()
 
     await api.close()
@@ -1216,7 +2036,11 @@ describe('CoreApi (MIG-IPC-001)', () => {
     const root = tmp('emperor-core-api-')
     const stateRoot = join(root, '.emperor')
     mkdirSync(join(stateRoot, 'skills', 'demo'), { recursive: true })
-    writeFileSync(join(stateRoot, 'skills', 'demo', 'SKILL.md'), '# Demo\n', 'utf8')
+    writeFileSync(
+      join(stateRoot, 'skills', 'demo', 'SKILL.md'),
+      '# Demo\n',
+      'utf8',
+    )
     const api = await CoreApi.create({
       root,
       stateRoot,
@@ -1244,8 +2068,15 @@ describe('CoreApi (MIG-IPC-001)', () => {
       'imported-skill/notes/readme.txt': 'extra file\n',
     })
 
-    expect(api.skills.importArchive({ name: 'skill.zip', raw: archive })).toEqual({ imported: 'imported-skill' })
-    expect(readFileSync(join(stateRoot, 'skills', 'imported-skill', 'SKILL.md'), 'utf8')).toContain('Imported')
+    expect(
+      api.skills.importArchive({ name: 'skill.zip', raw: archive }),
+    ).toEqual({ imported: 'imported-skill' })
+    expect(
+      readFileSync(
+        join(stateRoot, 'skills', 'imported-skill', 'SKILL.md'),
+        'utf8',
+      ),
+    ).toContain('Imported')
 
     await api.close()
   })
@@ -1259,11 +2090,20 @@ describe('CoreApi (MIG-IPC-001)', () => {
     })
 
     const enabled = await api.desktopPet.setEnabled(true)
-    expect(enabled).toMatchObject({ enabled: true, running: true, lastError: null, available: true })
+    expect(enabled).toMatchObject({
+      enabled: true,
+      running: true,
+      lastError: null,
+      available: true,
+    })
     expect((await api.desktopPet.get()).enabled).toBe(true)
 
     const disabled = await api.desktopPet.setEnabled(false)
-    expect(disabled).toMatchObject({ enabled: false, running: false, lastError: null })
+    expect(disabled).toMatchObject({
+      enabled: false,
+      running: false,
+      lastError: null,
+    })
 
     await api.close()
   })
@@ -1276,23 +2116,42 @@ function tmp(prefix: string): string {
 function resolveMethod(api: CoreApi, key: string): unknown {
   let current: unknown = api
   for (const part of key.split('.')) {
-    current = current && typeof current === 'object' ? (current as Record<string, unknown>)[part] : undefined
+    current =
+      current && typeof current === 'object'
+        ? (current as Record<string, unknown>)[part]
+        : undefined
   }
   return current
 }
 
 function validModelConfig(name: string): Record<string, unknown> {
   return {
-    agents: { defaults: { model: name, provider: 'openai', maxTokens: 8192, temperature: 0.1, reasoningEffort: null, contextWindowTokens: 128000 } },
-    models: [{
-      name,
-      provider: 'openai',
-      mainModelId: 'gpt-4.1',
-      secondaryModelId: 'gpt-4.1-mini',
-      apiKey: 'sk-test-entry',
-    }],
+    agents: {
+      defaults: {
+        model: name,
+        provider: 'openai',
+        maxTokens: 8192,
+        temperature: 0.1,
+        reasoningEffort: null,
+        contextWindowTokens: 128000,
+      },
+    },
+    models: [
+      {
+        name,
+        provider: 'openai',
+        mainModelId: 'gpt-4.1',
+        secondaryModelId: 'gpt-4.1-mini',
+        apiKey: 'sk-test-entry',
+      },
+    ],
     providers: {
-      openai: { apiKey: 'sk-test-provider', apiBase: 'https://api.openai.com/v1', extraHeaders: null, extraBody: null },
+      openai: {
+        apiKey: 'sk-test-provider',
+        apiBase: 'https://api.openai.com/v1',
+        extraHeaders: null,
+        extraBody: null,
+      },
     },
   }
 }
@@ -1308,20 +2167,40 @@ class FakeProvider extends LLMProvider {
   }
 }
 
-function fakeRouter(provider: FakeProvider): { route: (useCase: string, agentType?: string | null, task?: string | null) => ModelRoute; payload: () => Record<string, unknown> } {
+function fakeRouter(provider: FakeProvider): {
+  route: (
+    useCase: string,
+    agentType?: string | null,
+    task?: string | null,
+  ) => ModelRoute
+  payload: () => Record<string, unknown>
+} {
   return {
-    route: (useCase: string, _agentType?: string | null, _task?: string | null) => ({
-      snapshot: snapshot(provider, useCase === 'main_agent' ? 'main' : 'secondary'),
+    route: (
+      useCase: string,
+      _agentType?: string | null,
+      _task?: string | null,
+    ) => ({
+      snapshot: snapshot(
+        provider,
+        useCase === 'main_agent' ? 'main' : 'secondary',
+      ),
       fallback: null,
       useCase,
       reason: `${useCase}:fake`,
       estimatedTokens: null,
     }),
-    payload: () => ({ mainModel: 'fake-main', secondaryModel: 'fake-secondary' }),
+    payload: () => ({
+      mainModel: 'fake-main',
+      secondaryModel: 'fake-secondary',
+    }),
   }
 }
 
-function snapshot(provider: FakeProvider, role: 'main' | 'secondary'): ProviderSnapshot {
+function snapshot(
+  provider: FakeProvider,
+  role: 'main' | 'secondary',
+): ProviderSnapshot {
   return {
     provider,
     providerName: 'fake',

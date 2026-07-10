@@ -14,7 +14,12 @@ import {
 } from '../plans/models'
 import { PlanQualityGate } from '../plans/quality'
 import { CONTROL_RESUME_RE } from './clarification'
-import { ControlMode, InteractionStatus, makePlanInteraction, type Interaction } from './models'
+import {
+  ControlMode,
+  InteractionStatus,
+  makePlanInteraction,
+  type Interaction,
+} from './models'
 import { PlanDecision } from './plan-policy'
 import {
   dedupeStrings,
@@ -29,7 +34,9 @@ import type { ControlManagerHost } from './host'
 
 export class PlanDraftingManager {
   private readonly cm: ControlManagerHost
-  constructor(cm: ControlManagerHost) { this.cm = cm }
+  constructor(cm: ControlManagerHost) {
+    this.cm = cm
+  }
 
   createPlan(opts: {
     title: string
@@ -45,7 +52,10 @@ export class PlanDraftingManager {
     this.cm.ensureNoPending()
     const planMeta = { ...(opts.meta ?? {}) }
     const existing = this.planRecordForMeta(planMeta) ?? this.latestDraftPlan()
-    const planId = existing !== null ? existing.id : `plan_${randomUUID().replace(/-/g, '').slice(0, 12)}`
+    const planId =
+      existing !== null
+        ? existing.id
+        : `plan_${randomUUID().replace(/-/g, '').slice(0, 12)}`
     const now = nowTs()
     const structuredSteps = parsePlanSteps(opts.steps ?? [])
     const interaction = makePlanInteraction({
@@ -57,10 +67,13 @@ export class PlanDraftingManager {
       parentCallId: opts.parentCallId,
       meta: { ...planMeta, plan_id: planId },
     })
-    const draft = readyForApprovalDraft(existing !== null ? existing.draft : emptyDraft(), {
-      summary: interaction.summary,
-      steps: structuredSteps,
-    })
+    const draft = readyForApprovalDraft(
+      existing !== null ? existing.draft : emptyDraft(),
+      {
+        summary: interaction.summary,
+        steps: structuredSteps,
+      },
+    )
     if (opts.enforceQuality) {
       new PlanQualityGate().requireOk({ steps: structuredSteps, draft })
     }
@@ -96,22 +109,43 @@ export class PlanDraftingManager {
     const title = firstHeading(body) || '计划预览'
     const summary = plainSummary(body)
     if (!looksLikePlan(body)) {
-      body = ['# 计划预览', '', body, '', '## 验收', '- 用户批准后再执行任何写入或高影响操作。'].join('\n')
+      body = [
+        '# 计划预览',
+        '',
+        body,
+        '',
+        '## 验收',
+        '- 用户批准后再执行任何写入或高影响操作。',
+      ].join('\n')
     }
-    return this.createPlan({ title, summary, planMarkdown: body, assumptions: [], riskLevel: 'medium' })
+    return this.createPlan({
+      title,
+      summary,
+      planMarkdown: body,
+      assumptions: [],
+      riskLevel: 'medium',
+    })
   }
 
   assessPlanDecision(userMessage: string): PlanDecision {
     const state = this.cm.store.load()
-    const hasPending = Boolean(state.pending && state.pending.status === InteractionStatus.WAITING)
-    if (CONTROL_RESUME_RE.test(String(userMessage ?? '')) && this.cm.latestExecutablePlan() !== null) {
+    const hasPending = Boolean(
+      state.pending && state.pending.status === InteractionStatus.WAITING,
+    )
+    if (
+      CONTROL_RESUME_RE.test(String(userMessage ?? '')) &&
+      this.cm.latestExecutablePlan() !== null
+    ) {
       return new PlanDecision(
         'proceed',
         'Approved plan is already executing; continuation control messages do not re-trigger the plan guard.',
         ['executing_plan'],
       )
     }
-    return this.cm.planDecisionPolicy.assess(userMessage, { mode: state.mode, hasPending })
+    return this.cm.planDecisionPolicy.assess(userMessage, {
+      mode: state.mode,
+      hasPending,
+    })
   }
 
   recordPlanDiscovery(opts: {
@@ -129,7 +163,9 @@ export class PlanDraftingManager {
     const files = dedupeStrings(opts.files ?? [])
     const discovery = discoveryToDict({
       id: `disc_${randomUUID().replace(/-/g, '').slice(0, 10)}`,
-      source: String(opts.source ?? 'tool').trim().slice(0, 80),
+      source: String(opts.source ?? 'tool')
+        .trim()
+        .slice(0, 80),
       summary: text.slice(0, 1200),
       files,
       symbols: dedupeStrings(opts.symbols ?? []),
@@ -169,7 +205,12 @@ export class PlanDraftingManager {
   }
 
   private latestDraftPlan(): PlanRecord | null {
-    const plans = this.cm.planStore.list().filter((p) => p.status === PlanStatus.DRAFT && this.cm.planMatchesCurrentScope(p))
+    const plans = this.cm.planStore
+      .list()
+      .filter(
+        (p) =>
+          p.status === PlanStatus.DRAFT && this.cm.planMatchesCurrentScope(p),
+      )
     if (!plans.length) return null
     return plans.reduce((a, b) => (b.updatedAt > a.updatedAt ? b : a))
   }
@@ -194,7 +235,11 @@ export class PlanDraftingManager {
         context: interaction.context,
       })
     }
-    const draft = { ...record.draft, phase: PlanDraftPhase.QUESTIONING, openQuestions }
+    const draft = {
+      ...record.draft,
+      phase: PlanDraftPhase.QUESTIONING,
+      openQuestions,
+    }
     this.cm.planStore.save({ ...record, updatedAt: nowTs(), draft })
   }
 
@@ -203,17 +248,23 @@ export class PlanDraftingManager {
     if (record === null) return
     const questionIds = new Set(interaction.questions.map((q) => q.id))
     const remainingOpen = record.draft.openQuestions.filter(
-      (item) => item.interaction_id !== interaction.id || !questionIds.has(item.id as string),
+      (item) =>
+        item.interaction_id !== interaction.id ||
+        !questionIds.has(item.id as string),
     )
     const resolved = [...record.draft.resolvedQuestions]
     const openById = new Map<string, Record<string, unknown>>()
     for (const item of record.draft.openQuestions) {
-      if (item.interaction_id === interaction.id) openById.set(String(item.id), item)
+      if (item.interaction_id === interaction.id)
+        openById.set(String(item.id), item)
     }
     for (const question of interaction.questions) {
-      const answer = (interaction.answers[question.id] as Record<string, unknown>) ?? {}
-      const choice = answer && typeof answer === 'object' ? answer.choice : String(answer)
-      const freeform = answer && typeof answer === 'object' ? answer.freeform : ''
+      const answer =
+        (interaction.answers[question.id] as Record<string, unknown>) ?? {}
+      const choice =
+        answer && typeof answer === 'object' ? answer.choice : String(answer)
+      const freeform =
+        answer && typeof answer === 'object' ? answer.freeform : ''
       const source = openById.get(question.id) ?? {}
       resolved.push({
         interaction_id: interaction.id,
@@ -225,7 +276,12 @@ export class PlanDraftingManager {
         context: String(source.context ?? interaction.context),
       })
     }
-    const draft = { ...record.draft, phase: PlanDraftPhase.DESIGNING, openQuestions: remainingOpen, resolvedQuestions: resolved }
+    const draft = {
+      ...record.draft,
+      phase: PlanDraftPhase.DESIGNING,
+      openQuestions: remainingOpen,
+      resolvedQuestions: resolved,
+    }
     this.cm.planStore.save({ ...record, updatedAt: nowTs(), draft })
   }
 
@@ -242,8 +298,16 @@ export class PlanDraftingManager {
       timestamp: nowTs(),
     })
     metadata.revisions = revisions.slice(-20)
-    metadata = metadataWithoutPlanPermissionTokens(metadata, { reason: 'plan comment' })
+    metadata = metadataWithoutPlanPermissionTokens(metadata, {
+      reason: 'plan comment',
+    })
     const draft = { ...record.draft, phase: PlanDraftPhase.REVIEWING }
-    this.cm.planStore.save({ ...record, status: PlanStatus.DRAFT, updatedAt: nowTs(), draft, metadata })
+    this.cm.planStore.save({
+      ...record,
+      status: PlanStatus.DRAFT,
+      updatedAt: nowTs(),
+      draft,
+      metadata,
+    })
   }
 }

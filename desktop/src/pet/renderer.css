@@ -12,7 +12,13 @@ body {
   display: grid;
   place-items: center;
   -webkit-app-region: drag;
-  font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-family:
+    ui-sans-serif,
+    system-ui,
+    -apple-system,
+    BlinkMacSystemFont,
+    'Segoe UI',
+    sans-serif;
 }
 
 #pet-shell {
@@ -65,7 +71,7 @@ body {
 }
 
 #speech-bubble::after {
-  content: "";
+  content: '';
   position: absolute;
   left: 50%;
   bottom: -7px;

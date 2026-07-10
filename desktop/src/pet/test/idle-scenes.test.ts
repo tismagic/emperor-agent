@@ -18,7 +18,9 @@ describe('idle-scenes', () => {
 
   it('rotates idle-only assets and keeps sleeping short', () => {
     const animations = IDLE_SCENES.map((scene) => scene.animation)
-    expect(new Set(animations)).toEqual(new Set(['idle', 'sweeping', 'sleeping']))
+    expect(new Set(animations)).toEqual(
+      new Set(['idle', 'sweeping', 'sleeping']),
+    )
     expect(animations.includes('thinking')).toBe(false)
     expect(animations.includes('happy')).toBe(false)
     expect(animations.includes('notification')).toBe(false)

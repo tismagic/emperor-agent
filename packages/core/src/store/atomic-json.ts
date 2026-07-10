@@ -1,6 +1,13 @@
 import { randomBytes } from 'node:crypto'
 import { existsSync } from 'node:fs'
-import { copyFile, mkdir, readFile, rename, unlink, writeFile } from 'node:fs/promises'
+import {
+  copyFile,
+  mkdir,
+  readFile,
+  rename,
+  unlink,
+  writeFile,
+} from 'node:fs/promises'
 import { dirname } from 'node:path'
 
 /**
@@ -13,7 +20,11 @@ import { dirname } from 'node:path'
 
 export interface ReadOptions {
   /** 解析失败、已隔离损坏文件后回调（用于 diagnostics 可见，不静默吞）。 */
-  onCorrupt?: (info: { path: string; backupPath: string; error: unknown }) => void
+  onCorrupt?: (info: {
+    path: string
+    backupPath: string
+    error: unknown
+  }) => void
 }
 
 function corruptName(path: string): string {
@@ -29,7 +40,11 @@ export async function isolateCorrupt(path: string): Promise<string> {
 }
 
 /** 读 JSON；不存在或解析失败返回 fallback（失败时先隔离损坏文件）。 */
-export async function readJson<T>(path: string, fallback: T, opts: ReadOptions = {}): Promise<T> {
+export async function readJson<T>(
+  path: string,
+  fallback: T,
+  opts: ReadOptions = {},
+): Promise<T> {
   if (!existsSync(path)) return fallback
   let raw: string
   try {
@@ -52,7 +67,10 @@ export async function readJson<T>(path: string, fallback: T, opts: ReadOptions =
 }
 
 /** 原子写 JSON：写同目录 tmp → rename 替换。失败清理 tmp 并抛。 */
-export async function writeJsonAtomic(path: string, data: unknown): Promise<void> {
+export async function writeJsonAtomic(
+  path: string,
+  data: unknown,
+): Promise<void> {
   await mkdir(dirname(path), { recursive: true })
   const tmp = `${path}.tmp-${process.pid}-${randomBytes(4).toString('hex')}`
   const body = `${JSON.stringify(data, null, 2)}\n`

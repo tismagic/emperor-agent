@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import type { SchedulerJob } from '../../types'
-import { canEditSchedulerJob, readonlySchedulerTimeFields } from './schedulerPanelModel'
+import {
+  canEditSchedulerJob,
+  readonlySchedulerTimeFields,
+} from './schedulerPanelModel'
 
 function job(overrides: Partial<SchedulerJob> = {}): SchedulerJob {
   return {
@@ -18,7 +21,14 @@ function job(overrides: Partial<SchedulerJob> = {}): SchedulerJob {
 
 describe('scheduler panel model', () => {
   it('marks protected system jobs as not editable', () => {
-    expect(canEditSchedulerJob(job({ protected: true, payload: { kind: 'system_event', message: '' } }))).toBe(false)
+    expect(
+      canEditSchedulerJob(
+        job({
+          protected: true,
+          payload: { kind: 'system_event', message: '' },
+        }),
+      ),
+    ).toBe(false)
     expect(canEditSchedulerJob(job({ protected: false }))).toBe(true)
   })
 

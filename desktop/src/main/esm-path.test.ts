@@ -5,8 +5,17 @@ import { moduleDirFromUrl } from './esm-path'
 
 describe('moduleDirFromUrl', () => {
   it('derives the module directory from an import.meta.url style file URL', () => {
-    const file = path.join('/tmp', 'emperor-agent', 'desktop', 'out', 'main', 'index.js')
+    const file = path.join(
+      '/tmp',
+      'emperor-agent',
+      'desktop',
+      'out',
+      'main',
+      'index.js',
+    )
 
-    expect(moduleDirFromUrl(pathToFileURL(file).toString())).toBe(path.dirname(file))
+    expect(moduleDirFromUrl(pathToFileURL(file).toString())).toBe(
+      path.dirname(file),
+    )
   })
 })

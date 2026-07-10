@@ -12,11 +12,13 @@ Generate new images or edit existing ones using Google's Nano Banana Pro API (Ge
 Run the script using absolute path (do NOT cd to skill directory first):
 
 **Generate new image:**
+
 ```bash
 uv run /Users/anhuike/Documents/workspace/emperor-agent/skills/nano-banana-pro/scripts/generate_image.py --prompt "your image description" --filename "output-name.png" [--resolution 1K|2K|4K] [--api-key KEY]
 ```
 
 **Edit existing image:**
+
 ```bash
 uv run /Users/anhuike/Documents/workspace/emperor-agent/skills/nano-banana-pro/scripts/generate_image.py --prompt "editing instructions" --filename "output-name.png" --input-image "path/to/input.png" [--resolution 1K|2K|4K] [--api-key KEY]
 ```
@@ -43,6 +45,7 @@ The Gemini 3 Pro Image API supports three resolutions (uppercase K required):
 - **4K** - ~4096px resolution
 
 Map user requests to API parameters:
+
 - No mention of resolution → `1K`
 - "low resolution", "1080", "1080p", "1K" → `1K`
 - "2K", "2048", "normal", "medium resolution" → `2K`
@@ -51,6 +54,7 @@ Map user requests to API parameters:
 ## API Key
 
 The script checks for API key in this order:
+
 1. `--api-key` argument (use if user provided key in chat)
 2. `GEMINI_API_KEY` environment variable
 
@@ -73,6 +77,7 @@ If neither is available, the script exits with an error message.
 Generate filenames with the pattern: `yyyy-mm-dd-hh-mm-ss-name.png`
 
 **Format:** `{timestamp}-{descriptive-name}.png`
+
 - Timestamp: Current date/time in format `yyyy-mm-dd-hh-mm-ss` (24-hour format)
 - Name: Descriptive lowercase text with hyphens
 - Keep the descriptive part concise (1-5 words typically)
@@ -80,6 +85,7 @@ Generate filenames with the pattern: `yyyy-mm-dd-hh-mm-ss-name.png`
 - If unclear, use random identifier (e.g., `x9k2`, `a7b3`)
 
 Examples:
+
 - Prompt "A serene Japanese garden" → `2025-11-23-14-23-05-japanese-garden.png`
 - Prompt "sunset over mountains" → `2025-11-23-15-30-12-sunset-mountains.png`
 - Prompt "create an image of a robot" → `2025-11-23-16-45-33-robot.png`
@@ -88,6 +94,7 @@ Examples:
 ## Image Editing
 
 When the user wants to modify an existing image:
+
 1. Check if they provide an image path or reference an image in the current directory
 2. Use `--input-image` parameter with the path to the image
 3. The prompt should contain editing instructions (e.g., "make the sky more dramatic", "remove the person", "change to cartoon style")
@@ -120,11 +127,13 @@ Use templates when the user is vague or when edits must be precise.
 ## Examples
 
 **Generate new image:**
+
 ```bash
 uv run /Users/anhuike/Documents/workspace/emperor-agent/skills/nano-banana-pro/scripts/generate_image.py --prompt "A serene Japanese garden with cherry blossoms" --filename "2025-11-23-14-23-05-japanese-garden.png" --resolution 4K
 ```
 
 **Edit existing image:**
+
 ```bash
 uv run /Users/anhuike/Documents/workspace/emperor-agent/skills/nano-banana-pro/scripts/generate_image.py --prompt "make the sky more dramatic with storm clouds" --filename "2025-11-23-14-25-30-dramatic-sky.png" --input-image "original-photo.jpg" --resolution 2K
 ```

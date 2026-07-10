@@ -26,19 +26,31 @@ function cancel() {
 </script>
 
 <template>
-  <section v-if="visible" class="active-plan-decision-panel" @keydown.esc.prevent="cancel">
+  <section
+    v-if="visible"
+    class="active-plan-decision-panel"
+    @keydown.esc.prevent="cancel"
+  >
     <header class="active-plan-decision-head">
       <strong>实施此计划？</strong>
     </header>
 
-    <button type="button" class="active-plan-decision-option" :data-active="!comment.trim()" @click="comment = ''">
+    <button
+      type="button"
+      class="active-plan-decision-option"
+      :data-active="!comment.trim()"
+      @click="comment = ''"
+    >
       <span class="active-ask-number">1</span>
       <span class="active-plan-decision-copy">
         <strong>是，实施此计划</strong>
       </span>
     </button>
 
-    <label class="active-plan-decision-option active-plan-decision-freeform" :data-active="Boolean(comment.trim())">
+    <label
+      class="active-plan-decision-option active-plan-decision-freeform"
+      :data-active="Boolean(comment.trim())"
+    >
       <span class="active-ask-number">2</span>
       <textarea
         v-model="comment"
@@ -52,7 +64,12 @@ function cancel() {
         <span>忽略</span>
         <kbd>ESC</kbd>
       </button>
-      <button class="active-ask-submit" type="button" :disabled="!canSubmit" @click="submit">
+      <button
+        class="active-ask-submit"
+        type="button"
+        :disabled="!canSubmit"
+        @click="submit"
+      >
         提交
         <span aria-hidden="true">↩</span>
       </button>

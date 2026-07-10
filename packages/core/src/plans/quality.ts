@@ -19,7 +19,10 @@ export class PlanQualityError extends Error {
 }
 
 export class PlanQualityGate {
-  assess(opts: { steps: PlanStep[]; draft: PlanDraftState }): PlanQualityResult {
+  assess(opts: {
+    steps: PlanStep[]
+    draft: PlanDraftState
+  }): PlanQualityResult {
     const errors: string[] = []
     if (!opts.steps.length) {
       errors.push('plan has no structured steps')
@@ -46,35 +49,56 @@ export class PlanQualityGate {
 }
 
 export function formatPlanQualityError(errors: string[]): string {
-  return ['Error: plan quality gate failed', ...errors.map((e) => `- ${e}`)].join('\n')
+  return [
+    'Error: plan quality gate failed',
+    ...errors.map((e) => `- ${e}`),
+  ].join('\n')
 }
 
-function assessStep(step: PlanStep, discoveryIds: Set<string>, hasDraftVerification: boolean): string[] {
+function assessStep(
+  step: PlanStep,
+  discoveryIds: Set<string>,
+  hasDraftVerification: boolean,
+): string[] {
   const sid = step.id
   const errors: string[] = []
   if (!hasScope(step, discoveryIds)) {
-    errors.push(`${sid} has no target files, discovery reference, or concrete scope`)
+    errors.push(
+      `${sid} has no target files, discovery reference, or concrete scope`,
+    )
   }
-  const unknownRefs = step.discoveryRefs.filter((ref) => discoveryIds.size > 0 && !discoveryIds.has(ref))
+  const unknownRefs = step.discoveryRefs.filter(
+    (ref) => discoveryIds.size > 0 && !discoveryIds.has(ref),
+  )
   if (unknownRefs.length) {
-    errors.push(`${sid} references unknown discoveries: ${unknownRefs.slice(0, 3).join(', ')}`)
+    errors.push(
+      `${sid} references unknown discoveries: ${unknownRefs.slice(0, 3).join(', ')}`,
+    )
   }
   if (hasGenericTitle(step)) {
     errors.push(`${sid} title is too generic; add concrete acceptance`)
   }
   if (!hasVerification(step, hasDraftVerification)) {
-    errors.push(`${sid} has no verification command or manual verification rule`)
+    errors.push(
+      `${sid} has no verification command or manual verification rule`,
+    )
   }
   if (step.risk.trim().toLowerCase() === 'high') {
-    if (!step.riskNote.trim()) errors.push(`${sid} is high risk but has no risk note`)
-    if (!step.rollback.trim()) errors.push(`${sid} is high risk but has no rollback path`)
+    if (!step.riskNote.trim())
+      errors.push(`${sid} is high risk but has no risk note`)
+    if (!step.rollback.trim())
+      errors.push(`${sid} is high risk but has no rollback path`)
   }
   return errors
 }
 
 function hasScope(step: PlanStep, discoveryIds: Set<string>): boolean {
   if (step.files.length) return true
-  if (step.discoveryRefs.length && (discoveryIds.size === 0 || step.discoveryRefs.some((ref) => discoveryIds.has(ref)))) {
+  if (
+    step.discoveryRefs.length &&
+    (discoveryIds.size === 0 ||
+      step.discoveryRefs.some((ref) => discoveryIds.has(ref)))
+  ) {
     return true
   }
   if (step.acceptance.length) return true
@@ -95,10 +119,20 @@ const GENERIC_TITLES = new Set([
 ])
 
 function hasGenericTitle(step: PlanStep): boolean {
-  const title = step.title.toLowerCase().trim().split(/\s+/).filter((p) => p).join(' ')
+  const title = step.title
+    .toLowerCase()
+    .trim()
+    .split(/\s+/)
+    .filter((p) => p)
+    .join(' ')
   return GENERIC_TITLES.has(title) && !step.acceptance.length
 }
 
-function hasVerification(step: PlanStep, hasDraftVerification: boolean): boolean {
-  return Boolean(step.commands.length || step.acceptance.length || hasDraftVerification)
+function hasVerification(
+  step: PlanStep,
+  hasDraftVerification: boolean,
+): boolean {
+  return Boolean(
+    step.commands.length || step.acceptance.length || hasDraftVerification,
+  )
 }

@@ -18,7 +18,9 @@ describe('renderer routes', () => {
   it('moves MCP configuration under the plugins hub while keeping legacy routes', async () => {
     const { routeRecords } = await import('./router')
     const mcp = routeRecords.find((route) => route.path === '/mcp')
-    const settingsIntegrations = routeRecords.find((route) => route.path === '/settings/integrations')
+    const settingsIntegrations = routeRecords.find(
+      (route) => route.path === '/settings/integrations',
+    )
 
     expect(mcp?.redirect).toBe('/plugins/mcp')
     expect(settingsIntegrations?.redirect).toBe('/plugins/mcp')
@@ -34,7 +36,9 @@ describe('renderer routes', () => {
 
   it('marks settings as a standalone shell without the app sidebar', async () => {
     const { routeRecords } = await import('./router')
-    const settings = routeRecords.find((route) => route.path === '/settings/:section?')
+    const settings = routeRecords.find(
+      (route) => route.path === '/settings/:section?',
+    )
     const chat = routeRecords.find((route) => route.path === '/chat')
 
     expect(settings?.meta?.hideAppSidebar).toBe(true)
@@ -42,14 +46,20 @@ describe('renderer routes', () => {
   })
 
   it('does not expose Team as a settings category', () => {
-    const source = readFileSync(fileURLToPath(new URL('./views/SettingsView.vue', import.meta.url)), 'utf8')
+    const source = readFileSync(
+      fileURLToPath(new URL('./views/SettingsView.vue', import.meta.url)),
+      'utf8',
+    )
 
     expect(source).not.toContain("key: 'team'")
     expect(source).not.toContain('TeamView')
   })
 
   it('does not expose MCP as a settings category', () => {
-    const source = readFileSync(fileURLToPath(new URL('./views/SettingsView.vue', import.meta.url)), 'utf8')
+    const source = readFileSync(
+      fileURLToPath(new URL('./views/SettingsView.vue', import.meta.url)),
+      'utf8',
+    )
 
     expect(source).not.toContain("key: 'integrations'")
     expect(source).not.toContain('MCP / 集成')

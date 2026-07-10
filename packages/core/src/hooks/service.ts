@@ -1,7 +1,11 @@
 import { createHash } from 'node:crypto'
 import { HookAuditStore } from './audit'
 import { HookSnapshotStore, HookSourceResolver } from './config'
-import { CommandHookExecutor, HookExecutorRegistry, HttpHookExecutor } from './executor'
+import {
+  CommandHookExecutor,
+  HookExecutorRegistry,
+  HttpHookExecutor,
+} from './executor'
 import { buildHookInput, compileHookPlan } from './matcher'
 import {
   AgentHookExecutor,
@@ -18,7 +22,12 @@ import type {
   HookSnapshot,
   HooksConfigV2,
 } from './models'
-import { AsyncHookRegistry, HookOnceRegistry, HookOrchestrator, type HookOrchestratorEmitter } from './orchestrator'
+import {
+  AsyncHookRegistry,
+  HookOnceRegistry,
+  HookOrchestrator,
+  type HookOrchestratorEmitter,
+} from './orchestrator'
 import type { HookRuntimeRunOptions } from './runtime'
 import type { TokenTrackerLike } from '../agent/runner'
 import { writeJsonAtomic } from '../store/atomic-json'
@@ -62,15 +71,30 @@ export class HookService {
     this.resolver = new HookSourceResolver({ stateRoot: opts.stateRoot })
     this.snapshots = new HookSnapshotStore({
       resolver: this.resolver,
-      reviewCandidate: async (previous, candidate, scope) => await this.reviewSnapshotCandidate(previous, candidate, scope),
+      reviewCandidate: async (previous, candidate, scope) =>
+        await this.reviewSnapshotCandidate(previous, candidate, scope),
     })
     this.audit = new HookAuditStore(opts.stateRoot)
-    this.executors = opts.executors ?? defaultExecutors(opts.modelRouter ?? null, opts.tokenTracker ?? null)
+    this.executors =
+      opts.executors ??
+      defaultExecutors(opts.modelRouter ?? null, opts.tokenTracker ?? null)
   }
 
-  async beginTurn(opts: { turnId: string; sessionId: string; projectRoot?: string | null }): Promise<HookSnapshot> {
-    const snapshot = await this.snapshots.get({ projectRoot: opts.projectRoot ?? null, sessionId: opts.sessionId })
-    const active = { turnId: opts.turnId, sessionId: opts.sessionId, projectRoot: opts.projectRoot ?? null, snapshot }
+  async beginTurn(opts: {
+    turnId: string
+    sessionId: string
+    projectRoot?: string | null
+  }): Promise<HookSnapshot> {
+    const snapshot = await this.snapshots.get({
+      projectRoot: opts.projectRoot ?? null,
+      sessionId: opts.sessionId,
+    })
+    const active = {
+      turnId: opts.turnId,
+      sessionId: opts.sessionId,
+      projectRoot: opts.projectRoot ?? null,
+      snapshot,
+    }
     this.turns.set(opts.turnId, active)
     this.activeTurnBySession.set(opts.sessionId, opts.turnId)
     return snapshot
@@ -80,12 +104,13 @@ export class HookService {
     const active = this.turns.get(turnId)
     if (!active) return
     this.turns.delete(turnId)
-    if (this.activeTurnBySession.get(active.sessionId) === turnId) this.activeTurnBySession.delete(active.sessionId)
+    if (this.activeTurnBySession.get(active.sessionId) === turnId)
+      this.activeTurnBySession.delete(active.sessionId)
   }
 
   activeSnapshot(sessionId: string): HookSnapshot | null {
     const turnId = this.activeTurnBySession.get(sessionId)
-    return turnId ? this.turns.get(turnId)?.snapshot ?? null : null
+    return turnId ? (this.turns.get(turnId)?.snapshot ?? null) : null
   }
 
   async beginAgentScope(opts: {
@@ -95,11 +120,14 @@ export class HookService {
     cwd: string
     projectRoot?: string | null
   }): Promise<HookAgentScope> {
-    if (this.agentScopes.has(opts.agentId)) throw new Error(`hook agent scope already exists: ${opts.agentId}`)
-    const snapshot = this.activeSnapshot(opts.sessionId) ?? await this.snapshots.get({
-      sessionId: opts.sessionId,
-      projectRoot: opts.projectRoot ?? null,
-    })
+    if (this.agentScopes.has(opts.agentId))
+      throw new Error(`hook agent scope already exists: ${opts.agentId}`)
+    const snapshot =
+      this.activeSnapshot(opts.sessionId) ??
+      (await this.snapshots.get({
+        sessionId: opts.sessionId,
+        projectRoot: opts.projectRoot ?? null,
+      }))
     const scope: HookAgentScope = {
       agentId: opts.agentId,
       agentType: opts.agentType,
@@ -127,22 +155,31 @@ export class HookService {
   async runAgent(
     eventName: HookEventName,
     agentId: string,
-    opts: Omit<HookRuntimeRunOptions, 'sessionId' | 'cwd'> & Partial<Pick<HookRuntimeRunOptions, 'sessionId' | 'cwd'>>,
+    opts: Omit<HookRuntimeRunOptions, 'sessionId' | 'cwd'> &
+      Partial<Pick<HookRuntimeRunOptions, 'sessionId' | 'cwd'>>,
     runOpts: { emit?: HookOrchestratorEmitter | null } = {},
   ): Promise<HookAggregateDecision> {
     const scope = this.agentScopes.get(agentId)
     if (!scope) throw new Error(`unknown hook agent scope: ${agentId}`)
-    return await this.run(eventName, {
-      ...opts,
-      sessionId: scope.sessionId,
-      cwd: opts.cwd || scope.cwd,
-      projectRoot: scope.projectRoot,
-      agentId: scope.agentId,
-      agentType: scope.agentType,
-    }, { snapshot: scope.snapshot, emit: runOpts.emit ?? null })
+    return await this.run(
+      eventName,
+      {
+        ...opts,
+        sessionId: scope.sessionId,
+        cwd: opts.cwd || scope.cwd,
+        projectRoot: scope.projectRoot,
+        agentId: scope.agentId,
+        agentType: scope.agentType,
+      },
+      { snapshot: scope.snapshot, emit: runOpts.emit ?? null },
+    )
   }
 
-  mayMatchAgent(eventName: HookEventName, agentId: string, opts: HookRuntimeRunOptions): boolean {
+  mayMatchAgent(
+    eventName: HookEventName,
+    agentId: string,
+    opts: HookRuntimeRunOptions,
+  ): boolean {
     const scope = this.agentScopes.get(agentId)
     if (!scope) return true
     const input = this.input(eventName, {
@@ -156,8 +193,14 @@ export class HookService {
     return compileHookPlan(scope.snapshot, input).items.length > 0
   }
 
-  async snapshot(opts: { sessionId: string; projectRoot?: string | null }): Promise<HookSnapshot> {
-    return await this.snapshots.get({ sessionId: opts.sessionId, projectRoot: opts.projectRoot ?? null })
+  async snapshot(opts: {
+    sessionId: string
+    projectRoot?: string | null
+  }): Promise<HookSnapshot> {
+    return await this.snapshots.get({
+      sessionId: opts.sessionId,
+      projectRoot: opts.projectRoot ?? null,
+    })
   }
 
   async authorizeConfigChange(opts: {
@@ -168,22 +211,34 @@ export class HookService {
     projectRoot?: string | null
     snapshot?: HookSnapshot | null
   }): Promise<HookAggregateDecision> {
-    const snapshot = opts.snapshot ?? this.activeSnapshot(opts.sessionId) ?? await this.snapshots.get({
-      sessionId: opts.sessionId,
-      projectRoot: opts.projectRoot ?? null,
-    })
-    return await this.run('ConfigChange', {
-      sessionId: opts.sessionId,
-      cwd: opts.cwd,
-      projectRoot: opts.projectRoot ?? null,
-      source: opts.source,
-      candidateRevision: opts.candidateRevision,
-    }, { snapshot })
+    const snapshot =
+      opts.snapshot ??
+      this.activeSnapshot(opts.sessionId) ??
+      (await this.snapshots.get({
+        sessionId: opts.sessionId,
+        projectRoot: opts.projectRoot ?? null,
+      }))
+    return await this.run(
+      'ConfigChange',
+      {
+        sessionId: opts.sessionId,
+        cwd: opts.cwd,
+        projectRoot: opts.projectRoot ?? null,
+        source: opts.source,
+        candidateRevision: opts.candidateRevision,
+      },
+      { snapshot },
+    )
   }
 
   async saveGlobalConfig(
     raw: unknown,
-    opts: { expectedRevision?: string | null; sessionId?: string; cwd?: string; projectRoot?: string | null } = {},
+    opts: {
+      expectedRevision?: string | null
+      sessionId?: string
+      cwd?: string
+      projectRoot?: string | null
+    } = {},
   ): Promise<{
     saved: boolean
     config: HooksConfigV2
@@ -198,7 +253,9 @@ export class HookService {
     }
     const previous = await this.snapshots.get(scope)
     if (opts.expectedRevision && previous.revision !== opts.expectedRevision) {
-      throw new Error(`stale hooks revision: expected ${opts.expectedRevision}, current ${previous.revision}`)
+      throw new Error(
+        `stale hooks revision: expected ${opts.expectedRevision}, current ${previous.revision}`,
+      )
     }
     const candidateRevision = hashValue(serializeHooksConfigV2(parsed.config))
     const decision = parsed.diagnostics.length
@@ -211,13 +268,32 @@ export class HookService {
           projectRoot: scope.projectRoot,
           snapshot: previous,
         })
-    if (parsed.diagnostics.length || decision.decision === 'deny' || decision.decision === 'ask') {
-      return { saved: false, config: parsed.config, snapshot: previous, diagnostics: parsed.diagnostics, decision }
+    if (
+      parsed.diagnostics.length ||
+      decision.decision === 'deny' ||
+      decision.decision === 'ask'
+    ) {
+      return {
+        saved: false,
+        config: parsed.config,
+        snapshot: previous,
+        diagnostics: parsed.diagnostics,
+        decision,
+      }
     }
-    await writeJsonAtomic(this.resolver.globalConfigPath, serializeHooksConfigV2(parsed.config))
+    await writeJsonAtomic(
+      this.resolver.globalConfigPath,
+      serializeHooksConfigV2(parsed.config),
+    )
     const candidate = await this.resolver.resolve(scope)
     this.snapshots.accept(candidate, scope)
-    return { saved: true, config: parsed.config, snapshot: candidate, diagnostics: parsed.diagnostics, decision }
+    return {
+      saved: true,
+      config: parsed.config,
+      snapshot: candidate,
+      diagnostics: parsed.diagnostics,
+      decision,
+    }
   }
 
   mayMatch(eventName: HookEventName, opts: HookRuntimeRunOptions): boolean {
@@ -230,12 +306,18 @@ export class HookService {
   async run(
     eventName: HookEventName,
     opts: HookRuntimeRunOptions,
-    runOpts: { snapshot?: HookSnapshot | null; emit?: HookOrchestratorEmitter | null } = {},
+    runOpts: {
+      snapshot?: HookSnapshot | null
+      emit?: HookOrchestratorEmitter | null
+    } = {},
   ): Promise<HookAggregateDecision> {
-    const snapshot = runOpts.snapshot ?? this.snapshotFromActiveTurn(opts) ?? await this.snapshots.get({
-      sessionId: opts.sessionId,
-      projectRoot: opts.projectRoot ?? null,
-    })
+    const snapshot =
+      runOpts.snapshot ??
+      this.snapshotFromActiveTurn(opts) ??
+      (await this.snapshots.get({
+        sessionId: opts.sessionId,
+        projectRoot: opts.projectRoot ?? null,
+      }))
     const input = this.input(eventName, opts)
     const plan = compileHookPlan(snapshot, input)
     const orchestrator = new HookOrchestrator({
@@ -272,12 +354,20 @@ export class HookService {
     this.once.clear()
   }
 
-  private snapshotFromActiveTurn(opts: HookRuntimeRunOptions): HookSnapshot | null {
-    const turnId = typeof opts.turnId === 'string' ? opts.turnId : this.activeTurnBySession.get(opts.sessionId)
-    return turnId ? this.turns.get(turnId)?.snapshot ?? null : null
+  private snapshotFromActiveTurn(
+    opts: HookRuntimeRunOptions,
+  ): HookSnapshot | null {
+    const turnId =
+      typeof opts.turnId === 'string'
+        ? opts.turnId
+        : this.activeTurnBySession.get(opts.sessionId)
+    return turnId ? (this.turns.get(turnId)?.snapshot ?? null) : null
   }
 
-  private input(eventName: HookEventName, opts: HookRuntimeRunOptions): Record<string, unknown> {
+  private input(
+    eventName: HookEventName,
+    opts: HookRuntimeRunOptions,
+  ): Record<string, unknown> {
     return buildHookInput(eventName, {
       ...opts,
       stateRoot: opts.stateRoot ?? this.stateRoot,
@@ -317,7 +407,9 @@ function defaultExecutors(
   return registry
 }
 
-function legacyAggregate(result: Awaited<ReturnType<HookOrchestrator['run']>>): HookAggregateDecision {
+function legacyAggregate(
+  result: Awaited<ReturnType<HookOrchestrator['run']>>,
+): HookAggregateDecision {
   const results: HookExecutionResult[] = result.results.map((entry) => ({
     hookId: entry.handlerId,
     hookRunId: entry.hookRunId,
@@ -330,8 +422,12 @@ function legacyAggregate(result: Awaited<ReturnType<HookOrchestrator['run']>>): 
     reason: entry.reason,
     durationMs: entry.durationMs,
     asyncRewakeEligible: entry.asyncRewakeEligible,
-    ...(typeof entry.output?.additionalContext === 'string' ? { additionalContext: entry.output.additionalContext } : {}),
-    ...(isRecord(entry.output?.updatedInput) ? { updatedInput: entry.output.updatedInput } : {}),
+    ...(typeof entry.output?.additionalContext === 'string'
+      ? { additionalContext: entry.output.additionalContext }
+      : {}),
+    ...(isRecord(entry.output?.updatedInput)
+      ? { updatedInput: entry.output.updatedInput }
+      : {}),
   }))
   return {
     decision: result.decision,
@@ -339,24 +435,38 @@ function legacyAggregate(result: Awaited<ReturnType<HookOrchestrator['run']>>): 
     results,
     additionalContext: result.additionalContext,
     ...(result.updatedInput ? { updatedInput: result.updatedInput } : {}),
-    ...(result.updatedToolOutput !== undefined ? { updatedToolOutput: result.updatedToolOutput } : {}),
+    ...(result.updatedToolOutput !== undefined
+      ? { updatedToolOutput: result.updatedToolOutput }
+      : {}),
     ...(result.continue !== undefined ? { continue: result.continue } : {}),
-    ...(result.stopReason !== undefined ? { stopReason: result.stopReason } : {}),
-    ...(result.compactInstructions !== undefined ? { compactInstructions: result.compactInstructions } : {}),
-    ...(result.suppressOutput !== undefined ? { suppressOutput: result.suppressOutput } : {}),
-    ...(result.systemMessage !== undefined ? { systemMessage: result.systemMessage } : {}),
+    ...(result.stopReason !== undefined
+      ? { stopReason: result.stopReason }
+      : {}),
+    ...(result.compactInstructions !== undefined
+      ? { compactInstructions: result.compactInstructions }
+      : {}),
+    ...(result.suppressOutput !== undefined
+      ? { suppressOutput: result.suppressOutput }
+      : {}),
+    ...(result.systemMessage !== undefined
+      ? { systemMessage: result.systemMessage }
+      : {}),
   }
 }
 
 function legacyStatus(status: string): HookExecutionResult['status'] {
-  if (status === 'completed' || status === 'timeout' || status === 'skipped') return status
+  if (status === 'completed' || status === 'timeout' || status === 'skipped')
+    return status
   if (status === 'accepted') return 'skipped'
   return 'failed'
 }
 
 function outputDecision(output: Record<string, unknown> | null): HookDecision {
   const decision = output?.decision
-  return decision === 'deny' || decision === 'ask' || decision === 'allow' || decision === 'passthrough'
+  return decision === 'deny' ||
+    decision === 'ask' ||
+    decision === 'allow' ||
+    decision === 'passthrough'
     ? decision
     : 'passthrough'
 }

@@ -85,10 +85,28 @@ const PALETTE = [
   'rgb(var(--seal) / 0.55)',
 ]
 
-const MONTH_LABELS_CN = ['1月', '2月', '3月', '4月', '5月', '6月', '7月', '8月', '9月', '10月', '11月', '12月']
+const MONTH_LABELS_CN = [
+  '1月',
+  '2月',
+  '3月',
+  '4月',
+  '5月',
+  '6月',
+  '7月',
+  '8月',
+  '9月',
+  '10月',
+  '11月',
+  '12月',
+]
 
 function tokenTotal(row?: TokenStatsRow | null): number {
-  return (row?.input ?? 0) + (row?.cache_read ?? 0) + (row?.cache_create ?? 0) + (row?.output ?? 0)
+  return (
+    (row?.input ?? 0) +
+    (row?.cache_read ?? 0) +
+    (row?.cache_create ?? 0) +
+    (row?.output ?? 0)
+  )
 }
 
 function hashKey(input: string): number {
@@ -122,7 +140,10 @@ export function rangeDays(range: TokensRange): number | null {
   return null
 }
 
-export function filterByRange(byDate: Record<string, TokenStatsRow>, range: TokensRange): DateBucket[] {
+export function filterByRange(
+  byDate: Record<string, TokenStatsRow>,
+  range: TokensRange,
+): DateBucket[] {
   const today = startOfDay(new Date())
   const days = rangeDays(range)
   let startDate: Date
@@ -140,7 +161,11 @@ export function filterByRange(byDate: Record<string, TokenStatsRow>, range: Toke
     startDate = startOfDay(startDate)
   }
   const buckets: DateBucket[] = []
-  for (let cursor = new Date(startDate); cursor.getTime() <= today.getTime(); cursor = new Date(cursor.getTime() + DAY)) {
+  for (
+    let cursor = new Date(startDate);
+    cursor.getTime() <= today.getTime();
+    cursor = new Date(cursor.getTime() + DAY)
+  ) {
     const date = isoDate(cursor)
     const row = byDate[date]
     const input = row?.input ?? 0
@@ -172,7 +197,10 @@ function quantileLevel(value: number, sorted: number[]): 0 | 1 | 2 | 3 | 4 {
   return 4
 }
 
-export function buildHeatmap(byDate: Record<string, TokenStatsRow>, weeks = 53): HeatmapData {
+export function buildHeatmap(
+  byDate: Record<string, TokenStatsRow>,
+  weeks = 53,
+): HeatmapData {
   const today = startOfDay(new Date())
   const dayOfWeek = today.getDay() // 0=Sun..6=Sat
   const lastSunday = new Date(today)
@@ -202,7 +230,12 @@ export function buildHeatmap(byDate: Record<string, TokenStatsRow>, weeks = 53):
       const row = byDate[date]
       const total = tokenTotal(row)
       const calls = row?.calls ?? 0
-      column.push({ date, total, calls, level: quantileLevel(total, sortedTotals) })
+      column.push({
+        date,
+        total,
+        calls,
+        level: quantileLevel(total, sortedTotals),
+      })
     }
     const sundayCursor = new Date(startSunday)
     sundayCursor.setDate(startSunday.getDate() + w * 7)
@@ -232,7 +265,9 @@ function providerLabel(key: string, info?: TokenStatsRow): string {
   return ''
 }
 
-function modelTotalsAcrossDates(byDateModel: TokensPayload['byDateModel']): Map<string, number> {
+function modelTotalsAcrossDates(
+  byDateModel: TokensPayload['byDateModel'],
+): Map<string, number> {
   const totals = new Map<string, number>()
   for (const dateMap of Object.values(byDateModel)) {
     for (const [key, row] of Object.entries(dateMap)) {
@@ -242,7 +277,10 @@ function modelTotalsAcrossDates(byDateModel: TokensPayload['byDateModel']): Map<
   return totals
 }
 
-export function topModels(byDateModel: TokensPayload['byDateModel'], topN = 5): string[] {
+export function topModels(
+  byDateModel: TokensPayload['byDateModel'],
+  topN = 5,
+): string[] {
   const totals = modelTotalsAcrossDates(byDateModel)
   return [...totals.entries()]
     .sort((a, b) => b[1] - a[1])
@@ -282,7 +320,11 @@ export function buildStackedBars(
     }
     if (otherTotal > 0) {
       otherSeen = true
-      segments.push({ model: otherKey, total: otherTotal, color: 'rgb(var(--muted) / 0.65)' })
+      segments.push({
+        model: otherKey,
+        total: otherTotal,
+        color: 'rgb(var(--muted) / 0.65)',
+      })
     }
     const total = segments.reduce((acc, s) => acc + s.total, 0)
     columns.push({ date, total, segments })
@@ -317,8 +359,12 @@ export function buildModelRows(
   return rows
 }
 
-export function topModelDisplay(byModel: Record<string, TokenStatsRow>): string {
-  const sorted = Object.entries(byModel).sort((a, b) => tokenTotal(b[1]) - tokenTotal(a[1]))
+export function topModelDisplay(
+  byModel: Record<string, TokenStatsRow>,
+): string {
+  const sorted = Object.entries(byModel).sort(
+    (a, b) => tokenTotal(b[1]) - tokenTotal(a[1]),
+  )
   if (!sorted.length) return '—'
   const [key, info] = sorted[0]
   return modelLabel(key, info)
@@ -347,7 +393,9 @@ export function cacheTotal(row?: TokenStatsRow | null): number {
   return (row?.cache_read ?? 0) + (row?.cache_create ?? 0)
 }
 
-export function buildTokenComposition(row?: TokenStatsRow | null): TokenComposition {
+export function buildTokenComposition(
+  row?: TokenStatsRow | null,
+): TokenComposition {
   const cacheHit = row?.cache_read ?? 0
   const cacheCreate = row?.cache_create ?? 0
   const cacheMiss = (row?.input ?? 0) + cacheCreate
@@ -363,9 +411,24 @@ export function buildTokenComposition(row?: TokenStatsRow | null): TokenComposit
     inputTotal,
     hitRate: inputTotal ? cacheHit / inputTotal : 0,
     parts: [
-      { key: 'cache_hit', label: '输入缓存命中', value: cacheHit, color: 'rgb(var(--jade) / 0.9)' },
-      { key: 'cache_miss', label: '输入缓存未命中', value: cacheMiss, color: 'rgb(var(--seal) / 0.42)' },
-      { key: 'output', label: '输出', value: output, color: 'rgb(var(--amber) / 0.9)' },
+      {
+        key: 'cache_hit',
+        label: '输入缓存命中',
+        value: cacheHit,
+        color: 'rgb(var(--jade) / 0.9)',
+      },
+      {
+        key: 'cache_miss',
+        label: '输入缓存未命中',
+        value: cacheMiss,
+        color: 'rgb(var(--seal) / 0.42)',
+      },
+      {
+        key: 'output',
+        label: '输出',
+        value: output,
+        color: 'rgb(var(--amber) / 0.9)',
+      },
     ].filter((part) => part.value > 0) as TokenCompositionPart[],
   }
 }

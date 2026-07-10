@@ -1,5 +1,15 @@
 import { randomUUID } from 'node:crypto'
-import { appendFileSync, copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, renameSync, statSync, writeFileSync } from 'node:fs'
+import {
+  appendFileSync,
+  copyFileSync,
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  readdirSync,
+  renameSync,
+  statSync,
+  writeFileSync,
+} from 'node:fs'
 import { basename, dirname, join } from 'node:path'
 import { SCHEMA_VERSION, SchedulerJob, validateJobId } from './models'
 
@@ -14,10 +24,16 @@ export class SchedulerStoreData {
   }
   static fromDict(raw: Record<string, any>): SchedulerStoreData {
     const jobs = (raw.jobs ?? []).filter(isObject).map(SchedulerJob.fromDict)
-    return new SchedulerStoreData({ version: Number(raw.version || SCHEMA_VERSION), jobs })
+    return new SchedulerStoreData({
+      version: Number(raw.version || SCHEMA_VERSION),
+      jobs,
+    })
   }
   toDict(): Record<string, unknown> {
-    return { version: this.version || SCHEMA_VERSION, jobs: this.jobs.map((job) => job.toDict()) }
+    return {
+      version: this.version || SCHEMA_VERSION,
+      jobs: this.jobs.map((job) => job.toDict()),
+    }
   }
 }
 
@@ -38,10 +54,13 @@ export class SchedulerStore {
     this.lockFile = join(this.schedulerDir, 'scheduler.lock')
     mkdirSync(this.schedulerDir, { recursive: true })
     this.copyLegacyFilesIfNeeded()
-    if (!existsSync(this.jobsFile)) this.atomicWriteJson(this.jobsFile, new SchedulerStoreData().toDict())
+    if (!existsSync(this.jobsFile))
+      this.atomicWriteJson(this.jobsFile, new SchedulerStoreData().toDict())
   }
 
-  load(opts: { mergeActions?: boolean; allowLastGood?: boolean } = {}): SchedulerStoreData {
+  load(
+    opts: { mergeActions?: boolean; allowLastGood?: boolean } = {},
+  ): SchedulerStoreData {
     const mergeActions = opts.mergeActions ?? true
     const allowLastGood = opts.allowLastGood ?? true
     let data: SchedulerStoreData
@@ -58,13 +77,21 @@ export class SchedulerStore {
 
   save(data: SchedulerStoreData): void {
     this.atomicWriteJson(this.jobsFile, data.toDict())
-    this.lastGood = SchedulerStoreData.fromDict(data.toDict() as Record<string, any>)
+    this.lastGood = SchedulerStoreData.fromDict(
+      data.toDict() as Record<string, any>,
+    )
   }
 
   listJobs(opts: { includeDisabled?: boolean } = {}): SchedulerJob[] {
     let jobs = this.load().jobs
     if (opts.includeDisabled === false) jobs = jobs.filter((job) => job.enabled)
-    return jobs.slice().sort((a, b) => (a.state.next_run_at_ms ?? Infinity) - (b.state.next_run_at_ms ?? Infinity))
+    return jobs
+      .slice()
+      .sort(
+        (a, b) =>
+          (a.state.next_run_at_ms ?? Infinity) -
+          (b.state.next_run_at_ms ?? Infinity),
+      )
   }
 
   getJob(jobId: string): SchedulerJob | null {
@@ -91,9 +118,14 @@ export class SchedulerStore {
     return removed
   }
 
-  appendAction(action: 'add' | 'update' | 'delete', opts: { job?: SchedulerJob | null; jobId?: string | null } = {}): void {
-    if ((action === 'add' || action === 'update') && !opts.job) throw new Error(`job is required for action=${action}`)
-    if (action === 'delete' && !opts.jobId) throw new Error('job_id is required for action=delete')
+  appendAction(
+    action: 'add' | 'update' | 'delete',
+    opts: { job?: SchedulerJob | null; jobId?: string | null } = {},
+  ): void {
+    if ((action === 'add' || action === 'update') && !opts.job)
+      throw new Error(`job is required for action=${action}`)
+    if (action === 'delete' && !opts.jobId)
+      throw new Error('job_id is required for action=delete')
     const payload: Record<string, unknown> = { action }
     if (opts.job) payload.job = opts.job.toDict()
     if (opts.jobId) payload.jobId = validateJobId(opts.jobId)
@@ -102,7 +134,13 @@ export class SchedulerStore {
 
   diagnostics(): Record<string, unknown> {
     const corrupt = existsSync(this.schedulerDir)
-      ? readdirSync(this.schedulerDir).filter((name) => name.startsWith('action.corrupt-') && name.endsWith('.jsonl')).sort().reverse()
+      ? readdirSync(this.schedulerDir)
+          .filter(
+            (name) =>
+              name.startsWith('action.corrupt-') && name.endsWith('.jsonl'),
+          )
+          .sort()
+          .reverse()
       : []
     return {
       jobsFile: this.jobsFile,
@@ -119,16 +157,24 @@ export class SchedulerStore {
   private readStore(): SchedulerStoreData {
     try {
       const raw = JSON.parse(readFileSync(this.jobsFile, 'utf8') || '{}')
-      if (!isObject(raw)) throw new Error('scheduler store root must be an object')
+      if (!isObject(raw))
+        throw new Error('scheduler store root must be an object')
       const data = SchedulerStoreData.fromDict(raw)
       this.lastGood = data
       return data
     } catch (error) {
       const backup = `${this.jobsFile}.corrupt-${Math.trunc(Date.now() / 1000)}-${randomUUID().replace(/-/g, '').slice(0, 8)}`
       if (existsSync(this.jobsFile)) {
-        try { renameSync(this.jobsFile, backup) } catch { /* ignore */ }
+        try {
+          renameSync(this.jobsFile, backup)
+        } catch {
+          /* ignore */
+        }
       }
-      throw new SchedulerStoreCorrupt(`scheduler store at ${this.jobsFile} is corrupt; preserved at ${backup}`, { cause: error })
+      throw new SchedulerStoreCorrupt(
+        `scheduler store at ${this.jobsFile} is corrupt; preserved at ${backup}`,
+        { cause: error },
+      )
     }
   }
 
@@ -138,7 +184,11 @@ export class SchedulerStore {
       const source = join(legacyDir, name)
       const dest = join(this.schedulerDir, name)
       if (existsSync(dest) || !existsSync(source)) continue
-      try { copyFileSync(source, dest) } catch { /* non-destructive best effort */ }
+      try {
+        copyFileSync(source, dest)
+      } catch {
+        /* non-destructive best effort */
+      }
     }
   }
 
@@ -153,20 +203,29 @@ export class SchedulerStore {
       if (!line) return
       try {
         const action = JSON.parse(line)
-        if (!isObject(action)) throw new Error('action log row must be an object')
+        if (!isObject(action))
+          throw new Error('action log row must be an object')
         const kind = action.action
         if (kind === 'add' || kind === 'update') {
-          const job = SchedulerJob.fromDict(isObject(action.job) ? action.job : {})
+          const job = SchedulerJob.fromDict(
+            isObject(action.job) ? action.job : {},
+          )
           jobs.set(job.id, job)
           changed = true
         } else if (kind === 'delete') {
-          const jobId = validateJobId(String(action.jobId ?? action.job_id ?? ''))
+          const jobId = validateJobId(
+            String(action.jobId ?? action.job_id ?? ''),
+          )
           if (jobs.delete(jobId)) changed = true
         } else {
           throw new Error(`unknown scheduler action: ${kind}`)
         }
       } catch (error) {
-        corruptRecords.push({ line: index + 1, error: String(error instanceof Error ? error.message : error), raw: rawLine })
+        corruptRecords.push({
+          line: index + 1,
+          error: String(error instanceof Error ? error.message : error),
+          raw: rawLine,
+        })
       }
     })
     if (corruptRecords.length) {
@@ -174,21 +233,39 @@ export class SchedulerStore {
       this.lastActionErrors = corruptRecords
     }
     if (!changed && !corruptRecords.length) return data
-    const merged = changed ? new SchedulerStoreData({ version: data.version, jobs: [...jobs.values()] }) : data
+    const merged = changed
+      ? new SchedulerStoreData({
+          version: data.version,
+          jobs: [...jobs.values()],
+        })
+      : data
     if (changed) this.atomicWriteJson(this.jobsFile, merged.toDict())
     writeFileSync(this.actionFile, '', 'utf8')
     return merged
   }
 
   private writeCorruptActions(records: Array<Record<string, unknown>>): string {
-    const path = join(this.schedulerDir, `action.corrupt-${Math.trunc(Date.now() / 1000)}-${randomUUID().replace(/-/g, '').slice(0, 8)}.jsonl`)
-    writeFileSync(path, records.map((record) => JSON.stringify(record)).join('\n') + '\n', 'utf8')
+    const path = join(
+      this.schedulerDir,
+      `action.corrupt-${Math.trunc(Date.now() / 1000)}-${randomUUID().replace(/-/g, '').slice(0, 8)}.jsonl`,
+    )
+    writeFileSync(
+      path,
+      records.map((record) => JSON.stringify(record)).join('\n') + '\n',
+      'utf8',
+    )
     return path
   }
 
-  private atomicWriteJson(path: string, payload: Record<string, unknown>): void {
+  private atomicWriteJson(
+    path: string,
+    payload: Record<string, unknown>,
+  ): void {
     mkdirSync(dirname(path), { recursive: true })
-    const tmp = join(dirname(path), `.${basename(path)}.${randomUUID().replace(/-/g, '')}.tmp`)
+    const tmp = join(
+      dirname(path),
+      `.${basename(path)}.${randomUUID().replace(/-/g, '')}.tmp`,
+    )
     writeFileSync(tmp, JSON.stringify(payload, null, 2) + '\n', 'utf8')
     renameSync(tmp, path)
   }

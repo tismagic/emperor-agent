@@ -3,12 +3,18 @@
  * 高影响歧义统一判断是否先 ask_user。_CONTROL_RESUME_RE 导出供 plan-drafting 复用。
  */
 
-export const CONTROL_RESUME_RE = /^\[CONTROL:(ASK_ANSWERED|PLAN_APPROVED|PLAN_COMMENT|INTERACTION_CANCELLED)\]/
-const IMPLEMENT_PLAN_RE = /please\s+implement\s+this\s+plan|#\s*(summary|key changes|test plan)/i
-const EXPLICIT_AUTONOMY_RE = /(不用问|不要问|直接做|按你判断|自行决定|你决定|无需确认)/
-const BROAD_SCOPE_RE = /(工程化|架构|重构|重新设计|设计.*机制|解决以上问题|找到问题作出修改|通读项目|仔细阅读|审计.*修改|从头到尾|全链路|全项目|整体.*(优化|完善|改造|提升)|(项目|系统|机制|工作流|提示词|agent|Agent).*(优化|完善|改造|评估|审计)|(优化|完善|改造|评估|审计).*(项目|系统|机制|工作流|提示词|agent|Agent))/
-const HIGH_IMPACT_RE = /(提交|推送|发布|部署|删除|清空|重置|覆盖|迁移|密钥|权限|付款|成本|生产)/
-const LOW_RISK_RE = /(改错别字|修拼写|解释|说明|查看|查询|列出|读一下|review|审查)/
+export const CONTROL_RESUME_RE =
+  /^\[CONTROL:(ASK_ANSWERED|PLAN_APPROVED|PLAN_COMMENT|INTERACTION_CANCELLED)\]/
+const IMPLEMENT_PLAN_RE =
+  /please\s+implement\s+this\s+plan|#\s*(summary|key changes|test plan)/i
+const EXPLICIT_AUTONOMY_RE =
+  /(不用问|不要问|直接做|按你判断|自行决定|你决定|无需确认)/
+const BROAD_SCOPE_RE =
+  /(工程化|架构|重构|重新设计|设计.*机制|解决以上问题|找到问题作出修改|通读项目|仔细阅读|审计.*修改|从头到尾|全链路|全项目|整体.*(优化|完善|改造|提升)|(项目|系统|机制|工作流|提示词|agent|Agent).*(优化|完善|改造|评估|审计)|(优化|完善|改造|评估|审计).*(项目|系统|机制|工作流|提示词|agent|Agent))/
+const HIGH_IMPACT_RE =
+  /(提交|推送|发布|部署|删除|清空|重置|覆盖|迁移|密钥|权限|付款|成本|生产)/
+const LOW_RISK_RE =
+  /(改错别字|修拼写|解释|说明|查看|查询|列出|读一下|review|审查)/
 
 export interface ClarificationAssessment {
   required: boolean
@@ -36,16 +42,25 @@ export class ClarificationPolicy {
     const latest = latestUserText(history)
     if (!latest) return emptyClarification()
     const lowered = latest.toLowerCase()
-    if (CONTROL_RESUME_RE.test(latest) || IMPLEMENT_PLAN_RE.test(latest)) return emptyClarification()
+    if (CONTROL_RESUME_RE.test(latest) || IMPLEMENT_PLAN_RE.test(latest))
+      return emptyClarification()
 
     const categories: string[] = []
     if (BROAD_SCOPE_RE.test(latest)) categories.push('scope')
     if (HIGH_IMPACT_RE.test(latest)) categories.push('risk')
-    if (lowered.includes('ui') || latest.includes('界面') || latest.includes('前端') || latest.includes('视觉')) categories.push('ui')
+    if (
+      lowered.includes('ui') ||
+      latest.includes('界面') ||
+      latest.includes('前端') ||
+      latest.includes('视觉')
+    )
+      categories.push('ui')
 
     if (!categories.length) return emptyClarification()
-    if (LOW_RISK_RE.test(latest) && !categories.includes('risk')) return emptyClarification()
-    if (EXPLICIT_AUTONOMY_RE.test(latest) && !categories.includes('risk')) return emptyClarification()
+    if (LOW_RISK_RE.test(latest) && !categories.includes('risk'))
+      return emptyClarification()
+    if (EXPLICIT_AUTONOMY_RE.test(latest) && !categories.includes('risk'))
+      return emptyClarification()
     if (looksDecisionComplete(latest)) return emptyClarification()
 
     const questions = questionsFor(categories)
@@ -63,7 +78,11 @@ function latestUserText(history: Array<Record<string, unknown>>): string {
     if (Array.isArray(content)) {
       const parts: string[] = []
       for (const item of content) {
-        if (item && typeof item === 'object' && (item as Record<string, unknown>).type === 'text') {
+        if (
+          item &&
+          typeof item === 'object' &&
+          (item as Record<string, unknown>).type === 'text'
+        ) {
           parts.push(String((item as Record<string, unknown>).text ?? ''))
         }
       }
@@ -78,8 +97,14 @@ function looksDecisionComplete(text: string): boolean {
   const headings = (text.match(/^#{1,3}\s+/gm) || []).length
   const bullets = (text.match(/^\s*[-*]\s+/gm) || []).length
   const hasTests = /(测试|验收|test plan|tests?)/i.test(text)
-  const hasInterfaces = /(api|接口|types?|schema|public interfaces?)/i.test(text)
-  return text.length > 500 && (headings >= 2 || bullets >= 5) && (hasTests || hasInterfaces)
+  const hasInterfaces = /(api|接口|types?|schema|public interfaces?)/i.test(
+    text,
+  )
+  return (
+    text.length > 500 &&
+    (headings >= 2 || bullets >= 5) &&
+    (hasTests || hasInterfaces)
+  )
 }
 
 function questionsFor(categories: string[]): Array<Record<string, unknown>> {
@@ -89,7 +114,10 @@ function questionsFor(categories: string[]): Array<Record<string, unknown>> {
       header: '范围',
       question: '这次任务的实施边界优先按哪种方式推进？',
       options: [
-        { label: '完整工程化', description: '按长期可维护方案处理模块、测试与文档。' },
+        {
+          label: '完整工程化',
+          description: '按长期可维护方案处理模块、测试与文档。',
+        },
         { label: '最小修复', description: '只修当前可见问题，尽量少动结构。' },
         { label: '先出方案', description: '先产出更详细计划，确认后再实施。' },
       ],
@@ -101,8 +129,14 @@ function questionsFor(categories: string[]): Array<Record<string, unknown>> {
       header: '前端',
       question: '涉及界面时，视觉与交互优先级如何取舍？',
       options: [
-        { label: '产品级体验', description: '按正式功能页标准打磨布局、状态和响应式。' },
-        { label: '保持现状', description: '只接入必要状态，不做明显视觉调整。' },
+        {
+          label: '产品级体验',
+          description: '按正式功能页标准打磨布局、状态和响应式。',
+        },
+        {
+          label: '保持现状',
+          description: '只接入必要状态，不做明显视觉调整。',
+        },
       ],
     })
   }
@@ -112,8 +146,14 @@ function questionsFor(categories: string[]): Array<Record<string, unknown>> {
       header: '风险',
       question: '涉及提交、删除、发布或其他高影响操作时，应该如何控制风险？',
       options: [
-        { label: '先确认再执行', description: '列出将影响的对象，得到确认后再继续。' },
-        { label: '按安全默认', description: '只执行可恢复或低风险部分，高风险操作跳过。' },
+        {
+          label: '先确认再执行',
+          description: '列出将影响的对象，得到确认后再继续。',
+        },
+        {
+          label: '按安全默认',
+          description: '只执行可恢复或低风险部分，高风险操作跳过。',
+        },
       ],
     })
   }

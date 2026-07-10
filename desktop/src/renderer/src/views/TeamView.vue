@@ -13,7 +13,11 @@ const ctx = useAppContext()
         <h1>队友协作 · Agent Team</h1>
         <p>Lead 调度，队友执行，Inbox 留痕</p>
       </div>
-      <button class="tool-button asset-button refresh-action" title="刷新" @click="ctx.refreshAll()">
+      <button
+        class="tool-button asset-button refresh-action"
+        title="刷新"
+        @click="ctx.refreshAll()"
+      >
         <component :is="actionIcons.refresh" class="action-icon" :size="16" />
         <span>刷新</span>
       </button>

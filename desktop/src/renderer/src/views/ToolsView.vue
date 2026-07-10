@@ -13,7 +13,11 @@ const ctx = useAppContext()
         <h1>工具权限 · Tools</h1>
         <p>当前注册的内建工具与 MCP 工具</p>
       </div>
-      <button class="tool-button asset-button refresh-action" title="刷新" @click="ctx.refreshAll()">
+      <button
+        class="tool-button asset-button refresh-action"
+        title="刷新"
+        @click="ctx.refreshAll()"
+      >
         <component :is="actionIcons.refresh" class="action-icon" :size="16" />
         <span>刷新</span>
       </button>

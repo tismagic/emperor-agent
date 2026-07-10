@@ -20,14 +20,20 @@ describe('atomic-json store', () => {
   })
 
   it('returns fallback when file is missing', async () => {
-    expect(await readJson(join(dir, 'missing.json'), { def: true })).toEqual({ def: true })
+    expect(await readJson(join(dir, 'missing.json'), { def: true })).toEqual({
+      def: true,
+    })
   })
 
   it('isolates a corrupt file and reports it, then returns fallback', async () => {
     const p = join(dir, 'broken.json')
     await writeFile(p, '{ not json', 'utf8')
     const reports: string[] = []
-    const result = await readJson(p, { ok: false }, { onCorrupt: (i) => reports.push(i.backupPath) })
+    const result = await readJson(
+      p,
+      { ok: false },
+      { onCorrupt: (i) => reports.push(i.backupPath) },
+    )
     expect(result).toEqual({ ok: false })
     expect(reports).toHaveLength(1)
     const files = await readdir(dir)

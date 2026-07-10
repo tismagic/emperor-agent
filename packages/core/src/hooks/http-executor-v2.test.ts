@@ -1,4 +1,8 @@
-import { createServer, type IncomingMessage, type ServerResponse } from 'node:http'
+import {
+  createServer,
+  type IncomingMessage,
+  type ServerResponse,
+} from 'node:http'
 import { describe, expect, it } from 'vitest'
 import { defaultHooksConfigV2 } from './schema'
 
@@ -11,11 +15,16 @@ type Result = {
   stdoutBytes: number
   stdoutTruncated: boolean
 }
-type HttpExecutor = { execute(handler: Dict, input: Dict, context: Dict): Promise<Result> }
+type HttpExecutor = {
+  execute(handler: Dict, input: Dict, context: Dict): Promise<Result>
+}
 type Lookup = (hostname: string) => Promise<string[]>
 
 async function httpExecutor(lookup?: Lookup): Promise<HttpExecutor> {
-  const module = await import('./executor') as unknown as Record<string, new (...args: unknown[]) => unknown>
+  const module = (await import('./executor')) as unknown as Record<
+    string,
+    new (...args: unknown[]) => unknown
+  >
   expect(module.HttpHookExecutor).toBeTypeOf('function')
   const HttpHookExecutor = module.HttpHookExecutor!
   return new HttpHookExecutor({ lookup }) as HttpExecutor
@@ -39,13 +48,22 @@ function handler(url: string, overrides: Dict = {}): Dict {
 function input(): Dict {
   return {
     hook_event_name: 'PreToolUse',
-    session_id: 's1', cwd: '/repo', state_root: '/state',
-    tool_name: 'write_file', tool_input: { path: 'README.md' }, tool_use_id: 'call-1',
+    session_id: 's1',
+    cwd: '/repo',
+    state_root: '/state',
+    tool_name: 'write_file',
+    tool_input: { path: 'README.md' },
+    tool_use_id: 'call-1',
   }
 }
 
 function context(overrides: Dict = {}): Dict {
-  return { eventName: 'PreToolUse', cwd: '/repo', policy: defaultHooksConfigV2().policy, ...overrides }
+  return {
+    eventName: 'PreToolUse',
+    cwd: '/repo',
+    policy: defaultHooksConfigV2().policy,
+    ...overrides,
+  }
 }
 
 async function server(
@@ -54,17 +72,25 @@ async function server(
   const instance = createServer(listener)
   await new Promise<void>((resolve) => instance.listen(0, '127.0.0.1', resolve))
   const address = instance.address()
-  if (!address || typeof address === 'string') throw new Error('missing server address')
+  if (!address || typeof address === 'string')
+    throw new Error('missing server address')
   return {
     port: address.port,
-    close: () => new Promise<void>((resolve, reject) => instance.close((error) => error ? reject(error) : resolve())),
+    close: () =>
+      new Promise<void>((resolve, reject) =>
+        instance.close((error) => (error ? reject(error) : resolve())),
+      ),
   }
 }
 
 describe('hooks v2 HTTP executor', () => {
   it('disables HTTP when the global URL allowlist is empty', async () => {
     const executor = await httpExecutor()
-    const result = await executor.execute(handler('https://hooks.example.test/run'), input(), context())
+    const result = await executor.execute(
+      handler('https://hooks.example.test/run'),
+      input(),
+      context(),
+    )
 
     expect(result).toMatchObject({ outcome: 'failed', output: null })
     expect(result.reason).toMatch(/allowlist.*empty/i)
@@ -73,11 +99,18 @@ describe('hooks v2 HTTP executor', () => {
   it('posts event JSON to a pinned allowed target and preserves the Host header', async () => {
     const local = await server((req, res) => {
       let body = ''
-      req.on('data', (chunk) => { body += String(chunk) })
+      req.on('data', (chunk) => {
+        body += String(chunk)
+      })
       req.on('end', () => {
         const parsed = JSON.parse(body) as { tool_name: string }
         res.writeHead(200, { 'content-type': 'application/json' })
-        res.end(JSON.stringify({ decision: 'allow', reason: `${req.headers.host}:${parsed.tool_name}` }))
+        res.end(
+          JSON.stringify({
+            decision: 'allow',
+            reason: `${req.headers.host}:${parsed.tool_name}`,
+          }),
+        )
       })
     })
     try {
@@ -86,10 +119,19 @@ describe('hooks v2 HTTP executor', () => {
       policy.http.allowedUrlPatterns = ['http://hooks.example.test:*/run']
       policy.http.allowLoopback = true
       const executor = await httpExecutor(async () => ['127.0.0.1'])
-      const result = await executor.execute(handler(url), input(), context({ policy }))
+      const result = await executor.execute(
+        handler(url),
+        input(),
+        context({ policy }),
+      )
 
-      expect(result).toMatchObject({ outcome: 'completed', output: { decision: 'allow' } })
-      expect(String(result.output?.reason)).toContain(`hooks.example.test:${local.port}:write_file`)
+      expect(result).toMatchObject({
+        outcome: 'completed',
+        output: { decision: 'allow' },
+      })
+      expect(String(result.output?.reason)).toContain(
+        `hooks.example.test:${local.port}:write_file`,
+      )
     } finally {
       await local.close()
     }
@@ -99,9 +141,17 @@ describe('hooks v2 HTTP executor', () => {
     const policy = defaultHooksConfigV2().policy
     policy.http.allowedUrlPatterns = ['http://127.0.0.1:*/*']
     const executor = await httpExecutor()
-    const denied = await executor.execute(handler('http://127.0.0.1:9/run'), input(), context({ policy }))
+    const denied = await executor.execute(
+      handler('http://127.0.0.1:9/run'),
+      input(),
+      context({ policy }),
+    )
     policy.http.allowLoopback = true
-    const allowedPastPolicy = await executor.execute(handler('http://127.0.0.1:9/run'), input(), context({ policy }))
+    const allowedPastPolicy = await executor.execute(
+      handler('http://127.0.0.1:9/run'),
+      input(),
+      context({ policy }),
+    )
 
     expect(denied.reason).toMatch(/loopback/i)
     expect(allowedPastPolicy.reason).not.toMatch(/loopback.*denied/i)
@@ -111,10 +161,21 @@ describe('hooks v2 HTTP executor', () => {
     const policy = defaultHooksConfigV2().policy
     policy.http.allowedUrlPatterns = ['http://hooks.example.test/*']
     const privateExecutor = await httpExecutor(async () => ['10.1.2.3'])
-    const mixedExecutor = await httpExecutor(async () => ['93.184.216.34', '169.254.169.254'])
+    const mixedExecutor = await httpExecutor(async () => [
+      '93.184.216.34',
+      '169.254.169.254',
+    ])
 
-    const privateResult = await privateExecutor.execute(handler('http://hooks.example.test/run'), input(), context({ policy }))
-    const mixedResult = await mixedExecutor.execute(handler('http://hooks.example.test/run'), input(), context({ policy }))
+    const privateResult = await privateExecutor.execute(
+      handler('http://hooks.example.test/run'),
+      input(),
+      context({ policy }),
+    )
+    const mixedResult = await mixedExecutor.execute(
+      handler('http://hooks.example.test/run'),
+      input(),
+      context({ policy }),
+    )
 
     expect(privateResult.reason).toMatch(/private|blocked/i)
     expect(mixedResult.reason).toMatch(/blocked/i)
@@ -137,7 +198,11 @@ describe('hooks v2 HTTP executor', () => {
       policy.http.allowedUrlPatterns = ['http://127.0.0.1:*/*']
       policy.http.allowLoopback = true
       const executor = await httpExecutor()
-      const result = await executor.execute(handler(`http://127.0.0.1:${local.port}/redirect`), input(), context({ policy }))
+      const result = await executor.execute(
+        handler(`http://127.0.0.1:${local.port}/redirect`),
+        input(),
+        context({ policy }),
+      )
 
       expect(result.outcome).toBe('failed')
       expect(result.reason).toContain('HTTP 302')
@@ -152,7 +217,11 @@ describe('hooks v2 HTTP executor', () => {
     process.env.HOOK_HTTP_SECRET = 'visible'
     const local = await server((req, res) => {
       res.writeHead(200, { 'content-type': 'application/json' })
-      res.end(JSON.stringify({ reason: `${req.headers['x-secret'] ?? 'missing'}:${req.headers['x-denied'] ?? 'missing'}:${req.headers['x-injected'] ?? 'clean'}` }))
+      res.end(
+        JSON.stringify({
+          reason: `${req.headers['x-secret'] ?? 'missing'}:${req.headers['x-denied'] ?? 'missing'}:${req.headers['x-injected'] ?? 'clean'}`,
+        }),
+      )
     })
     try {
       const policy = defaultHooksConfigV2().policy
@@ -160,13 +229,17 @@ describe('hooks v2 HTTP executor', () => {
       policy.http.allowedEnv = ['HOOK_HTTP_SECRET']
       policy.http.allowLoopback = true
       const executor = await httpExecutor()
-      const result = await executor.execute(handler(`http://127.0.0.1:${local.port}/headers`, {
-        allowedEnv: ['HOOK_HTTP_SECRET'],
-        headers: {
-          'x-secret': '${HOOK_HTTP_SECRET}\r\nx-injected: bad',
-          'x-denied': '${NOT_ALLOWED}',
-        },
-      }), input(), context({ policy }))
+      const result = await executor.execute(
+        handler(`http://127.0.0.1:${local.port}/headers`, {
+          allowedEnv: ['HOOK_HTTP_SECRET'],
+          headers: {
+            'x-secret': '${HOOK_HTTP_SECRET}\r\nx-injected: bad',
+            'x-denied': '${NOT_ALLOWED}',
+          },
+        }),
+        input(),
+        context({ policy }),
+      )
 
       expect(result.output?.reason).toBe('visiblex-injected: bad:missing:clean')
     } finally {
@@ -178,9 +251,18 @@ describe('hooks v2 HTTP executor', () => {
 
   it('accepts empty 2xx, rejects non-2xx, and bounds response bytes', async () => {
     const local = await server((req, res) => {
-      if (req.url === '/empty') { res.writeHead(204); res.end(); return }
-      if (req.url === '/large') { res.writeHead(200); res.end('x'.repeat(1_000)); return }
-      res.writeHead(500); res.end('{"decision":"allow"}')
+      if (req.url === '/empty') {
+        res.writeHead(204)
+        res.end()
+        return
+      }
+      if (req.url === '/large') {
+        res.writeHead(200)
+        res.end('x'.repeat(1_000))
+        return
+      }
+      res.writeHead(500)
+      res.end('{"decision":"allow"}')
     })
     try {
       const policy = defaultHooksConfigV2().policy
@@ -188,13 +270,29 @@ describe('hooks v2 HTTP executor', () => {
       policy.http.allowLoopback = true
       policy.http.maxResponseBytes = 64
       const executor = await httpExecutor()
-      const empty = await executor.execute(handler(`http://127.0.0.1:${local.port}/empty`), input(), context({ policy }))
-      const failed = await executor.execute(handler(`http://127.0.0.1:${local.port}/failed`), input(), context({ policy }))
-      const large = await executor.execute(handler(`http://127.0.0.1:${local.port}/large`), input(), context({ policy }))
+      const empty = await executor.execute(
+        handler(`http://127.0.0.1:${local.port}/empty`),
+        input(),
+        context({ policy }),
+      )
+      const failed = await executor.execute(
+        handler(`http://127.0.0.1:${local.port}/failed`),
+        input(),
+        context({ policy }),
+      )
+      const large = await executor.execute(
+        handler(`http://127.0.0.1:${local.port}/large`),
+        input(),
+        context({ policy }),
+      )
 
       expect(empty).toMatchObject({ outcome: 'completed', output: {} })
       expect(failed).toMatchObject({ outcome: 'failed', output: null })
-      expect(large).toMatchObject({ outcome: 'failed', output: null, stdoutTruncated: true })
+      expect(large).toMatchObject({
+        outcome: 'failed',
+        output: null,
+        stdoutTruncated: true,
+      })
       expect(large.stdoutBytes).toBeGreaterThan(64)
     } finally {
       await local.close()
@@ -208,9 +306,17 @@ describe('hooks v2 HTTP executor', () => {
       policy.http.allowedUrlPatterns = ['http://127.0.0.1:*/*']
       policy.http.allowLoopback = true
       const executor = await httpExecutor()
-      const timedOut = await executor.execute(handler(`http://127.0.0.1:${local.port}/hang`, { timeoutMs: 20 }), input(), context({ policy }))
+      const timedOut = await executor.execute(
+        handler(`http://127.0.0.1:${local.port}/hang`, { timeoutMs: 20 }),
+        input(),
+        context({ policy }),
+      )
       const controller = new AbortController()
-      const running = executor.execute(handler(`http://127.0.0.1:${local.port}/hang`, { timeoutMs: 5_000 }), input(), context({ policy, signal: controller.signal }))
+      const running = executor.execute(
+        handler(`http://127.0.0.1:${local.port}/hang`, { timeoutMs: 5_000 }),
+        input(),
+        context({ policy, signal: controller.signal }),
+      )
       controller.abort()
       const cancelled = await running
 

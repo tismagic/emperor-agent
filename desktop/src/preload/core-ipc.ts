@@ -10,6 +10,7 @@ export interface CoreBridge {
 
 export function createCoreBridge(ipcRenderer: CoreIpcRendererLike): CoreBridge {
   return {
-    invokeCore: (operationKey: string, ...args: unknown[]) => ipcRenderer.invoke(channelForCoreOperation(operationKey), ...args),
+    invokeCore: (operationKey: string, ...args: unknown[]) =>
+      ipcRenderer.invoke(channelForCoreOperation(operationKey), ...args),
   }
 }

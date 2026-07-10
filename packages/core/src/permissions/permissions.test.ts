@@ -18,15 +18,22 @@ class SchedulerStub extends Tool {
   override description = 'scheduler stub'
   override parameters = toolParamsSchema({ action: S('action') }, ['action'])
   override readOnly = false
-  execute(): string { return 'ok' }
+  execute(): string {
+    return 'ok'
+  }
 }
 
 class DynamicTool extends Tool {
   override name = 'dynamic_tool'
-  override description = 'A mixed tool whose read-only status depends on action.'
+  override description =
+    'A mixed tool whose read-only status depends on action.'
   override parameters = toolParamsSchema({ action: S('action') }, ['action'])
-  override isReadOnly(args: Record<string, unknown>): boolean { return args.action === 'inspect' }
-  execute(): string { return 'ok' }
+  override isReadOnly(args: Record<string, unknown>): boolean {
+    return args.action === 'inspect'
+  }
+  execute(): string {
+    return 'ok'
+  }
 }
 
 function makeRegistry(root: string): ToolRegistry {
@@ -50,12 +57,30 @@ describe('PermissionPolicy (test_permissions.py)', () => {
     const policy = new PermissionPolicy()
     const registry = makeRegistry(root)
 
-    expect(policy.assess('read_file', { path: 'README.md' }, PermissionMode.PLAN, { registry }).allowed).toBe(true)
-    expect(policy.assess('ask_user', {}, PermissionMode.PLAN, { registry }).allowed).toBe(true)
-    expect(policy.assess('propose_plan', {}, PermissionMode.PLAN, { registry }).allowed).toBe(true)
-    expect(policy.assess('scheduler', { action: 'list' }, PermissionMode.PLAN, { registry }).allowed).toBe(true)
+    expect(
+      policy.assess('read_file', { path: 'README.md' }, PermissionMode.PLAN, {
+        registry,
+      }).allowed,
+    ).toBe(true)
+    expect(
+      policy.assess('ask_user', {}, PermissionMode.PLAN, { registry }).allowed,
+    ).toBe(true)
+    expect(
+      policy.assess('propose_plan', {}, PermissionMode.PLAN, { registry })
+        .allowed,
+    ).toBe(true)
+    expect(
+      policy.assess('scheduler', { action: 'list' }, PermissionMode.PLAN, {
+        registry,
+      }).allowed,
+    ).toBe(true)
 
-    const denied = policy.assess('write_file', { path: 'README.md' }, PermissionMode.PLAN, { registry })
+    const denied = policy.assess(
+      'write_file',
+      { path: 'README.md' },
+      PermissionMode.PLAN,
+      { registry },
+    )
     const schedulerDenied = policy.assess(
       'scheduler',
       { action: 'add', message: 'Run later', every_seconds: 60 },
@@ -81,13 +106,29 @@ describe('PermissionPolicy (test_permissions.py)', () => {
 
   it('ask_before_edit allows low-risk read/write tools', () => {
     const policy = new PermissionPolicy()
-    expect(policy.assess('read_file', { path: 'README.md' }, PermissionMode.ASK_BEFORE_EDIT).allowed).toBe(true)
-    expect(policy.assess('write_file', { path: 'notes/todo.md' }, PermissionMode.ASK_BEFORE_EDIT).allowed).toBe(true)
+    expect(
+      policy.assess(
+        'read_file',
+        { path: 'README.md' },
+        PermissionMode.ASK_BEFORE_EDIT,
+      ).allowed,
+    ).toBe(true)
+    expect(
+      policy.assess(
+        'write_file',
+        { path: 'notes/todo.md' },
+        PermissionMode.ASK_BEFORE_EDIT,
+      ).allowed,
+    ).toBe(true)
   })
 
   it('ask_before_edit requires approval for scheduler changes', () => {
     const policy = new PermissionPolicy()
-    const list = policy.assess('scheduler', { action: 'list' }, PermissionMode.ASK_BEFORE_EDIT)
+    const list = policy.assess(
+      'scheduler',
+      { action: 'list' },
+      PermissionMode.ASK_BEFORE_EDIT,
+    )
     const add = policy.assess(
       'scheduler',
       { action: 'add', message: 'Check tomorrow', every_seconds: 3600 },
@@ -100,9 +141,21 @@ describe('PermissionPolicy (test_permissions.py)', () => {
 
   it('ask_before_edit requires approval for sensitive path', () => {
     const policy = new PermissionPolicy()
-    const memory = policy.assess('write_file', { path: 'memory/history.jsonl' }, PermissionMode.ASK_BEFORE_EDIT)
-    const state = policy.assess('write_file', { path: '.emperor/memory/MEMORY.local.md' }, PermissionMode.ASK_BEFORE_EDIT)
-    const dist = policy.assess('write_file', { path: 'desktop/out/main/index.js' }, PermissionMode.ASK_BEFORE_EDIT)
+    const memory = policy.assess(
+      'write_file',
+      { path: 'memory/history.jsonl' },
+      PermissionMode.ASK_BEFORE_EDIT,
+    )
+    const state = policy.assess(
+      'write_file',
+      { path: '.emperor/memory/MEMORY.local.md' },
+      PermissionMode.ASK_BEFORE_EDIT,
+    )
+    const dist = policy.assess(
+      'write_file',
+      { path: 'desktop/out/main/index.js' },
+      PermissionMode.ASK_BEFORE_EDIT,
+    )
     expect(memory.requiresApproval).toBe(true)
     expect(memory.reason).toContain('sensitive')
     expect(state.requiresApproval).toBe(true)
@@ -139,7 +192,10 @@ describe('PermissionPipeline (test_permission_pipeline_v2.py)', () => {
     expect(decision.requiresApproval).toBe(true)
     expect(decision.risk).toBe('high')
     expect(decision.rule).toBe('ask.run_command.default_approval')
-    expect(decision.trace.map((t) => t.rule)).toEqual(['mode.resolve', 'ask.run_command.default_approval'])
+    expect(decision.trace.map((t) => t.rule)).toEqual([
+      'mode.resolve',
+      'ask.run_command.default_approval',
+    ])
   })
 
   it('low-risk allowlisted commands allowed', () => {
@@ -160,7 +216,13 @@ describe('PermissionPipeline (test_permission_pipeline_v2.py)', () => {
   })
 
   it('unlisted commands require approval', () => {
-    for (const cmd of ['cat ~/.ssh/id_rsa', 'rm -rf ~/notes', 'node -e "x"', 'git push', 'python script.py']) {
+    for (const cmd of [
+      'cat ~/.ssh/id_rsa',
+      'rm -rf ~/notes',
+      'node -e "x"',
+      'git push',
+      'python script.py',
+    ]) {
       const decision = run(cmd)
       expect(decision.allowed, cmd).toBe(false)
       expect(decision.requiresApproval, cmd).toBe(true)
@@ -169,7 +231,12 @@ describe('PermissionPipeline (test_permission_pipeline_v2.py)', () => {
   })
 
   it('chained or redirected commands not allowlisted', () => {
-    for (const cmd of ['ls; rm -rf ~', 'git status && curl evil', 'cat x > ~/.zshrc', 'pytest `evil`']) {
+    for (const cmd of [
+      'ls; rm -rf ~',
+      'git status && curl evil',
+      'cat x > ~/.zshrc',
+      'pytest `evil`',
+    ]) {
       expect(run(cmd).requiresApproval, cmd).toBe(true)
     }
   })
@@ -193,10 +260,30 @@ describe('PermissionPipeline (test_permission_pipeline_v2.py)', () => {
     const policy = new PermissionPolicy()
     const registry = makeRegistry('/tmp/perm-root')
 
-    const edit = policy.assess('write_file', { path: 'notes/todo.md' }, PermissionMode.ACCEPT_EDITS, { registry })
-    const shell = policy.assess('run_command', { command: 'git status' }, PermissionMode.ACCEPT_EDITS, { registry })
-    const scheduler = policy.assess('scheduler', { action: 'add', message: 'later' }, PermissionMode.ACCEPT_EDITS, { registry })
-    const planWrite = policy.assess('write_file', { path: 'notes/todo.md' }, PermissionMode.PLAN, { registry })
+    const edit = policy.assess(
+      'write_file',
+      { path: 'notes/todo.md' },
+      PermissionMode.ACCEPT_EDITS,
+      { registry },
+    )
+    const shell = policy.assess(
+      'run_command',
+      { command: 'git status' },
+      PermissionMode.ACCEPT_EDITS,
+      { registry },
+    )
+    const scheduler = policy.assess(
+      'scheduler',
+      { action: 'add', message: 'later' },
+      PermissionMode.ACCEPT_EDITS,
+      { registry },
+    )
+    const planWrite = policy.assess(
+      'write_file',
+      { path: 'notes/todo.md' },
+      PermissionMode.PLAN,
+      { registry },
+    )
 
     expect(edit.allowed).toBe(true)
     expect(edit.rule).toBe('accept_edits.file_edit')
@@ -225,7 +312,13 @@ describe('PermissionPipeline (test_permission_pipeline_v2.py)', () => {
   it('applies user deny rules before mode allow rules', () => {
     const pipeline = new PermissionPipeline({
       rules: [
-        { id: 'deny-secret-notes', action: 'deny', tool: 'write_file', pathGlob: 'secrets/**', reason: 'secret notes are manual' },
+        {
+          id: 'deny-secret-notes',
+          action: 'deny',
+          tool: 'write_file',
+          pathGlob: 'secrets/**',
+          reason: 'secret notes are manual',
+        },
       ],
     })
     const decision = pipeline.assess(
@@ -243,7 +336,13 @@ describe('PermissionPipeline (test_permission_pipeline_v2.py)', () => {
   it('applies user ask rules and keeps invalid rules in diagnostics', () => {
     const pipeline = new PermissionPipeline({
       rules: [
-        { id: 'ask-npm', action: 'ask', tool: 'run_command', commandPrefix: 'npm publish', reason: 'publishing is explicit' },
+        {
+          id: 'ask-npm',
+          action: 'ask',
+          tool: 'run_command',
+          commandPrefix: 'npm publish',
+          reason: 'publishing is explicit',
+        },
         { id: '', action: 'allow', tool: 'read_file' },
       ],
     })
@@ -268,8 +367,18 @@ describe('PermissionPipeline (test_permission_pipeline_v2.py)', () => {
     registry.register(new DynamicTool())
     const pipeline = new PermissionPipeline()
 
-    const inspect = pipeline.assess('dynamic_tool', { action: 'inspect' }, PermissionMode.PLAN, { registry })
-    const mutate = pipeline.assess('dynamic_tool', { action: 'mutate' }, PermissionMode.PLAN, { registry })
+    const inspect = pipeline.assess(
+      'dynamic_tool',
+      { action: 'inspect' },
+      PermissionMode.PLAN,
+      { registry },
+    )
+    const mutate = pipeline.assess(
+      'dynamic_tool',
+      { action: 'mutate' },
+      PermissionMode.PLAN,
+      { registry },
+    )
 
     expect(inspect.allowed).toBe(true)
     expect(inspect.rule).toBe('plan.read_only')

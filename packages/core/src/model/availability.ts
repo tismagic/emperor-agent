@@ -1,4 +1,9 @@
-import { activeEntry, type ModelConfig, type ModelEntry, type ProviderConfig } from '../config/model-config'
+import {
+  activeEntry,
+  type ModelConfig,
+  type ModelEntry,
+  type ProviderConfig,
+} from '../config/model-config'
 import { ModelConfigurationError } from '../errors'
 import { findByName } from '../providers/registry'
 
@@ -18,17 +23,29 @@ export function modelAvailability(config: ModelConfig): ModelAvailability {
 
   const entry = activeEntry(config) ?? null
   if (!entry) {
-    return unavailable('当前没有激活的模型条目。请到模型配置中选择或添加一个模型。', null, null)
+    return unavailable(
+      '当前没有激活的模型条目。请到模型配置中选择或添加一个模型。',
+      null,
+      null,
+    )
   }
   const providerName = String(entry.provider || '').trim() || null
   const entryName = String(entry.name || '').trim() || null
   const mainModelId = String(entry.mainModelId || entry.id || '').trim()
   if (!mainModelId) {
-    return unavailable(`模型条目「${entryName || '未命名'}」缺少 Main Model ID。请先补全模型配置。`, providerName, entryName)
+    return unavailable(
+      `模型条目「${entryName || '未命名'}」缺少 Main Model ID。请先补全模型配置。`,
+      providerName,
+      entryName,
+    )
   }
 
   const spec = findByName(providerName) ?? findByName('custom')
-  if (!spec?.isLocal && !spec?.isOauth && !credentialFor(entry, config.providers[spec?.name || providerName || ''])) {
+  if (
+    !spec?.isLocal &&
+    !spec?.isOauth &&
+    !credentialFor(entry, config.providers[spec?.name || providerName || ''])
+  ) {
     return unavailable(
       `模型条目「${entryName || mainModelId}」缺少 API Key。请到模型配置中填写 ${spec?.displayName || providerName || 'Provider'} 的 API Key。`,
       spec?.name || providerName,
@@ -46,12 +63,18 @@ export function modelAvailability(config: ModelConfig): ModelAvailability {
   }
 }
 
-export function assertModelAvailable(availability: ModelAvailability | null | undefined): void {
+export function assertModelAvailable(
+  availability: ModelAvailability | null | undefined,
+): void {
   if (!availability || availability.usable) return
   throw new ModelConfigurationError(availability.message)
 }
 
-function unavailable(message: string, provider: string | null, entryName: string | null): ModelAvailability {
+function unavailable(
+  message: string,
+  provider: string | null,
+  entryName: string | null,
+): ModelAvailability {
   return {
     usable: false,
     code: 'model_configuration_required',
@@ -62,6 +85,9 @@ function unavailable(message: string, provider: string | null, entryName: string
   }
 }
 
-function credentialFor(entry: ModelEntry, provider: ProviderConfig | null | undefined): string {
+function credentialFor(
+  entry: ModelEntry,
+  provider: ProviderConfig | null | undefined,
+): string {
   return String(entry.apiKey || provider?.apiKey || '').trim()
 }

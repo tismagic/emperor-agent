@@ -1,10 +1,34 @@
 import { createHash } from 'node:crypto'
-import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
+import {
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  statSync,
+  writeFileSync,
+} from 'node:fs'
 import { join, relative, sep } from 'node:path'
-import { extractDocumentText, type PdfTextExtractor, SIDECAR_SUFFIX } from './extract'
+import {
+  extractDocumentText,
+  type PdfTextExtractor,
+  SIDECAR_SUFFIX,
+} from './extract'
 
-export const ALLOWED_IMAGE_MIMES = new Set(['image/png', 'image/jpeg', 'image/jpg', 'image/webp', 'image/gif'])
-export const ALLOWED_DOC_MIMES = new Set(['application/pdf', 'application/json', 'text/csv', 'text/plain', 'text/markdown', 'text/x-markdown'])
+export const ALLOWED_IMAGE_MIMES = new Set([
+  'image/png',
+  'image/jpeg',
+  'image/jpg',
+  'image/webp',
+  'image/gif',
+])
+export const ALLOWED_DOC_MIMES = new Set([
+  'application/pdf',
+  'application/json',
+  'text/csv',
+  'text/plain',
+  'text/markdown',
+  'text/x-markdown',
+])
 
 export const MAX_IMAGE_BYTES = 10 * 1024 * 1024
 export const MAX_DOC_BYTES = 25 * 1024 * 1024
@@ -59,15 +83,25 @@ export class AttachmentStore {
     mkdirSync(this.base, { recursive: true })
   }
 
-  save(opts: { raw: Buffer | Uint8Array; name: string; mime: string }): AttachmentRef {
+  save(opts: {
+    raw: Buffer | Uint8Array
+    name: string
+    mime: string
+  }): AttachmentRef {
     const raw = Buffer.from(opts.raw)
-    const mime = String(opts.mime || '').toLowerCase().trim()
+    const mime = String(opts.mime || '')
+      .toLowerCase()
+      .trim()
     const isImage = ALLOWED_IMAGE_MIMES.has(mime)
     const isDoc = ALLOWED_DOC_MIMES.has(mime)
-    if (!isImage && !isDoc) throw new Error(`unsupported mime: ${JSON.stringify(mime)}`)
+    if (!isImage && !isDoc)
+      throw new Error(`unsupported mime: ${JSON.stringify(mime)}`)
 
     const limit = isImage ? MAX_IMAGE_BYTES : MAX_DOC_BYTES
-    if (raw.length > limit) throw new Error(`file too large: ${raw.length} bytes (limit ${limit} for ${isImage ? 'image' : 'document'})`)
+    if (raw.length > limit)
+      throw new Error(
+        `file too large: ${raw.length} bytes (limit ${limit} for ${isImage ? 'image' : 'document'})`,
+      )
 
     const hash8 = createHash('sha256').update(raw).digest('hex').slice(0, 8)
     const month = utc8Month(this.now())
@@ -76,16 +110,24 @@ export class AttachmentStore {
     const relDir = ['memory', 'attachments', month].join('/')
     const absDir = join(this.root, 'memory', 'attachments', month)
     mkdirSync(absDir, { recursive: true })
-    const fileName = safe.toLowerCase().endsWith(`.${ext}`) ? `${hash8}-${safe}` : `${hash8}-${safe}.${ext}`
+    const fileName = safe.toLowerCase().endsWith(`.${ext}`)
+      ? `${hash8}-${safe}`
+      : `${hash8}-${safe}.${ext}`
     const absPath = join(absDir, fileName)
     const relPath = `${relDir}/${fileName}`
     if (!existsSync(absPath)) writeFileSync(absPath, raw)
 
     let textRelPath: string | null = null
     let hasText = false
-    const kind: AttachmentKind = isImage ? 'image' : mime === 'application/pdf' ? 'document' : 'text'
+    const kind: AttachmentKind = isImage
+      ? 'image'
+      : mime === 'application/pdf'
+        ? 'document'
+        : 'text'
     if (!isImage) {
-      const text = extractDocumentText(raw, mime, { pdfTextExtractor: this.pdfTextExtractor })
+      const text = extractDocumentText(raw, mime, {
+        pdfTextExtractor: this.pdfTextExtractor,
+      })
       if (text && text.trim()) {
         const sidecarName = fileName + SIDECAR_SUFFIX
         writeFileSync(join(absDir, sidecarName), text, 'utf8')
@@ -125,10 +167,18 @@ export class AttachmentStore {
     const names = readDirSafe(monthDir).sort()
     for (const name of names) {
       if (!name.startsWith(`${hash8}-`)) continue
-      if (name.endsWith(SIDECAR_SUFFIX) && existsSync(join(monthDir, name.slice(0, -SIDECAR_SUFFIX.length)))) continue
+      if (
+        name.endsWith(SIDECAR_SUFFIX) &&
+        existsSync(join(monthDir, name.slice(0, -SIDECAR_SUFFIX.length)))
+      )
+        continue
       const path = join(monthDir, name)
       let isFile = false
-      try { isFile = statSync(path).isFile() } catch { isFile = false }
+      try {
+        isFile = statSync(path).isFile()
+      } catch {
+        isFile = false
+      }
       if (!isFile) continue
       const ref = this.buildRefFromPath(attId, path)
       this.cachePut(ref)
@@ -163,8 +213,15 @@ export class AttachmentStore {
     const ext = (absPath.split('.').pop() ?? '').toLowerCase()
     const mime = mimeFromExt(ext) ?? 'application/octet-stream'
     const isImage = ALLOWED_IMAGE_MIMES.has(mime)
-    const kind: AttachmentKind = isImage ? 'image' : mime === 'application/pdf' ? 'document' : 'text'
-    const name = absPath.split(/[\\/]/).pop()!.replace(/^[0-9a-f]{8}-/, '')
+    const kind: AttachmentKind = isImage
+      ? 'image'
+      : mime === 'application/pdf'
+        ? 'document'
+        : 'text'
+    const name = absPath
+      .split(/[\\/]/)
+      .pop()!
+      .replace(/^[0-9a-f]{8}-/, '')
     return {
       id: attId,
       name,
@@ -192,7 +249,9 @@ export class AttachmentStore {
 export function safeName(name: string): string {
   if (!name) return 'unnamed'
   let cleaned = name.replace(/[\\/]/g, '_')
-  cleaned = Array.from(cleaned).filter((ch) => ch === '\t' || ch.codePointAt(0)! >= 32).join('')
+  cleaned = Array.from(cleaned)
+    .filter((ch) => ch === '\t' || ch.codePointAt(0)! >= 32)
+    .join('')
   cleaned = cleaned.trim().replace(/^[. ]+|[. ]+$/g, '')
   if (!cleaned) return 'unnamed'
   if (cleaned.length > 80) {
@@ -200,7 +259,10 @@ export function safeName(name: string): string {
     if (idx > 0) {
       const stem = cleaned.slice(0, idx)
       const ext = cleaned.slice(idx + 1)
-      cleaned = ext.length <= 8 ? `${stem.slice(0, 80 - ext.length - 1)}.${ext}` : cleaned.slice(0, 80)
+      cleaned =
+        ext.length <= 8
+          ? `${stem.slice(0, 80 - ext.length - 1)}.${ext}`
+          : cleaned.slice(0, 80)
     } else {
       cleaned = cleaned.slice(0, 80)
     }
@@ -212,7 +274,9 @@ export function extFromName(name: string): string | null {
   const idx = name.lastIndexOf('.')
   if (idx < 0) return null
   const ext = name.slice(idx + 1).toLowerCase()
-  return ext.length >= 1 && ext.length <= 8 && /^[a-z0-9]+$/.test(ext) ? ext : null
+  return ext.length >= 1 && ext.length <= 8 && /^[a-z0-9]+$/.test(ext)
+    ? ext
+    : null
 }
 
 export function mimeFromExt(ext: string): string | null {

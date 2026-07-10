@@ -1,4 +1,8 @@
-import type { ControlInteraction, ControlPayload, ControlQuestion } from '../../types'
+import type {
+  ControlInteraction,
+  ControlPayload,
+  ControlQuestion,
+} from '../../types'
 
 export interface AskAnswerDraft {
   choice?: string
@@ -21,26 +25,37 @@ export interface AskHistoryPresentation {
   answers: AskHistoryAnswer[]
 }
 
-export function activeAskInteraction(control?: ControlPayload | null): ControlInteraction | null {
+export function activeAskInteraction(
+  control?: ControlPayload | null,
+): ControlInteraction | null {
   const pending = control?.pending
-  if (!pending || pending.kind !== 'ask' || pending.status !== 'waiting') return null
+  if (!pending || pending.kind !== 'ask' || pending.status !== 'waiting')
+    return null
   return pending
 }
 
-export function ensureAskDraft(drafts: AskAnswerDrafts, questionId: string): AskAnswerDraft {
+export function ensureAskDraft(
+  drafts: AskAnswerDrafts,
+  questionId: string,
+): AskAnswerDraft {
   drafts[questionId] ||= { choice: '', freeform: '' }
   return drafts[questionId]
 }
 
 export function askQuestionCanContinue(answer?: AskAnswerDraft): boolean {
-  return Boolean((answer?.choice || '').trim() || (answer?.freeform || '').trim())
+  return Boolean(
+    (answer?.choice || '').trim() || (answer?.freeform || '').trim(),
+  )
 }
 
 export function askSubmitLabel(index: number, total: number): string {
   return index >= total - 1 ? '提交' : '继续'
 }
 
-export function toPlainAskAnswers(questions: ControlQuestion[] = [], drafts: AskAnswerDrafts = {}): Record<string, { choice: string; freeform: string }> {
+export function toPlainAskAnswers(
+  questions: ControlQuestion[] = [],
+  drafts: AskAnswerDrafts = {},
+): Record<string, { choice: string; freeform: string }> {
   const out: Record<string, { choice: string; freeform: string }> = {}
   for (const question of questions) {
     const draft = drafts[question.id] || {}
@@ -52,11 +67,19 @@ export function toPlainAskAnswers(questions: ControlQuestion[] = [], drafts: Ask
   return out
 }
 
-export function allAskQuestionsAnswered(questions: ControlQuestion[] = [], drafts: AskAnswerDrafts = {}): boolean {
-  return questions.length > 0 && questions.every((question) => askQuestionCanContinue(drafts[question.id]))
+export function allAskQuestionsAnswered(
+  questions: ControlQuestion[] = [],
+  drafts: AskAnswerDrafts = {},
+): boolean {
+  return (
+    questions.length > 0 &&
+    questions.every((question) => askQuestionCanContinue(drafts[question.id]))
+  )
 }
 
-export function askHistoryPresentation(interaction: ControlInteraction): AskHistoryPresentation {
+export function askHistoryPresentation(
+  interaction: ControlInteraction,
+): AskHistoryPresentation {
   const questions = interaction.questions || []
   const count = questions.length
   const status = String(interaction.status || '')
@@ -99,11 +122,16 @@ export function askHistoryPresentation(interaction: ControlInteraction): AskHist
   }
 }
 
-function answerSummaries(questions: ControlQuestion[], answers: Record<string, unknown>): AskHistoryAnswer[] {
+function answerSummaries(
+  questions: ControlQuestion[],
+  answers: Record<string, unknown>,
+): AskHistoryAnswer[] {
   return questions.flatMap((question) => {
     const raw = answers[question.id]
     const value = answerValue(raw)
-    return value ? [{ header: question.header, question: question.question, value }] : []
+    return value
+      ? [{ header: question.header, question: question.question, value }]
+      : []
   })
 }
 

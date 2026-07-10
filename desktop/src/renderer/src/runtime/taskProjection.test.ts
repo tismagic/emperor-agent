@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest'
-import { applyTaskEvent, taskForPlanStep, type TaskProjection } from './handlers/tasks'
+import {
+  applyTaskEvent,
+  taskForPlanStep,
+  type TaskProjection,
+} from './handlers/tasks'
 
 describe('task projection', () => {
   it('creates and completes a task from replayed events', () => {
@@ -50,7 +54,9 @@ describe('task projection', () => {
       ],
     }
 
-    expect(taskForPlanStep(projection.tasks, 'plan_1', 'step_1')?.id).toBe('planstep_1')
+    expect(taskForPlanStep(projection.tasks, 'plan_1', 'step_1')?.id).toBe(
+      'planstep_1',
+    )
     expect(taskForPlanStep(projection.tasks, 'plan_1', 'step_2')).toBeNull()
   })
 })

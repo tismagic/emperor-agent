@@ -10,7 +10,10 @@ function tmp(prefix: string): string {
   return mkdtempSync(join(tmpdir(), prefix))
 }
 
-function seedPlan(store: PlanStore, opts: { status?: string; stepStatus?: string } = {}) {
+function seedPlan(
+  store: PlanStore,
+  opts: { status?: string; stepStatus?: string } = {},
+) {
   const record = makePlanRecord({
     id: 'plan_ctx',
     title: 'Throttle plan',
@@ -19,8 +22,16 @@ function seedPlan(store: PlanStore, opts: { status?: string; stepStatus?: string
     createdAt: 1,
     updatedAt: 1,
     steps: [
-      makeStep({ id: 'step_1', title: 'do work', status: opts.stepStatus ?? PlanStepStatus.ACTIVE }),
-      makeStep({ id: 'step_2', title: 'verify', status: PlanStepStatus.PENDING }),
+      makeStep({
+        id: 'step_1',
+        title: 'do work',
+        status: opts.stepStatus ?? PlanStepStatus.ACTIVE,
+      }),
+      makeStep({
+        id: 'step_2',
+        title: 'verify',
+        status: PlanStepStatus.PENDING,
+      }),
     ],
   })
   store.save(record)
@@ -75,7 +86,10 @@ describe('PlanContextBuilder throttling (Wave4.4)', () => {
 
   it('adds a one-shot approval notice the first time it sees a freshly approved plan', () => {
     const store = new PlanStore(tmp('emperor-plan-ctx-approved-'))
-    seedPlan(store, { status: PlanStatus.APPROVED, stepStatus: PlanStepStatus.PENDING })
+    seedPlan(store, {
+      status: PlanStatus.APPROVED,
+      stepStatus: PlanStepStatus.PENDING,
+    })
     const builder = new PlanContextBuilder(store)
 
     const first = builder.messageFor([])!

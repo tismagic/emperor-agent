@@ -1,19 +1,29 @@
 <script setup lang="ts">
-import { computed, getCurrentInstance, nextTick, onBeforeUnmount, reactive, ref } from 'vue'
+import {
+  computed,
+  getCurrentInstance,
+  nextTick,
+  onBeforeUnmount,
+  reactive,
+  ref,
+} from 'vue'
 import type { DiscoveredModel } from '../../../types'
 import { actionIcons } from '../../../icons'
 import { filterModelOptions, normalizeModelOptions } from './modelPickerModel'
 
-const props = withDefaults(defineProps<{
-  modelValue: string
-  options: DiscoveredModel[]
-  label: string
-  placeholder?: string
-  loading?: boolean
-}>(), {
-  placeholder: '',
-  loading: false,
-})
+const props = withDefaults(
+  defineProps<{
+    modelValue: string
+    options: DiscoveredModel[]
+    label: string
+    placeholder?: string
+    loading?: boolean
+  }>(),
+  {
+    placeholder: '',
+    loading: false,
+  },
+)
 
 const emit = defineEmits<{
   'update:modelValue': [value: string]
@@ -33,11 +43,17 @@ const popoverStyle = reactive({
   maxHeight: '260px',
 })
 
-const normalizedOptions = computed(() => normalizeModelOptions(props.options, props.modelValue))
-const visibleOptions = computed(() => filterModelOptions(normalizedOptions.value, query.value))
-const activeDescendant = computed(() => activeIndex.value >= 0
-  ? `${listboxId}-option-${activeIndex.value}`
-  : undefined)
+const normalizedOptions = computed(() =>
+  normalizeModelOptions(props.options, props.modelValue),
+)
+const visibleOptions = computed(() =>
+  filterModelOptions(normalizedOptions.value, query.value),
+)
+const activeDescendant = computed(() =>
+  activeIndex.value >= 0
+    ? `${listboxId}-option-${activeIndex.value}`
+    : undefined,
+)
 
 function updatePopoverPosition() {
   const target = input.value
@@ -49,7 +65,10 @@ function updatePopoverPosition() {
   const spaceBelow = viewportHeight - rect.bottom - gap
   const spaceAbove = rect.top - gap
   const openAbove = spaceBelow < 180 && spaceAbove > spaceBelow
-  const available = Math.max(120, Math.min(desiredHeight, openAbove ? spaceAbove : spaceBelow))
+  const available = Math.max(
+    120,
+    Math.min(desiredHeight, openAbove ? spaceAbove : spaceBelow),
+  )
 
   popoverStyle.left = `${Math.max(8, Math.min(rect.left, window.innerWidth - rect.width - 8))}px`
   popoverStyle.width = `${Math.max(220, Math.min(rect.width, window.innerWidth - 16))}px`
@@ -91,7 +110,11 @@ function closePicker() {
 
 function onDocumentPointerDown(event: PointerEvent) {
   const target = event.target as Node | null
-  if (target && (input.value?.contains(target) || listbox.value?.contains(target))) return
+  if (
+    target &&
+    (input.value?.contains(target) || listbox.value?.contains(target))
+  )
+    return
   closePicker()
 }
 
@@ -101,6 +124,11 @@ function onInput(event: Event) {
   activeIndex.value = -1
   emit('update:modelValue', value)
   void openPicker(false)
+}
+
+function onToggleClick() {
+  void openPicker(true)
+  input.value?.focus()
 }
 
 function selectOption(index: number) {
@@ -117,7 +145,12 @@ function onKeydown(event: KeyboardEvent) {
     closePicker()
     return
   }
-  if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp' && event.key !== 'Enter') return
+  if (
+    event.key !== 'ArrowDown' &&
+    event.key !== 'ArrowUp' &&
+    event.key !== 'Enter'
+  )
+    return
 
   if (!open.value) {
     if (event.key === 'Enter') return
@@ -137,11 +170,17 @@ function onKeydown(event: KeyboardEvent) {
   event.preventDefault()
   if (!visibleOptions.value.length) return
   const delta = event.key === 'ArrowDown' ? 1 : -1
-  activeIndex.value = activeIndex.value < 0
-    ? (delta > 0 ? 0 : visibleOptions.value.length - 1)
-    : (activeIndex.value + delta + visibleOptions.value.length) % visibleOptions.value.length
+  activeIndex.value =
+    activeIndex.value < 0
+      ? delta > 0
+        ? 0
+        : visibleOptions.value.length - 1
+      : (activeIndex.value + delta + visibleOptions.value.length) %
+        visibleOptions.value.length
   void nextTick(() => {
-    document.getElementById(`${listboxId}-option-${activeIndex.value}`)?.scrollIntoView({ block: 'nearest' })
+    document
+      .getElementById(`${listboxId}-option-${activeIndex.value}`)
+      ?.scrollIntoView({ block: 'nearest' })
   })
 }
 
@@ -175,7 +214,7 @@ onBeforeUnmount(removePositionListeners)
         :aria-label="`展开${label}列表`"
         :aria-expanded="open"
         @pointerdown.prevent
-        @click="openPicker(true); input?.focus()"
+        @click="onToggleClick"
       >
         <component :is="actionIcons.caretDown" :size="15" />
       </button>
@@ -200,18 +239,27 @@ onBeforeUnmount(removePositionListeners)
           :key="`${option.id}-${option.custom ? 'custom' : 'remote'}`"
           type="button"
           class="model-picker-option"
-          :class="{ active: index === activeIndex, selected: option.id === modelValue }"
+          :class="{
+            active: index === activeIndex,
+            selected: option.id === modelValue,
+          }"
           role="option"
           :aria-selected="option.id === modelValue"
           @pointerenter="activeIndex = index"
           @pointerdown.prevent="selectOption(index)"
         >
           <span>{{ option.id }}</span>
-          <small>{{ option.custom ? '自定义' : (option.ownedBy || '可用模型') }}</small>
+          <small>{{
+            option.custom ? '自定义' : option.ownedBy || '可用模型'
+          }}</small>
         </button>
       </template>
       <div v-else class="model-picker-state">
-        {{ options.length ? '没有匹配的模型，可继续手动填写' : '尚未获取模型，可手动填写 Model ID' }}
+        {{
+          options.length
+            ? '没有匹配的模型，可继续手动填写'
+            : '尚未获取模型，可手动填写 Model ID'
+        }}
       </div>
     </div>
   </Teleport>

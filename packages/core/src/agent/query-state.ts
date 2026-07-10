@@ -51,7 +51,9 @@ export interface QueryTransition {
   terminalReply: string | null
 }
 
-function transition(p: Partial<QueryTransition> & { reason: string; nextState: QueryState }): QueryTransition {
+function transition(
+  p: Partial<QueryTransition> & { reason: string; nextState: QueryState },
+): QueryTransition {
   return {
     reason: p.reason,
     nextState: p.nextState,
@@ -62,25 +64,43 @@ function transition(p: Partial<QueryTransition> & { reason: string; nextState: Q
 }
 
 export function beginIteration(state: QueryState): QueryTransition {
-  const nextState = { ...state, turnCount: state.turnCount + 1, transition: TransitionReason.ITERATION }
+  const nextState = {
+    ...state,
+    turnCount: state.turnCount + 1,
+    transition: TransitionReason.ITERATION,
+  }
   return transition({ reason: TransitionReason.ITERATION, nextState })
 }
 
 export function maxTurnsReached(state: QueryState): QueryTransition | null {
   if (state.maxTurns === null || state.turnCount < state.maxTurns) return null
   const reply = `（达到 max_turns=${state.maxTurns} 上限，未办妥；history 中已有部分进展）`
-  const nextState = { ...state, transition: TransitionReason.MAX_TURNS, completed: true }
-  return transition({ reason: TransitionReason.MAX_TURNS, nextState, terminalReply: reply })
+  const nextState = {
+    ...state,
+    transition: TransitionReason.MAX_TURNS,
+    completed: true,
+  }
+  return transition({
+    reason: TransitionReason.MAX_TURNS,
+    nextState,
+    terminalReply: reply,
+  })
 }
 
 const NEAR_MAX_TURNS_MIN_LIMIT = 5
 
 export function nearMaxTurns(state: QueryState): QueryTransition | null {
-  if (state.maxTurns === null || state.maxTurns < NEAR_MAX_TURNS_MIN_LIMIT) return null
-  if (state.finalWarningIssued || state.turnCount !== state.maxTurns - 2) return null
+  if (state.maxTurns === null || state.maxTurns < NEAR_MAX_TURNS_MIN_LIMIT)
+    return null
+  if (state.finalWarningIssued || state.turnCount !== state.maxTurns - 2)
+    return null
   const content =
     '（接近回合上限，剩余轮次有限。请停止扩展新任务，收束当前工作，并在下一条回复输出最终交付报告：已完成事项、未完成事项、验证命令与结果、恢复入口。）'
-  const nextState = { ...state, transition: TransitionReason.NEAR_MAX_TURNS, finalWarningIssued: true }
+  const nextState = {
+    ...state,
+    transition: TransitionReason.NEAR_MAX_TURNS,
+    finalWarningIssued: true,
+  }
   return transition({
     reason: TransitionReason.NEAR_MAX_TURNS,
     nextState,
@@ -89,43 +109,91 @@ export function nearMaxTurns(state: QueryState): QueryTransition | null {
 }
 
 export function toolFollowup(state: QueryState): QueryTransition {
-  const nextState = { ...state, transition: TransitionReason.TOOL_FOLLOWUP, emptyRetries: 0, lengthRetries: 0 }
+  const nextState = {
+    ...state,
+    transition: TransitionReason.TOOL_FOLLOWUP,
+    emptyRetries: 0,
+    lengthRetries: 0,
+  }
   return transition({ reason: TransitionReason.TOOL_FOLLOWUP, nextState })
 }
 
-export function emptyResponseRetry(state: QueryState, opts: { maxRetries: number }): QueryTransition | null {
+export function emptyResponseRetry(
+  state: QueryState,
+  opts: { maxRetries: number },
+): QueryTransition | null {
   if (state.emptyRetries >= opts.maxRetries) return null
   const attempt = state.emptyRetries + 1
-  const nextState = { ...state, transition: TransitionReason.EMPTY_RESPONSE_RETRY, emptyRetries: attempt }
+  const nextState = {
+    ...state,
+    transition: TransitionReason.EMPTY_RESPONSE_RETRY,
+    emptyRetries: attempt,
+  }
   return transition({
     reason: TransitionReason.EMPTY_RESPONSE_RETRY,
     nextState,
-    messages: [{ role: 'user', content: '（上一轮无任何输出，请继续推进或给出最终答复）' }],
-    events: [{ event: 'tool_error', name: '_empty_response', message: `empty response, retry ${attempt}/${opts.maxRetries}` }],
+    messages: [
+      {
+        role: 'user',
+        content: '（上一轮无任何输出，请继续推进或给出最终答复）',
+      },
+    ],
+    events: [
+      {
+        event: 'tool_error',
+        name: '_empty_response',
+        message: `empty response, retry ${attempt}/${opts.maxRetries}`,
+      },
+    ],
   })
 }
 
-export function lengthRecovery(state: QueryState, reply: string, opts: { maxRetries: number }): QueryTransition | null {
+export function lengthRecovery(
+  state: QueryState,
+  reply: string,
+  opts: { maxRetries: number },
+): QueryTransition | null {
   if (state.lengthRetries >= opts.maxRetries) return null
   const attempt = state.lengthRetries + 1
-  const nextState = { ...state, transition: TransitionReason.LENGTH_RECOVERY, lengthRetries: attempt }
+  const nextState = {
+    ...state,
+    transition: TransitionReason.LENGTH_RECOVERY,
+    lengthRetries: attempt,
+  }
   const messages: Array<Record<string, unknown>> = []
   if (reply) {
-    const assistantMessage: Record<string, unknown> = { role: 'assistant', content: reply }
+    const assistantMessage: Record<string, unknown> = {
+      role: 'assistant',
+      content: reply,
+    }
     if (state.turnId) assistantMessage.turn_id = state.turnId
     messages.push(assistantMessage)
   }
-  messages.push({ role: 'user', content: '（上一轮被 max_tokens 截断，请从中断处续写，不要重复已输出内容）' })
+  messages.push({
+    role: 'user',
+    content: '（上一轮被 max_tokens 截断，请从中断处续写，不要重复已输出内容）',
+  })
   return transition({
     reason: TransitionReason.LENGTH_RECOVERY,
     nextState,
     messages,
-    events: [{ event: 'tool_error', name: '_length_truncation', message: `truncated, continuing ${attempt}/${opts.maxRetries}` }],
+    events: [
+      {
+        event: 'tool_error',
+        name: '_length_truncation',
+        message: `truncated, continuing ${attempt}/${opts.maxRetries}`,
+      },
+    ],
   })
 }
 
-export function todoFollowup(state: QueryState, opts: { unfinishedText: string; unfinishedCount: number }): QueryTransition {
-  const content = '差事尚未办妥，以下任务仍未完成，请按计划继续执行，并按规矩更新 todolist 状态：\n' + opts.unfinishedText
+export function todoFollowup(
+  state: QueryState,
+  opts: { unfinishedText: string; unfinishedCount: number },
+): QueryTransition {
+  const content =
+    '差事尚未办妥，以下任务仍未完成，请按计划继续执行，并按规矩更新 todolist 状态：\n' +
+    opts.unfinishedText
   const nextState = { ...state, transition: TransitionReason.TODO_CONTINUATION }
   return transition({
     reason: TransitionReason.TODO_CONTINUATION,
@@ -135,12 +203,19 @@ export function todoFollowup(state: QueryState, opts: { unfinishedText: string; 
   })
 }
 
-export function markPaused(state: QueryState, reason: TransitionReason): QueryTransition {
+export function markPaused(
+  state: QueryState,
+  reason: TransitionReason,
+): QueryTransition {
   const nextState = { ...state, transition: reason, paused: true }
   return transition({ reason, nextState })
 }
 
 export function markCompleted(state: QueryState): QueryTransition {
-  const nextState = { ...state, transition: TransitionReason.COMPLETED, completed: true }
+  const nextState = {
+    ...state,
+    transition: TransitionReason.COMPLETED,
+    completed: true,
+  }
   return transition({ reason: TransitionReason.COMPLETED, nextState })
 }

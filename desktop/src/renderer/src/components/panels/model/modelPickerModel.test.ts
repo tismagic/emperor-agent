@@ -14,11 +14,13 @@ const discovered: DiscoveredModel[] = [
 
 describe('model picker model', () => {
   it('deduplicates candidates by trimmed id while preserving backend order', () => {
-    expect(normalizeModelOptions([
-      discovered[0],
-      { id: ' deepseek-chat ', ownedBy: 'duplicate' },
-      discovered[2],
-    ])).toEqual([discovered[0], discovered[2]])
+    expect(
+      normalizeModelOptions([
+        discovered[0],
+        { id: ' deepseek-chat ', ownedBy: 'duplicate' },
+        discovered[2],
+      ]),
+    ).toEqual([discovered[0], discovered[2]])
   })
 
   it('returns every candidate when the picker reopens with an empty query', () => {
@@ -62,7 +64,9 @@ describe('model picker model', () => {
       id: 'deepseek-chat',
       mainModelId: 'deepseek-chat',
     })
-    expect(applyModelSelection(entry, 'secondary', 'deepseek-reasoner')).toEqual({
+    expect(
+      applyModelSelection(entry, 'secondary', 'deepseek-reasoner'),
+    ).toEqual({
       ...entry,
       secondaryModelId: 'deepseek-reasoner',
     })

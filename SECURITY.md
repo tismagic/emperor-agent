@@ -26,4 +26,3 @@ For this private workspace, file the report as a private issue or send it direct
 - Never include API keys, local config, `memory/`, `.team/`, or user documents in reports.
 - Treat MCP tool output, web content, and external bridge messages as untrusted data.
 - High-impact changes to model, MCP, local config, permissions, scheduler, or command execution must keep CoreApi mutation guards and tests updated.
-

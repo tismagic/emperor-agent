@@ -30,7 +30,9 @@ describe('writePromptSnapshot', () => {
         version: 1,
         mode: 'build',
         policyId: 'build',
-        activeMemoryBinding: { longTerm: { kind: 'project', projectId: 'project_1' } },
+        activeMemoryBinding: {
+          longTerm: { kind: 'project', projectId: 'project_1' },
+        },
         items: [
           {
             id: 'section:project_agents',
@@ -59,8 +61,18 @@ describe('writePromptSnapshot', () => {
       },
       messages: [
         { role: 'system', content: 'secret project system prompt' },
-        { role: 'user', content: 'secret user request', seq: 7, turn_id: 'turn_0' },
-        { role: 'assistant', content: 'secret assistant context', seq: 8, turn_id: 'turn_1' },
+        {
+          role: 'user',
+          content: 'secret user request',
+          seq: 7,
+          turn_id: 'turn_0',
+        },
+        {
+          role: 'assistant',
+          content: 'secret assistant context',
+          seq: 8,
+          turn_id: 'turn_1',
+        },
       ],
       checkpoint: {
         schemaVersion: 'emperor.turn-checkpoint.v1',

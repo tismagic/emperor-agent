@@ -6,9 +6,13 @@ import { actionIcons } from '../icons'
 const ctx = useAppContext()
 const draft = ref('')
 
-watch(() => ctx.configContent.value, (content) => {
-  draft.value = content
-}, { immediate: true })
+watch(
+  () => ctx.configContent.value,
+  (content) => {
+    draft.value = content
+  },
+  { immediate: true },
+)
 
 onMounted(() => {
   if (!ctx.configContent.value) {
@@ -28,7 +32,11 @@ function save() {
         <h1>配置文件</h1>
         <p>memory/profile/USER.local.md — 用户偏好与档案</p>
       </div>
-      <button class="tool-button asset-button refresh-action" title="刷新" @click="ctx.refreshAll()">
+      <button
+        class="tool-button asset-button refresh-action"
+        title="刷新"
+        @click="ctx.refreshAll()"
+      >
         <component :is="actionIcons.refresh" class="action-icon" :size="16" />
         <span>刷新</span>
       </button>
@@ -41,8 +49,15 @@ function save() {
             <textarea v-model="draft" />
             <div class="editor-actions">
               <span class="status-pill">保存后刷新 Agent 上下文</span>
-              <button class="tool-button ink asset-button primary-action" @click="save">
-                <component :is="actionIcons.save" class="action-icon" :size="16" />
+              <button
+                class="tool-button ink asset-button primary-action"
+                @click="save"
+              >
+                <component
+                  :is="actionIcons.save"
+                  class="action-icon"
+                  :size="16"
+                />
                 <span>保存配置</span>
               </button>
             </div>

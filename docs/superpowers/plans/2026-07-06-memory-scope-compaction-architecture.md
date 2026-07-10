@@ -172,12 +172,7 @@ export type MemoryMutability =
   | 'derived'
 
 export type MemoryWriter =
-  | 'onboarding'
-  | 'agent_loop'
-  | 'user_tool'
-  | 'compactor'
-  | 'runtime'
-  | 'system'
+  'onboarding' | 'agent_loop' | 'user_tool' | 'compactor' | 'runtime' | 'system'
 
 export interface MemoryArtifactMeta {
   artifactId: string
@@ -258,7 +253,11 @@ export interface MicrocompactRecord {
     originalTokenEstimate: number
     originalHash: string
     replacementText: string
-    reason: 'old_long_text' | 'tool_output_too_large' | 'assistant_response_too_large' | 'within_token_budget'
+    reason:
+      | 'old_long_text'
+      | 'tool_output_too_large'
+      | 'assistant_response_too_large'
+      | 'within_token_budget'
   }>
 }
 
@@ -268,7 +267,11 @@ export interface ContextPlan {
   mode: 'chat' | 'build'
   activeMemoryBinding: ActiveMemoryBinding
   items: ContextPlanItem[]
-  omitted: Array<{ kind: ContextPlanItemKind | string; source: string; reason: string }>
+  omitted: Array<{
+    kind: ContextPlanItemKind | string
+    source: string
+    reason: string
+  }>
   microcompact: MicrocompactRecord | null
   createdAt: string
 }
@@ -280,12 +283,26 @@ Policies:
 export const CONTEXT_POLICIES: Record<'chat' | 'build', ContextPolicy> = {
   chat: {
     mode: 'chat',
-    include: ['system_bootstrap', 'tool_instructions', 'user_profile', 'global_memory', 'project_index', 'session_history'],
+    include: [
+      'system_bootstrap',
+      'tool_instructions',
+      'user_profile',
+      'global_memory',
+      'project_index',
+      'session_history',
+    ],
     exclude: ['project_memory', 'project_path'],
   },
   build: {
     mode: 'build',
-    include: ['system_bootstrap', 'tool_instructions', 'user_profile', 'project_memory', 'project_path', 'session_history'],
+    include: [
+      'system_bootstrap',
+      'tool_instructions',
+      'user_profile',
+      'project_memory',
+      'project_path',
+      'session_history',
+    ],
     exclude: ['global_memory'],
   },
 }
@@ -361,7 +378,13 @@ export interface CompactionJob {
   projectId?: string
   fromSeq: number
   toSeq: number
-  status: 'queued' | 'running' | 'patch_generated' | 'validated' | 'applied' | 'failed'
+  status:
+    | 'queued'
+    | 'running'
+    | 'patch_generated'
+    | 'validated'
+    | 'applied'
+    | 'failed'
   createdAt: string
   updatedAt: string
 }
@@ -413,7 +436,10 @@ export interface TurnCheckpoint {
 Restore rule:
 
 ```ts
-function shouldRecoverFromCheckpoint(checkpoint: TurnCheckpoint, history: { lastSeq: number }): boolean {
+function shouldRecoverFromCheckpoint(
+  checkpoint: TurnCheckpoint,
+  history: { lastSeq: number },
+): boolean {
   if (checkpoint.phase === 'committed') return false
   if (checkpoint.phase === 'aborted') return false
   if (checkpoint.baseHistorySeq > history.lastSeq) return false

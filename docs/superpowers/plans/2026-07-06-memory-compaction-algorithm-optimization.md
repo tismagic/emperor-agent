@@ -43,7 +43,9 @@ const unarchivedHistory = this.loop.activeMemoryStore.loadUnarchivedHistory()
 if (count < 2) return { status: 'skipped' }
 const compactor = this.buildCompactor()
 compacted = await compactor.compactStartupAsync(unarchivedHistory)
-const runtime = this.loop.runtimeStore.compact(this.loop.activeMemoryStore.loadUnarchivedTurnIds())
+const runtime = this.loop.runtimeStore.compact(
+  this.loop.activeMemoryStore.loadUnarchivedTurnIds(),
+)
 this.loop.history = []
 ```
 
@@ -263,8 +265,11 @@ export interface ProjectedCompactionMessage {
   truncated: boolean
   toolName?: string
   toolCallId?: string
-  durableHint: 'candidate' | 'likely_transient' | 'sensitive_candidate' | 'audit_only'
-  scopeHints: Array<'user_profile' | 'global' | 'project' | 'episode' | 'discard'>
+  durableHint:
+    'candidate' | 'likely_transient' | 'sensitive_candidate' | 'audit_only'
+  scopeHints: Array<
+    'user_profile' | 'global' | 'project' | 'episode' | 'discard'
+  >
 }
 ```
 
@@ -286,7 +291,11 @@ export interface DraftTarget {
 }
 
 export interface DraftOperation {
-  op: 'append_section_item' | 'update_item' | 'mark_deprecated' | 'replace_section'
+  op:
+    | 'append_section_item'
+    | 'update_item'
+    | 'mark_deprecated'
+    | 'replace_section'
   section: string
   itemId?: string
   content?: string
@@ -298,7 +307,12 @@ export interface DraftOperation {
 export interface CompactionDecision {
   sourceSeqs: number[]
   content: string
-  destination: 'user_profile' | 'global_memory' | 'project_memory' | 'episode' | 'discarded'
+  destination:
+    | 'user_profile'
+    | 'global_memory'
+    | 'project_memory'
+    | 'episode'
+    | 'discarded'
   classification:
     | 'stable_user_preference'
     | 'working_style'
@@ -490,7 +504,9 @@ Return corrected JSON only.
 ### Chat mode
 
 ```ts
-export function routeChatDecision(decision: CompactionDecision): MemoryScope | 'discard' {
+export function routeChatDecision(
+  decision: CompactionDecision,
+): MemoryScope | 'discard' {
   switch (decision.classification) {
     case 'stable_user_preference':
     case 'working_style':
@@ -580,24 +596,28 @@ Build default writes:
 # User Profile
 
 ## Stable Preferences
+
 - id: ...
   updated: ...
   confidence: high
   content: ...
 
 ## Working Style
+
 - id: ...
   updated: ...
   confidence: medium
   content: ...
 
 ## Long-Term Constraints
+
 - id: ...
   updated: ...
   confidence: high
   content: ...
 
 ## Deprecated
+
 - id: ...
   deprecated: ...
   reason: ...
@@ -616,8 +636,11 @@ Rules:
 # Global Long-Term Memory
 
 ## Long-Term Projects
+
 ## Cross-Project Decisions
+
 ## Open Questions
+
 ## Deprecated
 ```
 
@@ -632,11 +655,17 @@ Rules:
 # Project Memory
 
 ## Project Identity
+
 ## Architecture Notes
+
 ## Build Commands
+
 ## Design Decisions
+
 ## Open Tasks
+
 ## Known Issues
+
 ## Deprecated
 ```
 
@@ -651,8 +680,11 @@ Rules:
 # Episode: YYYY-MM-DD
 
 ## Summary
+
 ## Decisions
+
 ## Follow-ups
+
 ## Raw References
 ```
 
@@ -681,10 +713,15 @@ export function selectCompactionRange(input: {
 }): CompactionRange | null {
   const fromSeq = input.cursor.compactedUntilSeq + 1
   const stableBoundarySeq = input.historyIndex.lastCompletedTurnSeq
-  const keepTailFromSeq = input.historyIndex.seqBeforeLastNTurns(input.keepTailTurns)
+  const keepTailFromSeq = input.historyIndex.seqBeforeLastNTurns(
+    input.keepTailTurns,
+  )
   const toSeq = Math.min(stableBoundarySeq, keepTailFromSeq - 1)
   if (toSeq < fromSeq) return null
-  const completedTurnCount = input.historyIndex.countCompletedTurns(fromSeq, toSeq)
+  const completedTurnCount = input.historyIndex.countCompletedTurns(
+    fromSeq,
+    toSeq,
+  )
   if (completedTurnCount < 1) return null
   return {
     sessionId: input.historyIndex.sessionId,
@@ -715,7 +752,10 @@ Automatic compact:
 User text:
 
 ```ts
-export function capUserText(text: string): { content: string; truncated: boolean } {
+export function capUserText(text: string): {
+  content: string
+  truncated: boolean
+} {
   if (text.length <= 4000) return { content: text, truncated: false }
   return {
     content: [
@@ -799,7 +839,9 @@ const SOFT_SIGNALS: Array<keyof Omit<DraftQualityScore, 'score'>> = [
   'noOversizedItems',
 ]
 
-export function computeDraftQualityScore(flags: Omit<DraftQualityScore, 'score'>): number {
+export function computeDraftQualityScore(
+  flags: Omit<DraftQualityScore, 'score'>,
+): number {
   if (HARD_GATES.some((key) => !flags[key])) return 0
   const passed = SOFT_SIGNALS.filter((key) => flags[key]).length
   return passed / SOFT_SIGNALS.length
@@ -827,15 +869,18 @@ export function validateScopeWrite(ctx: {
     throw new Error('chat_cannot_write_project_memory_without_explicit_binding')
   }
   if (ctx.mode === 'build' && ctx.patch.target.kind === 'global') {
-    const allowed = ctx.decisions.some((d) =>
-      d.destination === 'global_memory' &&
-      d.classification === 'cross_project_learning' &&
-      d.confidence !== 'low'
+    const allowed = ctx.decisions.some(
+      (d) =>
+        d.destination === 'global_memory' &&
+        d.classification === 'cross_project_learning' &&
+        d.confidence !== 'low',
     )
-    if (!allowed) throw new Error('build_global_write_requires_cross_project_learning')
+    if (!allowed)
+      throw new Error('build_global_write_requires_cross_project_learning')
   }
   if (ctx.mode === 'build' && ctx.patch.target.kind === 'project') {
-    if (ctx.patch.target.projectId !== ctx.projectId) throw new Error('project_memory_target_mismatch')
+    if (ctx.patch.target.projectId !== ctx.projectId)
+      throw new Error('project_memory_target_mismatch')
   }
 }
 ```
@@ -900,7 +945,9 @@ If same target, same section, and normalized similarity is above `0.90`, convert
 ## Two-Phase Commit
 
 ```ts
-export async function commitPatchBundle(bundle: CompactionPatchBundle): Promise<CommitResult> {
+export async function commitPatchBundle(
+  bundle: CompactionPatchBundle,
+): Promise<CommitResult> {
   const validation = await validator.validateBundle(bundle)
   if (!validation.ok) return fail(validation)
   const snapshots = await versionStore.snapshotTargets(bundle.patches)
@@ -951,7 +998,7 @@ Order is mandatory:
 6. Record ledger.
 7. Advance cursor last.
 
-This staged/activate-all shape is a deliberate change from a naive "apply target 1, apply target 2, roll back on failure" loop: it removes the need to roll back a target that already activated successfully just because a *later* target in the same bundle failed, since nothing is live until its own verified rename runs. The residual risk (a crash between two renames within one bundle) is covered in the Risk Register below.
+This staged/activate-all shape is a deliberate change from a naive "apply target 1, apply target 2, roll back on failure" loop: it removes the need to roll back a target that already activated successfully just because a _later_ target in the same bundle failed, since nothing is live until its own verified rename runs. The residual risk (a crash between two renames within one bundle) is covered in the Risk Register below.
 
 ## ContextPlan Closure
 
@@ -1254,7 +1301,7 @@ Expected: manual compaction writes scoped patches, advances cursor only on succe
 - [ ] History rotation archives only `seq <= compactedUntilSeq`.
 - [ ] If history needs rotation but semantic compaction is behind, emit diagnostics instead of archiving uncompacted rows.
 - [ ] Preserve ability to include archived rows for diagnostics and explain output.
-- [ ] `this.loop.runtimeStore.compact(unarchivedTurnIds)` — the runtime *event* store (UI/tool events, a file separate from `history.jsonl`) — is independent of semantic memory compaction and stays that way: it continues to run keyed off completed/committed turn ids, is never gated by `compactedUntilSeq`, and never blocks on or is blocked by `MemoryPatch` commits. State this explicitly so Task 8's `compactStartupAsync()` → `compactSession()` replacement has an unambiguous answer for the existing `const runtime = this.loop.runtimeStore.compact(...)` call quoted in this plan's Current Evidence — keep calling it, independently of the new semantic path (invariant #1 already guarantees runtime events never enter model context regardless of when this runs).
+- [ ] `this.loop.runtimeStore.compact(unarchivedTurnIds)` — the runtime _event_ store (UI/tool events, a file separate from `history.jsonl`) — is independent of semantic memory compaction and stays that way: it continues to run keyed off completed/committed turn ids, is never gated by `compactedUntilSeq`, and never blocks on or is blocked by `MemoryPatch` commits. State this explicitly so Task 8's `compactStartupAsync()` → `compactSession()` replacement has an unambiguous answer for the existing `const runtime = this.loop.runtimeStore.compact(...)` call quoted in this plan's Current Evidence — keep calling it, independently of the new semantic path (invariant #1 already guarantees runtime events never enter model context regardless of when this runs).
 
 Acceptance:
 
@@ -1395,7 +1442,7 @@ Manual verification:
   **Mitigation:** mode-aware routing plus `build_global_write_requires_cross_project_learning` validator.
 
 - **Risk:** Cursor advances after partial write.
-  **Mitigation:** two-phase commit stages every target to a temp file and verifies hashes *before* any rename, then activates (renames) all targets, and only then advances the cursor. Residual risk is limited to a failure between the first and last rename within one bundle (at most a handful of files, each individually atomic); duplicate-detection (`normalizeMemoryItem` + 0.90 similarity) is the backstop if a retried compaction re-processes a target that partially activated.
+  **Mitigation:** two-phase commit stages every target to a temp file and verifies hashes _before_ any rename, then activates (renames) all targets, and only then advances the cursor. Residual risk is limited to a failure between the first and last rename within one bundle (at most a handful of files, each individually atomic); duplicate-detection (`normalizeMemoryItem` + 0.90 similarity) is the backstop if a retried compaction re-processes a target that partially activated.
 
 - **Risk:** Keeping source history after compaction increases disk use.
   **Mitigation:** history rotation remains available but gated by `compactedUntilSeq`.

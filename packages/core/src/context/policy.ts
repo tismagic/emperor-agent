@@ -26,11 +26,19 @@ export interface ContextPolicy {
 export const CONTEXT_POLICIES: Record<ContextMode, ContextPolicy> = {
   chat: {
     id: 'chat',
-    includeKinds: ['bootstrap', 'tool_instructions', 'user_profile', 'global_memory', 'project_index', 'session_history'],
+    includeKinds: [
+      'bootstrap',
+      'tool_instructions',
+      'user_profile',
+      'global_memory',
+      'project_index',
+      'session_history',
+    ],
     excludeKinds: ['project_memory', 'project_path'],
     includeReasons: {
       global_memory: 'chat policy includes global long-term memory',
-      project_index: 'chat policy includes project index summary, not project memory',
+      project_index:
+        'chat policy includes project index summary, not project memory',
       session_history: 'chat policy includes active session transcript',
     },
     omitReasons: {
@@ -40,7 +48,14 @@ export const CONTEXT_POLICIES: Record<ContextMode, ContextPolicy> = {
   },
   build: {
     id: 'build',
-    includeKinds: ['bootstrap', 'tool_instructions', 'user_profile', 'project_memory', 'project_path', 'session_history'],
+    includeKinds: [
+      'bootstrap',
+      'tool_instructions',
+      'user_profile',
+      'project_memory',
+      'project_path',
+      'session_history',
+    ],
     excludeKinds: ['global_memory'],
     includeReasons: {
       project_memory: 'build policy includes bound project memory',
@@ -59,7 +74,9 @@ export class ContextPolicyRegistry {
   }
 
   includes(policy: ContextPolicy, kind: ContextPlanItemKind): boolean {
-    return policy.includeKinds.includes(kind) && !policy.excludeKinds.includes(kind)
+    return (
+      policy.includeKinds.includes(kind) && !policy.excludeKinds.includes(kind)
+    )
   }
 
   excludes(policy: ContextPolicy, kind: ContextPlanItemKind): boolean {
@@ -67,6 +84,8 @@ export class ContextPolicyRegistry {
   }
 }
 
-export function contextPolicyForMode(mode: string | null | undefined): ContextPolicy {
+export function contextPolicyForMode(
+  mode: string | null | undefined,
+): ContextPolicy {
   return mode === 'build' ? CONTEXT_POLICIES.build : CONTEXT_POLICIES.chat
 }

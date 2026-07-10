@@ -13,15 +13,24 @@ import type { ModelConfigRaw } from '../types'
 
 const ctx = useAppContext()
 const sessionStore = useSession()
-const modelEntries = computed(() => ctx.boot.value?.modelConfig?.config?.models || [])
-const currentModel = computed(() => ctx.boot.value?.modelConfig?.current || null)
+const modelEntries = computed(
+  () => ctx.boot.value?.modelConfig?.config?.models || [],
+)
+const currentModel = computed(
+  () => ctx.boot.value?.modelConfig?.current || null,
+)
 const sendBlockedReason = computed(() => {
   const availability = ctx.boot.value?.modelConfig?.availability
   return availability?.usable === false
     ? availability.message || '还没有可用模型，请先配置模型。'
     : ''
 })
-const activeBottomControl = computed(() => activeBottomControlPanel(ctx.boot.value?.control || null, sessionStore.active.value || null))
+const activeBottomControl = computed(() =>
+  activeBottomControlPanel(
+    ctx.boot.value?.control || null,
+    sessionStore.active.value || null,
+  ),
+)
 
 function switchModel(entryName: string) {
   const payload = ctx.boot.value?.modelConfig
@@ -44,14 +53,20 @@ function setReasoningEffort(level: string | null) {
   const payload = ctx.boot.value?.modelConfig
   const activeName = payload?.current?.entryName
   if (!payload?.config || !activeName) return
-  const currentEntry = payload.config.models?.find((entry) => entry.name === activeName)
-  const currentValue = normalizeReasoningEffort(payload.current?.reasoningEffort ?? currentEntry?.reasoningEffort)
+  const currentEntry = payload.config.models?.find(
+    (entry) => entry.name === activeName,
+  )
+  const currentValue = normalizeReasoningEffort(
+    payload.current?.reasoningEffort ?? currentEntry?.reasoningEffort,
+  )
   const nextValue = normalizeReasoningEffort(level)
   if (currentValue === nextValue) return
   const sourceConfig = payload.config
   void ctx.runSafely(async () => {
     const config = cloneJson<ModelConfigRaw>(sourceConfig)
-    const entry = config.models?.find((candidate) => candidate.name === activeName)
+    const entry = config.models?.find(
+      (candidate) => candidate.name === activeName,
+    )
     if (!entry) return
     entry.reasoningEffort = nextValue || null
     await ctx.saveModelConfig(config)
@@ -59,7 +74,9 @@ function setReasoningEffort(level: string | null) {
 }
 
 function normalizeReasoningEffort(value?: string | null) {
-  const normalized = String(value || '').trim().toLowerCase()
+  const normalized = String(value || '')
+    .trim()
+    .toLowerCase()
   if (normalized === 'xhigh') return 'max'
   return normalized
 }
@@ -70,16 +87,32 @@ function normalizeReasoningEffort(value?: string | null) {
     <header class="view-head">
       <div class="min-w-0">
         <h1>对话</h1>
-        <p class="truncate">{{ ctx.runtimeText() }} · {{ ctx.boot.value?.modelConfig?.current?.entryLabel || ctx.boot.value?.model || 'model' }}</p>
+        <p class="truncate">
+          {{ ctx.runtimeText() }} ·
+          {{
+            ctx.boot.value?.modelConfig?.current?.entryLabel ||
+            ctx.boot.value?.model ||
+            'model'
+          }}
+        </p>
       </div>
     </header>
 
     <div class="chat-body">
-      <MessageList :messages="ctx.messages.value" :plans="ctx.planProjection.plans" />
+      <MessageList
+        :messages="ctx.messages.value"
+        :plans="ctx.planProjection.plans"
+      />
 
       <div class="chat-bottom-stack">
-        <ActiveAskPanel v-if="activeBottomControl?.kind === 'ask'" :interaction="activeBottomControl.interaction" />
-        <ActivePlanDecisionPanel v-else-if="activeBottomControl?.kind === 'plan'" :interaction="activeBottomControl.interaction" />
+        <ActiveAskPanel
+          v-if="activeBottomControl?.kind === 'ask'"
+          :interaction="activeBottomControl.interaction"
+        />
+        <ActivePlanDecisionPanel
+          v-else-if="activeBottomControl?.kind === 'plan'"
+          :interaction="activeBottomControl.interaction"
+        />
         <PendingBar v-if="!activeBottomControl" :pending="ctx.pending" />
         <div v-if="!activeBottomControl" class="composer-wrap">
           <Composer
@@ -88,11 +121,15 @@ function normalizeReasoningEffort(value?: string | null) {
             :tools="ctx.boot.value?.tools || []"
             :mcp-content="ctx.mcpContent.value"
             :context-used="ctx.boot.value?.context_used ?? 0"
-            :context-max="ctx.boot.value?.modelConfig?.current?.contextWindowTokens ?? 0"
+            :context-max="
+              ctx.boot.value?.modelConfig?.current?.contextWindowTokens ?? 0
+            "
             :control-mode="ctx.boot.value?.control?.mode || 'ask_before_edit'"
             :current-model="currentModel"
             :model-entries="modelEntries"
-            :supports-vision="ctx.boot.value?.modelConfig?.current?.supportsVision ?? false"
+            :supports-vision="
+              ctx.boot.value?.modelConfig?.current?.supportsVision ?? false
+            "
             :send-blocked-reason="sendBlockedReason"
             @set-mode="ctx.setControlMode"
             @switch-model="switchModel"

@@ -5,7 +5,11 @@ import { describe, expect, it } from 'vitest'
 import { HookAuditStore } from './audit'
 import type { HookAuditRunRecordV2 } from './orchestrator'
 
-function record(id: string, startedAt: string, reason = 'ok'): HookAuditRunRecordV2 {
+function record(
+  id: string,
+  startedAt: string,
+  reason = 'ok',
+): HookAuditRunRecordV2 {
   return {
     hookRunId: id,
     eventName: 'PreToolUse',
@@ -13,8 +17,14 @@ function record(id: string, startedAt: string, reason = 'ok'): HookAuditRunRecor
     handlerId: 'command-1',
     handlerType: 'command',
     source: {
-      id: 'global', kind: 'global', rank: 100, path: '/state/hooks.json', readonly: false,
-      revision: 'source-r1', active: true, blockedReason: null,
+      id: 'global',
+      kind: 'global',
+      rank: 100,
+      path: '/state/hooks.json',
+      readonly: false,
+      revision: 'source-r1',
+      active: true,
+      blockedReason: null,
     },
     snapshotRevision: 'snapshot-r1',
     sessionId: 'session-1',
@@ -35,11 +45,23 @@ describe('HookAuditStore v2', () => {
     const root = await mkdtemp(join(tmpdir(), 'hook-audit-v2-'))
     try {
       const store = new HookAuditStore(root)
-      await store.appendRun(record('run-1', '2026-07-09T23:59:00.000Z', 'token=top-secret password=hunter2'))
+      await store.appendRun(
+        record(
+          'run-1',
+          '2026-07-09T23:59:00.000Z',
+          'token=top-secret password=hunter2',
+        ),
+      )
       await store.appendRun(record('run-2', '2026-07-10T00:01:00.000Z'))
 
-      expect((await readdir(store.auditDir)).sort()).toEqual(['2026-07-09.jsonl', '2026-07-10.jsonl'])
-      const raw = await readFile(join(store.auditDir, '2026-07-09.jsonl'), 'utf8')
+      expect((await readdir(store.auditDir)).sort()).toEqual([
+        '2026-07-09.jsonl',
+        '2026-07-10.jsonl',
+      ])
+      const raw = await readFile(
+        join(store.auditDir, '2026-07-09.jsonl'),
+        'utf8',
+      )
       expect(raw).toContain('"inputHash":"input-hash"')
       expect(raw).toContain('token=[REDACTED]')
       expect(raw).not.toContain('top-secret')
@@ -56,14 +78,20 @@ describe('HookAuditStore v2', () => {
       const store = new HookAuditStore(root)
       await store.appendRun(record('run-1', '2026-07-09T23:59:00.000Z'))
       await store.appendRun(record('run-2', '2026-07-10T00:01:00.000Z'))
-      await writeFile(join(store.auditDir, '2026-07-10.jsonl'), 'not-json\n', { flag: 'a' })
+      await writeFile(join(store.auditDir, '2026-07-10.jsonl'), 'not-json\n', {
+        flag: 'a',
+      })
 
       const replay = await store.replayRuns({ limit: 1 })
 
       expect(replay.records.map((entry) => entry.hookRunId)).toEqual(['run-2'])
-      expect(replay.badLines).toEqual([{
-        path: join(store.auditDir, '2026-07-10.jsonl'), line: 2, raw: 'not-json',
-      }])
+      expect(replay.badLines).toEqual([
+        {
+          path: join(store.auditDir, '2026-07-10.jsonl'),
+          line: 2,
+          raw: 'not-json',
+        },
+      ])
     } finally {
       await rm(root, { recursive: true, force: true })
     }

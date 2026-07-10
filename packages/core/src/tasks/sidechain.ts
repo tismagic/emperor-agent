@@ -27,12 +27,17 @@ export class SidechainTranscript {
     for (const message of messages) this.append(message)
   }
 
-  read(opts: { offset?: number; limit?: number } = {}): { messages: Array<Record<string, any>>; nextOffset: number; path: string } {
+  read(opts: { offset?: number; limit?: number } = {}): {
+    messages: Array<Record<string, any>>
+    nextOffset: number
+    path: string
+  } {
     const offset = Math.max(0, Math.trunc(opts.offset ?? 0))
     const limit = Math.max(0, Math.trunc(opts.limit ?? 100))
     const messages: Array<Record<string, any>> = []
     let nextOffset = 0
-    if (!existsSync(this.path)) return { messages: [], nextOffset: 0, path: this.path }
+    if (!existsSync(this.path))
+      return { messages: [], nextOffset: 0, path: this.path }
     const lines = readFileSync(this.path, 'utf8').split('\n')
     for (let lineNumber = 0; lineNumber < lines.length; lineNumber++) {
       const line = lines[lineNumber]
@@ -42,11 +47,16 @@ export class SidechainTranscript {
       if (messages.length >= limit) break
       try {
         const payload = JSON.parse(line)
-        if (payload && typeof payload === 'object' && !Array.isArray(payload)) messages.push(payload)
+        if (payload && typeof payload === 'object' && !Array.isArray(payload))
+          messages.push(payload)
       } catch {
         continue
       }
     }
-    return { messages, nextOffset: Math.min(nextOffset, offset + messages.length), path: this.path }
+    return {
+      messages,
+      nextOffset: Math.min(nextOffset, offset + messages.length),
+      path: this.path,
+    }
   }
 }

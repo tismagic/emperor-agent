@@ -21,25 +21,82 @@ export interface SlashPaletteItem {
 }
 
 export const slashCommands: SlashCommand[] = [
-  { name: '/help', usage: '/help', description: '显示可用斜杠命令', aliases: ['/commands'] },
-  { name: '/status', usage: '/status', description: '查看运行状态、模型、Token 与资源计数' },
-  { name: '/model', usage: '/model', description: '输出当前模型与 Provider 配置信息' },
-  { name: '/tokens', usage: '/tokens', description: '输出 Token 消耗统计', aliases: ['/token'] },
+  {
+    name: '/help',
+    usage: '/help',
+    description: '显示可用斜杠命令',
+    aliases: ['/commands'],
+  },
+  {
+    name: '/status',
+    usage: '/status',
+    description: '查看运行状态、模型、Token 与资源计数',
+  },
+  {
+    name: '/model',
+    usage: '/model',
+    description: '输出当前模型与 Provider 配置信息',
+  },
+  {
+    name: '/tokens',
+    usage: '/tokens',
+    description: '输出 Token 消耗统计',
+    aliases: ['/token'],
+  },
   { name: '/tools', usage: '/tools', description: '输出可用工具摘要' },
   { name: '/skills', usage: '/skills', description: '输出可用 Skill 摘要' },
-  { name: '/config', usage: '/config', description: '查看并编辑用户配置文件 (USER.local.md)', aliases: ['/configs'] },
+  {
+    name: '/config',
+    usage: '/config',
+    description: '查看并编辑用户配置文件 (USER.local.md)',
+    aliases: ['/configs'],
+  },
   { name: '/memory', usage: '/memory', description: '输出记忆状态摘要' },
-  { name: '/memory-log', usage: '/memory-log', description: '列出最近的记忆版本快照' },
-  { name: '/memory-restore', usage: '/memory-restore <id>', description: '恢复指定记忆版本快照' },
-  { name: '/plan', usage: '/plan on|off|status', description: '查看或切换 Plan 模式' },
-  { name: '/mode', usage: '/mode ask|auto|plan|status', description: '查看或切换权限模式' },
-  { name: '/stop', usage: '/stop', description: '停止当前运行中的 turn / Scheduler 任务' },
-  { name: '/compact', usage: '/compact', description: '触发未归档会话压缩，写入 MEMORY/情景记忆' },
-  { name: '/clear', usage: '/clear', description: '清空当前屏幕，不删除运行期记忆' },
-  { name: '/reload', usage: '/reload', description: '刷新 bootstrap、模型、skills、tools、memory' },
+  {
+    name: '/memory-log',
+    usage: '/memory-log',
+    description: '列出最近的记忆版本快照',
+  },
+  {
+    name: '/memory-restore',
+    usage: '/memory-restore <id>',
+    description: '恢复指定记忆版本快照',
+  },
+  {
+    name: '/plan',
+    usage: '/plan on|off|status',
+    description: '查看或切换 Plan 模式',
+  },
+  {
+    name: '/mode',
+    usage: '/mode ask|auto|plan|status',
+    description: '查看或切换权限模式',
+  },
+  {
+    name: '/stop',
+    usage: '/stop',
+    description: '停止当前运行中的 turn / Scheduler 任务',
+  },
+  {
+    name: '/compact',
+    usage: '/compact',
+    description: '触发未归档会话压缩，写入 MEMORY/情景记忆',
+  },
+  {
+    name: '/clear',
+    usage: '/clear',
+    description: '清空当前屏幕，不删除运行期记忆',
+  },
+  {
+    name: '/reload',
+    usage: '/reload',
+    description: '刷新 bootstrap、模型、skills、tools、memory',
+  },
 ]
 
-export function buildSlashPaletteItems(skills: SkillInfo[] = []): SlashPaletteItem[] {
+export function buildSlashPaletteItems(
+  skills: SkillInfo[] = [],
+): SlashPaletteItem[] {
   const commandItems = slashCommands.map((command) => ({
     id: `command:${command.name}`,
     kind: 'command' as const,
@@ -72,20 +129,29 @@ export function parseSlashCommand(input: string) {
   const [name, ...args] = trimmed.split(/\s+/)
   if (isPathLikeSlashToken(name)) return null
   const normalized = name.toLowerCase()
-  const command = slashCommands.find((item) => item.name === normalized || item.aliases?.includes(normalized))
+  const command = slashCommands.find(
+    (item) => item.name === normalized || item.aliases?.includes(normalized),
+  )
   return { raw: trimmed, name: normalized, command, args }
 }
 
-export function parseSkillSlashCommand(input: string, skills: SkillInfo[] = []) {
+export function parseSkillSlashCommand(
+  input: string,
+  skills: SkillInfo[] = [],
+) {
   const trimmed = input.trim()
   if (!trimmed.startsWith('/')) return null
   const [token, ...rest] = trimmed.split(/\s+/)
   if (isPathLikeSlashToken(token)) return null
   const normalized = token.slice(1).toLowerCase()
   const exact = skills.find((skill) => skill.name.toLowerCase() === normalized)
-  const alias = !exact && normalized.endsWith('-skill')
-    ? skills.find((skill) => skill.name.toLowerCase() === normalized.slice(0, -'-skill'.length))
-    : undefined
+  const alias =
+    !exact && normalized.endsWith('-skill')
+      ? skills.find(
+          (skill) =>
+            skill.name.toLowerCase() === normalized.slice(0, -'-skill'.length),
+        )
+      : undefined
   const skill = exact || alias
   if (!skill) return null
   const requestedSkill: RequestedSkill = { name: skill.name, source: 'slash' }

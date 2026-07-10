@@ -64,18 +64,29 @@ describe('capability projection', () => {
       server: 'github',
     }
 
-    expect(toolCapability(builtin).badges.map((badge) => badge.label)).toEqual(['只读', '并发'])
+    expect(toolCapability(builtin).badges.map((badge) => badge.label)).toEqual([
+      '只读',
+      '并发',
+    ])
     expect(toolCapability(mcp).kind).toBe('mcp')
-    expect(toolCapability(mcp).badges.map((badge) => badge.label)).toContain('github')
-    expect(toolCapability(mcp).badges.map((badge) => badge.label)).toContain('可写')
+    expect(toolCapability(mcp).badges.map((badge) => badge.label)).toContain(
+      'github',
+    )
+    expect(toolCapability(mcp).badges.map((badge) => badge.label)).toContain(
+      '可写',
+    )
   })
 
   it('projects MCP servers from config status', () => {
-    const item = mcpServerCapability('github', {
-      transport: 'stdio',
-      enabled: true,
-      command: 'github-mcp-server',
-    }, 4)
+    const item = mcpServerCapability(
+      'github',
+      {
+        transport: 'stdio',
+        enabled: true,
+        command: 'github-mcp-server',
+      },
+      4,
+    )
 
     expect(item.kind).toBe('mcp')
     expect(item.title).toBe('GitHub')

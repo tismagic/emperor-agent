@@ -1,4 +1,10 @@
-import type { AssistantMessage, TodoItem, ToolArtifactRef, ToolSegment, ToolStatus } from '../types'
+import type {
+  AssistantMessage,
+  TodoItem,
+  ToolArtifactRef,
+  ToolSegment,
+  ToolStatus,
+} from '../types'
 
 export interface ToolResultUpdate {
   summary?: string
@@ -21,10 +27,14 @@ export interface ToolRunUpdate {
   endedAt?: number
 }
 
-export function applyToolResultToSegment(segment: ToolSegment, update: ToolResultUpdate) {
+export function applyToolResultToSegment(
+  segment: ToolSegment,
+  update: ToolResultUpdate,
+) {
   finishTimedTool(segment, update.endedAt)
   segment.status = update.isError ? 'error' : 'done'
-  segment.summary = textOrEmpty(update.summary) || (update.isError ? '工具执行出错' : '已完成')
+  segment.summary =
+    textOrEmpty(update.summary) || (update.isError ? '工具执行出错' : '已完成')
   applyOutput(segment, update.output, update.outputTruncated)
   const artifacts = artifactList(update.artifacts)
   if (artifacts) segment.artifacts = artifacts
@@ -34,7 +44,10 @@ export function applyToolResultToSegment(segment: ToolSegment, update: ToolResul
   if (todos) segment.todos = todos
 }
 
-export function applyToolRunUpdateToSegment(segment: ToolSegment, update: ToolRunUpdate) {
+export function applyToolRunUpdateToSegment(
+  segment: ToolSegment,
+  update: ToolRunUpdate,
+) {
   finishTimedTool(segment, update.endedAt)
   segment.status = update.status
   const summary = textOrEmpty(update.summary)
@@ -48,12 +61,20 @@ export function applyToolRunUpdateToSegment(segment: ToolSegment, update: ToolRu
 
 export function settleRunningToolSegments(
   assistant: AssistantMessage,
-  options: { endedAt?: number; summary?: string; status?: Extract<ToolStatus, 'error_aborted' | 'error'> } = {},
+  options: {
+    endedAt?: number
+    summary?: string
+    status?: Extract<ToolStatus, 'error_aborted' | 'error'>
+  } = {},
 ) {
   const endedAt = options.endedAt ?? Date.now()
   let settled = 0
   for (const segment of assistant.segments) {
-    if (segment.type !== 'tool' || (segment.status !== 'running' && segment.status !== 'queued')) continue
+    if (
+      segment.type !== 'tool' ||
+      (segment.status !== 'running' && segment.status !== 'queued')
+    )
+      continue
     finishTimedTool(segment, endedAt)
     segment.status = options.status || 'error_aborted'
     segment.summary = options.summary || segment.summary || '工具未返回结束事件'
@@ -64,14 +85,19 @@ export function settleRunningToolSegments(
 
 function finishTimedTool(segment: ToolSegment, endedAt = Date.now()) {
   segment.endedAt = endedAt
-  if (segment.startedAt) segment.durationMs = Math.max(0, endedAt - segment.startedAt)
+  if (segment.startedAt)
+    segment.durationMs = Math.max(0, endedAt - segment.startedAt)
 }
 
 function textOrEmpty(value: unknown): string {
   return typeof value === 'string' ? value : ''
 }
 
-function applyOutput(segment: ToolSegment, output: unknown, outputTruncated: unknown) {
+function applyOutput(
+  segment: ToolSegment,
+  output: unknown,
+  outputTruncated: unknown,
+) {
   if (typeof output === 'string') {
     segment.output = output
     segment.outputMissing = false
@@ -84,16 +110,27 @@ function applyOutput(segment: ToolSegment, output: unknown, outputTruncated: unk
 }
 
 function plainObject(value: unknown): Record<string, unknown> | undefined {
-  return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : undefined
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : undefined
 }
 
 function artifactList(value: unknown): ToolArtifactRef[] | undefined {
   if (!Array.isArray(value)) return undefined
-  const out = value.filter((item): item is Record<string, unknown> => Boolean(item && typeof item === 'object' && !Array.isArray(item) && typeof (item as Record<string, unknown>).path === 'string'))
+  const out = value
+    .filter((item): item is Record<string, unknown> =>
+      Boolean(
+        item &&
+        typeof item === 'object' &&
+        !Array.isArray(item) &&
+        typeof (item as Record<string, unknown>).path === 'string',
+      ),
+    )
     .map((item) => {
       const artifact: ToolArtifactRef = { path: String(item.path) }
       if (typeof item.kind === 'string') artifact.kind = item.kind
-      if (typeof item.bytes === 'number' && Number.isFinite(item.bytes)) artifact.bytes = item.bytes
+      if (typeof item.bytes === 'number' && Number.isFinite(item.bytes))
+        artifact.bytes = item.bytes
       const media = plainObject(item.media)
       if (
         media &&
@@ -123,22 +160,26 @@ function artifactList(value: unknown): ToolArtifactRef[] | undefined {
 function todoList(value: unknown): ToolSegment['todos'] | undefined {
   if (!Array.isArray(value)) return undefined
   const out: TodoItem[] = value
-    .filter((item): item is Record<string, unknown> => Boolean(item && typeof item === 'object' && !Array.isArray(item)))
+    .filter((item): item is Record<string, unknown> =>
+      Boolean(item && typeof item === 'object' && !Array.isArray(item)),
+    )
     .map((item): TodoItem => {
       const planStepId = item.plan_step_id
       const blockedReason = item.blocked_reason
       return {
-        id: typeof item.id === 'number' || typeof item.id === 'string' ? item.id : '',
+        id:
+          typeof item.id === 'number' || typeof item.id === 'string'
+            ? item.id
+            : '',
         content: typeof item.content === 'string' ? item.content : '',
         status: typeof item.status === 'string' ? item.status : 'pending',
-        plan_step_id: (typeof planStepId === 'string' || planStepId === null ? planStepId : undefined) as
-          | string
-          | null
-          | undefined,
-        blocked_reason: (typeof blockedReason === 'string' || blockedReason === null ? blockedReason : undefined) as
-          | string
-          | null
-          | undefined,
+        plan_step_id: (typeof planStepId === 'string' || planStepId === null
+          ? planStepId
+          : undefined) as string | null | undefined,
+        blocked_reason: (typeof blockedReason === 'string' ||
+        blockedReason === null
+          ? blockedReason
+          : undefined) as string | null | undefined,
       }
     })
     .filter((item) => item.id !== '' || item.content)

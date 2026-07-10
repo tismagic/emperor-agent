@@ -1,8 +1,20 @@
-import type { AssistantMessage, ChatMessage, ControlInteraction, RuntimeEventEnvelope, ThoughtSegment, ToolSegment, WsEvent } from '../types'
+import type {
+  AssistantMessage,
+  ChatMessage,
+  ControlInteraction,
+  RuntimeEventEnvelope,
+  ThoughtSegment,
+  ToolSegment,
+  WsEvent,
+} from '../types'
 import { toolDisplayName } from '../components/chat/toolDisplay'
 import { schedulerMessageMeta } from './schedulerMeta'
 import { sortRuntimeEvents } from './events'
-import { applyToolResultToSegment, applyToolRunUpdateToSegment, settleRunningToolSegments } from './toolStatus'
+import {
+  applyToolResultToSegment,
+  applyToolRunUpdateToSegment,
+  settleRunningToolSegments,
+} from './toolStatus'
 
 export interface ChatProjectionState {
   messages: ChatMessage[]
@@ -55,7 +67,8 @@ export function projectChatEvents(
 ): ChatProjectionState {
   const state = emptyChatProjection()
   const runtime: ProjectionRuntime = createProjectionRuntime()
-  for (const event of sortRuntimeEvents(events)) applyChatProjectionEvent(state, event as WsEvent, runtime, opts)
+  for (const event of sortRuntimeEvents(events))
+    applyChatProjectionEvent(state, event as WsEvent, runtime, opts)
   return state
 }
 
@@ -66,7 +79,8 @@ export function applyChatProjectionEvent(
   opts: { sessionId?: string | null } = {},
 ): ChatProjectionState {
   const sessionId = String(opts.sessionId ?? '').trim()
-  if (sessionId && event.session_id && event.session_id !== sessionId) return state
+  if (sessionId && event.session_id && event.session_id !== sessionId)
+    return state
   const seq = Number(event.seq || 0)
   if (seq > 0) {
     if (runtime.seenSeqs.has(seq)) return state
@@ -86,7 +100,12 @@ export function applyChatProjectionEvent(
     assistant.content += delta
     const last = assistant.segments[assistant.segments.length - 1]
     if (last?.type === 'text') last.content += delta
-    else assistant.segments.push({ id: segmentId('text', event), type: 'text', content: delta })
+    else
+      assistant.segments.push({
+        id: segmentId('text', event),
+        type: 'text',
+        content: delta,
+      })
     return state
   }
 
@@ -97,12 +116,17 @@ export function applyChatProjectionEvent(
     return state
   }
 
-  if (event.event === 'tool_call' || event.event === 'tool_run_queued' || event.event === 'tool_run_started') {
+  if (
+    event.event === 'tool_call' ||
+    event.event === 'tool_run_queued' ||
+    event.event === 'tool_run_started'
+  ) {
     const assistant = assistantForEvent(state, event, runtime)!
     finishActiveThought(assistant, event)
     const seg = ensureToolSegment(assistant, event)
     seg.status = event.event === 'tool_run_queued' ? 'queued' : 'running'
-    if (event.event === 'tool_run_queued' && !seg.summary) seg.summary = '等待执行'
+    if (event.event === 'tool_run_queued' && !seg.summary)
+      seg.summary = '等待执行'
     return state
   }
 
@@ -119,24 +143,45 @@ export function applyChatProjectionEvent(
       isError: Boolean(event.is_error),
       endedAt: eventTimeMs(event),
     })
-    if ((event.name === 'update_todos' || seg.name === 'update_todos') && event.todos) assistant.todos = event.todos
+    if (
+      (event.name === 'update_todos' || seg.name === 'update_todos') &&
+      event.todos
+    )
+      assistant.todos = event.todos
     return state
   }
 
-  if (event.event === 'tool_run_completed' || event.event === 'tool_run_failed' || event.event === 'tool_run_cancelled') {
+  if (
+    event.event === 'tool_run_completed' ||
+    event.event === 'tool_run_failed' ||
+    event.event === 'tool_run_cancelled'
+  ) {
     const assistant = assistantForEvent(state, event, runtime)!
     const seg = ensureToolSegment(assistant, event)
     applyToolRunUpdateToSegment(seg, {
-      status: event.event === 'tool_run_completed' ? 'done' : event.event === 'tool_run_failed' ? 'error' : 'error_aborted',
-      summary: event.event === 'tool_run_completed'
-        ? event.summary
-        : event.event === 'tool_run_failed'
-          ? (event.reason_kind === 'safety_refusal' ? `被安全策略拦截：${event.message || ''}` : event.message)
-          : event.reason,
+      status:
+        event.event === 'tool_run_completed'
+          ? 'done'
+          : event.event === 'tool_run_failed'
+            ? 'error'
+            : 'error_aborted',
+      summary:
+        event.event === 'tool_run_completed'
+          ? event.summary
+          : event.event === 'tool_run_failed'
+            ? event.reason_kind === 'safety_refusal'
+              ? `被安全策略拦截：${event.message || ''}`
+              : event.message
+            : event.reason,
       output: event.event === 'tool_run_completed' ? event.output : undefined,
-      outputTruncated: event.event === 'tool_run_completed' ? Boolean(event.output_truncated) : false,
-      artifacts: event.event === 'tool_run_completed' ? event.artifacts : undefined,
-      metadata: event.event === 'tool_run_completed' ? event.metadata : undefined,
+      outputTruncated:
+        event.event === 'tool_run_completed'
+          ? Boolean(event.output_truncated)
+          : false,
+      artifacts:
+        event.event === 'tool_run_completed' ? event.artifacts : undefined,
+      metadata:
+        event.event === 'tool_run_completed' ? event.metadata : undefined,
       endedAt: eventTimeMs(event),
     })
     return state
@@ -157,7 +202,11 @@ export function applyChatProjectionEvent(
     if (!event.interaction) return state
     const assistant = assistantForEvent(state, event, runtime)!
     finishActiveThought(assistant, event)
-    upsertControlSegment(assistant, event.event === 'ask_request' ? 'ask' : 'plan', event.interaction)
+    upsertControlSegment(
+      assistant,
+      event.event === 'ask_request' ? 'ask' : 'plan',
+      event.interaction,
+    )
     return state
   }
 
@@ -169,7 +218,10 @@ export function applyChatProjectionEvent(
       ...event.interaction,
       meta: {
         ...(event.interaction.meta || {}),
-        plan_stream_id: controlInteractionStreamId(event.interaction, event.tool_call_id),
+        plan_stream_id: controlInteractionStreamId(
+          event.interaction,
+          event.tool_call_id,
+        ),
         provisional: true,
       },
     }
@@ -185,18 +237,23 @@ export function applyChatProjectionEvent(
   ) {
     if (!event.interaction) return state
     const assistantId = updateControlSegment(state, event.interaction)
-    if (event.event === 'interaction_cancelled') runtime.pendingControlResumeAssistantId = null
+    if (event.event === 'interaction_cancelled')
+      runtime.pendingControlResumeAssistantId = null
     else if (assistantId) runtime.pendingControlResumeAssistantId = assistantId
     return state
   }
 
   if (event.event === 'assistant_done') {
-    const assistant = assistantForEvent(state, event, runtime, false) || currentAssistant(state)
+    const assistant =
+      assistantForEvent(state, event, runtime, false) || currentAssistant(state)
     if (assistant) {
       const endedAt = eventTimeMs(event)
       finishActiveThought(assistant, event)
       finishTimedState(assistant, endedAt)
-      settleRunningToolSegments(assistant, { endedAt, summary: '工具未返回结束事件' })
+      settleRunningToolSegments(assistant, {
+        endedAt,
+        summary: '工具未返回结束事件',
+      })
       assistant.content = event.content || assistant.content
       syncAssistantDoneContent(assistant, event.content || '')
       assistant.streaming = false
@@ -211,7 +268,8 @@ export function applyChatProjectionEvent(
   }
 
   if (event.event === 'turn_paused') {
-    const assistant = assistantForEvent(state, event, runtime, false) || currentAssistant(state)
+    const assistant =
+      assistantForEvent(state, event, runtime, false) || currentAssistant(state)
     if (assistant) {
       const endedAt = eventTimeMs(event)
       finishActiveThought(assistant, event)
@@ -229,13 +287,26 @@ export function applyChatProjectionEvent(
   }
 
   if (event.event === 'runtime_task_cancelled') {
-    const assistant = assistantForEvent(state, { ...event, turn_id: event.turn_id || event.task?.turnId } as WsEvent, runtime, false) || currentAssistant(state)
+    const assistant =
+      assistantForEvent(
+        state,
+        { ...event, turn_id: event.turn_id || event.task?.turnId } as WsEvent,
+        runtime,
+        false,
+      ) || currentAssistant(state)
     if (assistant) {
       finishTimedState(assistant, eventTimeMs(event))
-      settleRunningToolSegments(assistant, { endedAt: eventTimeMs(event), status: 'error_aborted', summary: '任务已停止' })
+      settleRunningToolSegments(assistant, {
+        endedAt: eventTimeMs(event),
+        status: 'error_aborted',
+        summary: '任务已停止',
+      })
       assistant.streaming = false
     }
-    if (event.turn_id || event.task?.turnId) runtime.resumeTurnTargets.delete(event.turn_id || event.task?.turnId || '')
+    if (event.turn_id || event.task?.turnId)
+      runtime.resumeTurnTargets.delete(
+        event.turn_id || event.task?.turnId || '',
+      )
     state.currentAssistantId = null
   }
 
@@ -251,7 +322,11 @@ export function createProjectionRuntime(): ProjectionRuntime {
   }
 }
 
-function applyUserMessage(state: ChatProjectionState, event: Extract<WsEvent, { event: 'user_message' }>, runtime: ProjectionRuntime): void {
+function applyUserMessage(
+  state: ChatProjectionState,
+  event: Extract<WsEvent, { event: 'user_message' }>,
+  runtime: ProjectionRuntime,
+): void {
   const turnId = event.turn_id || ''
   const clientId = event.client_message_id || ''
   if (turnId) runtime.turnClock.set(turnId, eventTimeMs(event))
@@ -259,12 +334,17 @@ function applyUserMessage(state: ChatProjectionState, event: Extract<WsEvent, { 
     bindControlResumeTurn(state, runtime, turnId)
     return
   }
-  const meta = schedulerMessageMeta(event.content || '', clientId, event.source, event.scheduler)
-  const existing = state.messages.find((message) =>
-    message.role === 'user' && (
-      (clientId && message.id === clientId) ||
-      (turnId && message.turn_id === turnId)
-    )
+  const meta = schedulerMessageMeta(
+    event.content || '',
+    clientId,
+    event.source,
+    event.scheduler,
+  )
+  const existing = state.messages.find(
+    (message) =>
+      message.role === 'user' &&
+      ((clientId && message.id === clientId) ||
+        (turnId && message.turn_id === turnId)),
   )
   if (existing && existing.role === 'user') {
     existing.turn_id = turnId || existing.turn_id
@@ -295,8 +375,9 @@ function assistantForEvent(
   if (turnId) {
     const resumeTarget = runtime.resumeTurnTargets.get(turnId)
     if (resumeTarget) {
-      const resumed = state.messages.find((message): message is AssistantMessage =>
-        message.role === 'assistant' && message.id === resumeTarget
+      const resumed = state.messages.find(
+        (message): message is AssistantMessage =>
+          message.role === 'assistant' && message.id === resumeTarget,
       )
       if (resumed) {
         state.currentAssistantId = resumed.id
@@ -304,8 +385,9 @@ function assistantForEvent(
       }
       runtime.resumeTurnTargets.delete(turnId)
     }
-    const existing = state.messages.find((message): message is AssistantMessage =>
-      message.role === 'assistant' && message.turn_id === turnId
+    const existing = state.messages.find(
+      (message): message is AssistantMessage =>
+        message.role === 'assistant' && message.turn_id === turnId,
     )
     if (existing) {
       state.currentAssistantId = existing.id
@@ -319,13 +401,16 @@ function assistantForEvent(
       if (startedAt && (!current.startedAt || current.startedAt > startedAt)) {
         current.startedAt = startedAt
         const first = current.segments[0]
-        if (first?.type === 'thought' && first.status === 'running') first.startedAt = startedAt
+        if (first?.type === 'thought' && first.status === 'running')
+          first.startedAt = startedAt
       }
       return current
     }
   }
   if (!create) return undefined
-  const startedAt = turnId ? runtime.turnClock.get(turnId) || eventTimeMs(event) : eventTimeMs(event)
+  const startedAt = turnId
+    ? runtime.turnClock.get(turnId) || eventTimeMs(event)
+    : eventTimeMs(event)
   const assistant: AssistantMessage = {
     id: `assistant-${turnId || event.seq || state.messages.length + 1}`,
     role: 'assistant',
@@ -341,10 +426,16 @@ function assistantForEvent(
   return assistant
 }
 
-function bindControlResumeTurn(state: ChatProjectionState, runtime: ProjectionRuntime, turnId: string): void {
+function bindControlResumeTurn(
+  state: ChatProjectionState,
+  runtime: ProjectionRuntime,
+  turnId: string,
+): void {
   if (!turnId || !runtime.pendingControlResumeAssistantId) return
-  const assistant = state.messages.find((message): message is AssistantMessage =>
-    message.role === 'assistant' && message.id === runtime.pendingControlResumeAssistantId
+  const assistant = state.messages.find(
+    (message): message is AssistantMessage =>
+      message.role === 'assistant' &&
+      message.id === runtime.pendingControlResumeAssistantId,
   )
   if (!assistant) {
     runtime.pendingControlResumeAssistantId = null
@@ -356,22 +447,38 @@ function bindControlResumeTurn(state: ChatProjectionState, runtime: ProjectionRu
   state.currentAssistantId = assistant.id
 }
 
-function currentAssistant(state: ChatProjectionState): AssistantMessage | undefined {
-  return state.messages.find((message): message is AssistantMessage =>
-    message.role === 'assistant' && message.id === state.currentAssistantId
+function currentAssistant(
+  state: ChatProjectionState,
+): AssistantMessage | undefined {
+  return state.messages.find(
+    (message): message is AssistantMessage =>
+      message.role === 'assistant' && message.id === state.currentAssistantId,
   )
 }
 
-function upsertThoughtSegment(assistant: AssistantMessage, event: Extract<WsEvent, { event: 'agent_thought' }>): void {
+function upsertThoughtSegment(
+  assistant: AssistantMessage,
+  event: Extract<WsEvent, { event: 'agent_thought' }>,
+): void {
   const id = `thought-${event.turn_id || 'global'}-${event.stage || 'stage'}-${event.seq ?? assistant.segments.length + 1}`
-  const existing = assistant.segments.find((segment): segment is ThoughtSegment => segment.type === 'thought' && segment.id === id)
-  const target = existing || {
-    id,
-    type: 'thought',
-    status: 'running',
-    startedAt: eventTimeMs(event),
-  } satisfies ThoughtSegment
-  target.status = (event.status === 'running' || event.status === 'error' || event.status === 'error_aborted') ? event.status : 'done'
+  const existing = assistant.segments.find(
+    (segment): segment is ThoughtSegment =>
+      segment.type === 'thought' && segment.id === id,
+  )
+  const target =
+    existing ||
+    ({
+      id,
+      type: 'thought',
+      status: 'running',
+      startedAt: eventTimeMs(event),
+    } satisfies ThoughtSegment)
+  target.status =
+    event.status === 'running' ||
+    event.status === 'error' ||
+    event.status === 'error_aborted'
+      ? event.status
+      : 'done'
   target.label = event.label || target.label
   target.stage = event.stage || target.stage
   target.source = event.source || target.source
@@ -382,12 +489,27 @@ function upsertThoughtSegment(assistant: AssistantMessage, event: Extract<WsEven
   if (!existing) assistant.segments.push(target)
 }
 
-function ensureToolSegment(assistant: AssistantMessage, event: { id?: string; name?: string; arguments?: unknown; ts?: number; seq?: number }): ToolSegment {
+function ensureToolSegment(
+  assistant: AssistantMessage,
+  event: {
+    id?: string
+    name?: string
+    arguments?: unknown
+    ts?: number
+    seq?: number
+  },
+): ToolSegment {
   const existing = findToolSegment(assistant, event.id)
-  const name = typeof event.name === 'string' && event.name ? event.name : existing?.name || 'unknown_tool'
-  const args = event.arguments && typeof event.arguments === 'object' && !Array.isArray(event.arguments)
-    ? event.arguments as Record<string, unknown>
-    : existing?.arguments || {}
+  const name =
+    typeof event.name === 'string' && event.name
+      ? event.name
+      : existing?.name || 'unknown_tool'
+  const args =
+    event.arguments &&
+    typeof event.arguments === 'object' &&
+    !Array.isArray(event.arguments)
+      ? (event.arguments as Record<string, unknown>)
+      : existing?.arguments || {}
   if (existing) {
     existing.name = name
     existing.displayName ||= toolDisplayName(name)
@@ -412,35 +534,61 @@ function ensureToolSegment(assistant: AssistantMessage, event: { id?: string; na
   return segment
 }
 
-function findToolSegment(assistant: AssistantMessage | undefined, toolId?: string): ToolSegment | undefined {
+function findToolSegment(
+  assistant: AssistantMessage | undefined,
+  toolId?: string,
+): ToolSegment | undefined {
   if (!assistant) return undefined
   if (toolId) {
-    const byId = assistant.segments.find((segment): segment is ToolSegment => segment.type === 'tool' && segment.toolId === toolId)
+    const byId = assistant.segments.find(
+      (segment): segment is ToolSegment =>
+        segment.type === 'tool' && segment.toolId === toolId,
+    )
     if (byId) return byId
   }
   return undefined
 }
 
-function upsertControlSegment(assistant: AssistantMessage, type: 'ask' | 'plan', interaction: ControlInteraction): void {
+function upsertControlSegment(
+  assistant: AssistantMessage,
+  type: 'ask' | 'plan',
+  interaction: ControlInteraction,
+): void {
   const existing = findControlSegment(assistant, type, interaction)
   if (existing && (existing.type === 'ask' || existing.type === 'plan')) {
-    existing.interaction = mergeControlInteraction(existing.interaction, interaction)
+    existing.interaction = mergeControlInteraction(
+      existing.interaction,
+      interaction,
+    )
     return
   }
-  assistant.segments.push({ id: `${type}-${interaction.id || assistant.segments.length + 1}`, type, interaction })
+  assistant.segments.push({
+    id: `${type}-${interaction.id || assistant.segments.length + 1}`,
+    type,
+    interaction,
+  })
 }
 
-function updateControlSegment(state: ChatProjectionState, interaction: ControlInteraction): string | null {
+function updateControlSegment(
+  state: ChatProjectionState,
+  interaction: ControlInteraction,
+): string | null {
   const streamId = controlInteractionStreamId(interaction)
   let assistantId: string | null = null
   for (const message of state.messages) {
     if (message.role !== 'assistant') continue
     for (const segment of message.segments) {
-      if ((segment.type === 'ask' || segment.type === 'plan') && (
-        segment.interaction.id === interaction.id ||
-        (segment.type === 'plan' && streamId && controlInteractionStreamId(segment.interaction) === streamId)
-      )) {
-        segment.interaction = mergeControlInteraction(segment.interaction, interaction)
+      if (
+        (segment.type === 'ask' || segment.type === 'plan') &&
+        (segment.interaction.id === interaction.id ||
+          (segment.type === 'plan' &&
+            streamId &&
+            controlInteractionStreamId(segment.interaction) === streamId))
+      ) {
+        segment.interaction = mergeControlInteraction(
+          segment.interaction,
+          interaction,
+        )
         assistantId ||= message.id
       }
     }
@@ -448,33 +596,51 @@ function updateControlSegment(state: ChatProjectionState, interaction: ControlIn
   return assistantId
 }
 
-function findControlSegment(assistant: AssistantMessage, type: 'ask' | 'plan', interaction: ControlInteraction) {
-  const streamId = type === 'plan' ? controlInteractionStreamId(interaction) : ''
+function findControlSegment(
+  assistant: AssistantMessage,
+  type: 'ask' | 'plan',
+  interaction: ControlInteraction,
+) {
+  const streamId =
+    type === 'plan' ? controlInteractionStreamId(interaction) : ''
   return assistant.segments.find((segment) => {
-    if (type === 'ask') return segment.type === 'ask' && segment.interaction.id === interaction.id
-    return segment.type === 'plan' && (
-      segment.interaction.id === interaction.id ||
-      (streamId && controlInteractionStreamId(segment.interaction) === streamId)
+    if (type === 'ask')
+      return segment.type === 'ask' && segment.interaction.id === interaction.id
+    return (
+      segment.type === 'plan' &&
+      (segment.interaction.id === interaction.id ||
+        (streamId &&
+          controlInteractionStreamId(segment.interaction) === streamId))
     )
   })
 }
 
-function controlInteractionStreamId(interaction: ControlInteraction, fallback?: string): string {
+function controlInteractionStreamId(
+  interaction: ControlInteraction,
+  fallback?: string,
+): string {
   const metaId = interaction.meta?.plan_stream_id
   if (typeof metaId === 'string' && metaId.trim()) return metaId.trim()
   if (interaction.parent_call_id) return interaction.parent_call_id
   return String(fallback || '').trim()
 }
 
-function mergeControlInteraction(previous: ControlInteraction, next: ControlInteraction): ControlInteraction {
-  const streamId = controlInteractionStreamId(next) || controlInteractionStreamId(previous)
+function mergeControlInteraction(
+  previous: ControlInteraction,
+  next: ControlInteraction,
+): ControlInteraction {
+  const streamId =
+    controlInteractionStreamId(next) || controlInteractionStreamId(previous)
   const meta = { ...(previous.meta || {}), ...(next.meta || {}) }
   if (streamId) meta.plan_stream_id = streamId
   if (!next.meta?.provisional) delete meta.provisional
   return { ...previous, ...next, meta }
 }
 
-export function finishActiveThought(assistant: AssistantMessage | undefined, event?: { ts?: number }): void {
+export function finishActiveThought(
+  assistant: AssistantMessage | undefined,
+  event?: { ts?: number },
+): void {
   if (!assistant) return
   const last = assistant.segments[assistant.segments.length - 1]
   if (last?.type !== 'thought' || last.status !== 'running') return
@@ -482,23 +648,37 @@ export function finishActiveThought(assistant: AssistantMessage | undefined, eve
   last.status = 'done'
 }
 
-export function syncAssistantDoneContent(assistant: AssistantMessage, content: string): void {
+export function syncAssistantDoneContent(
+  assistant: AssistantMessage,
+  content: string,
+): void {
   const text = content.trimEnd()
   if (!text) return
-  const textSegments = assistant.segments.filter((segment) => segment.type === 'text')
+  const textSegments = assistant.segments.filter(
+    (segment) => segment.type === 'text',
+  )
   const current = textSegments.map((segment) => segment.content).join('')
   if (!current) {
-    assistant.segments.push({ id: `text-${assistant.turn_id || assistant.segments.length + 1}-done`, type: 'text', content: text })
+    assistant.segments.push({
+      id: `text-${assistant.turn_id || assistant.segments.length + 1}-done`,
+      type: 'text',
+      content: text,
+    })
     return
   }
   if (text.startsWith(current)) {
     const rest = text.slice(current.length)
-    const lastText = [...assistant.segments].reverse().find((segment) => segment.type === 'text')
+    const lastText = [...assistant.segments]
+      .reverse()
+      .find((segment) => segment.type === 'text')
     if (rest && lastText?.type === 'text') lastText.content += rest
   }
 }
 
-function segmentId(type: string, event: { turn_id?: string; seq?: number }): string {
+function segmentId(
+  type: string,
+  event: { turn_id?: string; seq?: number },
+): string {
   return `${type}-${event.turn_id || 'global'}-${event.seq || 'next'}`
 }
 
@@ -508,7 +688,10 @@ export function eventTimeMs(data?: { ts?: number }): number {
   return raw < 1_000_000_000_000 ? Math.round(raw * 1000) : Math.round(raw)
 }
 
-export function finishTimedState(state: { startedAt?: number; endedAt?: number; durationMs?: number }, endedAt = 0): void {
+export function finishTimedState(
+  state: { startedAt?: number; endedAt?: number; durationMs?: number },
+  endedAt = 0,
+): void {
   state.endedAt = endedAt
   if (state.startedAt) state.durationMs = Math.max(0, endedAt - state.startedAt)
 }

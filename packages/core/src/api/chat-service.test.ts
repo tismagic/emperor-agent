@@ -4,7 +4,11 @@ import { join } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
 import type { ModelRoute, ProviderSnapshot } from '../model/router'
 import { LLMProvider, type ChatArgs, type LLMResponse } from '../providers/base'
-import { SCHEDULER_TARGET_SESSION_METADATA_KEY, SchedulerPayload, SchedulerSchedule } from '../scheduler/models'
+import {
+  SCHEDULER_TARGET_SESSION_METADATA_KEY,
+  SchedulerPayload,
+  SchedulerSchedule,
+} from '../scheduler/models'
 import { CoreApi } from './core-api'
 import { MainlineTurnService } from './chat-service'
 
@@ -13,7 +17,12 @@ const TEMPLATES_DIR = join(__dirname, '..', '..', '..', '..', 'templates')
 describe('MainlineTurnService (MIG-IPC-005)', () => {
   it('submits chat turns through AgentLoop and returns durable turn metadata', async () => {
     const root = tmp('emperor-mainline-')
-    const api = await CoreApi.create({ root, stateRoot: join(root, '.emperor'), templatesDir: TEMPLATES_DIR, modelRouter: fakeRouter(new FakeProvider()) })
+    const api = await CoreApi.create({
+      root,
+      stateRoot: join(root, '.emperor'),
+      templatesDir: TEMPLATES_DIR,
+      modelRouter: fakeRouter(new FakeProvider()),
+    })
     const events: Array<Record<string, unknown>> = []
     const session = api.sessions.create({ title: 'Mainline' })
 
@@ -24,59 +33,133 @@ describe('MainlineTurnService (MIG-IPC-005)', () => {
       turnId: 'turn_main_1',
       source: 'chat',
       sessionId: String(session.id),
-      emit: async (event) => { events.push(event) },
+      emit: async (event) => {
+        events.push(event)
+      },
     })
 
-    expect(result).toMatchObject({ turnId: 'turn_main_1', content: 'pong', activeSessionId: api.loop.activeSessionId })
+    expect(result).toMatchObject({
+      turnId: 'turn_main_1',
+      content: 'pong',
+      activeSessionId: api.loop.activeSessionId,
+    })
     expect(events.map((event) => event.event)).toContain('user_message')
     expect(events.map((event) => event.event)).toContain('assistant_done')
-    expect(api.loop.activeMemoryStore.loadUnarchivedHistory().map((row) => row.role)).toEqual(['user', 'assistant'])
-    expect(JSON.stringify(api.loop.activeMemoryStore.loadUnarchivedHistory())).toContain('Ping display')
-    expect(existsSync(join(root, '.emperor', 'sessions', api.loop.activeSessionId!, 'history.jsonl'))).toBe(true)
+    expect(
+      api.loop.activeMemoryStore.loadUnarchivedHistory().map((row) => row.role),
+    ).toEqual(['user', 'assistant'])
+    expect(
+      JSON.stringify(api.loop.activeMemoryStore.loadUnarchivedHistory()),
+    ).toContain('Ping display')
+    expect(
+      existsSync(
+        join(
+          root,
+          '.emperor',
+          'sessions',
+          api.loop.activeSessionId!,
+          'history.jsonl',
+        ),
+      ),
+    ).toBe(true)
 
     await api.close()
   })
 
   it('backs CoreApi chat.submit with the same mainline service', async () => {
-    const api = await CoreApi.create({ root: tmp('emperor-mainline-'), stateRoot: tmp('emperor-mainline-state-'), templatesDir: TEMPLATES_DIR, modelRouter: fakeRouter(new FakeProvider()) })
+    const api = await CoreApi.create({
+      root: tmp('emperor-mainline-'),
+      stateRoot: tmp('emperor-mainline-state-'),
+      templatesDir: TEMPLATES_DIR,
+      modelRouter: fakeRouter(new FakeProvider()),
+    })
     const session = api.sessions.create({ title: 'Chat' })
 
     expect(api.mainline).toBeInstanceOf(MainlineTurnService)
-    await expect(api.chat.submit({ content: 'hello', turnId: 'turn_chat_1', sessionId: String(session.id) })).resolves.toMatchObject({ turnId: 'turn_chat_1', content: 'pong' })
+    await expect(
+      api.chat.submit({
+        content: 'hello',
+        turnId: 'turn_chat_1',
+        sessionId: String(session.id),
+      }),
+    ).resolves.toMatchObject({ turnId: 'turn_chat_1', content: 'pong' })
 
     await api.close()
   })
 
   it('rejects chat submits without a real known session id before writing history', async () => {
     const root = tmp('emperor-mainline-session-boundary-')
-    const api = await CoreApi.create({ root, stateRoot: join(root, '.emperor'), templatesDir: TEMPLATES_DIR, modelRouter: fakeRouter(new FakeProvider()) })
+    const api = await CoreApi.create({
+      root,
+      stateRoot: join(root, '.emperor'),
+      templatesDir: TEMPLATES_DIR,
+      modelRouter: fakeRouter(new FakeProvider()),
+    })
     const activeSessionId = String(api.loop.activeSessionId)
 
-    await expect(api.chat.submit({ content: 'missing session' })).rejects.toThrow(/session/i)
-    await expect(api.chat.submit({ content: 'unknown session', sessionId: 'not-real' })).rejects.toThrow(/unknown|session/i)
+    await expect(
+      api.chat.submit({ content: 'missing session' }),
+    ).rejects.toThrow(/session/i)
+    await expect(
+      api.chat.submit({ content: 'unknown session', sessionId: 'not-real' }),
+    ).rejects.toThrow(/unknown|session/i)
     // P1-6 起 draft 提交不再被拒，而是晋升为真实 session（见 core-api.test 的 draft submit 用例）
 
-    const historyPath = join(root, '.emperor', 'sessions', activeSessionId, 'history.jsonl')
-    expect(existsSync(historyPath) ? readFileSync(historyPath, 'utf8').trim() : '').toBe('')
+    const historyPath = join(
+      root,
+      '.emperor',
+      'sessions',
+      activeSessionId,
+      'history.jsonl',
+    )
+    expect(
+      existsSync(historyPath) ? readFileSync(historyPath, 'utf8').trim() : '',
+    ).toBe('')
 
     await api.close()
   })
 
   it('writes the first build-session chat turn to the build session history only', async () => {
     const root = tmp('emperor-mainline-build-session-')
-    const api = await CoreApi.create({ root, stateRoot: join(root, '.emperor'), templatesDir: TEMPLATES_DIR, modelRouter: fakeRouter(new FakeProvider()) })
+    const api = await CoreApi.create({
+      root,
+      stateRoot: join(root, '.emperor'),
+      templatesDir: TEMPLATES_DIR,
+      modelRouter: fakeRouter(new FakeProvider()),
+    })
     const defaultSessionId = String(api.loop.activeSessionId)
     const projectPath = join(root, 'project')
     mkdirSync(projectPath, { recursive: true })
-    const build = api.sessions.create({ title: 'Build Project', mode: 'build', project_path: projectPath })
+    const build = api.sessions.create({
+      title: 'Build Project',
+      mode: 'build',
+      project_path: projectPath,
+    })
     api.control.setMode('auto')
 
-    await api.chat.submit({ content: 'ping', turnId: 'turn_build_1', sessionId: String(build.id) })
+    await api.chat.submit({
+      content: 'ping',
+      turnId: 'turn_build_1',
+      sessionId: String(build.id),
+    })
 
-    const buildHistory = readFileSync(join(root, '.emperor', 'sessions', String(build.id), 'history.jsonl'), 'utf8')
+    const buildHistory = readFileSync(
+      join(root, '.emperor', 'sessions', String(build.id), 'history.jsonl'),
+      'utf8',
+    )
     expect(buildHistory).toContain('ping')
-    const defaultHistory = join(root, '.emperor', 'sessions', defaultSessionId, 'history.jsonl')
-    expect(existsSync(defaultHistory) ? readFileSync(defaultHistory, 'utf8').trim() : '').toBe('')
+    const defaultHistory = join(
+      root,
+      '.emperor',
+      'sessions',
+      defaultSessionId,
+      'history.jsonl',
+    )
+    expect(
+      existsSync(defaultHistory)
+        ? readFileSync(defaultHistory, 'utf8').trim()
+        : '',
+    ).toBe('')
     expect(api.loop.sessionStore.get(String(build.id))).toMatchObject({
       mode: 'build',
       project_path: projectPath,
@@ -89,28 +172,57 @@ describe('MainlineTurnService (MIG-IPC-005)', () => {
   it('rejects a second concurrent mainline turn before switching sessions', async () => {
     const root = tmp('emperor-mainline-concurrent-turn-')
     const provider = new BlockingProvider()
-    const api = await CoreApi.create({ root, stateRoot: join(root, '.emperor'), templatesDir: TEMPLATES_DIR, modelRouter: fakeRouter(provider) })
+    const api = await CoreApi.create({
+      root,
+      stateRoot: join(root, '.emperor'),
+      templatesDir: TEMPLATES_DIR,
+      modelRouter: fakeRouter(provider),
+    })
     const first = api.sessions.create({ title: 'First' })
     const second = api.sessions.create({ title: 'Second' })
 
-    const running = api.chat.submit({ content: 'first', turnId: 'turn_busy_1', sessionId: String(first.id) })
+    const running = api.chat.submit({
+      content: 'first',
+      turnId: 'turn_busy_1',
+      sessionId: String(first.id),
+    })
     await provider.started
 
-    await expect(api.chat.submit({ content: 'second', turnId: 'turn_busy_2', sessionId: String(second.id) }))
-      .rejects.toMatchObject({ name: 'TurnBusyError' })
+    await expect(
+      api.chat.submit({
+        content: 'second',
+        turnId: 'turn_busy_2',
+        sessionId: String(second.id),
+      }),
+    ).rejects.toMatchObject({ name: 'TurnBusyError' })
     expect(api.loop.activeSessionId).toBe(String(first.id))
 
     provider.finish(response('first done'))
     await expect(running).resolves.toMatchObject({ content: 'first done' })
 
-    const secondHistoryPath = join(root, '.emperor', 'sessions', String(second.id), 'history.jsonl')
-    expect(existsSync(secondHistoryPath) ? readFileSync(secondHistoryPath, 'utf8') : '').not.toContain('second')
+    const secondHistoryPath = join(
+      root,
+      '.emperor',
+      'sessions',
+      String(second.id),
+      'history.jsonl',
+    )
+    expect(
+      existsSync(secondHistoryPath)
+        ? readFileSync(secondHistoryPath, 'utf8')
+        : '',
+    ).not.toContain('second')
 
     await api.close()
   })
 
   it('routes scheduler agent_turn jobs through MainlineTurnService', async () => {
-    const api = await CoreApi.create({ root: tmp('emperor-mainline-'), stateRoot: tmp('emperor-mainline-state-'), templatesDir: TEMPLATES_DIR, modelRouter: fakeRouter(new FakeProvider()) })
+    const api = await CoreApi.create({
+      root: tmp('emperor-mainline-'),
+      stateRoot: tmp('emperor-mainline-state-'),
+      templatesDir: TEMPLATES_DIR,
+      modelRouter: fakeRouter(new FakeProvider()),
+    })
     const submitSchedulerTurn = vi.spyOn(api.mainline, 'submitSchedulerTurn')
     const originalSessionId = api.loop.activeSessionId!
     const target = api.sessions.create({ title: 'Scheduler target' })
@@ -125,12 +237,16 @@ describe('MainlineTurnService (MIG-IPC-005)', () => {
       }),
     })
 
-    await expect(api.loop.schedulerService.runJob(job.id, { force: true })).resolves.toBe(true)
+    await expect(
+      api.loop.schedulerService.runJob(job.id, { force: true }),
+    ).resolves.toBe(true)
 
     expect(submitSchedulerTurn).toHaveBeenCalledOnce()
     expect(api.loop.activeSessionId).toBe(originalSessionId)
     api.loop.activateSession(String(target.id))
-    const history = JSON.stringify(api.loop.activeMemoryStore.loadUnarchivedHistory())
+    const history = JSON.stringify(
+      api.loop.activeMemoryStore.loadUnarchivedHistory(),
+    )
     expect(history).toContain('[SCHEDULER_TRIGGER]')
     expect(history).toContain('定时任务触发 · daily summary')
 
@@ -157,7 +273,9 @@ class BlockingProvider extends LLMProvider {
   calls: ChatArgs[] = []
   private startedResolve: () => void = () => {}
   private finishResolve: (response: LLMResponse) => void = () => {}
-  readonly started = new Promise<void>((resolve) => { this.startedResolve = resolve })
+  readonly started = new Promise<void>((resolve) => {
+    this.startedResolve = resolve
+  })
 
   constructor() {
     super({ defaultModel: 'fake-main' })
@@ -167,7 +285,9 @@ class BlockingProvider extends LLMProvider {
     this.calls.push(args)
     if (this.calls.length > 1) return response('unexpected second turn')
     this.startedResolve()
-    return new Promise<LLMResponse>((resolve) => { this.finishResolve = resolve })
+    return new Promise<LLMResponse>((resolve) => {
+      this.finishResolve = resolve
+    })
   }
 
   finish(response: LLMResponse): void {
@@ -175,20 +295,40 @@ class BlockingProvider extends LLMProvider {
   }
 }
 
-function fakeRouter(provider: LLMProvider): { route: (useCase: string, agentType?: string | null, task?: string | null) => ModelRoute; payload: () => Record<string, unknown> } {
+function fakeRouter(provider: LLMProvider): {
+  route: (
+    useCase: string,
+    agentType?: string | null,
+    task?: string | null,
+  ) => ModelRoute
+  payload: () => Record<string, unknown>
+} {
   return {
-    route: (useCase: string, _agentType?: string | null, _task?: string | null) => ({
-      snapshot: snapshot(provider, useCase === 'main_agent' ? 'main' : 'secondary'),
+    route: (
+      useCase: string,
+      _agentType?: string | null,
+      _task?: string | null,
+    ) => ({
+      snapshot: snapshot(
+        provider,
+        useCase === 'main_agent' ? 'main' : 'secondary',
+      ),
       fallback: null,
       useCase,
       reason: `${useCase}:fake`,
       estimatedTokens: null,
     }),
-    payload: () => ({ mainModel: 'fake-main', secondaryModel: 'fake-secondary' }),
+    payload: () => ({
+      mainModel: 'fake-main',
+      secondaryModel: 'fake-secondary',
+    }),
   }
 }
 
-function snapshot(provider: LLMProvider, role: 'main' | 'secondary'): ProviderSnapshot {
+function snapshot(
+  provider: LLMProvider,
+  role: 'main' | 'secondary',
+): ProviderSnapshot {
   return {
     provider,
     providerName: 'fake',

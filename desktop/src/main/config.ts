@@ -39,7 +39,8 @@ function resolveRuntimeRoot(
 ): { root: string; source: RootSource } {
   const explicit = argValue(argv, '--root')
   if (explicit) return { root: explicit, source: 'explicit' }
-  if (env.EMPEROR_AGENT_ROOT) return { root: env.EMPEROR_AGENT_ROOT, source: 'env' }
+  if (env.EMPEROR_AGENT_ROOT)
+    return { root: env.EMPEROR_AGENT_ROOT, source: 'env' }
   if (defaultRoot) return { root: defaultRoot, source: 'default' }
   return { root: path.resolve(mainDir, '..', '..', '..'), source: 'default' }
 }
@@ -47,8 +48,12 @@ function resolveRuntimeRoot(
 /** `EMPEROR_AGENT_ROOT`/`--root` only ever mean runtime *resources* root now; the private
  * state root is resolved independently so packaged installs keep private data outside the
  * app bundle even when `--root`/`EMPEROR_AGENT_ROOT` point at a bundled resources dir. */
-function resolveStateRoot(env: Record<string, string | undefined>): { root: string; source: RootSource } {
-  if (env.EMPEROR_CONFIG_DIR) return { root: env.EMPEROR_CONFIG_DIR, source: 'env' }
+function resolveStateRoot(env: Record<string, string | undefined>): {
+  root: string
+  source: RootSource
+} {
+  if (env.EMPEROR_CONFIG_DIR)
+    return { root: env.EMPEROR_CONFIG_DIR, source: 'env' }
   return { root: defaultStateRoot(), source: 'default' }
 }
 
@@ -58,7 +63,11 @@ export function resolveConfig({
   readFile = defaultReadFile,
   defaultRoot,
 }: ResolveConfigOptions = {}): ResolvedConfig {
-  const { root: runtimeRoot, source: runtimeRootSource } = resolveRuntimeRoot(argv, env, defaultRoot)
+  const { root: runtimeRoot, source: runtimeRootSource } = resolveRuntimeRoot(
+    argv,
+    env,
+    defaultRoot,
+  )
   const { root: stateRoot, source: stateRootSource } = resolveStateRoot(env)
 
   let configSource: 'file' | 'default' = 'default'

@@ -90,6 +90,7 @@
 ```
 
 对比原始草案的两处修正：
+
 1. 原草案在 `memory/` 下又列了一个 `projects/`，与顶层 `projects/`（对应 `paths.ts` 里唯一的 `projectsRoot`）重复且当前代码没有任何对应实现，属于文档笔误，已删除。
 2. 原草案在 `<project-id>/` 下列了 `memory/`、`runtime/` 两个子目录，但 `projects/state-store.ts` 的 `paths()` 只产出 `project.json`/`AGENTS.local.md`/`prompt-overlay.md`，本计划 10 个任务里也没有任何一项创建这两个子目录，属于超前于实现的臆测内容，已删除；如未来确有需要（例如项目级 episode），应先补任务再回写目录树。
 

@@ -12,13 +12,19 @@ describe('runInitialStartup', () => {
     await runInitialStartup({
       sessionStore: {
         activeId: ref(''),
-        load: vi.fn(async () => { throw new Error('Core IPC bridge is unavailable; use the Electron desktop window.') }),
+        load: vi.fn(async () => {
+          throw new Error(
+            'Core IPC bridge is unavailable; use the Electron desktop window.',
+          )
+        }),
         backendSessionId: () => '',
         isDraftSessionId: () => false,
       },
       bootstrap: {
         boot: ref(null),
-        error: ref('Core IPC bridge is unavailable; use the Electron desktop window.'),
+        error: ref(
+          'Core IPC bridge is unavailable; use the Electron desktop window.',
+        ),
         loadBootstrap,
       },
       switchSession,

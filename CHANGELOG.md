@@ -10,4 +10,3 @@
 - Removed duplicated Composer model/mode floating-menu logic behind a shared helper.
 - Reduced chat message-list scroll watcher cost by tracking the latest visible message signature instead of deep-watching the full timeline.
 - Cleaned binary NUL bytes from `packages/core/src/memory/history.ts` source signatures.
-

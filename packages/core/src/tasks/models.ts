@@ -63,7 +63,10 @@ export class TaskRecord {
     this.tool_call_id = nullable(payload.tool_call_id)
     this.job_id = nullable(payload.job_id)
     this.session_id = nullable(payload.session_id)
-    this.ended_at = payload.ended_at === null || payload.ended_at === undefined ? null : Number(payload.ended_at)
+    this.ended_at =
+      payload.ended_at === null || payload.ended_at === undefined
+        ? null
+        : Number(payload.ended_at)
     this.output_path = nullable(payload.output_path)
     this.transcript_path = nullable(payload.transcript_path)
     this.progress = { ...(payload.progress ?? {}) }

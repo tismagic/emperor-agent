@@ -1,4 +1,9 @@
-import { createMemoryHistory, createRouter, createWebHistory, type RouteRecordRaw } from 'vue-router'
+import {
+  createMemoryHistory,
+  createRouter,
+  createWebHistory,
+  type RouteRecordRaw,
+} from 'vue-router'
 
 export const routeRecords: RouteRecordRaw[] = [
   { path: '/', redirect: '/chat' },
@@ -92,9 +97,16 @@ export const routeRecords: RouteRecordRaw[] = [
 ]
 
 export const router = createRouter({
-  history: typeof window === 'undefined' ? createMemoryHistory() : createWebHistory(),
+  history:
+    typeof window === 'undefined' ? createMemoryHistory() : createWebHistory(),
   routes: routeRecords,
 })
 
-export const navOrder = ['chat', 'plugins', 'scheduler', 'pet', 'settings'] as const
+export const navOrder = [
+  'chat',
+  'plugins',
+  'scheduler',
+  'pet',
+  'settings',
+] as const
 export type NavRouteName = (typeof navOrder)[number]

@@ -5,10 +5,17 @@ export function applyTeamEventToBootstrap(
   data: WsEvent,
   options: { countUnread?: boolean } = {},
 ) {
-  boot.team ||= { members: [], leadInbox: [], leadUnread: 0, config: { members: [] } }
+  boot.team ||= {
+    members: [],
+    leadInbox: [],
+    leadUnread: 0,
+    config: { members: [] },
+  }
 
   if (data.event === 'team_member_update' && data.member) {
-    const index = boot.team.members.findIndex((member) => member.name === data.member!.name)
+    const index = boot.team.members.findIndex(
+      (member) => member.name === data.member!.name,
+    )
     if (index >= 0) {
       boot.team.members[index] = { ...boot.team.members[index], ...data.member }
     } else {
@@ -29,10 +36,13 @@ export function applyTeamEventToBootstrap(
       boot.team.leadInbox = boot.team.leadInbox.slice(-50)
       added = true
     }
-    if (added && countUnread) boot.team.leadUnread = (boot.team.leadUnread || 0) + 1
+    if (added && countUnread)
+      boot.team.leadUnread = (boot.team.leadUnread || 0) + 1
   }
 
-  const target = boot.team.members.find((member) => member.name === data.message!.to)
+  const target = boot.team.members.find(
+    (member) => member.name === data.message!.to,
+  )
   if (target) {
     target.recent_messages ||= []
     let added = false

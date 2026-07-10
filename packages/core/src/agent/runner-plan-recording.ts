@@ -7,14 +7,30 @@ import type { ToolCallRequest } from '../providers/base'
 import type { ToolResultObj } from '../tools/base'
 import type { ToolRegistry } from '../tools/registry'
 import { planToDict } from '../plans/models'
-import { resultFromToolOutput, type VerificationCommand } from '../plans/verification'
+import {
+  resultFromToolOutput,
+  type VerificationCommand,
+} from '../plans/verification'
 import type { ControlManagerRunnerHost } from './runner'
-import { discoveryEvidenceRefs, discoveryFiles, summarizeToolResult } from './runner-helpers'
+import {
+  discoveryEvidenceRefs,
+  discoveryFiles,
+  summarizeToolResult,
+} from './runner-helpers'
 
 type Msg = Record<string, unknown>
 
-export function recordPlanDiscovery(cm: ControlManagerRunnerHost | null, call: ToolCallRequest, result: ToolResultObj): void {
-  if (result.isError || cm === null || typeof cm.recordPlanDiscovery !== 'function') return
+export function recordPlanDiscovery(
+  cm: ControlManagerRunnerHost | null,
+  call: ToolCallRequest,
+  result: ToolResultObj,
+): void {
+  if (
+    result.isError ||
+    cm === null ||
+    typeof cm.recordPlanDiscovery !== 'function'
+  )
+    return
   const source = String(result.metadata.tool ?? call.name)
   if (source !== 'read_file' && source !== 'grep') return
   const files = discoveryFiles(source, result)
@@ -23,7 +39,8 @@ export function recordPlanDiscovery(cm: ControlManagerRunnerHost | null, call: T
   try {
     cm.recordPlanDiscovery({
       source,
-      summary: result.displaySummary || summarizeToolResult(result.modelContent, 240),
+      summary:
+        result.displaySummary || summarizeToolResult(result.modelContent, 240),
       files,
       evidenceRefs,
     })
@@ -32,12 +49,17 @@ export function recordPlanDiscovery(cm: ControlManagerRunnerHost | null, call: T
   }
 }
 
-export function recordPlanStepToolOutput(cm: ControlManagerRunnerHost | null, call: ToolCallRequest, result: ToolResultObj): void {
+export function recordPlanStepToolOutput(
+  cm: ControlManagerRunnerHost | null,
+  call: ToolCallRequest,
+  result: ToolResultObj,
+): void {
   if (cm === null || typeof cm.recordPlanStepToolOutput !== 'function') return
   try {
     cm.recordPlanStepToolOutput({
       toolName: call.name,
-      summary: result.displaySummary || summarizeToolResult(result.modelContent, 240),
+      summary:
+        result.displaySummary || summarizeToolResult(result.modelContent, 240),
       toolCallId: call.id,
       artifacts: result.artifactPayloads(),
       metadata: result.metadata,
@@ -48,15 +70,31 @@ export function recordPlanStepToolOutput(cm: ControlManagerRunnerHost | null, ca
   }
 }
 
-export function planIndependentVerificationFollowup(cm: ControlManagerRunnerHost | null, registry: ToolRegistry): Record<string, unknown> | null {
-  if (cm === null || typeof cm.planIndependentVerificationFollowup !== 'function') return null
-  return cm.planIndependentVerificationFollowup({ dispatchAvailable: registry.get('dispatch_subagent') !== undefined })
+export function planIndependentVerificationFollowup(
+  cm: ControlManagerRunnerHost | null,
+  registry: ToolRegistry,
+): Record<string, unknown> | null {
+  if (
+    cm === null ||
+    typeof cm.planIndependentVerificationFollowup !== 'function'
+  )
+    return null
+  return cm.planIndependentVerificationFollowup({
+    dispatchAvailable: registry.get('dispatch_subagent') !== undefined,
+  })
 }
 
-export function planVerificationTarget(cm: ControlManagerRunnerHost | null, call: ToolCallRequest): Record<string, string> | null {
+export function planVerificationTarget(
+  cm: ControlManagerRunnerHost | null,
+  call: ToolCallRequest,
+): Record<string, string> | null {
   if (call.name !== 'run_command' || cm === null) return null
   const command = call.arguments.command
-  if (typeof command !== 'string' || typeof cm.planVerificationTarget !== 'function') return null
+  if (
+    typeof command !== 'string' ||
+    typeof cm.planVerificationTarget !== 'function'
+  )
+    return null
   return cm.planVerificationTarget(command)
 }
 
@@ -65,9 +103,22 @@ export function recordPlanVerification(
   call: ToolCallRequest,
   content: string,
   target: Record<string, string> | null,
-): { target: Record<string, string>; result: Record<string, unknown>; plan: Record<string, unknown> } | null {
-  if (target === null || cm === null || typeof cm.recordPlanVerificationResult !== 'function') return null
-  const command: VerificationCommand = { command: target.command!, cwd: null, timeoutSeconds: 300 }
+): {
+  target: Record<string, string>
+  result: Record<string, unknown>
+  plan: Record<string, unknown>
+} | null {
+  if (
+    target === null ||
+    cm === null ||
+    typeof cm.recordPlanVerificationResult !== 'function'
+  )
+    return null
+  const command: VerificationCommand = {
+    command: target.command!,
+    cwd: null,
+    timeoutSeconds: 300,
+  }
   const resultObj = resultFromToolOutput(command, content)
   const result: Record<string, unknown> = {
     command: resultObj.command,
@@ -84,15 +135,25 @@ export function recordPlanVerification(
     result.requirement_id = target.requirement_id
     result.verification_id = target.requirement_id
   }
-  const plan = cm.recordPlanVerificationResult({ planId: target.plan_id!, stepId: target.step_id!, result })
+  const plan = cm.recordPlanVerificationResult({
+    planId: target.plan_id!,
+    stepId: target.step_id!,
+    result,
+  })
   if (plan === null) return null
   return { target, result, plan: planToDict(plan) }
 }
 
 /** B4.2：领取未验证步骤并生成一次性诚实性 followup；宿主缺失或无未验证项返回 null。 */
-export function unverifiedPlanHonestyFollowup(cm: ControlManagerRunnerHost | null): Msg | null {
-  if (cm === null || typeof cm.claimUnverifiedPlanSteps !== 'function') return null
-  let claim: { planId: string; steps: Array<{ id: string; title: string }> } | null = null
+export function unverifiedPlanHonestyFollowup(
+  cm: ControlManagerRunnerHost | null,
+): Msg | null {
+  if (cm === null || typeof cm.claimUnverifiedPlanSteps !== 'function')
+    return null
+  let claim: {
+    planId: string
+    steps: Array<{ id: string; title: string }>
+  } | null = null
   try {
     claim = cm.claimUnverifiedPlanSteps()
   } catch {
@@ -111,7 +172,10 @@ export function unverifiedPlanHonestyFollowup(cm: ControlManagerRunnerHost | nul
   }
 }
 
-export function planVerificationFollowup(update: { result: Record<string, unknown>; target: Record<string, string> }): Msg | null {
+export function planVerificationFollowup(update: {
+  result: Record<string, unknown>
+  target: Record<string, string>
+}): Msg | null {
   const result = update.result ?? {}
   if (result.passed !== false) return null
   const target = update.target ?? {}

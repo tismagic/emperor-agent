@@ -2,7 +2,12 @@
 import { computed, ref, watch } from 'vue'
 import { core } from '../../api/http'
 import { useAppContext } from '../../composables/useAppContext'
-import type { SchedulerJob, SchedulerPayload, SchedulerRunRecord, SchedulerSchedule } from '../../types'
+import type {
+  SchedulerJob,
+  SchedulerPayload,
+  SchedulerRunRecord,
+  SchedulerSchedule,
+} from '../../types'
 import { actionIcons, navIcon, toolIcon } from '../../icons'
 import { canEditSchedulerJob } from './schedulerPanelModel'
 
@@ -19,7 +24,9 @@ const createScheduleKind = ref<'at' | 'every' | 'cron'>('every')
 const createAtLocal = ref('')
 const createEveryMinutes = ref(60)
 const createCronExpr = ref('0 9 * * *')
-const createCronTz = ref(Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC')
+const createCronTz = ref(
+  Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC',
+)
 
 const editName = ref('')
 const editMessage = ref('')
@@ -29,33 +36,61 @@ const editScheduleKind = ref<'at' | 'every' | 'cron'>('every')
 const editAtLocal = ref('')
 const editEveryMinutes = ref(60)
 const editCronExpr = ref('0 9 * * *')
-const editCronTz = ref(Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC')
+const editCronTz = ref(
+  Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC',
+)
 
-const scheduler = computed<SchedulerPayload>(() => ctx.boot.value?.scheduler || {
-  status: { running: false, jobs: 0, enabled: 0, nextRunAtMs: null, lastError: null },
-  jobs: [],
-})
+const scheduler = computed<SchedulerPayload>(
+  () =>
+    ctx.boot.value?.scheduler || {
+      status: {
+        running: false,
+        jobs: 0,
+        enabled: 0,
+        nextRunAtMs: null,
+        lastError: null,
+      },
+      jobs: [],
+    },
+)
 const jobs = computed(() => scheduler.value.jobs || [])
-const selected = computed(() => jobs.value.find((job) => job.id === selectedId.value) || null)
+const selected = computed(
+  () => jobs.value.find((job) => job.id === selectedId.value) || null,
+)
 const selectedCanEdit = computed(() => canEditSchedulerJob(selected.value))
-const selectedRunHistory = computed(() => [...(selected.value?.state?.runHistory || [])].reverse())
+const selectedRunHistory = computed(() =>
+  [...(selected.value?.state?.runHistory || [])].reverse(),
+)
 const enabledCount = computed(() => scheduler.value.status?.enabled || 0)
-const nextRunLabel = computed(() => formatMs(scheduler.value.status?.nextRunAtMs))
+const nextRunLabel = computed(() =>
+  formatMs(scheduler.value.status?.nextRunAtMs),
+)
 
-watch(jobs, () => {
-  if (selectedId.value && !jobs.value.some((job) => job.id === selectedId.value)) {
-    selectedId.value = ''
-  }
-}, { immediate: true })
+watch(
+  jobs,
+  () => {
+    if (
+      selectedId.value &&
+      !jobs.value.some((job) => job.id === selectedId.value)
+    ) {
+      selectedId.value = ''
+    }
+  },
+  { immediate: true },
+)
 
-watch(selected, (job) => {
-  if (!job) return
-  editName.value = job.name || ''
-  editMessage.value = job.payload?.message || ''
-  editDeliver.value = job.payload?.deliver !== false
-  editDeleteAfterRun.value = Boolean(job.deleteAfterRun)
-  setScheduleDraft(job.schedule, 'edit')
-}, { immediate: true })
+watch(
+  selected,
+  (job) => {
+    if (!job) return
+    editName.value = job.name || ''
+    editMessage.value = job.payload?.message || ''
+    editDeliver.value = job.payload?.deliver !== false
+    editDeleteAfterRun.value = Boolean(job.deleteAfterRun)
+    setScheduleDraft(job.schedule, 'edit')
+  },
+  { immediate: true },
+)
 
 defineExpose({ openCreate })
 
@@ -101,23 +136,26 @@ async function createJob() {
   if (!createMessage.value.trim()) return
   loading.value = true
   try {
-    const result = await core<{ job: SchedulerJob; scheduler: SchedulerPayload }>('scheduler.createJob', {
-        name: createName.value.trim() || defaultJobName(),
-        schedule: buildSchedule(
-          createScheduleKind.value,
-          createAtLocal.value,
-          createEveryMinutes.value,
-          createCronExpr.value,
-          createCronTz.value,
-        ),
-        payload: {
-          kind: 'agent_turn',
-          message: createMessage.value.trim(),
-          target: null,
-          deliver: createDeliver.value,
-        },
-        deleteAfterRun: createDeleteAfterRun.value,
-      })
+    const result = await core<{
+      job: SchedulerJob
+      scheduler: SchedulerPayload
+    }>('scheduler.createJob', {
+      name: createName.value.trim() || defaultJobName(),
+      schedule: buildSchedule(
+        createScheduleKind.value,
+        createAtLocal.value,
+        createEveryMinutes.value,
+        createCronExpr.value,
+        createCronTz.value,
+      ),
+      payload: {
+        kind: 'agent_turn',
+        message: createMessage.value.trim(),
+        target: null,
+        deliver: createDeliver.value,
+      },
+      deleteAfterRun: createDeleteAfterRun.value,
+    })
     if (ctx.boot.value) ctx.boot.value.scheduler = result.scheduler
     selectedId.value = result.job.id
     closeCreate()
@@ -132,26 +170,25 @@ async function saveSelected() {
   if (!selected.value || !selectedCanEdit.value) return
   loading.value = true
   try {
-    const result = await core<{ job: SchedulerJob; scheduler: SchedulerPayload }>(
-      'scheduler.updateJob',
-      selected.value.id,
-      {
-          name: editName.value.trim() || selected.value.name,
-          schedule: buildSchedule(
-            editScheduleKind.value,
-            editAtLocal.value,
-            editEveryMinutes.value,
-            editCronExpr.value,
-            editCronTz.value,
-          ),
-          payload: {
-            ...selected.value.payload,
-            message: editMessage.value.trim(),
-            deliver: editDeliver.value,
-          },
-          deleteAfterRun: editDeleteAfterRun.value,
+    const result = await core<{
+      job: SchedulerJob
+      scheduler: SchedulerPayload
+    }>('scheduler.updateJob', selected.value.id, {
+      name: editName.value.trim() || selected.value.name,
+      schedule: buildSchedule(
+        editScheduleKind.value,
+        editAtLocal.value,
+        editEveryMinutes.value,
+        editCronExpr.value,
+        editCronTz.value,
+      ),
+      payload: {
+        ...selected.value.payload,
+        message: editMessage.value.trim(),
+        deliver: editDeliver.value,
       },
-    )
+      deleteAfterRun: editDeleteAfterRun.value,
+    })
     if (ctx.boot.value) ctx.boot.value.scheduler = result.scheduler
     ctx.showToast('定时任务已保存')
   } finally {
@@ -179,7 +216,10 @@ async function deleteSelected() {
   if (!window.confirm(`删除定时任务「${selected.value.name}」？`)) return
   loading.value = true
   try {
-    const result = await core<{ deleted: string; scheduler: SchedulerPayload }>('scheduler.deleteJob', selected.value.id)
+    const result = await core<{ deleted: string; scheduler: SchedulerPayload }>(
+      'scheduler.deleteJob',
+      selected.value.id,
+    )
     if (ctx.boot.value) ctx.boot.value.scheduler = result.scheduler
     selectedId.value = ''
     ctx.showToast('定时任务已删除')
@@ -188,11 +228,22 @@ async function deleteSelected() {
   }
 }
 
-async function schedulerAction(job: SchedulerJob, action: 'run' | 'pause' | 'resume', toast: string) {
+async function schedulerAction(
+  job: SchedulerJob,
+  action: 'run' | 'pause' | 'resume',
+  toast: string,
+) {
   loading.value = true
   try {
-    const opByAction = { run: 'scheduler.runJob', pause: 'scheduler.pauseJob', resume: 'scheduler.resumeJob' } as const
-    const result = await core<{ scheduler: SchedulerPayload }>(opByAction[action], job.id)
+    const opByAction = {
+      run: 'scheduler.runJob',
+      pause: 'scheduler.pauseJob',
+      resume: 'scheduler.resumeJob',
+    } as const
+    const result = await core<{ scheduler: SchedulerPayload }>(
+      opByAction[action],
+      job.id,
+    )
     if (ctx.boot.value) ctx.boot.value.scheduler = result.scheduler
     ctx.showToast(toast)
   } finally {
@@ -208,23 +259,41 @@ function buildSchedule(
   cronTz: string,
 ): SchedulerSchedule {
   if (kind === 'at') {
-    return { kind: 'at', atMs: atLocal ? new Date(atLocal).getTime() : Date.now() + 60 * 60 * 1000 }
+    return {
+      kind: 'at',
+      atMs: atLocal ? new Date(atLocal).getTime() : Date.now() + 60 * 60 * 1000,
+    }
   }
   if (kind === 'cron') {
-    return { kind: 'cron', expr: cronExpr.trim() || '0 9 * * *', tz: cronTz.trim() || 'UTC' }
+    return {
+      kind: 'cron',
+      expr: cronExpr.trim() || '0 9 * * *',
+      tz: cronTz.trim() || 'UTC',
+    }
   }
-  return { kind: 'every', everyMs: Math.max(1, Number(everyMinutes || 1)) * 60 * 1000 }
+  return {
+    kind: 'every',
+    everyMs: Math.max(1, Number(everyMinutes || 1)) * 60 * 1000,
+  }
 }
 
-function setScheduleDraft(schedule: SchedulerSchedule | undefined, target: 'edit') {
+function setScheduleDraft(
+  schedule: SchedulerSchedule | undefined,
+  target: 'edit',
+) {
   const current = schedule || { kind: 'every', everyMs: 60 * 60 * 1000 }
-  const kind = current.kind === 'at' || current.kind === 'cron' ? current.kind : 'every'
+  const kind =
+    current.kind === 'at' || current.kind === 'cron' ? current.kind : 'every'
   if (target === 'edit') {
     editScheduleKind.value = kind
     editAtLocal.value = current.atMs ? toLocalInputValue(current.atMs) : ''
-    editEveryMinutes.value = Math.max(1, Math.round(Number(current.everyMs || 60 * 60 * 1000) / 60_000))
+    editEveryMinutes.value = Math.max(
+      1,
+      Math.round(Number(current.everyMs || 60 * 60 * 1000) / 60_000),
+    )
     editCronExpr.value = current.expr || '0 9 * * *'
-    editCronTz.value = current.tz || Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'
+    editCronTz.value =
+      current.tz || Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'
   }
 }
 
@@ -235,12 +304,14 @@ function defaultJobName() {
 function scheduleLabel(job: SchedulerJob) {
   const schedule = job.schedule || { kind: 'every' }
   if (schedule.kind === 'at') return `指定时间：${formatMs(schedule.atMs)}`
-  if (schedule.kind === 'cron') return `Cron：${schedule.expr || '-'} · ${schedule.tz || '本地时区'}`
+  if (schedule.kind === 'cron')
+    return `Cron：${schedule.expr || '-'} · ${schedule.tz || '本地时区'}`
   return `每隔 ${formatDuration(schedule.everyMs || 0)}`
 }
 
 function payloadLabel(job: SchedulerJob) {
-  if (job.payload.kind === 'team_wake') return `唤醒队友 · ${job.payload.target || '-'}`
+  if (job.payload.kind === 'team_wake')
+    return `唤醒队友 · ${job.payload.target || '-'}`
   if (job.payload.kind === 'system_event') return '系统事件'
   return '主 Agent 任务'
 }
@@ -253,11 +324,14 @@ function statusLabel(job: SchedulerJob) {
 }
 
 function statusClass(job: SchedulerJob) {
-  return ['scheduler-table-row', {
-    active: job.id === selected.value?.id,
-    paused: !job.enabled,
-    error: job.state?.lastStatus === 'error',
-  }]
+  return [
+    'scheduler-table-row',
+    {
+      active: job.id === selected.value?.id,
+      paused: !job.enabled,
+      error: job.state?.lastStatus === 'error',
+    },
+  ]
 }
 
 function runStatusLabel(status?: string | null) {
@@ -295,11 +369,27 @@ function toLocalInputValue(ms: number) {
 <template>
   <div class="panel-content scheduler-panel scheduler-panel-v2">
     <div class="scheduler-overview">
-      <span><b>{{ jobs.length }}</b>任务</span>
-      <span><b>{{ enabledCount }}</b>已启用</span>
-      <span><b>{{ scheduler.status.running ? '运行中' : '已停止' }}</b>服务状态</span>
-      <span><b>{{ nextRunLabel }}</b>下次运行</span>
-      <button class="tool-button asset-button compact" :disabled="loading" @click="refreshScheduler">
+      <span
+        ><b>{{ jobs.length }}</b
+        >任务</span
+      >
+      <span
+        ><b>{{ enabledCount }}</b
+        >已启用</span
+      >
+      <span
+        ><b>{{ scheduler.status.running ? '运行中' : '已停止' }}</b
+        >服务状态</span
+      >
+      <span
+        ><b>{{ nextRunLabel }}</b
+        >下次运行</span
+      >
+      <button
+        class="tool-button asset-button compact"
+        :disabled="loading"
+        @click="refreshScheduler"
+      >
         <component :is="actionIcons.refresh" class="action-icon" :size="15" />
         <span>刷新列表</span>
       </button>
@@ -324,7 +414,11 @@ function toLocalInputValue(ms: number) {
             @click="selectJob(job)"
           >
             <span class="scheduler-cell-main">
-              <component :is="navIcon('scheduler')" class="scheduler-inline-icon" :size="18" />
+              <component
+                :is="navIcon('scheduler')"
+                class="scheduler-inline-icon"
+                :size="18"
+              />
               <span class="min-w-0">
                 <strong>{{ job.name }}</strong>
                 <small>{{ job.id }}</small>
@@ -333,7 +427,9 @@ function toLocalInputValue(ms: number) {
             <span>{{ scheduleLabel(job) }}</span>
             <span>{{ payloadLabel(job) }}</span>
             <span>{{ formatMs(job.state?.nextRunAtMs) }}</span>
-            <span>{{ runStatusLabel(job.state?.lastStatus || undefined) }}</span>
+            <span>{{
+              runStatusLabel(job.state?.lastStatus || undefined)
+            }}</span>
             <span class="scheduler-status-wrap">
               <em>{{ statusLabel(job) }}</em>
               <em v-if="job.deleteAfterRun">一次性</em>
@@ -348,115 +444,207 @@ function toLocalInputValue(ms: number) {
     </div>
 
     <section v-else class="scheduler-detail-page">
-        <div class="scheduler-drawer-head scheduler-detail-page-head">
-          <button class="tool-button asset-button" type="button" @click="backToList">
-            返回任务列表
-          </button>
-          <div>
-            <h2>{{ selected?.name || '任务详情' }}</h2>
-            <p>{{ selected ? scheduleLabel(selected) : '选择一个任务查看详情' }}</p>
+      <div class="scheduler-drawer-head scheduler-detail-page-head">
+        <button
+          class="tool-button asset-button"
+          type="button"
+          @click="backToList"
+        >
+          返回任务列表
+        </button>
+        <div>
+          <h2>{{ selected?.name || '任务详情' }}</h2>
+          <p>
+            {{ selected ? scheduleLabel(selected) : '选择一个任务查看详情' }}
+          </p>
+        </div>
+      </div>
+
+      <form
+        v-if="selected"
+        class="scheduler-detail-body"
+        @submit.prevent="saveSelected"
+      >
+        <div class="team-stamp">
+          <component
+            :is="navIcon('scheduler')"
+            :size="38"
+            :stroke-width="1.5"
+          />
+          <div class="min-w-0">
+            <strong>{{ selected.name }}</strong>
+            <span>{{ selected.protected ? '受保护任务' : selected.id }}</span>
           </div>
         </div>
 
-        <form v-if="selected" class="scheduler-detail-body" @submit.prevent="saveSelected">
-          <div class="team-stamp">
-            <component :is="navIcon('scheduler')" :size="38" :stroke-width="1.5" />
-            <div class="min-w-0">
-              <strong>{{ selected.name }}</strong>
-              <span>{{ selected.protected ? '受保护任务' : selected.id }}</span>
-            </div>
-          </div>
+        <div class="scheduler-meta-grid">
+          <span><b>下次</b>{{ formatMs(selected.state?.nextRunAtMs) }}</span>
+          <span
+            ><b>上次</b
+            >{{ runStatusLabel(selected.state?.lastStatus || undefined) }}</span
+          >
+          <span><b>创建</b>{{ formatMs(selected.createdAtMs) }}</span>
+          <span><b>更新</b>{{ formatMs(selected.updatedAtMs) }}</span>
+        </div>
 
-          <div class="scheduler-meta-grid">
-            <span><b>下次</b>{{ formatMs(selected.state?.nextRunAtMs) }}</span>
-            <span><b>上次</b>{{ runStatusLabel(selected.state?.lastStatus || undefined) }}</span>
-            <span><b>创建</b>{{ formatMs(selected.createdAtMs) }}</span>
-            <span><b>更新</b>{{ formatMs(selected.updatedAtMs) }}</span>
-          </div>
+        <label class="scheduler-field">
+          <span>任务名称</span>
+          <input
+            v-model="editName"
+            autocomplete="off"
+            :disabled="!selectedCanEdit"
+          />
+        </label>
+        <label class="scheduler-field">
+          <span>任务内容 / 提示词</span>
+          <textarea
+            v-model="editMessage"
+            rows="5"
+            :disabled="!selectedCanEdit"
+          />
+        </label>
 
+        <div class="scheduler-form-grid">
           <label class="scheduler-field">
-            <span>任务名称</span>
-            <input v-model="editName" autocomplete="off" :disabled="!selectedCanEdit" />
+            <span>计划类型</span>
+            <select v-model="editScheduleKind" :disabled="!selectedCanEdit">
+              <option value="every">每隔</option>
+              <option value="at">指定时间</option>
+              <option value="cron">Cron 表达式</option>
+            </select>
           </label>
-          <label class="scheduler-field">
-            <span>任务内容 / 提示词</span>
-            <textarea v-model="editMessage" rows="5" :disabled="!selectedCanEdit" />
+          <label v-if="editScheduleKind === 'every'" class="scheduler-field">
+            <span>间隔分钟</span>
+            <input
+              v-model.number="editEveryMinutes"
+              min="1"
+              type="number"
+              :disabled="!selectedCanEdit"
+            />
           </label>
+          <label v-else-if="editScheduleKind === 'at'" class="scheduler-field">
+            <span>指定时间</span>
+            <input
+              v-model="editAtLocal"
+              type="datetime-local"
+              :disabled="!selectedCanEdit"
+            />
+          </label>
+          <label v-else class="scheduler-field">
+            <span>Cron</span>
+            <input
+              v-model="editCronExpr"
+              placeholder="0 9 * * *"
+              :disabled="!selectedCanEdit"
+            />
+          </label>
+        </div>
 
-          <div class="scheduler-form-grid">
-            <label class="scheduler-field">
-              <span>计划类型</span>
-              <select v-model="editScheduleKind" :disabled="!selectedCanEdit">
-                <option value="every">每隔</option>
-                <option value="at">指定时间</option>
-                <option value="cron">Cron 表达式</option>
-              </select>
-            </label>
-            <label v-if="editScheduleKind === 'every'" class="scheduler-field">
-              <span>间隔分钟</span>
-              <input v-model.number="editEveryMinutes" min="1" type="number" :disabled="!selectedCanEdit" />
-            </label>
-            <label v-else-if="editScheduleKind === 'at'" class="scheduler-field">
-              <span>指定时间</span>
-              <input v-model="editAtLocal" type="datetime-local" :disabled="!selectedCanEdit" />
-            </label>
-            <label v-else class="scheduler-field">
-              <span>Cron</span>
-              <input v-model="editCronExpr" placeholder="0 9 * * *" :disabled="!selectedCanEdit" />
-            </label>
+        <label v-if="editScheduleKind === 'cron'" class="scheduler-field">
+          <span>时区</span>
+          <input
+            v-model="editCronTz"
+            placeholder="Asia/Shanghai"
+            :disabled="!selectedCanEdit"
+          />
+        </label>
+
+        <label class="scheduler-check">
+          <input
+            v-model="editDeliver"
+            type="checkbox"
+            :disabled="!selectedCanEdit"
+          />
+          将运行结果显示到当前对话
+        </label>
+        <label class="scheduler-check">
+          <input
+            v-model="editDeleteAfterRun"
+            type="checkbox"
+            :disabled="!selectedCanEdit"
+          />
+          一次性任务运行后删除
+        </label>
+
+        <div class="team-tool-cloud">
+          <span
+            ><component :is="toolIcon('scheduler')" :size="14" /> 定时任务</span
+          >
+          <span>{{ selected.deleteAfterRun ? '运行后删除' : '持续保留' }}</span>
+          <span>{{ payloadLabel(selected) }}</span>
+        </div>
+
+        <div class="scheduler-action-grid">
+          <button
+            class="tool-button ink"
+            type="submit"
+            :disabled="loading || !selectedCanEdit"
+          >
+            保存
+          </button>
+          <button
+            class="tool-button"
+            type="button"
+            :disabled="loading"
+            @click="runSelected"
+          >
+            运行
+          </button>
+          <button
+            v-if="selected.enabled"
+            class="tool-button"
+            type="button"
+            :disabled="loading"
+            @click="pauseSelected"
+          >
+            暂停
+          </button>
+          <button
+            v-else
+            class="tool-button"
+            type="button"
+            :disabled="loading"
+            @click="resumeSelected"
+          >
+            恢复
+          </button>
+          <button
+            class="tool-button danger"
+            type="button"
+            :disabled="loading || !selectedCanEdit"
+            @click="deleteSelected"
+          >
+            删除
+          </button>
+        </div>
+
+        <div v-if="selected.state?.lastError" class="team-error">
+          {{ selected.state.lastError }}
+        </div>
+
+        <section class="scheduler-history-block">
+          <div class="scheduler-history-head">
+            <strong>运行历史</strong>
+            <span>{{ selectedRunHistory.length }} 条</span>
           </div>
-
-          <label v-if="editScheduleKind === 'cron'" class="scheduler-field">
-            <span>时区</span>
-            <input v-model="editCronTz" placeholder="Asia/Shanghai" :disabled="!selectedCanEdit" />
-          </label>
-
-          <label class="scheduler-check">
-            <input v-model="editDeliver" type="checkbox" :disabled="!selectedCanEdit" />
-            将运行结果显示到当前对话
-          </label>
-          <label class="scheduler-check">
-            <input v-model="editDeleteAfterRun" type="checkbox" :disabled="!selectedCanEdit" />
-            一次性任务运行后删除
-          </label>
-
-          <div class="team-tool-cloud">
-            <span><component :is="toolIcon('scheduler')" :size="14" /> 定时任务</span>
-            <span>{{ selected.deleteAfterRun ? '运行后删除' : '持续保留' }}</span>
-            <span>{{ payloadLabel(selected) }}</span>
-          </div>
-
-          <div class="scheduler-action-grid">
-            <button class="tool-button ink" type="submit" :disabled="loading || !selectedCanEdit">保存</button>
-            <button class="tool-button" type="button" :disabled="loading" @click="runSelected">运行</button>
-            <button v-if="selected.enabled" class="tool-button" type="button" :disabled="loading" @click="pauseSelected">暂停</button>
-            <button v-else class="tool-button" type="button" :disabled="loading" @click="resumeSelected">恢复</button>
-            <button class="tool-button danger" type="button" :disabled="loading || !selectedCanEdit" @click="deleteSelected">删除</button>
-          </div>
-
-          <div v-if="selected.state?.lastError" class="team-error">{{ selected.state.lastError }}</div>
-
-          <section class="scheduler-history-block">
-            <div class="scheduler-history-head">
-              <strong>运行历史</strong>
-              <span>{{ selectedRunHistory.length }} 条</span>
+          <article
+            v-for="run in selectedRunHistory"
+            :key="runKey(run)"
+            class="scheduler-run compact-run"
+            :class="run.status"
+          >
+            <div class="team-message-top">
+              <strong>{{ runStatusLabel(run.status) }}</strong>
+              <span>{{ formatMs(run.runAtMs) }}</span>
             </div>
-            <article
-              v-for="run in selectedRunHistory"
-              :key="runKey(run)"
-              class="scheduler-run compact-run"
-              :class="run.status"
-            >
-              <div class="team-message-top">
-                <strong>{{ runStatusLabel(run.status) }}</strong>
-                <span>{{ formatMs(run.runAtMs) }}</span>
-              </div>
-              <p>{{ formatDuration(run.durationMs) }}</p>
-              <small v-if="run.error">{{ run.error }}</small>
-            </article>
-            <div v-if="!selectedRunHistory.length" class="empty-note">暂无运行记录。</div>
-          </section>
-        </form>
+            <p>{{ formatDuration(run.durationMs) }}</p>
+            <small v-if="run.error">{{ run.error }}</small>
+          </article>
+          <div v-if="!selectedRunHistory.length" class="empty-note">
+            暂无运行记录。
+          </div>
+        </section>
+      </form>
     </section>
 
     <div v-if="createOpen" class="modal-backdrop" @click.self="closeCreate">
@@ -466,16 +654,31 @@ function toLocalInputValue(ms: number) {
             <h2>新增定时任务</h2>
             <p>创建一个由本地 Scheduler 触发的 Agent 任务</p>
           </div>
-          <button class="icon-button" type="button" title="关闭" @click="closeCreate">×</button>
+          <button
+            class="icon-button"
+            type="button"
+            title="关闭"
+            @click="closeCreate"
+          >
+            ×
+          </button>
         </div>
 
         <label class="scheduler-field">
           <span>任务名称</span>
-          <input v-model="createName" placeholder="主 Agent 任务" autocomplete="off" />
+          <input
+            v-model="createName"
+            placeholder="主 Agent 任务"
+            autocomplete="off"
+          />
         </label>
         <label class="scheduler-field">
           <span>任务内容 / 提示词</span>
-          <textarea v-model="createMessage" rows="4" placeholder="描述要推进的任务" />
+          <textarea
+            v-model="createMessage"
+            rows="4"
+            placeholder="描述要推进的任务"
+          />
         </label>
 
         <div class="scheduler-form-grid">
@@ -491,7 +694,10 @@ function toLocalInputValue(ms: number) {
             <span>间隔分钟</span>
             <input v-model.number="createEveryMinutes" min="1" type="number" />
           </label>
-          <label v-else-if="createScheduleKind === 'at'" class="scheduler-field">
+          <label
+            v-else-if="createScheduleKind === 'at'"
+            class="scheduler-field"
+          >
             <span>指定时间</span>
             <input v-model="createAtLocal" type="datetime-local" />
           </label>
@@ -506,12 +712,26 @@ function toLocalInputValue(ms: number) {
           <input v-model="createCronTz" placeholder="Asia/Shanghai" />
         </label>
 
-        <label class="scheduler-check"><input v-model="createDeliver" type="checkbox" /> 将运行结果显示到当前对话</label>
-        <label class="scheduler-check"><input v-model="createDeleteAfterRun" type="checkbox" /> 一次性任务运行后删除</label>
+        <label class="scheduler-check"
+          ><input v-model="createDeliver" type="checkbox" />
+          将运行结果显示到当前对话</label
+        >
+        <label class="scheduler-check"
+          ><input v-model="createDeleteAfterRun" type="checkbox" />
+          一次性任务运行后删除</label
+        >
 
         <div class="scheduler-modal-actions">
-          <button class="tool-button" type="button" @click="closeCreate">取消</button>
-          <button class="tool-button ink" type="submit" :disabled="loading || !createMessage.trim()">创建任务</button>
+          <button class="tool-button" type="button" @click="closeCreate">
+            取消
+          </button>
+          <button
+            class="tool-button ink"
+            type="submit"
+            :disabled="loading || !createMessage.trim()"
+          >
+            创建任务
+          </button>
         </div>
       </form>
     </div>

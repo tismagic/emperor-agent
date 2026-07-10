@@ -1,6 +1,11 @@
 import type { SchedulerJob } from '../../types'
 
-const READONLY_TIME_FIELDS = ['createdAtMs', 'updatedAtMs', 'nextRunAtMs', 'lastRunAtMs'] as const
+const READONLY_TIME_FIELDS = [
+  'createdAtMs',
+  'updatedAtMs',
+  'nextRunAtMs',
+  'lastRunAtMs',
+] as const
 
 export function canEditSchedulerJob(job: SchedulerJob | null): boolean {
   if (!job) return false

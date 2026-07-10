@@ -21,7 +21,11 @@ export class EmperorError extends Error {
   /** 可选的前端动作提示，例如打开模型配置页。 */
   readonly action?: string
 
-  constructor(message: string, code = 'emperor_error', options?: EmperorErrorOptions) {
+  constructor(
+    message: string,
+    code = 'emperor_error',
+    options?: EmperorErrorOptions,
+  ) {
     super(message, options)
     this.name = new.target.name
     this.code = code
@@ -65,17 +69,19 @@ export class ValidationError extends EmperorError {
 
 /** 模型尚未配置到可用状态。 */
 export class ModelConfigurationError extends EmperorError {
-  constructor(message = '还没有可用模型，请先配置模型。', options?: ErrorOptions) {
-    super(message, 'model_configuration_required', { ...options, action: 'open_model_settings' })
+  constructor(
+    message = '还没有可用模型，请先配置模型。',
+    options?: ErrorOptions,
+  ) {
+    super(message, 'model_configuration_required', {
+      ...options,
+      action: 'open_model_settings',
+    })
   }
 }
 
 export type ModelProviderErrorKind =
-  | 'rate_limit'
-  | 'auth'
-  | 'transient'
-  | 'permanent'
-  | 'unknown'
+  'rate_limit' | 'auth' | 'transient' | 'permanent' | 'unknown'
 
 /** Provider 最终失败，但可展示为用户可处理的安全错误。 */
 export class ModelProviderError extends EmperorError {
@@ -100,7 +106,8 @@ export class ContextOverflowError extends EmperorError {
 /** 把任意 throwable 归一成安全错误（IPC 出口用）。 */
 export function toSafeError(err: unknown): { code: string; message: string } {
   if (err instanceof EmperorError) return err.toSafe()
-  if (err instanceof Error) return { code: 'internal_error', message: err.message }
+  if (err instanceof Error)
+    return { code: 'internal_error', message: err.message }
   return { code: 'internal_error', message: String(err) }
 }
 
@@ -111,9 +118,12 @@ function providerErrorAction(kind: ModelProviderErrorKind): string | null {
 }
 
 function providerErrorMessage(kind: ModelProviderErrorKind): string {
-  if (kind === 'auth') return '模型认证失败：API Key 无效或没有权限。请到模型配置检查 Provider、API Key 和模型 ID。'
-  if (kind === 'rate_limit') return '模型服务触发限流。请稍后重试，或切换到可用额度更高的模型配置。'
+  if (kind === 'auth')
+    return '模型认证失败：API Key 无效或没有权限。请到模型配置检查 Provider、API Key 和模型 ID。'
+  if (kind === 'rate_limit')
+    return '模型服务触发限流。请稍后重试，或切换到可用额度更高的模型配置。'
   if (kind === 'transient') return '模型服务暂时不可用或网络超时。请稍后重试。'
-  if (kind === 'permanent') return '模型请求失败。请检查模型 ID、API Base 和 Provider 配置。'
+  if (kind === 'permanent')
+    return '模型请求失败。请检查模型 ID、API Base 和 Provider 配置。'
   return '模型调用失败。请检查模型配置或稍后重试。'
 }

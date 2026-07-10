@@ -5,7 +5,8 @@ const OPERATION_KEY_RE = /^[A-Za-z][A-Za-z0-9]*(?:\.[A-Za-z][A-Za-z0-9]*)*$/
 
 export function channelForCoreOperation(operationKey: string): string {
   const key = String(operationKey || '').trim()
-  if (!OPERATION_KEY_RE.test(key)) throw new Error(`invalid core IPC operation: ${operationKey}`)
+  if (!OPERATION_KEY_RE.test(key))
+    throw new Error(`invalid core IPC operation: ${operationKey}`)
   return CORE_IPC_PREFIX + key.replaceAll('.', ':')
 }
 

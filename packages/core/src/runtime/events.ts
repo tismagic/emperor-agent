@@ -1,6 +1,9 @@
 type EventPayload = Record<string, unknown>
 
-export function runtimeEvent(event: string, payload: EventPayload = {}): EventPayload {
+export function runtimeEvent(
+  event: string,
+  payload: EventPayload = {},
+): EventPayload {
   const data: EventPayload = { event }
   for (const [key, value] of Object.entries(payload)) {
     if (value !== null && value !== undefined) data[key] = value
@@ -50,7 +53,14 @@ export function controlModeUpdate(control: EventPayload): EventPayload {
   return runtimeEvent('control_mode_update', { control })
 }
 
-export function error(message: string, opts: { partial?: boolean; code?: string | null; action?: string | null } = {}): EventPayload {
+export function error(
+  message: string,
+  opts: {
+    partial?: boolean
+    code?: string | null
+    action?: string | null
+  } = {},
+): EventPayload {
   return runtimeEvent('error', {
     message,
     code: opts.code ?? null,
@@ -59,7 +69,12 @@ export function error(message: string, opts: { partial?: boolean; code?: string 
   })
 }
 
-export function modelRouteFallback(opts: { fromModel: string; toModel: string; reason: string; usageType: string }): EventPayload {
+export function modelRouteFallback(opts: {
+  fromModel: string
+  toModel: string
+  reason: string
+  usageType: string
+}): EventPayload {
   return runtimeEvent('model_route_fallback', {
     from_model: opts.fromModel,
     to_model: opts.toModel,
@@ -68,8 +83,14 @@ export function modelRouteFallback(opts: { fromModel: string; toModel: string; r
   })
 }
 
-export function sessionCreated(session: EventPayload, opts: { clientDraftId?: string | null } = {}): EventPayload {
-  return runtimeEvent('session_created', { session, client_draft_id: opts.clientDraftId ?? null })
+export function sessionCreated(
+  session: EventPayload,
+  opts: { clientDraftId?: string | null } = {},
+): EventPayload {
+  return runtimeEvent('session_created', {
+    session,
+    client_draft_id: opts.clientDraftId ?? null,
+  })
 }
 
 export function sessionTitleUpdated(session: EventPayload): EventPayload {
@@ -80,7 +101,10 @@ export function externalInbound(message: EventPayload): EventPayload {
   return runtimeEvent('external_inbound', { message })
 }
 
-export function externalQueued(message: EventPayload, opts: { reason: string }): EventPayload {
+export function externalQueued(
+  message: EventPayload,
+  opts: { reason: string },
+): EventPayload {
   return runtimeEvent('external_queued', { message, reason: opts.reason })
 }
 
@@ -88,15 +112,27 @@ export function externalOutboundQueued(message: EventPayload): EventPayload {
   return runtimeEvent('external_outbound_queued', { message })
 }
 
-export function externalOutboundSent(message: EventPayload, opts: { delivery: EventPayload }): EventPayload {
-  return runtimeEvent('external_outbound_sent', { message, delivery: opts.delivery })
+export function externalOutboundSent(
+  message: EventPayload,
+  opts: { delivery: EventPayload },
+): EventPayload {
+  return runtimeEvent('external_outbound_sent', {
+    message,
+    delivery: opts.delivery,
+  })
 }
 
-export function externalOutboundError(message: EventPayload, opts: { error: string }): EventPayload {
+export function externalOutboundError(
+  message: EventPayload,
+  opts: { error: string },
+): EventPayload {
   return runtimeEvent('external_outbound_error', { message, error: opts.error })
 }
 
-export function schedulerJobUpdate(job: EventPayload, opts: { action: string }): EventPayload {
+export function schedulerJobUpdate(
+  job: EventPayload,
+  opts: { action: string },
+): EventPayload {
   return runtimeEvent('scheduler_job_update', { job, action: opts.action })
 }
 
@@ -108,20 +144,41 @@ export function schedulerRunDone(job: EventPayload): EventPayload {
   return runtimeEvent('scheduler_run_done', { job })
 }
 
-export function schedulerRunError(job: EventPayload, opts: { error: string }): EventPayload {
+export function schedulerRunError(
+  job: EventPayload,
+  opts: { error: string },
+): EventPayload {
   return runtimeEvent('scheduler_run_error', { job, error: opts.error })
 }
 
-export function schedulerRunCancelled(job: EventPayload, opts: { reason?: string } = {}): EventPayload {
-  return runtimeEvent('scheduler_run_cancelled', { job, reason: opts.reason ?? 'cancelled' })
+export function schedulerRunCancelled(
+  job: EventPayload,
+  opts: { reason?: string } = {},
+): EventPayload {
+  return runtimeEvent('scheduler_run_cancelled', {
+    job,
+    reason: opts.reason ?? 'cancelled',
+  })
 }
 
-export function runtimeTaskCancelled(task: EventPayload, opts: { reason?: string } = {}): EventPayload {
-  return runtimeEvent('runtime_task_cancelled', { task, reason: opts.reason ?? 'cancelled' })
+export function runtimeTaskCancelled(
+  task: EventPayload,
+  opts: { reason?: string } = {},
+): EventPayload {
+  return runtimeEvent('runtime_task_cancelled', {
+    task,
+    reason: opts.reason ?? 'cancelled',
+  })
 }
 
-export function contextProjection(opts: { report: EventPayload; messageCount: number }): EventPayload {
-  return runtimeEvent('context_projection', { report: opts.report, message_count: opts.messageCount })
+export function contextProjection(opts: {
+  report: EventPayload
+  messageCount: number
+}): EventPayload {
+  return runtimeEvent('context_projection', {
+    report: opts.report,
+    message_count: opts.messageCount,
+  })
 }
 
 export function agentThought(opts: {
@@ -158,7 +215,12 @@ export function planEntryDecision(decision: EventPayload): EventPayload {
   return runtimeEvent('plan_entry_decision', decision)
 }
 
-export function turnPhase(opts: { phase: string; sequence: number; iteration: number; detail?: EventPayload | null }): EventPayload {
+export function turnPhase(opts: {
+  phase: string
+  sequence: number
+  iteration: number
+  detail?: EventPayload | null
+}): EventPayload {
   return runtimeEvent('turn_phase', {
     phase: opts.phase,
     sequence: opts.sequence,
@@ -167,11 +229,22 @@ export function turnPhase(opts: { phase: string; sequence: number; iteration: nu
   })
 }
 
-export function toolRunQueued(opts: { id: string; name: string; arguments?: EventPayload | null }): EventPayload {
-  return runtimeEvent('tool_run_queued', { id: opts.id, name: opts.name, arguments: opts.arguments ?? {} })
+export function toolRunQueued(opts: {
+  id: string
+  name: string
+  arguments?: EventPayload | null
+}): EventPayload {
+  return runtimeEvent('tool_run_queued', {
+    id: opts.id,
+    name: opts.name,
+    arguments: opts.arguments ?? {},
+  })
 }
 
-export function toolRunStarted(opts: { id: string; name: string }): EventPayload {
+export function toolRunStarted(opts: {
+  id: string
+  name: string
+}): EventPayload {
   return runtimeEvent('tool_run_started', { id: opts.id, name: opts.name })
 }
 
@@ -195,55 +268,118 @@ export function toolRunCompleted(opts: {
   })
 }
 
-export function toolRunFailed(opts: { id: string; name: string; message: string; reasonKind?: 'safety_refusal' | 'error' }): EventPayload {
-  return runtimeEvent('tool_run_failed', { id: opts.id, name: opts.name, message: opts.message, reason_kind: opts.reasonKind ?? 'error' })
+export function toolRunFailed(opts: {
+  id: string
+  name: string
+  message: string
+  reasonKind?: 'safety_refusal' | 'error'
+}): EventPayload {
+  return runtimeEvent('tool_run_failed', {
+    id: opts.id,
+    name: opts.name,
+    message: opts.message,
+    reason_kind: opts.reasonKind ?? 'error',
+  })
 }
 
-export function toolRunCancelled(opts: { id: string; name: string; reason: string }): EventPayload {
-  return runtimeEvent('tool_run_cancelled', { id: opts.id, name: opts.name, reason: opts.reason })
+export function toolRunCancelled(opts: {
+  id: string
+  name: string
+  reason: string
+}): EventPayload {
+  return runtimeEvent('tool_run_cancelled', {
+    id: opts.id,
+    name: opts.name,
+    reason: opts.reason,
+  })
 }
 
-export function planVerificationStart(opts: { planId: string; stepId: string; command: string }): EventPayload {
-  return runtimeEvent('plan_verification_start', { plan_id: opts.planId, step_id: opts.stepId, command: opts.command })
+export function planVerificationStart(opts: {
+  planId: string
+  stepId: string
+  command: string
+}): EventPayload {
+  return runtimeEvent('plan_verification_start', {
+    plan_id: opts.planId,
+    step_id: opts.stepId,
+    command: opts.command,
+  })
 }
 
-export function planVerificationDone(opts: { planId: string; stepId: string; result: EventPayload }): EventPayload {
-  return runtimeEvent('plan_verification_done', { plan_id: opts.planId, step_id: opts.stepId, result: opts.result })
+export function planVerificationDone(opts: {
+  planId: string
+  stepId: string
+  result: EventPayload
+}): EventPayload {
+  return runtimeEvent('plan_verification_done', {
+    plan_id: opts.planId,
+    step_id: opts.stepId,
+    result: opts.result,
+  })
 }
 
 export function planRuntimeUpdate(plan: EventPayload): EventPayload {
   return runtimeEvent('plan_runtime_update', { plan })
 }
 
-export function planStepUpdate(opts: { planId: string; step: EventPayload }): EventPayload {
-  return runtimeEvent('plan_step_update', { plan_id: opts.planId, step: opts.step })
+export function planStepUpdate(opts: {
+  planId: string
+  step: EventPayload
+}): EventPayload {
+  return runtimeEvent('plan_step_update', {
+    plan_id: opts.planId,
+    step: opts.step,
+  })
 }
 
 export function taskStarted(task: EventPayload): EventPayload {
   return runtimeEvent('task_started', { task })
 }
 
-export function taskProgress(task: EventPayload, opts: { progress: EventPayload }): EventPayload {
+export function taskProgress(
+  task: EventPayload,
+  opts: { progress: EventPayload },
+): EventPayload {
   return runtimeEvent('task_progress', { task, progress: opts.progress })
 }
 
-export function taskOutput(task: EventPayload, opts: { offset: number; chunk: string }): EventPayload {
-  return runtimeEvent('task_output', { task, offset: opts.offset, chunk: opts.chunk })
+export function taskOutput(
+  task: EventPayload,
+  opts: { offset: number; chunk: string },
+): EventPayload {
+  return runtimeEvent('task_output', {
+    task,
+    offset: opts.offset,
+    chunk: opts.chunk,
+  })
 }
 
 export function taskDone(task: EventPayload): EventPayload {
   return runtimeEvent('task_done', { task })
 }
 
-export function taskError(task: EventPayload, opts: { error: string }): EventPayload {
+export function taskError(
+  task: EventPayload,
+  opts: { error: string },
+): EventPayload {
   return runtimeEvent('task_error', { task, error: opts.error })
 }
 
-export function taskCancelled(task: EventPayload, opts: { reason?: string } = {}): EventPayload {
-  return runtimeEvent('task_cancelled', { task, reason: opts.reason ?? 'cancelled' })
+export function taskCancelled(
+  task: EventPayload,
+  opts: { reason?: string } = {},
+): EventPayload {
+  return runtimeEvent('task_cancelled', {
+    task,
+    reason: opts.reason ?? 'cancelled',
+  })
 }
 
-export function recordDegraded(opts: { kind: string; reason: string; taskId?: string | null }): EventPayload {
+export function recordDegraded(opts: {
+  kind: string
+  reason: string
+  taskId?: string | null
+}): EventPayload {
   return runtimeEvent('record_degraded', {
     kind: opts.kind,
     reason: opts.reason.slice(0, 500),
@@ -251,7 +387,12 @@ export function recordDegraded(opts: { kind: string; reason: string; taskId?: st
   })
 }
 
-export function hookRunStarted(opts: { hookId: string; eventName: string; handlerType: string; source?: EventPayload | null }): EventPayload {
+export function hookRunStarted(opts: {
+  hookId: string
+  eventName: string
+  handlerType: string
+  source?: EventPayload | null
+}): EventPayload {
   return runtimeEvent('hook_run_started', {
     hook_id: opts.hookId,
     event_name: opts.eventName,
@@ -260,7 +401,12 @@ export function hookRunStarted(opts: { hookId: string; eventName: string; handle
   })
 }
 
-export function hookRunProgress(opts: { hookId: string; eventName: string; status: string; message?: string | null }): EventPayload {
+export function hookRunProgress(opts: {
+  hookId: string
+  eventName: string
+  status: string
+  message?: string | null
+}): EventPayload {
   return runtimeEvent('hook_run_progress', {
     hook_id: opts.hookId,
     event_name: opts.eventName,
@@ -269,7 +415,14 @@ export function hookRunProgress(opts: { hookId: string; eventName: string; statu
   })
 }
 
-export function hookRunCompleted(opts: { hookId: string; eventName: string; status: string; decision: string; reason: string; durationMs: number }): EventPayload {
+export function hookRunCompleted(opts: {
+  hookId: string
+  eventName: string
+  status: string
+  decision: string
+  reason: string
+  durationMs: number
+}): EventPayload {
   return runtimeEvent('hook_run_completed', {
     hook_id: opts.hookId,
     event_name: opts.eventName,
@@ -280,7 +433,14 @@ export function hookRunCompleted(opts: { hookId: string; eventName: string; stat
   })
 }
 
-export function hookRunFailed(opts: { hookId: string; eventName: string; status: string; decision: string; reason: string; durationMs: number }): EventPayload {
+export function hookRunFailed(opts: {
+  hookId: string
+  eventName: string
+  status: string
+  decision: string
+  reason: string
+  durationMs: number
+}): EventPayload {
   return runtimeEvent('hook_run_failed', {
     hook_id: opts.hookId,
     event_name: opts.eventName,
@@ -291,7 +451,12 @@ export function hookRunFailed(opts: { hookId: string; eventName: string; status:
   })
 }
 
-export function hookDecisionApplied(opts: { eventName: string; decision: string; reason: string; hookIds: string[] }): EventPayload {
+export function hookDecisionApplied(opts: {
+  eventName: string
+  decision: string
+  reason: string
+  hookIds: string[]
+}): EventPayload {
   return runtimeEvent('hook_decision_applied', {
     event_name: opts.eventName,
     decision: opts.decision,

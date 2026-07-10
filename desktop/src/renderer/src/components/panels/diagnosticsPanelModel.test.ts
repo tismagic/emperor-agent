@@ -41,11 +41,15 @@ describe('diagnostics panel model', () => {
         exists: true,
         status: 'corrupt',
         error: 'Unexpected token',
-        corruptBackups: [{ path: '/repo/emperor.local.json.corrupt-1', bytes: 16 }],
+        corruptBackups: [
+          { path: '/repo/emperor.local.json.corrupt-1', bytes: 16 },
+        ],
       },
       scheduler: {
         lastActionErrors: [{ line: 2 }],
-        corruptActionFiles: [{ path: '/repo/scheduler/action.corrupt-1.jsonl', bytes: 9 }],
+        corruptActionFiles: [
+          { path: '/repo/scheduler/action.corrupt-1.jsonl', bytes: 9 },
+        ],
       },
       runtime: {
         events: 4,
@@ -64,7 +68,15 @@ describe('diagnostics panel model', () => {
         inbox: { pending: 3 },
         store: { exists: true, corruptBackups: [] },
       },
-      activeTasks: [{ id: 'task_1', kind: 'chat', status: 'running', title: 'Visual task', source: 'runtime' }],
+      activeTasks: [
+        {
+          id: 'task_1',
+          kind: 'chat',
+          status: 'running',
+          title: 'Visual task',
+          source: 'runtime',
+        },
+      ],
       desktopPet: {
         enabled: false,
         autoStartWithWebui: false,
@@ -81,8 +93,16 @@ describe('diagnostics panel model', () => {
     const groups = diagnosticRows(payload)
     const rows = groups.flatMap((group) => group.rows)
 
-    expect(groups.map((group) => group.title)).toEqual(['存储路径', '配置', '运行时', '外部能力', '依赖'])
-    expect(rows.find((row) => row.id === 'runtime-resources-root')).toMatchObject({
+    expect(groups.map((group) => group.title)).toEqual([
+      '存储路径',
+      '配置',
+      '运行时',
+      '外部能力',
+      '依赖',
+    ])
+    expect(
+      rows.find((row) => row.id === 'runtime-resources-root'),
+    ).toMatchObject({
       label: 'Runtime 资源根',
       value: '已定位',
       path: '/repo',
@@ -150,7 +170,11 @@ describe('diagnostics panel model', () => {
   it('shows chat sessions as unbound and omits the legacy-data group when nothing was detected', () => {
     const groups = diagnosticRows({
       root: '/repo',
-      paths: { runtimeRoot: '/repo', stateRoot: '/repo', stateRootSource: 'explicit' },
+      paths: {
+        runtimeRoot: '/repo',
+        stateRoot: '/repo',
+        stateRootSource: 'explicit',
+      },
       workspacePolicy: { workspaceRoot: '/repo' },
     })
     const rows = groups.flatMap((group) => group.rows)
@@ -169,8 +193,16 @@ describe('diagnostics panel model', () => {
         copied: 12,
         skipped: 1,
         legacyStateRoots: [
-          { path: '/repo/memory', kind: 'ancient-bare-runtime-root', existed: false },
-          { path: '/repo/.emperor', kind: 'previous-dotemperor-root', existed: true },
+          {
+            path: '/repo/memory',
+            kind: 'ancient-bare-runtime-root',
+            existed: false,
+          },
+          {
+            path: '/repo/.emperor',
+            kind: 'previous-dotemperor-root',
+            existed: true,
+          },
         ],
       },
       projectLegacyPrivateData: {
@@ -182,13 +214,17 @@ describe('diagnostics panel model', () => {
     const rows = groups.flatMap((group) => group.rows)
 
     expect(groups.map((group) => group.title)).toContain('旧数据')
-    expect(rows.find((row) => row.id === 'legacy-state-migration')).toMatchObject({
+    expect(
+      rows.find((row) => row.id === 'legacy-state-migration'),
+    ).toMatchObject({
       value: '12 个文件已迁移',
       tone: 'warn',
       path: '/repo/.emperor',
       detail: '检测到 1 处旧存储位置 · 1 个跳过（已存在或损坏） · 旧数据未删除',
     })
-    expect(rows.find((row) => row.id === 'project-legacy-private-data')).toMatchObject({
+    expect(
+      rows.find((row) => row.id === 'project-legacy-private-data'),
+    ).toMatchObject({
       value: '未迁移/可迁移',
       tone: 'warn',
       path: '/Users/me/projects/demo',
@@ -209,16 +245,38 @@ describe('diagnostics panel model', () => {
           { kind: 'project_memory', tokenEstimate: 34 },
         ],
         omitted: [
-          { kind: 'global_memory', reason: 'build mode intentionally does not inject global MEMORY' },
+          {
+            kind: 'global_memory',
+            reason: 'build mode intentionally does not inject global MEMORY',
+          },
         ],
         checkpoint: { status: 'none' },
         compaction: { cursor: { compactedUntilSeq: 7, status: 'active' } },
-        microcompact: { records: [{ original_chars: 1200 }, { original_chars: 800 }], omittedChars: 2000 },
+        microcompact: {
+          records: [{ original_chars: 1200 }, { original_chars: 800 }],
+          omittedChars: 2000,
+        },
         artifacts: [
-          { kind: 'project_memory', visibility: 'build_only', injectedIn: ['build'] },
-          { kind: 'runtime_event_log', visibility: 'runtime_only', injectedIn: [] },
-          { kind: 'model_call_audit', visibility: 'debug_only', injectedIn: [] },
-          { kind: 'history_archive', visibility: 'never_model_visible', injectedIn: [] },
+          {
+            kind: 'project_memory',
+            visibility: 'build_only',
+            injectedIn: ['build'],
+          },
+          {
+            kind: 'runtime_event_log',
+            visibility: 'runtime_only',
+            injectedIn: [],
+          },
+          {
+            kind: 'model_call_audit',
+            visibility: 'debug_only',
+            injectedIn: [],
+          },
+          {
+            kind: 'history_archive',
+            visibility: 'never_model_visible',
+            injectedIn: [],
+          },
         ],
       },
     })
@@ -230,26 +288,38 @@ describe('diagnostics panel model', () => {
       detail: 'session_1 / turn_1',
       tone: 'ok',
     })
-    expect(group?.rows.find((row) => row.id === 'context-injected')).toMatchObject({
+    expect(
+      group?.rows.find((row) => row.id === 'context-injected'),
+    ).toMatchObject({
       value: '2 项注入',
       detail: 'bootstrap, project_memory · 46 tokens',
     })
-    expect(group?.rows.find((row) => row.id === 'context-omitted')).toMatchObject({
+    expect(
+      group?.rows.find((row) => row.id === 'context-omitted'),
+    ).toMatchObject({
       value: '1 项未注入',
-      detail: 'global_memory: build mode intentionally does not inject global MEMORY',
+      detail:
+        'global_memory: build mode intentionally does not inject global MEMORY',
     })
-    expect(group?.rows.find((row) => row.id === 'context-microcompact')).toMatchObject({
+    expect(
+      group?.rows.find((row) => row.id === 'context-microcompact'),
+    ).toMatchObject({
       value: '2 条裁剪',
       detail: '本次请求局部裁剪 2000 chars，不写回 history',
     })
-    expect(group?.rows.find((row) => row.id === 'context-compaction-cursor')).toMatchObject({
+    expect(
+      group?.rows.find((row) => row.id === 'context-compaction-cursor'),
+    ).toMatchObject({
       value: 'seq 7',
       detail: 'active',
     })
-    expect(group?.rows.find((row) => row.id === 'context-artifacts')).toMatchObject({
+    expect(
+      group?.rows.find((row) => row.id === 'context-artifacts'),
+    ).toMatchObject({
       label: '记忆 Artifact 边界',
       value: '4 个 artifact',
-      detail: 'project_memory: build_only -> build · runtime_event_log: runtime_only -> 不注入 · model_call_audit: debug_only -> 不注入 · history_archive: never_model_visible -> 不注入',
+      detail:
+        'project_memory: build_only -> build · runtime_event_log: runtime_only -> 不注入 · model_call_audit: debug_only -> 不注入 · history_archive: never_model_visible -> 不注入',
       tone: 'ok',
     })
   })

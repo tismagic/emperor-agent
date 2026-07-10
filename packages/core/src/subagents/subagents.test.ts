@@ -11,17 +11,34 @@ import type { LLMResponse } from '../providers/base'
 import { Tool } from '../tools/base'
 import { toolParamsSchema } from '../tools/schema'
 import { ToolRegistry } from '../tools/registry'
-import { DispatchSubagentTool, composeSubagentTask, extractEvidenceFiles, extractEvidenceRefs } from '../tools/dispatch'
+import {
+  DispatchSubagentTool,
+  composeSubagentTask,
+  extractEvidenceFiles,
+  extractEvidenceRefs,
+} from '../tools/dispatch'
 import { buildDispatchRunnerFactory } from './dispatch-runner'
 import { SubagentRegistry } from './registry'
 
-const TEMPLATES = join(__dirname, '..', '..', '..', '..', 'templates', 'subagents')
+const TEMPLATES = join(
+  __dirname,
+  '..',
+  '..',
+  '..',
+  '..',
+  'templates',
+  'subagents',
+)
 
 function tmp(prefix: string): string {
   return mkdtempSync(join(tmpdir(), prefix))
 }
 
-async function withEnv(name: string, value: string | undefined, fn: () => Promise<void>): Promise<void> {
+async function withEnv(
+  name: string,
+  value: string | undefined,
+  fn: () => Promise<void>,
+): Promise<void> {
   const previous = process.env[name]
   if (value === undefined) delete process.env[name]
   else process.env[name] = value
@@ -38,7 +55,9 @@ class ReadTool extends Tool {
   override description = 'read'
   override parameters = toolParamsSchema({}, [])
   override readOnly = true
-  execute(): string { return 'ok' }
+  execute(): string {
+    return 'ok'
+  }
 }
 
 class FakeRunner {
@@ -90,9 +109,14 @@ describe('DispatchSubagentTool (W04-014/W08)', () => {
     })
     expect(task).toContain('## 差事契约')
     expect(task).toContain('期望产物: 列出结论')
-    const refs = extractEvidenceRefs('证据: agent/runner.py:10 docs/migration/ts/README.md https://example.com')
+    const refs = extractEvidenceRefs(
+      '证据: agent/runner.py:10 docs/migration/ts/README.md https://example.com',
+    )
     expect(refs).toEqual(['agent/runner.py:10', 'docs/migration/ts/README.md'])
-    expect(extractEvidenceFiles(refs)).toEqual(['agent/runner.py', 'docs/migration/ts/README.md'])
+    expect(extractEvidenceFiles(refs)).toEqual([
+      'agent/runner.py',
+      'docs/migration/ts/README.md',
+    ])
   })
 
   it('records task and sidechain while running an isolated fake runner', async () => {
@@ -102,27 +126,39 @@ describe('DispatchSubagentTool (W04-014/W08)', () => {
     parent.register(new ReadTool())
     const manager = new TaskManager(root)
     const captured: Record<string, unknown> = {}
-    const fakeRunner = new FakeRunner('结论: done\n证据: agent/runner.py:10\n风险: none\n建议下一步: none')
+    const fakeRunner = new FakeRunner(
+      '结论: done\n证据: agent/runner.py:10\n风险: none\n建议下一步: none',
+    )
 
     const tool = new DispatchSubagentTool({
       parentRegistry: parent,
       subagentRegistry: subagents,
       runnerFactory: (args) => {
         captured.task = args.task
-        captured.tools = args.subRegistry.getDefinitions().map((def) => def.name)
+        captured.tools = args.subRegistry
+          .getDefinitions()
+          .map((def) => def.name)
         return fakeRunner
       },
       taskManager: manager,
     })
 
-    const result = await tool.execute({
-      agent_type: 'sili_suitang',
-      task: '阅读核心流程',
-      purpose: 'read files',
-      expected_output: '结论/证据',
-      evidence_required: '文件路径',
-      scope_limit: '只读',
-    }, { root: root, arguments: {}, parentCallId: 'call_1', sessionId: 'sess_d' })
+    const result = await tool.execute(
+      {
+        agent_type: 'sili_suitang',
+        task: '阅读核心流程',
+        purpose: 'read files',
+        expected_output: '结论/证据',
+        evidence_required: '文件路径',
+        scope_limit: '只读',
+      },
+      {
+        root: root,
+        arguments: {},
+        parentCallId: 'call_1',
+        sessionId: 'sess_d',
+      },
+    )
 
     expect(result).toContain('结论: done')
     expect(captured.task).toContain('期望产物: 结论/证据')
@@ -157,14 +193,17 @@ describe('DispatchSubagentTool (W04-014/W08)', () => {
       taskManager: manager,
     })
 
-    const result = await tool.execute({
-      agent_type: 'sili_suitang',
-      task: '阅读核心流程',
-      purpose: 'read files',
-      expected_output: '结论/证据',
-      evidence_required: '文件路径',
-      scope_limit: '只读',
-    }, { root: root, arguments: {}, parentCallId: 'call_cancelled' })
+    const result = await tool.execute(
+      {
+        agent_type: 'sili_suitang',
+        task: '阅读核心流程',
+        purpose: 'read files',
+        expected_output: '结论/证据',
+        evidence_required: '文件路径',
+        scope_limit: '只读',
+      },
+      { root: root, arguments: {}, parentCallId: 'call_cancelled' },
+    )
 
     const [record] = manager.store.list()
     expect(result).toContain('cancelled')
@@ -183,15 +222,27 @@ describe('DispatchSubagentTool (W04-014/W08)', () => {
       controlManager: { mode: 'plan' },
     })
 
-    expect(tool.isReadOnly({
-      agent_type: 'sili_suitang',
-      task: 'read',
-      expected_output: 'summary',
-      evidence_required: 'files',
-      scope_limit: 'only docs',
-    })).toBe(true)
-    expect(tool.isReadOnly({ agent_type: 'sili_suitang', task: 'read' })).toBe(false)
-    expect(tool.isReadOnly({ agent_type: 'neiguan_yingzao', task: 'write', expected_output: 'x', evidence_required: 'x', scope_limit: 'x' })).toBe(false)
+    expect(
+      tool.isReadOnly({
+        agent_type: 'sili_suitang',
+        task: 'read',
+        expected_output: 'summary',
+        evidence_required: 'files',
+        scope_limit: 'only docs',
+      }),
+    ).toBe(true)
+    expect(tool.isReadOnly({ agent_type: 'sili_suitang', task: 'read' })).toBe(
+      false,
+    )
+    expect(
+      tool.isReadOnly({
+        agent_type: 'neiguan_yingzao',
+        task: 'write',
+        expected_output: 'x',
+        evidence_required: 'x',
+        scope_limit: 'x',
+      }),
+    ).toBe(false)
   })
 
   it('builds routed subagent runners through ModelRouter and records usage role', async () => {
@@ -200,7 +251,11 @@ describe('DispatchSubagentTool (W04-014/W08)', () => {
     const tracker = new TokenTracker(join(root, 'memory', 'tokens.jsonl'))
     const calls: Array<Record<string, unknown>> = []
     const modelRouter = {
-      route: (useCase: string, agentType?: string | null, task?: string | null) => {
+      route: (
+        useCase: string,
+        agentType?: string | null,
+        task?: string | null,
+      ) => {
         calls.push({ useCase, agentType, task })
         return {
           snapshot: snapshot('secondary-model', 'secondary'),
@@ -211,15 +266,30 @@ describe('DispatchSubagentTool (W04-014/W08)', () => {
         }
       },
     } as unknown as ModelRouter
-    const factory = buildDispatchRunnerFactory({ modelRouter, tokenTracker: tracker })
+    const factory = buildDispatchRunnerFactory({
+      modelRouter,
+      tokenTracker: tracker,
+    })
     const spec = subagents.get('sili_suitang')!
-    const runner = factory({ spec, subRegistry: new ToolRegistry(), task: '阅读 docs' })
+    const runner = factory({
+      spec,
+      subRegistry: new ToolRegistry(),
+      task: '阅读 docs',
+    })
 
     const result = await runner.step([{ role: 'user', content: '阅读 docs' }])
     expect(result).toBe('结论: routed')
-    expect(calls[0]).toMatchObject({ useCase: 'subagent', agentType: 'sili_suitang', task: '阅读 docs' })
-    expect(requireTokenLedger(tracker.logFile)).toContain('"model_role":"secondary"')
-    expect(requireTokenLedger(tracker.logFile)).toContain('"usage_type":"subagent:sili_suitang"')
+    expect(calls[0]).toMatchObject({
+      useCase: 'subagent',
+      agentType: 'sili_suitang',
+      task: '阅读 docs',
+    })
+    expect(requireTokenLedger(tracker.logFile)).toContain(
+      '"model_role":"secondary"',
+    )
+    expect(requireTokenLedger(tracker.logFile)).toContain(
+      '"usage_type":"subagent:sili_suitang"',
+    )
   })
 
   it('routed dispatch runner adopts the route context window for compaction checks', async () => {
@@ -227,7 +297,10 @@ describe('DispatchSubagentTool (W04-014/W08)', () => {
     const seenMaxContext: number[] = []
     const modelRouter = {
       route: () => ({
-        snapshot: { ...snapshot('secondary-model', 'secondary'), contextWindowTokens: 64_000 },
+        snapshot: {
+          ...snapshot('secondary-model', 'secondary'),
+          contextWindowTokens: 64_000,
+        },
         fallback: null,
         useCase: 'subagent',
         reason: 'test',
@@ -246,7 +319,11 @@ describe('DispatchSubagentTool (W04-014/W08)', () => {
       compactor: { compactAsync: async (history) => history },
     })
     const spec = subagents.get('sili_suitang')!
-    const runner = factory({ spec, subRegistry: new ToolRegistry(), task: '阅读 docs' })
+    const runner = factory({
+      spec,
+      subRegistry: new ToolRegistry(),
+      task: '阅读 docs',
+    })
 
     await withEnv('EMPEROR_AUTO_MEMORY_COMPACT', '1', async () => {
       await runner.step([{ role: 'user', content: '阅读 docs' }])
@@ -259,7 +336,9 @@ describe('DispatchSubagentTool (W04-014/W08)', () => {
 
 function snapshot(model: string, role: 'main' | 'secondary'): ProviderSnapshot {
   return {
-    provider: { chat: async (): Promise<LLMResponse> => response('结论: routed') } as never,
+    provider: {
+      chat: async (): Promise<LLMResponse> => response('结论: routed'),
+    } as never,
     providerName: 'fake',
     providerLabel: 'Fake',
     model,
@@ -276,7 +355,14 @@ function snapshot(model: string, role: 'main' | 'secondary'): ProviderSnapshot {
 }
 
 function response(content: string): LLMResponse {
-  return { content, toolCalls: [], finishReason: 'stop', usage: { input: 2, output: 1 }, reasoningContent: null, thinkingBlocks: null }
+  return {
+    content,
+    toolCalls: [],
+    finishReason: 'stop',
+    usage: { input: 2, output: 1 },
+    reasoningContent: null,
+    thinkingBlocks: null,
+  }
 }
 
 function requireTokenLedger(path: string): string {

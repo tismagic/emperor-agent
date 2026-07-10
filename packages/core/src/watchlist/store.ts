@@ -1,5 +1,12 @@
 import { randomUUID } from 'node:crypto'
-import { existsSync, mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from 'node:fs'
+import {
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  renameSync,
+  unlinkSync,
+  writeFileSync,
+} from 'node:fs'
 import { dirname, join } from 'node:path'
 import { WatchlistDecision } from './models'
 
@@ -36,24 +43,38 @@ export class WatchlistStore {
     if (!existsSync(this.statePath)) return {}
     try {
       const raw = JSON.parse(readFileSync(this.statePath, 'utf8') || '{}')
-      return raw && typeof raw === 'object' && !Array.isArray(raw) ? raw as Record<string, unknown> : {}
+      return raw && typeof raw === 'object' && !Array.isArray(raw)
+        ? (raw as Record<string, unknown>)
+        : {}
     } catch {
       // 审计 P1-5：先隔离损坏文件再回退默认，不能静默丢弃。
       const backup = `${this.statePath}.corrupt-${Math.trunc(Date.now() / 1000)}-${randomUUID().replace(/-/g, '').slice(0, 8)}`
-      try { renameSync(this.statePath, backup) } catch { /* ignore */ }
+      try {
+        renameSync(this.statePath, backup)
+      } catch {
+        /* ignore */
+      }
       return {}
     }
   }
 
   writeDecision(decision: WatchlistDecision): void {
-    atomicWriteText(this.statePath, JSON.stringify({ lastDecision: decision.toDict() }, null, 2) + '\n')
+    atomicWriteText(
+      this.statePath,
+      JSON.stringify({ lastDecision: decision.toDict() }, null, 2) + '\n',
+    )
   }
 
   payload(): Record<string, unknown> {
     const state = this.readState()
     return {
       content: this.read(),
-      lastDecision: state.lastDecision && typeof state.lastDecision === 'object' && !Array.isArray(state.lastDecision) ? state.lastDecision : null,
+      lastDecision:
+        state.lastDecision &&
+        typeof state.lastDecision === 'object' &&
+        !Array.isArray(state.lastDecision)
+          ? state.lastDecision
+          : null,
     }
   }
 
@@ -61,7 +82,8 @@ export class WatchlistStore {
     const items: string[] = []
     for (const line of this.read().split(/\r?\n/)) {
       let stripped = line.trim()
-      if (!stripped || stripped.startsWith('#') || stripped.startsWith('<!--')) continue
+      if (!stripped || stripped.startsWith('#') || stripped.startsWith('<!--'))
+        continue
       if (stripped.startsWith('- [ ]')) stripped = stripped.slice(5).trim()
       else if (stripped.startsWith('-')) stripped = stripped.slice(1).trim()
       else continue
@@ -83,7 +105,9 @@ function atomicWriteText(path: string, content: string): void {
     writeFileSync(tmp, content, 'utf8')
     renameSync(tmp, path)
   } catch (error) {
-    try { unlinkSync(tmp) } catch {}
+    try {
+      unlinkSync(tmp)
+    } catch {}
     throw error
   }
 }

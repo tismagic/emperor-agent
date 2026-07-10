@@ -12,7 +12,13 @@ export class ExternalAttachment {
   path: string
   metadata: Record<string, unknown>
 
-  constructor(opts: { name: string; mime?: string; size?: number; path?: string; metadata?: Record<string, unknown> }) {
+  constructor(opts: {
+    name: string
+    mime?: string
+    size?: number
+    path?: string
+    metadata?: Record<string, unknown>
+  }) {
     this.name = opts.name
     this.mime = opts.mime ?? ''
     this.size = opts.size ?? 0
@@ -21,7 +27,13 @@ export class ExternalAttachment {
   }
 
   toDict(): Record<string, unknown> {
-    return { name: this.name, mime: this.mime, size: this.size, path: this.path, metadata: { ...this.metadata } }
+    return {
+      name: this.name,
+      mime: this.mime,
+      size: this.size,
+      path: this.path,
+      metadata: { ...this.metadata },
+    }
   }
 
   static fromDict(raw: Record<string, unknown>): ExternalAttachment {
@@ -89,14 +101,18 @@ export class ExternalInbound {
 
   static fromDict(raw: Record<string, unknown>): ExternalInbound {
     const attachments = Array.isArray(raw.attachments)
-      ? raw.attachments.filter(isRecord).map((item) => ExternalAttachment.fromDict(item))
+      ? raw.attachments
+          .filter(isRecord)
+          .map((item) => ExternalAttachment.fromDict(item))
       : []
     return new ExternalInbound({
       id: String(raw.id ?? '') || undefined,
       platform: String(raw.platform ?? ''),
       sender_id: String(raw.sender_id ?? raw.senderId ?? ''),
       target_id: String(raw.target_id ?? raw.targetId ?? ''),
-      external_message_id: String(raw.external_message_id ?? raw.externalMessageId ?? ''),
+      external_message_id: String(
+        raw.external_message_id ?? raw.externalMessageId ?? '',
+      ),
       content: String(raw.content ?? ''),
       attachments,
       metadata: objectOrEmpty(raw.metadata),
@@ -151,7 +167,12 @@ export class ExternalDeliveryResult {
   error: string
   metadata: Record<string, unknown>
 
-  constructor(opts: { ok: boolean; external_message_id?: string; error?: string; metadata?: Record<string, unknown> }) {
+  constructor(opts: {
+    ok: boolean
+    external_message_id?: string
+    error?: string
+    metadata?: Record<string, unknown>
+  }) {
     this.ok = opts.ok
     this.external_message_id = opts.external_message_id ?? ''
     this.error = opts.error ?? ''

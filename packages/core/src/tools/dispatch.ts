@@ -8,8 +8,13 @@ import type { SubagentRegistry } from '../subagents/registry'
 import type { SubagentSpec } from '../subagents/spec'
 import type { HookAggregateDecision } from '../hooks/models'
 
-const PLAN_CONTRACT_FIELDS = ['scope_limit', 'expected_output', 'evidence_required'] as const
-const EVIDENCE_FILE_RE = /(?<![\w/.-])([A-Za-z0-9_./-]+\.(?:py|pyi|ts|tsx|js|jsx|vue|md|rst|json|toml|yaml|yml|txt|css|scss|html)(?::\d+(?:-\d+)?)?)/g
+const PLAN_CONTRACT_FIELDS = [
+  'scope_limit',
+  'expected_output',
+  'evidence_required',
+] as const
+const EVIDENCE_FILE_RE =
+  /(?<![\w/.-])([A-Za-z0-9_./-]+\.(?:py|pyi|ts|tsx|js|jsx|vue|md|rst|json|toml|yaml|yml|txt|css|scss|html)(?::\d+(?:-\d+)?)?)/g
 
 export interface DispatchRunner {
   step(history: Array<Record<string, unknown>>): string | Promise<string>
@@ -25,7 +30,12 @@ export interface DispatchRunnerFactoryArgs {
 }
 
 export interface DispatchSubagentHookHost {
-  begin(opts: { agentId: string; agentType: string; sessionId: string; cwd: string }): Promise<HookAggregateDecision>
+  begin(opts: {
+    agentId: string
+    agentType: string
+    sessionId: string
+    cwd: string
+  }): Promise<HookAggregateDecision>
   end(agentId: string): void
 }
 
@@ -46,9 +56,14 @@ export class DispatchSubagentTool extends Tool {
 
   private readonly parentRegistry: ToolRegistry
   private readonly subagentRegistry: SubagentRegistry
-  private readonly runnerFactory: (args: DispatchRunnerFactoryArgs) => DispatchRunner
+  private readonly runnerFactory: (
+    args: DispatchRunnerFactoryArgs,
+  ) => DispatchRunner
   private readonly taskManager: TaskManager | null
-  private readonly controlManager: { mode?: string; [key: string]: unknown } | null
+  private readonly controlManager: {
+    mode?: string
+    [key: string]: unknown
+  } | null
   private readonly hooks: DispatchSubagentHookHost | null
 
   constructor(opts: DispatchSubagentToolOptions) {
@@ -76,14 +91,29 @@ export class DispatchSubagentTool extends Tool {
       ...S('子代理类型，必须是 enum 中列出的可用类型之一'),
       enum: this.subagentRegistry.names({ includeAliases: true }),
     } as ParamSchema
-    return toolParamsSchema({
-      agent_type: agentType,
-      task: S('交代给小太监的差事, 写清要做什么、希望返回什么格式的总结'),
-      purpose: { ...S('一句话用途标签, 仅用于终端打印'), nullable: true } as ParamSchema,
-      expected_output: { ...S('可选: 希望子代理最终回禀的具体产物或格式'), nullable: true } as ParamSchema,
-      evidence_required: { ...S('可选: 需要子代理提供的证据类型, 如文件路径/行号/URL/命令摘要'), nullable: true } as ParamSchema,
-      scope_limit: { ...S('可选: 明确禁止越界的范围, 如只读/不改文件/只看某目录'), nullable: true } as ParamSchema,
-    }, ['agent_type', 'task'])
+    return toolParamsSchema(
+      {
+        agent_type: agentType,
+        task: S('交代给小太监的差事, 写清要做什么、希望返回什么格式的总结'),
+        purpose: {
+          ...S('一句话用途标签, 仅用于终端打印'),
+          nullable: true,
+        } as ParamSchema,
+        expected_output: {
+          ...S('可选: 希望子代理最终回禀的具体产物或格式'),
+          nullable: true,
+        } as ParamSchema,
+        evidence_required: {
+          ...S('可选: 需要子代理提供的证据类型, 如文件路径/行号/URL/命令摘要'),
+          nullable: true,
+        } as ParamSchema,
+        scope_limit: {
+          ...S('可选: 明确禁止越界的范围, 如只读/不改文件/只看某目录'),
+          nullable: true,
+        } as ParamSchema,
+      },
+      ['agent_type', 'task'],
+    )
   }
 
   override isReadOnly(args: Record<string, unknown>): boolean {
@@ -96,7 +126,10 @@ export class DispatchSubagentTool extends Tool {
     return !this.isReadOnly(args)
   }
 
-  override async execute(args: Record<string, unknown>, ctx?: ToolExecutionContext): Promise<string> {
+  override async execute(
+    args: Record<string, unknown>,
+    ctx?: ToolExecutionContext,
+  ): Promise<string> {
     const agentType = String(args.agent_type ?? '')
     const task = String(args.task ?? '')
     const spec = this.subagentRegistry.get(agentType)
@@ -118,7 +151,9 @@ export class DispatchSubagentTool extends Tool {
     })
     const workspaceRoot = ctx?.workspaceRoot ?? ctx?.root ?? process.cwd()
     const agentId = `subagent_${randomUUID().replace(/-/g, '').slice(0, 12)}`
-    const history: Array<Record<string, unknown>> = [{ role: 'user', content: subagentTask }]
+    const history: Array<Record<string, unknown>> = [
+      { role: 'user', content: subagentTask },
+    ]
     let taskRecord: TaskRecord | null = null
     let hookScopeStarted = false
 
@@ -132,7 +167,11 @@ export class DispatchSubagentTool extends Tool {
         })
         hookScopeStarted = true
         if (start.additionalContext.trim()) {
-          history.unshift({ role: 'system', content: `[SubagentStart hook context]\n${start.additionalContext}`, ui_hidden: true })
+          history.unshift({
+            role: 'system',
+            content: `[SubagentStart hook context]\n${start.additionalContext}`,
+            ui_hidden: true,
+          })
         }
       }
       const runner = this.runnerFactory({
@@ -146,30 +185,40 @@ export class DispatchSubagentTool extends Tool {
 
       if (this.taskManager) {
         taskRecord = await this.taskManager.startTaskWithHooks({
-        kind: TaskKind.SUBAGENT,
-        title: asOptional(args.purpose) || task.slice(0, 80),
-        source: 'dispatch_subagent',
-        toolCallId: ctx?.parentCallId ?? null,
-        sessionId: ctx?.sessionId ?? null,
-        metadata: {
-          agent_type: agentType,
-          subagent_name: spec.name,
-          plan_readonly_explorer: spec.planReadonlyExplorer,
-          scope_limit: asOptional(args.scope_limit) || '',
-          expected_output: asOptional(args.expected_output) || '',
-          evidence_required: asOptional(args.evidence_required) || '',
-        },
-      })
-        if (!taskRecord) return `Error: subagent '${agentType}' task creation denied by hook`
+          kind: TaskKind.SUBAGENT,
+          title: asOptional(args.purpose) || task.slice(0, 80),
+          source: 'dispatch_subagent',
+          toolCallId: ctx?.parentCallId ?? null,
+          sessionId: ctx?.sessionId ?? null,
+          metadata: {
+            agent_type: agentType,
+            subagent_name: spec.name,
+            plan_readonly_explorer: spec.planReadonlyExplorer,
+            scope_limit: asOptional(args.scope_limit) || '',
+            expected_output: asOptional(args.expected_output) || '',
+            evidence_required: asOptional(args.evidence_required) || '',
+          },
+        })
+        if (!taskRecord)
+          return `Error: subagent '${agentType}' task creation denied by hook`
         this.taskManager.appendSidechain(taskRecord.id, history.at(-1)!)
       }
 
       const final = await runner.step(history)
       if (this.taskManager && taskRecord) {
-        const terminal = terminalTaskResult(this.taskManager.store.get(taskRecord.id), agentType)
+        const terminal = terminalTaskResult(
+          this.taskManager.store.get(taskRecord.id),
+          agentType,
+        )
         if (terminal) return terminal
-        this.taskManager.appendSidechain(taskRecord.id, { role: 'assistant', content: final })
-        const completion = await this.taskManager.completeTaskWithHooks(taskRecord.id, { summary: final.slice(0, 500) })
+        this.taskManager.appendSidechain(taskRecord.id, {
+          role: 'assistant',
+          content: final,
+        })
+        const completion = await this.taskManager.completeTaskWithHooks(
+          taskRecord.id,
+          { summary: final.slice(0, 500) },
+        )
         if (completion && !completion.committed) {
           return `Error: subagent '${agentType}' completion denied by hook: ${completion.reason}`
         }
@@ -177,7 +226,10 @@ export class DispatchSubagentTool extends Tool {
       return final
     } catch (error) {
       if (this.taskManager && taskRecord) {
-        const terminal = terminalTaskResult(this.taskManager.store.get(taskRecord.id), agentType)
+        const terminal = terminalTaskResult(
+          this.taskManager.store.get(taskRecord.id),
+          agentType,
+        )
         if (terminal) return terminal
         this.taskManager.failTask(taskRecord.id, { error: String(error) })
       }
@@ -187,7 +239,10 @@ export class DispatchSubagentTool extends Tool {
     }
   }
 
-  private planExplorationError(spec: SubagentSpec, args: Record<string, unknown>): string {
+  private planExplorationError(
+    spec: SubagentSpec,
+    args: Record<string, unknown>,
+  ): string {
     if (String(this.controlManager?.mode ?? '') !== 'plan') return ''
     if (!spec.planReadonlyExplorer) {
       return 'Error: Plan mode only allows dispatch_subagent for registry-marked read-only explorer subagents.'
@@ -200,14 +255,18 @@ export class DispatchSubagentTool extends Tool {
   }
 }
 
-export function composeSubagentTask(task: string, opts: {
-  expectedOutput?: string | null
-  evidenceRequired?: string | null
-  scopeLimit?: string | null
-} = {}): string {
+export function composeSubagentTask(
+  task: string,
+  opts: {
+    expectedOutput?: string | null
+    evidenceRequired?: string | null
+    scopeLimit?: string | null
+  } = {},
+): string {
   const contract: string[] = []
   if (opts.expectedOutput) contract.push(`- 期望产物: ${opts.expectedOutput}`)
-  if (opts.evidenceRequired) contract.push(`- 证据要求: ${opts.evidenceRequired}`)
+  if (opts.evidenceRequired)
+    contract.push(`- 证据要求: ${opts.evidenceRequired}`)
   if (opts.scopeLimit) contract.push(`- 范围限制: ${opts.scopeLimit}`)
   contract.push('- 最终回禀必须包含: 结论、证据、风险、建议下一步。')
   return `${task.trimEnd()}\n\n## 差事契约\n${contract.join('\n')}`
@@ -216,37 +275,57 @@ export function composeSubagentTask(task: string, opts: {
 export function extractEvidenceRefs(text: string): string[] {
   const refs: string[] = []
   for (const match of String(text || '').matchAll(EVIDENCE_FILE_RE)) {
-    const ref = String(match[1] ?? '').trim().replace(/[.,;，。；)]+$/g, '')
-    if (!ref || ref.startsWith('http://') || ref.startsWith('https://')) continue
+    const ref = String(match[1] ?? '')
+      .trim()
+      .replace(/[.,;，。；)]+$/g, '')
+    if (!ref || ref.startsWith('http://') || ref.startsWith('https://'))
+      continue
     refs.push(ref)
   }
   return dedupe(refs)
 }
 
 export function extractEvidenceFiles(evidenceRefs: string[]): string[] {
-  return dedupe(evidenceRefs.filter((ref) => !ref.startsWith('task:')).map((ref) => ref.split(':', 1)[0]!))
+  return dedupe(
+    evidenceRefs
+      .filter((ref) => !ref.startsWith('task:'))
+      .map((ref) => ref.split(':', 1)[0]!),
+  )
 }
 
 export function summarizeExploration(text: string, limit = 500): string {
-  const summary = String(text || '').trim().split(/\s+/).join(' ')
-  return summary.length <= limit ? summary : `${summary.slice(0, limit - 3).trimEnd()}...`
+  const summary = String(text || '')
+    .trim()
+    .split(/\s+/)
+    .join(' ')
+  return summary.length <= limit
+    ? summary
+    : `${summary.slice(0, limit - 3).trimEnd()}...`
 }
 
 function missingPlanContract(args: Record<string, unknown>): string[] {
-  return PLAN_CONTRACT_FIELDS.filter((field) => !String(args[field] ?? '').trim())
+  return PLAN_CONTRACT_FIELDS.filter(
+    (field) => !String(args[field] ?? '').trim(),
+  )
 }
 
 function asOptional(value: unknown): string {
   return String(value ?? '').trim()
 }
 
-function terminalTaskResult(record: TaskRecord | null | undefined, agentType: string): string {
+function terminalTaskResult(
+  record: TaskRecord | null | undefined,
+  agentType: string,
+): string {
   if (!record) return ''
   if (record.status === TaskStatus.CANCELLED) {
     const reason = String(record.progress.reason ?? 'cancelled')
     return `Error: subagent '${agentType}' task cancelled: ${reason}`
   }
-  if (record.status === TaskStatus.COMPLETED || record.status === TaskStatus.FAILED) {
+  if (
+    record.status === TaskStatus.COMPLETED ||
+    record.status === TaskStatus.FAILED
+  ) {
     return `Error: subagent '${agentType}' task already ${record.status}; result ignored.`
   }
   return ''

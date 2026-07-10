@@ -17,7 +17,9 @@ describe('useBootstrap IPC bootstrap (MIG-IPC-004)', () => {
           calls.push(args)
           return {
             app: 'Emperor Agent',
-            modelConfig: { config: { agents: { defaults: { provider: 'fake' } } } },
+            modelConfig: {
+              config: { agents: { defaults: { provider: 'fake' } } },
+            },
           }
         },
       },
@@ -39,7 +41,8 @@ describe('useBootstrap IPC bootstrap (MIG-IPC-004)', () => {
       emperor: {
         invokeCore: async (...args: unknown[]) => {
           calls.push(args)
-          if (args[0] === 'skills.importArchive') return { imported: 'demo-skill' }
+          if (args[0] === 'skills.importArchive')
+            return { imported: 'demo-skill' }
           return { app: 'Emperor Agent' }
         },
       },
@@ -47,7 +50,10 @@ describe('useBootstrap IPC bootstrap (MIG-IPC-004)', () => {
     const fetchSpy = vi.spyOn(globalThis, 'fetch')
     const boot = useBootstrap(() => {})
     const data = new FormData()
-    data.append('file', new File(['zip-bytes'], 'demo.zip', { type: 'application/zip' }))
+    data.append(
+      'file',
+      new File(['zip-bytes'], 'demo.zip', { type: 'application/zip' }),
+    )
 
     await expect(boot.importSkill(data)).resolves.toBe('demo-skill')
 

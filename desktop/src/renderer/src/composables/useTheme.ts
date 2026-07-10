@@ -1,5 +1,10 @@
 import { ref } from 'vue'
-import { applyTheme, DEFAULT_THEME, isTheme, type ThemeName } from '../theme/tokens'
+import {
+  applyTheme,
+  DEFAULT_THEME,
+  isTheme,
+  type ThemeName,
+} from '../theme/tokens'
 
 export const THEME_STORAGE_KEY = 'emperor.theme'
 

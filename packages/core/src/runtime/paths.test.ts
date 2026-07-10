@@ -2,7 +2,11 @@ import { existsSync, mkdtempSync } from 'node:fs'
 import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
-import { defaultStateRoot, ensureRuntimeStateDirs, resolveRuntimePaths } from './paths'
+import {
+  defaultStateRoot,
+  ensureRuntimeStateDirs,
+  resolveRuntimePaths,
+} from './paths'
 
 function tmp(prefix: string): string {
   return mkdtempSync(join(tmpdir(), prefix))

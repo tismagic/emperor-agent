@@ -3,7 +3,11 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import type { HookCommandHandlerV2 } from './models'
-import { HookExecutorRegistry, type HookExecutorResultV2, type HookHandlerExecutor } from './executor'
+import {
+  HookExecutorRegistry,
+  type HookExecutorResultV2,
+  type HookHandlerExecutor,
+} from './executor'
 import { HookService } from './service'
 
 class FakeCommandExecutor implements HookHandlerExecutor<HookCommandHandlerV2> {
@@ -11,8 +15,16 @@ class FakeCommandExecutor implements HookHandlerExecutor<HookCommandHandlerV2> {
   async execute(handler: HookCommandHandlerV2): Promise<HookExecutorResultV2> {
     const [decision, reason] = handler.args
     return {
-      outcome: 'completed', output: { decision, reason }, reason: reason ?? '', durationMs: 1,
-      stdout: '', stderr: '', stdoutBytes: 0, stderrBytes: 0, stdoutTruncated: false, stderrTruncated: false,
+      outcome: 'completed',
+      output: { decision, reason },
+      reason: reason ?? '',
+      durationMs: 1,
+      stdout: '',
+      stderr: '',
+      stdoutBytes: 0,
+      stderrBytes: 0,
+      stdoutTruncated: false,
+      stderrTruncated: false,
     }
   }
 }
@@ -21,14 +33,31 @@ function config(decision: 'deny' | 'allow', reason: string): Dict {
   return {
     version: 2,
     hooks: {
-      PreToolUse: [{
-        id: 'guard', enabled: true, matcher: 'write_file', if: '', failureMode: 'closed',
-        handlers: [{
-          id: 'command-1', type: 'command', enabled: true, command: 'fake', args: [decision, reason],
-          shell: 'none', allowedEnv: [], async: false, asyncRewake: false, timeoutMs: 1_000,
-          statusMessage: '', once: false,
-        }],
-      }],
+      PreToolUse: [
+        {
+          id: 'guard',
+          enabled: true,
+          matcher: 'write_file',
+          if: '',
+          failureMode: 'closed',
+          handlers: [
+            {
+              id: 'command-1',
+              type: 'command',
+              enabled: true,
+              command: 'fake',
+              args: [decision, reason],
+              shell: 'none',
+              allowedEnv: [],
+              async: false,
+              asyncRewake: false,
+              timeoutMs: 1_000,
+              statusMessage: '',
+              once: false,
+            },
+          ],
+        },
+      ],
     },
   }
 }
@@ -40,29 +69,59 @@ describe('HookService turn snapshots', () => {
     const root = await mkdtemp(join(tmpdir(), 'hook-service-'))
     try {
       const configPath = join(root, 'hooks_config.json')
-      await writeFile(configPath, JSON.stringify(config('deny', 'revision-a')), 'utf8')
+      await writeFile(
+        configPath,
+        JSON.stringify(config('deny', 'revision-a')),
+        'utf8',
+      )
       const executors = new HookExecutorRegistry()
       executors.register(new FakeCommandExecutor())
       const service = new HookService({ stateRoot: root, executors })
-      const first = await service.beginTurn({ turnId: 'turn-1', sessionId: 's1', projectRoot: null })
-      await writeFile(configPath, JSON.stringify(config('allow', 'revision-b')), 'utf8')
+      const first = await service.beginTurn({
+        turnId: 'turn-1',
+        sessionId: 's1',
+        projectRoot: null,
+      })
+      await writeFile(
+        configPath,
+        JSON.stringify(config('allow', 'revision-b')),
+        'utf8',
+      )
 
       const duringTurn = await service.run('PreToolUse', {
-        sessionId: 's1', turnId: 'turn-1', cwd: '/repo', toolName: 'write_file',
-        toolInput: { path: 'README.md' }, toolUseId: 'call-1',
+        sessionId: 's1',
+        turnId: 'turn-1',
+        cwd: '/repo',
+        toolName: 'write_file',
+        toolInput: { path: 'README.md' },
+        toolUseId: 'call-1',
       })
       const same = service.activeSnapshot('s1')
       service.endTurn('turn-1')
-      const second = await service.beginTurn({ turnId: 'turn-2', sessionId: 's1', projectRoot: null })
+      const second = await service.beginTurn({
+        turnId: 'turn-2',
+        sessionId: 's1',
+        projectRoot: null,
+      })
       const nextTurn = await service.run('PreToolUse', {
-        sessionId: 's1', turnId: 'turn-2', cwd: '/repo', toolName: 'write_file',
-        toolInput: { path: 'README.md' }, toolUseId: 'call-2',
+        sessionId: 's1',
+        turnId: 'turn-2',
+        cwd: '/repo',
+        toolName: 'write_file',
+        toolInput: { path: 'README.md' },
+        toolUseId: 'call-2',
       })
 
-      expect(duringTurn).toMatchObject({ decision: 'deny', reason: 'revision-a' })
+      expect(duringTurn).toMatchObject({
+        decision: 'deny',
+        reason: 'revision-a',
+      })
       expect(same?.revision).toBe(first.revision)
       expect(second.revision).not.toBe(first.revision)
-      expect(nextTurn).toMatchObject({ decision: 'allow', reason: 'revision-b' })
+      expect(nextTurn).toMatchObject({
+        decision: 'allow',
+        reason: 'revision-b',
+      })
       await service.shutdown()
     } finally {
       await rm(root, { recursive: true, force: true })
@@ -72,15 +131,41 @@ describe('HookService turn snapshots', () => {
   it('provides a synchronous no-match proof only from an active snapshot', async () => {
     const root = await mkdtemp(join(tmpdir(), 'hook-service-match-'))
     try {
-      await writeFile(join(root, 'hooks_config.json'), JSON.stringify(config('deny', 'blocked')), 'utf8')
+      await writeFile(
+        join(root, 'hooks_config.json'),
+        JSON.stringify(config('deny', 'blocked')),
+        'utf8',
+      )
       const executors = new HookExecutorRegistry()
       executors.register(new FakeCommandExecutor())
       const service = new HookService({ stateRoot: root, executors })
 
-      expect(service.mayMatch('PreToolUse', { sessionId: 's1', cwd: '/repo', toolName: 'read_file' })).toBe(true)
-      await service.beginTurn({ turnId: 'turn-1', sessionId: 's1', projectRoot: null })
-      expect(service.mayMatch('PreToolUse', { sessionId: 's1', cwd: '/repo', toolName: 'read_file' })).toBe(false)
-      expect(service.mayMatch('PreToolUse', { sessionId: 's1', cwd: '/repo', toolName: 'write_file' })).toBe(true)
+      expect(
+        service.mayMatch('PreToolUse', {
+          sessionId: 's1',
+          cwd: '/repo',
+          toolName: 'read_file',
+        }),
+      ).toBe(true)
+      await service.beginTurn({
+        turnId: 'turn-1',
+        sessionId: 's1',
+        projectRoot: null,
+      })
+      expect(
+        service.mayMatch('PreToolUse', {
+          sessionId: 's1',
+          cwd: '/repo',
+          toolName: 'read_file',
+        }),
+      ).toBe(false)
+      expect(
+        service.mayMatch('PreToolUse', {
+          sessionId: 's1',
+          cwd: '/repo',
+          toolName: 'write_file',
+        }),
+      ).toBe(true)
       await service.shutdown()
     } finally {
       await rm(root, { recursive: true, force: true })
@@ -90,16 +175,26 @@ describe('HookService turn snapshots', () => {
   it('executes a 100-handler match plan from one turn snapshot without resolving sources again', async () => {
     const root = await mkdtemp(join(tmpdir(), 'hook-service-large-plan-'))
     try {
-      await writeFile(join(root, 'hooks_config.json'), JSON.stringify({
-        version: 2,
-        policy: { maxConcurrency: 4 },
-        hooks: {
-          PreToolUse: Array.from({ length: 100 }, (_, index) => ({
-            id: `group-${index}`, enabled: true, matcher: 'write_file', if: '', failureMode: 'open',
-            handlers: [handlerConfig(`handler-${index}`, 'allow', `handler-${index}`)],
-          })),
-        },
-      }), 'utf8')
+      await writeFile(
+        join(root, 'hooks_config.json'),
+        JSON.stringify({
+          version: 2,
+          policy: { maxConcurrency: 4 },
+          hooks: {
+            PreToolUse: Array.from({ length: 100 }, (_, index) => ({
+              id: `group-${index}`,
+              enabled: true,
+              matcher: 'write_file',
+              if: '',
+              failureMode: 'open',
+              handlers: [
+                handlerConfig(`handler-${index}`, 'allow', `handler-${index}`),
+              ],
+            })),
+          },
+        }),
+        'utf8',
+      )
       const executors = new HookExecutorRegistry()
       executors.register(new FakeCommandExecutor())
       const service = new HookService({ stateRoot: root, executors })
@@ -110,14 +205,24 @@ describe('HookService turn snapshots', () => {
         return await resolveSources(opts)
       }
 
-      await service.beginTurn({ turnId: 'turn-large', sessionId: 's1', projectRoot: null })
+      await service.beginTurn({
+        turnId: 'turn-large',
+        sessionId: 's1',
+        projectRoot: null,
+      })
       const result = await service.run('PreToolUse', {
-        sessionId: 's1', turnId: 'turn-large', cwd: '/repo', toolName: 'write_file',
-        toolInput: { path: 'README.md' }, toolUseId: 'call-large',
+        sessionId: 's1',
+        turnId: 'turn-large',
+        cwd: '/repo',
+        toolName: 'write_file',
+        toolInput: { path: 'README.md' },
+        toolUseId: 'call-large',
       })
 
       expect(result.results).toHaveLength(100)
-      expect(result.results.map((entry) => entry.handlerId)).toEqual(Array.from({ length: 100 }, (_, index) => `handler-${index}`))
+      expect(result.results.map((entry) => entry.handlerId)).toEqual(
+        Array.from({ length: 100 }, (_, index) => `handler-${index}`),
+      )
       expect(resolveCount).toBe(1)
       await service.shutdown()
     } finally {
@@ -129,24 +234,51 @@ describe('HookService turn snapshots', () => {
     const root = await mkdtemp(join(tmpdir(), 'hook-service-agent-scope-'))
     try {
       const configPath = join(root, 'hooks_config.json')
-      await writeFile(configPath, JSON.stringify(config('deny', 'parent-revision')), 'utf8')
+      await writeFile(
+        configPath,
+        JSON.stringify(config('deny', 'parent-revision')),
+        'utf8',
+      )
       const executors = new HookExecutorRegistry()
       executors.register(new FakeCommandExecutor())
       const service = new HookService({ stateRoot: root, executors })
-      const parent = await service.beginTurn({ turnId: 'turn-1', sessionId: 's1', projectRoot: null })
+      const parent = await service.beginTurn({
+        turnId: 'turn-1',
+        sessionId: 's1',
+        projectRoot: null,
+      })
       const [a, b] = await Promise.all([
-        service.beginAgentScope({ agentId: 'agent-a', agentType: 'reader', sessionId: 's1', cwd: '/repo' }),
-        service.beginAgentScope({ agentId: 'agent-b', agentType: 'reviewer', sessionId: 's1', cwd: '/repo' }),
+        service.beginAgentScope({
+          agentId: 'agent-a',
+          agentType: 'reader',
+          sessionId: 's1',
+          cwd: '/repo',
+        }),
+        service.beginAgentScope({
+          agentId: 'agent-b',
+          agentType: 'reviewer',
+          sessionId: 's1',
+          cwd: '/repo',
+        }),
       ])
-      await writeFile(configPath, JSON.stringify(config('allow', 'new-disk-revision')), 'utf8')
+      await writeFile(
+        configPath,
+        JSON.stringify(config('allow', 'new-disk-revision')),
+        'utf8',
+      )
 
       const nested = await service.runAgent('PreToolUse', 'agent-a', {
-        toolName: 'write_file', toolInput: { path: 'x' }, toolUseId: 'call-a',
+        toolName: 'write_file',
+        toolInput: { path: 'x' },
+        toolUseId: 'call-a',
       })
 
       expect(a.snapshot.revision).toBe(parent.revision)
       expect(b.snapshot.revision).toBe(parent.revision)
-      expect(nested).toMatchObject({ decision: 'deny', reason: 'parent-revision' })
+      expect(nested).toMatchObject({
+        decision: 'deny',
+        reason: 'parent-revision',
+      })
       service.endAgentScope('agent-a')
       expect(service.agentScope('agent-a')).toBeNull()
       expect(service.agentScope('agent-b')?.agentType).toBe('reviewer')
@@ -165,7 +297,12 @@ describe('HookService turn snapshots', () => {
       const original = {
         version: 2,
         hooks: {
-          ConfigChange: [group('config-guard', handlerConfig('config-deny', 'deny', 'keep old config'))],
+          ConfigChange: [
+            group(
+              'config-guard',
+              handlerConfig('config-deny', 'deny', 'keep old config'),
+            ),
+          ],
         },
       }
       await writeFile(configPath, JSON.stringify(original), 'utf8')
@@ -174,11 +311,19 @@ describe('HookService turn snapshots', () => {
       const service = new HookService({ stateRoot: root, executors })
       const previous = await service.snapshot({ sessionId: 's1' })
 
-      const result = await service.saveGlobalConfig({ version: 2, hooks: {} }, {
-        expectedRevision: previous.revision, sessionId: 's1', cwd: '/repo',
-      })
+      const result = await service.saveGlobalConfig(
+        { version: 2, hooks: {} },
+        {
+          expectedRevision: previous.revision,
+          sessionId: 's1',
+          cwd: '/repo',
+        },
+      )
 
-      expect(result).toMatchObject({ saved: false, decision: { decision: 'deny', reason: 'keep old config' } })
+      expect(result).toMatchObject({
+        saved: false,
+        decision: { decision: 'deny', reason: 'keep old config' },
+      })
       expect(JSON.parse(await readFile(configPath, 'utf8'))).toEqual(original)
       expect(result.snapshot.revision).toBe(previous.revision)
       await service.shutdown()
@@ -192,25 +337,56 @@ describe('HookService turn snapshots', () => {
     const project = await mkdtemp(join(tmpdir(), 'hook-service-project-'))
     try {
       await mkdir(join(project, '.emperor'), { recursive: true })
-      await writeFile(join(root, 'hooks_config.json'), JSON.stringify({
-        version: 2,
-        projectHooks: { enabled: true },
-        hooks: { ConfigChange: [group('config-guard', handlerConfig('config-deny', 'deny', 'reject external'))] },
-      }), 'utf8')
+      await writeFile(
+        join(root, 'hooks_config.json'),
+        JSON.stringify({
+          version: 2,
+          projectHooks: { enabled: true },
+          hooks: {
+            ConfigChange: [
+              group(
+                'config-guard',
+                handlerConfig('config-deny', 'deny', 'reject external'),
+              ),
+            ],
+          },
+        }),
+        'utf8',
+      )
       const projectPath = join(project, '.emperor', 'settings.json')
-      await writeFile(projectPath, JSON.stringify(config('deny', 'project-a')), 'utf8')
+      await writeFile(
+        projectPath,
+        JSON.stringify(config('deny', 'project-a')),
+        'utf8',
+      )
       const executors = new HookExecutorRegistry()
       executors.register(new FakeCommandExecutor())
       const service = new HookService({ stateRoot: root, executors })
       const trust = await service.resolver.trustStore.status(project)
-      await service.resolver.trustStore.set({ projectRoot: project, expectedDigest: trust.digest, trusted: true })
-      const first = await service.snapshot({ sessionId: 's1', projectRoot: project })
-      await writeFile(projectPath, JSON.stringify(config('allow', 'project-b')), 'utf8')
+      await service.resolver.trustStore.set({
+        projectRoot: project,
+        expectedDigest: trust.digest,
+        trusted: true,
+      })
+      const first = await service.snapshot({
+        sessionId: 's1',
+        projectRoot: project,
+      })
+      await writeFile(
+        projectPath,
+        JSON.stringify(config('allow', 'project-b')),
+        'utf8',
+      )
 
-      const reviewed = await service.snapshot({ sessionId: 's1', projectRoot: project })
+      const reviewed = await service.snapshot({
+        sessionId: 's1',
+        projectRoot: project,
+      })
 
       expect(reviewed.revision).toBe(first.revision)
-      expect(reviewed.diagnostics.some((item) => item.code === 'candidate_rejected')).toBe(true)
+      expect(
+        reviewed.diagnostics.some((item) => item.code === 'candidate_rejected'),
+      ).toBe(true)
       expect(await readFile(projectPath, 'utf8')).toContain('project-b')
       await service.shutdown()
     } finally {
@@ -220,13 +396,34 @@ describe('HookService turn snapshots', () => {
   })
 })
 
-function handlerConfig(id: string, decision: 'deny' | 'allow', reason: string): Dict {
+function handlerConfig(
+  id: string,
+  decision: 'deny' | 'allow',
+  reason: string,
+): Dict {
   return {
-    id, type: 'command', enabled: true, command: 'fake', args: [decision, reason], shell: 'none',
-    allowedEnv: [], async: false, asyncRewake: false, timeoutMs: 1_000, statusMessage: '', once: false,
+    id,
+    type: 'command',
+    enabled: true,
+    command: 'fake',
+    args: [decision, reason],
+    shell: 'none',
+    allowedEnv: [],
+    async: false,
+    asyncRewake: false,
+    timeoutMs: 1_000,
+    statusMessage: '',
+    once: false,
   }
 }
 
 function group(id: string, command: Dict): Dict {
-  return { id, enabled: true, matcher: '*', if: '', failureMode: 'closed', handlers: [command] }
+  return {
+    id,
+    enabled: true,
+    matcher: '*',
+    if: '',
+    failureMode: 'closed',
+    handlers: [command],
+  }
 }

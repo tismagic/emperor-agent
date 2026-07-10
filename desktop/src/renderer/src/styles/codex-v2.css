@@ -32,7 +32,11 @@
 
 body {
   background:
-    linear-gradient(180deg, rgb(var(--bg)) 0%, rgb(var(--bg-inset) / 0.22) 100%),
+    linear-gradient(
+      180deg,
+      rgb(var(--bg)) 0%,
+      rgb(var(--bg-inset) / 0.22) 100%
+    ),
     rgb(var(--bg));
 }
 
@@ -200,7 +204,9 @@ select:focus-visible {
   color: rgb(var(--fg-muted));
   font-size: 13px;
   font-weight: 600;
-  transition: background 140ms ease, color 140ms ease;
+  transition:
+    background 140ms ease,
+    color 140ms ease;
 }
 
 .session-primary-actions button:hover {
@@ -213,7 +219,9 @@ select:focus-visible {
   display: grid;
   place-items: center;
   color: rgb(var(--fg-subtle));
-  transition: background 140ms ease, color 140ms ease;
+  transition:
+    background 140ms ease,
+    color 140ms ease;
 }
 
 .session-new-btn {
@@ -332,7 +340,10 @@ select:focus-visible {
   padding: 6px 6px 6px 9px;
   color: rgb(var(--fg-muted));
   cursor: pointer;
-  transition: background 140ms ease, border-color 140ms ease, color 140ms ease;
+  transition:
+    background 140ms ease,
+    border-color 140ms ease,
+    color 140ms ease;
 }
 
 .session-row:hover {
@@ -599,7 +610,10 @@ select:focus-visible {
 
 .timeline-node::before {
   display: block;
-  left: calc(var(--timeline-axis-x) - var(--timeline-content-inset) - var(--timeline-dot-radius));
+  left: calc(
+    var(--timeline-axis-x) - var(--timeline-content-inset) -
+      var(--timeline-dot-radius)
+  );
   top: 18px;
   width: var(--timeline-dot-size);
   height: var(--timeline-dot-size);
@@ -872,7 +886,11 @@ select:focus-visible {
   border-color: transparent;
   background:
     linear-gradient(180deg, rgb(var(--bg) / 0), rgb(var(--bg)) 36%),
-    radial-gradient(ellipse at center bottom, rgb(0 0 0 / 0.16), transparent 62%);
+    radial-gradient(
+      ellipse at center bottom,
+      rgb(0 0 0 / 0.16),
+      transparent 62%
+    );
 }
 
 .active-ask-panel {
@@ -1467,7 +1485,9 @@ select:focus-visible {
   color: rgb(var(--fg));
   font-size: 12px;
   text-align: left;
-  transition: background 120ms ease, color 120ms ease;
+  transition:
+    background 120ms ease,
+    color 120ms ease;
 }
 
 .composer-palette-item:hover {
@@ -1523,13 +1543,16 @@ select:focus-visible {
   color: rgb(var(--ok));
 }
 
-.composer-palette-item[data-action='insert_capability_token'] .composer-palette-item-icon,
+.composer-palette-item[data-action='insert_capability_token']
+  .composer-palette-item-icon,
 .composer-palette-item[data-action='insert_capability_token'] strong {
   color: rgb(101 210 255);
 }
 
-.composer-palette-item[data-action='insert_capability_token'][data-tone='slate'] .composer-palette-item-icon,
-.composer-palette-item[data-action='insert_capability_token'][data-tone='slate'] strong {
+.composer-palette-item[data-action='insert_capability_token'][data-tone='slate']
+  .composer-palette-item-icon,
+.composer-palette-item[data-action='insert_capability_token'][data-tone='slate']
+  strong {
   color: rgb(var(--fg));
 }
 
@@ -1594,7 +1617,9 @@ select:focus-visible {
   place-items: center;
   border-radius: 999px;
   color: rgb(var(--fg-subtle));
-  transition: background 120ms ease, color 120ms ease;
+  transition:
+    background 120ms ease,
+    color 120ms ease;
 }
 
 .composer-capability-remove:hover {
@@ -1774,7 +1799,9 @@ select:focus-visible {
   color: rgb(var(--fg-muted));
   font-size: 11px;
   line-height: 1.2;
-  transition: background 120ms ease, color 120ms ease;
+  transition:
+    background 120ms ease,
+    color 120ms ease;
 }
 
 .reasoning-choice:hover {
@@ -2174,7 +2201,10 @@ select:focus-visible {
   }
 
   .timeline-node::before {
-    left: calc(var(--timeline-axis-x) - var(--timeline-content-inset) - var(--timeline-dot-radius));
+    left: calc(
+      var(--timeline-axis-x) - var(--timeline-content-inset) -
+        var(--timeline-dot-radius)
+    );
     width: var(--timeline-dot-size);
     height: var(--timeline-dot-size);
   }
@@ -2296,7 +2326,9 @@ select:focus-visible {
   place-items: center;
   border-radius: 6px;
   color: rgb(var(--fg-subtle));
-  transition: background 140ms ease, color 140ms ease;
+  transition:
+    background 140ms ease,
+    color 140ms ease;
 }
 
 .sidebar-icon-button:hover {
@@ -2327,7 +2359,9 @@ select:focus-visible {
   font-size: 13px;
   font-weight: 600;
   text-align: left;
-  transition: background 140ms ease, color 140ms ease;
+  transition:
+    background 140ms ease,
+    color 140ms ease;
 }
 
 .sidebar-top-actions button:hover,

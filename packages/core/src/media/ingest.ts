@@ -15,7 +15,8 @@ export interface MediaIngestOptions {
   maxArtifacts?: number
 }
 
-const IMAGE_PATH_RE = /(?:file:\/\/)?(?:~\/|\/|\.{1,2}\/)?[A-Za-z0-9_.~-][^\s"'`<>]*?\.(?:png|jpe?g|webp|gif)/gi
+const IMAGE_PATH_RE =
+  /(?:file:\/\/)?(?:~\/|\/|\.{1,2}\/)?[A-Za-z0-9_.~-][^\s"'`<>]*?\.(?:png|jpe?g|webp|gif)/gi
 const SENSITIVE_SEGMENTS = new Set(['.emperor', '.ssh', '.aws', '.gnupg'])
 const SENSITIVE_SUFFIXES = [
   ['library', 'keychains'],
@@ -24,7 +25,10 @@ const SENSITIVE_SUFFIXES = [
   ['library', 'application support', 'braveSoftware'],
 ].map((parts) => parts.map((part) => part.toLowerCase()))
 
-export function ingestToolResultMedia(result: ToolResultObj, opts: MediaIngestOptions): ToolResultObj {
+export function ingestToolResultMedia(
+  result: ToolResultObj,
+  opts: MediaIngestOptions,
+): ToolResultObj {
   const root = opts.root ? resolve(opts.root) : ''
   if (!root) return result
   const sourceRoot = opts.workspaceRoot ? resolve(opts.workspaceRoot) : root
@@ -32,7 +36,9 @@ export function ingestToolResultMedia(result: ToolResultObj, opts: MediaIngestOp
   if (!candidates.length) return result
 
   const store = new MediaStore(root)
-  const existingKeys = new Set(result.artifacts.map((artifact) => mediaKey(artifact)))
+  const existingKeys = new Set(
+    result.artifacts.map((artifact) => mediaKey(artifact)),
+  )
   const seenPaths = new Set<string>()
   const imported: ToolArtifact[] = []
   const maxArtifacts = opts.maxArtifacts ?? 4
@@ -72,28 +78,41 @@ export function ingestToolResultMedia(result: ToolResultObj, opts: MediaIngestOp
   })
 }
 
-function appendMediaArtifactNotice(content: string, artifacts: ToolArtifact[]): string {
-  const media = artifacts.map((artifact) => artifact.media ? { artifact, media: artifact.media } : null).filter((item) => item !== null)
+function appendMediaArtifactNotice(
+  content: string,
+  artifacts: ToolArtifact[],
+): string {
+  const media = artifacts
+    .map((artifact) =>
+      artifact.media ? { artifact, media: artifact.media } : null,
+    )
+    .filter((item) => item !== null)
   if (!media.length) return content
   const lines = [
     '[media_artifacts]',
     'The files below were imported into managed media storage and are shown inline in the conversation UI for the user. Do not say you cannot display them; keep original_path only for locating the source file. If you need to reason about image contents, use an image-capable path instead of read_file.',
-    ...media.map(({ artifact, media: item }) => [
-      `- id: ${item.id}`,
-      `  kind: ${item.kind}`,
-      `  mime: ${item.mime}`,
-      `  name: ${item.name}`,
-      `  managed_path: ${item.relPath}`,
-      `  original_path: ${item.originalPath}`,
-      `  bytes: ${artifact.bytes}`,
-      '  user_visible: true',
-    ].join('\n')),
+    ...media.map(({ artifact, media: item }) =>
+      [
+        `- id: ${item.id}`,
+        `  kind: ${item.kind}`,
+        `  mime: ${item.mime}`,
+        `  name: ${item.name}`,
+        `  managed_path: ${item.relPath}`,
+        `  original_path: ${item.originalPath}`,
+        `  bytes: ${artifact.bytes}`,
+        '  user_visible: true',
+      ].join('\n'),
+    ),
   ]
   const trimmed = content.trimEnd()
   return `${trimmed}${trimmed ? '\n\n' : ''}${lines.join('\n')}`
 }
 
-export function isAllowedSourcePath(path: string, root: string, home = homedir()): boolean {
+export function isAllowedSourcePath(
+  path: string,
+  root: string,
+  home = homedir(),
+): boolean {
   let abs: string
   try {
     abs = realpathSync(path)
@@ -106,8 +125,11 @@ export function isAllowedSourcePath(path: string, root: string, home = homedir()
   } catch {
     return false
   }
-  const loweredSegments = abs.split(/[\\/]+/).map((segment) => segment.toLowerCase())
-  if (loweredSegments.some((segment) => SENSITIVE_SEGMENTS.has(segment))) return false
+  const loweredSegments = abs
+    .split(/[\\/]+/)
+    .map((segment) => segment.toLowerCase())
+  if (loweredSegments.some((segment) => SENSITIVE_SEGMENTS.has(segment)))
+    return false
   for (const suffix of SENSITIVE_SUFFIXES) {
     if (containsSubsequence(loweredSegments, suffix)) return false
   }
@@ -116,7 +138,10 @@ export function isAllowedSourcePath(path: string, root: string, home = homedir()
   return isWithin(abs, normalizedRoot) || isWithin(abs, normalizedHome)
 }
 
-function collectCandidatePaths(result: ToolResultObj, args: Record<string, unknown>): string[] {
+function collectCandidatePaths(
+  result: ToolResultObj,
+  args: Record<string, unknown>,
+): string[] {
   const out: string[] = []
   for (const text of [
     result.rawContent,
@@ -135,7 +160,8 @@ function collectCandidatePaths(result: ToolResultObj, args: Record<string, unkno
 function stringValues(value: unknown): string[] {
   if (typeof value === 'string') return [value]
   if (Array.isArray(value)) return value.flatMap(stringValues)
-  if (value && typeof value === 'object') return Object.values(value as Record<string, unknown>).flatMap(stringValues)
+  if (value && typeof value === 'object')
+    return Object.values(value as Record<string, unknown>).flatMap(stringValues)
   return []
 }
 
@@ -154,7 +180,11 @@ function resolveCandidatePath(candidate: string, root: string): string | null {
   return isAbsolute(text) ? resolve(text) : resolve(root, text)
 }
 
-function mediaArtifact(ref: MediaRef, originalPath: string, opts: MediaIngestOptions): ToolArtifact {
+function mediaArtifact(
+  ref: MediaRef,
+  originalPath: string,
+  opts: MediaIngestOptions,
+): ToolArtifact {
   return {
     path: originalPath,
     kind: 'media',
@@ -195,7 +225,10 @@ function isWithin(path: string, parent: string): boolean {
   return p === base || p.startsWith(baseWithSep)
 }
 
-function containsSubsequence(segments: string[], subsequence: string[]): boolean {
+function containsSubsequence(
+  segments: string[],
+  subsequence: string[],
+): boolean {
   if (!subsequence.length || subsequence.length > segments.length) return false
   for (let i = 0; i <= segments.length - subsequence.length; i += 1) {
     if (subsequence.every((part, j) => segments[i + j] === part)) return true

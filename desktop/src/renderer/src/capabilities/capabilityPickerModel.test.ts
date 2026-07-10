@@ -42,8 +42,14 @@ const tools: ToolInfo[] = [
 
 describe('capability picker model', () => {
   it('does not expose builtin tools in the composer picker', () => {
-    const groups = buildCapabilityPickerGroups({ commands, tools, mcpContent: '' })
-    const labels = groups.flatMap((group) => group.items.map((item) => item.label))
+    const groups = buildCapabilityPickerGroups({
+      commands,
+      tools,
+      mcpContent: '',
+    })
+    const labels = groups.flatMap((group) =>
+      group.items.map((item) => item.label),
+    )
     const groupLabels = groups.map((group) => group.label)
 
     expect(groupLabels).not.toContain('内建工具')
@@ -54,11 +60,19 @@ describe('capability picker model', () => {
     const groups = buildCapabilityPickerGroups({
       commands,
       tools,
-      mcpContent: JSON.stringify({ servers: { gitlab: { transport: 'stdio', enabled: true } } }),
+      mcpContent: JSON.stringify({
+        servers: { gitlab: { transport: 'stdio', enabled: true } },
+      }),
     })
-    const skill = groups.flatMap((group) => group.items).find((item) => item.id === 'skill:clawhub')
-    const github = groups.flatMap((group) => group.items).find((item) => item.id === 'mcp:github')
-    const gitlab = groups.flatMap((group) => group.items).find((item) => item.id === 'mcp:gitlab')
+    const skill = groups
+      .flatMap((group) => group.items)
+      .find((item) => item.id === 'skill:clawhub')
+    const github = groups
+      .flatMap((group) => group.items)
+      .find((item) => item.id === 'mcp:github')
+    const gitlab = groups
+      .flatMap((group) => group.items)
+      .find((item) => item.id === 'mcp:gitlab')
 
     expect(skill?.completion).toBe('@skill(clawhub)')
     expect(github?.completion).toBe('@mcp(github)')

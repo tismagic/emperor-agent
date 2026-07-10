@@ -1,4 +1,10 @@
-import { existsSync, mkdtempSync, readFileSync, readdirSync, writeFileSync } from 'node:fs'
+import {
+  existsSync,
+  mkdtempSync,
+  readFileSync,
+  readdirSync,
+  writeFileSync,
+} from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
@@ -21,7 +27,9 @@ function tmp(prefix: string): string {
 class FakeClock {
   value = 1_700_000_000_000
   now = () => this.value
-  advance(ms: number): void { this.value += ms }
+  advance(ms: number): void {
+    this.value += ms
+  }
 }
 
 function makeJob(jobId = 'job-1', name = 'job'): SchedulerJob {
@@ -40,7 +48,12 @@ describe('scheduler models/store', () => {
     const store = new SchedulerStore(root)
     const job = makeJob()
     job.state.next_run_at_ms = 1_700_000_060_000
-    for (let i = 0; i < 25; i++) job.state.recordRun({ runAtMs: i, status: SchedulerStatus.OK, durationMs: 12 })
+    for (let i = 0; i < 25; i++)
+      job.state.recordRun({
+        runAtMs: i,
+        status: SchedulerStatus.OK,
+        durationMs: 12,
+      })
 
     store.upsertJob(job)
     const loaded = store.getJob('job-1')!
@@ -60,12 +73,26 @@ describe('scheduler models/store', () => {
     store.appendAction('update', { job: makeJob('job-1', 'second') })
     store.appendAction('add', { job: makeJob('job-2', 'keep') })
     store.appendAction('delete', { jobId: 'job-1' })
-    expect(store.load().jobs.map((job) => [job.id, job.name])).toEqual([['job-2', 'keep']])
+    expect(store.load().jobs.map((job) => [job.id, job.name])).toEqual([
+      ['job-2', 'keep'],
+    ])
     expect(readFileSync(store.actionFile, 'utf8')).toBe('')
 
-    writeFileSync(store.actionFile, 'not json\n' + JSON.stringify({ action: 'add', job: makeJob('job-3').toDict() }) + '\n' + JSON.stringify({ action: 'delete', jobId: '../bad' }) + '\n', 'utf8')
+    writeFileSync(
+      store.actionFile,
+      'not json\n' +
+        JSON.stringify({ action: 'add', job: makeJob('job-3').toDict() }) +
+        '\n' +
+        JSON.stringify({ action: 'delete', jobId: '../bad' }) +
+        '\n',
+      'utf8',
+    )
     expect(store.load().jobs.map((job) => job.id)).toContain('job-3')
-    expect(readdirSync(store.schedulerDir).some((name) => name.startsWith('action.corrupt-'))).toBe(true)
+    expect(
+      readdirSync(store.schedulerDir).some((name) =>
+        name.startsWith('action.corrupt-'),
+      ),
+    ).toBe(true)
     expect(store.diagnostics().lastActionErrors).toHaveLength(2)
   })
 
@@ -75,22 +102,57 @@ describe('scheduler models/store', () => {
     store.upsertJob(makeJob('job-1'))
     expect(store.load().jobs).toHaveLength(1)
     writeFileSync(store.jobsFile, '{bad', 'utf8')
-    expect(store.load({ allowLastGood: true }).jobs.map((job) => job.id)).toEqual(['job-1'])
+    expect(
+      store.load({ allowLastGood: true }).jobs.map((job) => job.id),
+    ).toEqual(['job-1'])
 
     const fresh = new SchedulerStore(root)
     writeFileSync(fresh.jobsFile, '{bad', 'utf8')
-    expect(() => fresh.load({ allowLastGood: false })).toThrow(SchedulerStoreCorrupt)
+    expect(() => fresh.load({ allowLastGood: false })).toThrow(
+      SchedulerStoreCorrupt,
+    )
     expect(existsSync(fresh.jobsFile)).toBe(false)
   })
 })
 
 describe('scheduler service/tool', () => {
   it('computes and validates schedules', () => {
-    expect(computeNextRunMs(new SchedulerSchedule({ kind: 'every', every_ms: 5_000 }), 1_000)).toBe(6_000)
-    expect(computeNextRunMs(new SchedulerSchedule({ kind: 'at', at_ms: 900 }), 1_000)).toBeNull()
-    expect(computeNextRunMs(new SchedulerSchedule({ kind: 'cron', expr: '0 9 * * *', tz: 'Asia/Shanghai' }), Date.UTC(2026, 0, 1, 0, 0))).toBe(Date.UTC(2026, 0, 1, 1, 0))
-    expect(() => validateSchedule(new SchedulerSchedule({ kind: 'cron', expr: 'bad cron', tz: 'UTC' }))).toThrow(/invalid cron/)
-    expect(() => validateSchedule(new SchedulerSchedule({ kind: 'cron', expr: '0 9 * * *', tz: 'Bad/Zone' }))).toThrow(/unknown timezone/)
+    expect(
+      computeNextRunMs(
+        new SchedulerSchedule({ kind: 'every', every_ms: 5_000 }),
+        1_000,
+      ),
+    ).toBe(6_000)
+    expect(
+      computeNextRunMs(
+        new SchedulerSchedule({ kind: 'at', at_ms: 900 }),
+        1_000,
+      ),
+    ).toBeNull()
+    expect(
+      computeNextRunMs(
+        new SchedulerSchedule({
+          kind: 'cron',
+          expr: '0 9 * * *',
+          tz: 'Asia/Shanghai',
+        }),
+        Date.UTC(2026, 0, 1, 0, 0),
+      ),
+    ).toBe(Date.UTC(2026, 0, 1, 1, 0))
+    expect(() =>
+      validateSchedule(
+        new SchedulerSchedule({ kind: 'cron', expr: 'bad cron', tz: 'UTC' }),
+      ),
+    ).toThrow(/invalid cron/)
+    expect(() =>
+      validateSchedule(
+        new SchedulerSchedule({
+          kind: 'cron',
+          expr: '0 9 * * *',
+          tz: 'Bad/Zone',
+        }),
+      ),
+    ).toThrow(/unknown timezone/)
   })
 
   it('runs jobs, records status, handles stale running, and registers protected jobs', async () => {
@@ -100,8 +162,13 @@ describe('scheduler service/tool', () => {
     const called: string[] = []
     const service = new SchedulerService(new SchedulerStore(root), {
       timeFunc: clock.now,
-      eventSink: async (event) => { events.push(event) },
-      onJob: async (job) => { called.push(job.id); clock.advance(25) },
+      eventSink: async (event) => {
+        events.push(event)
+      },
+      onJob: async (job) => {
+        called.push(job.id)
+        clock.advance(25)
+      },
     })
     const job = service.addJob({
       name: 'ping',
@@ -114,7 +181,10 @@ describe('scheduler service/tool', () => {
     expect(called).toEqual([job.id])
     expect(service.getJob(job.id)?.state.last_status).toBe(SchedulerStatus.OK)
     expect(service.getJob(job.id)?.state.run_history[0]!.duration_ms).toBe(25)
-    expect(events.map((event) => event.event)).toEqual(['scheduler_run_start', 'scheduler_run_done'])
+    expect(events.map((event) => event.event)).toEqual([
+      'scheduler_run_start',
+      'scheduler_run_done',
+    ])
 
     const stale = service.addJob({
       name: 'stale',
@@ -127,12 +197,23 @@ describe('scheduler service/tool', () => {
     clock.advance(500)
     await service.start()
     service.stop()
-    expect(service.getJob(stale.id)?.state.last_status).toBe(SchedulerStatus.ERROR)
+    expect(service.getJob(stale.id)?.state.last_status).toBe(
+      SchedulerStatus.ERROR,
+    )
 
     await service.start()
-    const protectedIds = service.listJobs({ includeDisabled: true }).filter((item) => item.protected).map((item) => item.id)
+    const protectedIds = service
+      .listJobs({ includeDisabled: true })
+      .filter((item) => item.protected)
+      .map((item) => item.id)
     service.stop()
-    expect(protectedIds).toEqual(expect.arrayContaining(['memory-maintenance', 'runtime-maintenance', 'watchlist-check']))
+    expect(protectedIds).toEqual(
+      expect.arrayContaining([
+        'memory-maintenance',
+        'runtime-maintenance',
+        'watchlist-check',
+      ]),
+    )
     expect(service.removeJob('memory-maintenance')).toBe('protected')
   })
 
@@ -143,7 +224,9 @@ describe('scheduler service/tool', () => {
     let liveSession: string | null = 'sess_live'
     const service = new SchedulerService(new SchedulerStore(root), {
       timeFunc: clock.now,
-      eventSink: async (event) => { events.push(event) },
+      eventSink: async (event) => {
+        events.push(event)
+      },
       onJob: async () => undefined,
       targetSessionId: () => liveSession,
     })
@@ -203,16 +286,24 @@ describe('scheduler service/tool', () => {
 
     await service.onTimer()
 
-    const names = service.listJobs({ includeDisabled: true }).map((job) => job.name)
+    const names = service
+      .listJobs({ includeDisabled: true })
+      .map((job) => job.name)
     expect(names).toContain('concurrent-add')
     expect(names).not.toContain('other')
-    expect(service.getJob(running.id)?.state.last_status).toBe(SchedulerStatus.OK)
+    expect(service.getJob(running.id)?.state.last_status).toBe(
+      SchedulerStatus.OK,
+    )
   })
 
   it('arms, re-arms, and clears the service timer around due jobs', async () => {
     const root = tmp('emperor-scheduler-timer-')
     const clock = new FakeClock()
-    const timers: Array<{ handle: number; delayMs: number; callback: () => void | Promise<void> }> = []
+    const timers: Array<{
+      handle: number
+      delayMs: number
+      callback: () => void | Promise<void>
+    }> = []
     const cleared: unknown[] = []
     const called: string[] = []
     const service = new SchedulerService(new SchedulerStore(root), {
@@ -223,8 +314,12 @@ describe('scheduler service/tool', () => {
         timers.push({ handle, delayMs, callback })
         return handle
       },
-      clearTimer: (handle) => { cleared.push(handle) },
-      onJob: async (job) => { called.push(job.id) },
+      clearTimer: (handle) => {
+        cleared.push(handle)
+      },
+      onJob: async (job) => {
+        called.push(job.id)
+      },
     })
 
     await service.start()
@@ -250,24 +345,56 @@ describe('scheduler service/tool', () => {
   it('SchedulerTool adds, lists, pauses, resumes, runs, removes, and rejects recursive creation', async () => {
     const root = tmp('emperor-scheduler-tool-')
     const ran: string[] = []
-    const service = new SchedulerService(new SchedulerStore(root), { onJob: async (job) => { ran.push(job.id) } })
+    const service = new SchedulerService(new SchedulerStore(root), {
+      onJob: async (job) => {
+        ran.push(job.id)
+      },
+    })
     const tool = new SchedulerTool(service)
 
-    const created = await tool.execute({ action: 'add', name: 'daily summary', payload_kind: 'agent_turn', message: 'Summarize today', every_seconds: 60 })
+    const created = await tool.execute({
+      action: 'add',
+      name: 'daily summary',
+      payload_kind: 'agent_turn',
+      message: 'Summarize today',
+      every_seconds: 60,
+    })
     expect(created).toContain('Scheduler job created')
     const job = service.listJobs()[0]!
     expect(await tool.execute({ action: 'list' })).toContain('daily summary')
-    expect(await tool.execute({ action: 'pause', job_id: job.id })).toContain('paused')
+    expect(await tool.execute({ action: 'pause', job_id: job.id })).toContain(
+      'paused',
+    )
     expect(service.getJob(job.id)?.enabled).toBe(false)
-    expect(await tool.execute({ action: 'resume', job_id: job.id })).toContain('resumed')
-    expect(await tool.execute({ action: 'run', job_id: job.id })).toContain('run finished')
+    expect(await tool.execute({ action: 'resume', job_id: job.id })).toContain(
+      'resumed',
+    )
+    expect(await tool.execute({ action: 'run', job_id: job.id })).toContain(
+      'run finished',
+    )
     expect(ran).toEqual([job.id])
-    expect(await tool.execute({ action: 'remove', job_id: job.id })).toContain('removed')
+    expect(await tool.execute({ action: 'remove', job_id: job.id })).toContain(
+      'removed',
+    )
 
-    expect(await tool.execute({ action: 'add', payload_kind: 'system_event', message: 'internal', every_seconds: 60 })).toContain('system_event')
+    expect(
+      await tool.execute({
+        action: 'add',
+        payload_kind: 'system_event',
+        message: 'internal',
+        every_seconds: 60,
+      }),
+    ).toContain('system_event')
     const token = setSchedulerRun(true)
     try {
-      expect(await tool.execute({ action: 'add', payload_kind: 'agent_turn', message: 'recursive', every_seconds: 60 })).toContain('cannot create')
+      expect(
+        await tool.execute({
+          action: 'add',
+          payload_kind: 'agent_turn',
+          message: 'recursive',
+          every_seconds: 60,
+        }),
+      ).toContain('cannot create')
     } finally {
       resetSchedulerRun(token)
     }

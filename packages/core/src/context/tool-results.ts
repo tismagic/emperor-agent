@@ -32,7 +32,8 @@ export function contentTextSize(content: unknown): number {
   if (typeof c === 'string') return c.length
   if (Array.isArray(content)) {
     return content.reduce((sum, block) => {
-      if (!block || typeof block !== 'object' || Array.isArray(block)) return sum
+      if (!block || typeof block !== 'object' || Array.isArray(block))
+        return sum
       const b = block as Record<string, unknown>
       return b.type === 'text' ? sum + String(b.text ?? '').length : sum
     }, 0)
@@ -54,12 +55,16 @@ export function capToolResults(
   const headChars = Math.max(1, perCallLimit - tailChars)
   const out = history.map((msg) => {
     if (msg.role !== 'tool') return msg
-    const text = typeof msg.content === 'string' ? msg.content : String(msg.content ?? '')
+    const text =
+      typeof msg.content === 'string' ? msg.content : String(msg.content ?? '')
     if (text.length <= perCallLimit) return msg
     capped++
     const head = text.slice(0, headChars)
     const tail = text.slice(-tailChars)
-    return { ...msg, content: `${head}\n${truncationNotice(text.length)}\n${tail}` }
+    return {
+      ...msg,
+      content: `${head}\n${truncationNotice(text.length)}\n${tail}`,
+    }
   })
   return [out, capped]
 }
@@ -74,7 +79,9 @@ export function shrinkOldToolResults(
   const boundary = stableBoundary ?? history.length
   if (boundary <= keepRecent) return [history.slice(), 0]
   const toolIndices: number[] = []
-  history.forEach((m, i) => { if (m.role === 'tool') toolIndices.push(i) })
+  history.forEach((m, i) => {
+    if (m.role === 'tool') toolIndices.push(i)
+  })
   const cutoff = boundary - keepRecent
   let shrunk = 0
   const out = history.map((msg, i) => {
@@ -105,7 +112,10 @@ export class ToolResultStore {
     content: string,
     opts: { previewChars?: number } = {},
   ): ToolResultReplacementRecord {
-    const digest = createHash('sha256').update(`${turnId}:${toolCallId}:${content}`).digest('hex').slice(0, 16)
+    const digest = createHash('sha256')
+      .update(`${turnId}:${toolCallId}:${content}`)
+      .digest('hex')
+      .slice(0, 16)
     const artifact = join(this.dir, `${digest}.txt`)
     const meta = join(this.dir, `${digest}.json`)
     if (!existsSync(artifact)) writeFileSync(artifact, content, 'utf8')
@@ -117,11 +127,13 @@ export class ToolResultStore {
       preview: content.slice(0, opts.previewChars ?? 1000),
       original_chars: content.length,
     }
-    if (!existsSync(meta)) writeFileSync(meta, JSON.stringify(record, null, 2), 'utf8')
+    if (!existsSync(meta))
+      writeFileSync(meta, JSON.stringify(record, null, 2), 'utf8')
     if (existsSync(meta)) {
       try {
         const parsed = JSON.parse(readFileSync(meta, 'utf8'))
-        if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) return parsed as ToolResultReplacementRecord
+        if (parsed && typeof parsed === 'object' && !Array.isArray(parsed))
+          return parsed as ToolResultReplacementRecord
       } catch {
         // Fall through to the freshly computed record if metadata is corrupt.
       }
@@ -158,9 +170,12 @@ export function replaceLargeToolResults(
     const copied = { ...msg }
     const toolName = String(copied.name || copied.tool_call_id || 'tool')
     const limit = limitForTool(toolName, limits, minBytes)
-    if (copied.role !== 'tool' || contentTextSize(copied.content) <= limit) return copied
+    if (copied.role !== 'tool' || contentTextSize(copied.content) <= limit)
+      return copied
     const content = String(copied.content || '')
-    const toolCallId = String(copied.tool_call_id || copied.id || 'unknown_tool_call')
+    const toolCallId = String(
+      copied.tool_call_id || copied.id || 'unknown_tool_call',
+    )
     const record = store.persistLargeResult(
       String(copied.turn_id || 'unknown_turn'),
       toolCallId,
@@ -181,32 +196,46 @@ export function replaceAggregateToolResults(
     budgetChars?: number
     previewChars?: number
   } = {},
-): [OpenAiMsg[], ToolResultReplacementRecord[], Array<Record<string, unknown>>] {
+): [
+  OpenAiMsg[],
+  ToolResultReplacementRecord[],
+  Array<Record<string, unknown>>,
+] {
   const budgetChars = opts.budgetChars ?? DEFAULT_AGGREGATE_TOOL_RESULT_BUDGET
-  if (!Number.isInteger(budgetChars) || budgetChars <= 0) return [history.slice(), [], []]
+  if (!Number.isInteger(budgetChars) || budgetChars <= 0)
+    return [history.slice(), [], []]
 
   const out = history.map((msg) => ({ ...msg }))
-  const groups = new Map<string, {
-    key: string
-    total: number
-    entries: Array<{
-      index: number
-      size: number
-      content: string
-      toolCallId: string
-      toolName: string
-      turnId: string
-      replaceable: boolean
-    }>
-  }>()
+  const groups = new Map<
+    string,
+    {
+      key: string
+      total: number
+      entries: Array<{
+        index: number
+        size: number
+        content: string
+        toolCallId: string
+        toolName: string
+        turnId: string
+        replaceable: boolean
+      }>
+    }
+  >()
   let currentBatchKey: string | null = null
   let currentBatchTurnId: string | null = null
 
   out.forEach((msg, index) => {
     if (msg.role === 'assistant') {
       const toolCalls = Array.isArray(msg.tool_calls) ? msg.tool_calls : []
-      currentBatchKey = toolCalls.length > 0 ? `assistant:${String(msg.turn_id || msg.id || index)}` : null
-      currentBatchTurnId = toolCalls.length > 0 ? String(msg.turn_id || msg.id || currentBatchKey) : null
+      currentBatchKey =
+        toolCalls.length > 0
+          ? `assistant:${String(msg.turn_id || msg.id || index)}`
+          : null
+      currentBatchTurnId =
+        toolCalls.length > 0
+          ? String(msg.turn_id || msg.id || currentBatchKey)
+          : null
       return
     }
     if (msg.role !== 'tool') {
@@ -216,13 +245,20 @@ export function replaceAggregateToolResults(
     }
 
     const explicitTurnId = String(msg.turn_id || '').trim()
-    const groupKey = explicitTurnId ? `turn:${explicitTurnId}` : currentBatchKey ?? `tool:${index}`
+    const groupKey = explicitTurnId
+      ? `turn:${explicitTurnId}`
+      : (currentBatchKey ?? `tool:${index}`)
     const turnId = explicitTurnId || currentBatchTurnId || 'unknown_turn'
-    const content = typeof msg.content === 'string' ? msg.content : String(msg.content ?? '')
+    const content =
+      typeof msg.content === 'string' ? msg.content : String(msg.content ?? '')
     const size = contentTextSize(msg.content)
     const toolCallId = String(msg.tool_call_id || msg.id || `tool_${index}`)
     const toolName = String(msg.name || toolCallId || 'tool')
-    const group = groups.get(groupKey) ?? { key: groupKey, total: 0, entries: [] }
+    const group = groups.get(groupKey) ?? {
+      key: groupKey,
+      total: 0,
+      entries: [],
+    }
     group.total += size
     group.entries.push({
       index,
@@ -248,13 +284,19 @@ export function replaceAggregateToolResults(
     // 2026-07-05 审计会话中实测触发，非本轮 stableBoundary 覆盖范围）。
     const candidates = group.entries
       .filter((entry) => entry.replaceable)
-      .sort((a, b) => (b.size - a.size) || (a.index - b.index))
+      .sort((a, b) => b.size - a.size || a.index - b.index)
 
     for (const entry of candidates) {
       if (currentTotal <= budgetChars) break
-      const record = store.persistLargeResult(entry.turnId, entry.toolCallId, entry.toolName, entry.content, {
-        previewChars: opts.previewChars ?? 1000,
-      })
+      const record = store.persistLargeResult(
+        entry.turnId,
+        entry.toolCallId,
+        entry.toolName,
+        entry.content,
+        {
+          previewChars: opts.previewChars ?? 1000,
+        },
+      )
       const replacement = replacementMessage(record)
       const replacementSize = contentTextSize(replacement)
       if (replacementSize >= entry.size) continue
@@ -278,9 +320,15 @@ export function replaceAggregateToolResults(
   return [out, replacements, groupReports]
 }
 
-function limitForTool(toolName: string, limits: Record<string, number>, fallback: number): number {
+function limitForTool(
+  toolName: string,
+  limits: Record<string, number>,
+  fallback: number,
+): number {
   const value = limits[toolName]
-  return typeof value === 'number' && Number.isInteger(value) && value > 0 ? value : fallback
+  return typeof value === 'number' && Number.isInteger(value) && value > 0
+    ? value
+    : fallback
 }
 
 function isToolResultReplacement(content: string): boolean {
@@ -299,5 +347,7 @@ function replacementMessage(record: ToolResultReplacementRecord): string {
     '',
     'preview:',
     record.preview,
-  ].join('\n').trim()
+  ]
+    .join('\n')
+    .trim()
 }

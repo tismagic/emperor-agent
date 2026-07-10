@@ -3,7 +3,7 @@ name: release
 on:
   push:
     tags:
-      - "v*"
+      - 'v*'
 
 permissions:
   contents: write
@@ -23,17 +23,17 @@ jobs:
               desktop/dist/*.zip
           - os: ubuntu-latest
             target: linux
-            artifact_glob: "desktop/dist/*.AppImage"
+            artifact_glob: 'desktop/dist/*.AppImage'
           - os: windows-latest
             target: win
-            artifact_glob: "desktop/dist/*.exe"
+            artifact_glob: 'desktop/dist/*.exe'
     env:
-      CSC_IDENTITY_AUTO_DISCOVERY: "false"
+      CSC_IDENTITY_AUTO_DISCOVERY: 'false'
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: "22"
+          node-version: '22'
           cache: npm
           cache-dependency-path: |
             package-lock.json

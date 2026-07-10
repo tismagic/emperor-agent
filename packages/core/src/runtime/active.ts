@@ -45,9 +45,12 @@ export class ActiveTaskRegistry {
     sessionId?: string | null
     abort?: (() => void) | null
   }): Promise<T> {
-    if (this.tasks.has(opts.taskId)) throw new Error(`active task already exists: ${opts.taskId}`)
+    if (this.tasks.has(opts.taskId))
+      throw new Error(`active task already exists: ${opts.taskId}`)
     let rejectCancel: (error: Error) => void = () => {}
-    const cancelPromise = new Promise<never>((_, reject) => { rejectCancel = reject })
+    const cancelPromise = new Promise<never>((_, reject) => {
+      rejectCancel = reject
+    })
     const info: ActiveTaskInfo = {
       id: opts.taskId,
       kind: opts.kind,
@@ -74,19 +77,34 @@ export class ActiveTaskRegistry {
     }
   }
 
-  update(taskId: string, fields: { turnId?: string | null; jobId?: string | null; sessionId?: string | null; label?: string | null }): ActiveTaskInfo | null {
+  update(
+    taskId: string,
+    fields: {
+      turnId?: string | null
+      jobId?: string | null
+      sessionId?: string | null
+      label?: string | null
+    },
+  ): ActiveTaskInfo | null {
     const active = this.tasks.get(taskId)
     if (!active) return null
     if (fields.turnId !== undefined) active.info.turn_id = fields.turnId
     if (fields.jobId !== undefined) active.info.job_id = fields.jobId
-    if (fields.sessionId !== undefined) active.info.session_id = fields.sessionId
-    if (fields.label !== undefined && fields.label !== null) active.info.label = fields.label
+    if (fields.sessionId !== undefined)
+      active.info.session_id = fields.sessionId
+    if (fields.label !== undefined && fields.label !== null)
+      active.info.label = fields.label
     return active.info
   }
 
-  cancel(opts: { taskId?: string | null; kind?: ActiveTaskKind | null } = {}): ActiveTaskInfo[] {
+  cancel(
+    opts: { taskId?: string | null; kind?: ActiveTaskKind | null } = {},
+  ): ActiveTaskInfo[] {
     const selected = [...this.tasks.values()].filter((active) => {
-      return (!opts.taskId || active.info.id === opts.taskId) && (!opts.kind || active.info.kind === opts.kind)
+      return (
+        (!opts.taskId || active.info.id === opts.taskId) &&
+        (!opts.kind || active.info.kind === opts.kind)
+      )
     })
     for (const active of selected) active.cancel()
     return selected.map((active) => active.info)
@@ -105,7 +123,9 @@ export class ActiveTaskRegistry {
   }
 }
 
-export function activeTaskToDict(info: ActiveTaskInfo): Record<string, unknown> {
+export function activeTaskToDict(
+  info: ActiveTaskInfo,
+): Record<string, unknown> {
   return {
     id: info.id,
     kind: info.kind,

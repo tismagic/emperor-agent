@@ -1,5 +1,11 @@
 import { existsSync } from 'node:fs'
-import { appendFile, mkdir, readFile, rename, writeFile } from 'node:fs/promises'
+import {
+  appendFile,
+  mkdir,
+  readFile,
+  rename,
+  writeFile,
+} from 'node:fs/promises'
 import { dirname } from 'node:path'
 
 /**
@@ -10,7 +16,10 @@ import { dirname } from 'node:path'
  */
 
 /** 追加一行 JSON。 */
-export async function appendJsonl(path: string, record: unknown): Promise<void> {
+export async function appendJsonl(
+  path: string,
+  record: unknown,
+): Promise<void> {
   await mkdir(dirname(path), { recursive: true })
   await appendFile(path, `${JSON.stringify(record)}\n`, 'utf8')
 }
@@ -54,7 +63,11 @@ export async function rotateToArchive(
   const lineCount = raw.split('\n').filter((l) => l.trim()).length
   if (lineCount < opts.keepThreshold) return false
   await mkdir(dirname(archivePath), { recursive: true })
-  await appendFile(archivePath, raw.endsWith('\n') || raw === '' ? raw : `${raw}\n`, 'utf8')
+  await appendFile(
+    archivePath,
+    raw.endsWith('\n') || raw === '' ? raw : `${raw}\n`,
+    'utf8',
+  )
   // 原子清空热段
   const tmp = `${hotPath}.tmp-${process.pid}`
   await writeFile(tmp, '', 'utf8')

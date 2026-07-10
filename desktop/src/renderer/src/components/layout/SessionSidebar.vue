@@ -35,7 +35,12 @@ import {
   sessionRuntimeIndicator,
   type SidebarProjectGroup,
 } from '../../runtime/sidebarModel'
-import type { ProjectInfo, SessionInfo, SidebarSortMode, SidebarState } from '../../types'
+import type {
+  ProjectInfo,
+  SessionInfo,
+  SidebarSortMode,
+  SidebarState,
+} from '../../types'
 
 const emit = defineEmits<{ activate: [id: string] }>()
 const router = useRouter()
@@ -69,9 +74,15 @@ const searchIndex = ref(0)
 const searchInput = ref<HTMLInputElement | null>(null)
 const sidebarState = ref<SidebarState>({ ...defaultSidebarState })
 
-const grouped = computed(() => buildSidebarGroups(sessions.value, sidebarState.value, projects.value))
-const searchResults = computed(() => searchSidebarSessions(sessions.value, searchQuery.value))
-const schedulerCount = computed(() => ctx.boot.value?.scheduler?.jobs?.length || 0)
+const grouped = computed(() =>
+  buildSidebarGroups(sessions.value, sidebarState.value, projects.value),
+)
+const searchResults = computed(() =>
+  searchSidebarSessions(sessions.value, searchQuery.value),
+)
+const schedulerCount = computed(
+  () => ctx.boot.value?.scheduler?.jobs?.length || 0,
+)
 
 function controlPendingTag(session: SessionInfo) {
   return sessionControlPendingTag(session)
@@ -79,12 +90,17 @@ function controlPendingTag(session: SessionInfo) {
 
 // P1-7：running spinner > pending tag > attention dot
 function rowIndicator(session: SessionInfo) {
-  return sessionRuntimeIndicator(ctx.sessionRuntimeStates[session.id], sessionControlPendingTag(session))
+  return sessionRuntimeIndicator(
+    ctx.sessionRuntimeStates[session.id],
+    sessionControlPendingTag(session),
+  )
 }
 
 async function loadSidebarState() {
   try {
-    sidebarState.value = normalizeSidebarState(await core<Partial<SidebarState>>('sidebar.get'))
+    sidebarState.value = normalizeSidebarState(
+      await core<Partial<SidebarState>>('sidebar.get'),
+    )
   } catch {
     sidebarState.value = { ...defaultSidebarState }
   }
@@ -94,7 +110,9 @@ async function patchSidebarState(update: Partial<SidebarState>) {
   const next = normalizeSidebarState({ ...sidebarState.value, ...update })
   sidebarState.value = next
   try {
-    sidebarState.value = normalizeSidebarState(await core<Partial<SidebarState>>('sidebar.patch', update))
+    sidebarState.value = normalizeSidebarState(
+      await core<Partial<SidebarState>>('sidebar.patch', update),
+    )
   } catch {
     sidebarState.value = next
   }
@@ -144,7 +162,10 @@ async function pickBuildProject(kind: 'empty' | 'existing') {
   creatingBuild.value = true
   try {
     const picked = await selectDirectory()
-    const fallbackLabel = kind === 'empty' ? '输入已创建的空白项目文件夹路径' : '输入要绑定的项目文件夹路径'
+    const fallbackLabel =
+      kind === 'empty'
+        ? '输入已创建的空白项目文件夹路径'
+        : '输入要绑定的项目文件夹路径'
     const path = picked || window.prompt(fallbackLabel) || ''
     await createBuildFromPath(path)
   } catch (err) {
@@ -174,7 +195,10 @@ async function doArchive(id: string) {
 
 async function doRename(id: string) {
   const title = editTitle.value.trim()
-  if (!title) { editingId.value = null; return }
+  if (!title) {
+    editingId.value = null
+    return
+  }
   await rename(id, title)
   editingId.value = null
 }
@@ -232,7 +256,11 @@ function moveProject(projectId: string, delta: -1 | 1) {
   const ids = grouped.value.projects.map((project) => project.id)
   void patchSidebarState({
     project_sort: 'manual',
-    project_order: moveId(completeManualOrder(sidebarState.value.project_order, ids), projectId, delta),
+    project_order: moveId(
+      completeManualOrder(sidebarState.value.project_order, ids),
+      projectId,
+      delta,
+    ),
   })
 }
 
@@ -240,13 +268,24 @@ function moveChat(sessionId: string, delta: -1 | 1) {
   const ids = grouped.value.chats.map((session) => session.id)
   void patchSidebarState({
     chat_sort: 'manual',
-    chat_order: moveId(completeManualOrder(sidebarState.value.chat_order, ids), sessionId, delta),
+    chat_order: moveId(
+      completeManualOrder(sidebarState.value.chat_order, ids),
+      sessionId,
+      delta,
+    ),
   })
 }
 
-function moveProjectSession(project: SidebarProjectGroup, sessionId: string, delta: -1 | 1) {
+function moveProjectSession(
+  project: SidebarProjectGroup,
+  sessionId: string,
+  delta: -1 | 1,
+) {
   const current = sidebarState.value.project_session_order
-  const order = completeManualOrder(current[project.id] || [], project.sessions.map((session) => session.id))
+  const order = completeManualOrder(
+    current[project.id] || [],
+    project.sessions.map((session) => session.id),
+  )
   void patchSidebarState({
     project_sort: 'manual',
     project_session_order: {
@@ -255,7 +294,6 @@ function moveProjectSession(project: SidebarProjectGroup, sessionId: string, del
     },
   })
 }
-
 
 function closeMenus() {
   projectMenuOpen.value = false
@@ -301,7 +339,10 @@ function relativeDate(value?: string) {
 }
 
 onMounted(async () => {
-  await Promise.all([loadSidebarState(), sessions.value.length ? Promise.resolve() : load()])
+  await Promise.all([
+    loadSidebarState(),
+    sessions.value.length ? Promise.resolve() : load(),
+  ])
   if (activeId.value) emit('activate', activeId.value)
 })
 </script>
@@ -349,7 +390,10 @@ onMounted(async () => {
     <div v-if="loading" class="session-sidebar-empty"><p>Loading...</p></div>
 
     <div v-else class="session-list codex-session-list">
-      <section v-if="sidebarState.section_order.includes('projects')" class="sidebar-section">
+      <section
+        v-if="sidebarState.section_order.includes('projects')"
+        class="sidebar-section"
+      >
         <div class="sidebar-section-head">
           <button
             class="sidebar-section-title"
@@ -362,10 +406,18 @@ onMounted(async () => {
             <ChevronDown :size="13" />
           </button>
           <div class="sidebar-section-actions">
-            <button class="sidebar-icon-button" title="项目排序" @click="projectMenuOpen = !projectMenuOpen">
+            <button
+              class="sidebar-icon-button"
+              title="项目排序"
+              @click="projectMenuOpen = !projectMenuOpen"
+            >
               <MoreHorizontal :size="15" />
             </button>
-            <button class="sidebar-icon-button" title="新增项目" @click="projectAddOpen = !projectAddOpen">
+            <button
+              class="sidebar-icon-button"
+              title="新增项目"
+              @click="projectAddOpen = !projectAddOpen"
+            >
               <FolderPlus :size="15" />
             </button>
           </div>
@@ -377,12 +429,18 @@ onMounted(async () => {
               <span>Manual order</span>
             </button>
             <button @click="setProjectSort('created_at')">
-              <Check v-if="sidebarState.project_sort === 'created_at'" :size="14" />
+              <Check
+                v-if="sidebarState.project_sort === 'created_at'"
+                :size="14"
+              />
               <span v-else class="menu-spacer" />
               <span>创建时间</span>
             </button>
             <button @click="setProjectSort('updated_at')">
-              <Check v-if="sidebarState.project_sort === 'updated_at'" :size="14" />
+              <Check
+                v-if="sidebarState.project_sort === 'updated_at'"
+                :size="14"
+              />
               <span v-else class="menu-spacer" />
               <span>更新时间</span>
             </button>
@@ -408,12 +466,29 @@ onMounted(async () => {
                 <span>{{ project.name }}</span>
               </button>
               <span class="project-count">{{ project.sessions.length }}</span>
-              <button class="sidebar-icon-button project-add-session" title="新建该项目会话" @click.stop="doCreateProjectSession(project)">
+              <button
+                class="sidebar-icon-button project-add-session"
+                title="新建该项目会话"
+                @click.stop="doCreateProjectSession(project)"
+              >
                 <Plus :size="13" />
               </button>
-              <span v-if="sidebarState.project_sort === 'manual'" class="row-move-actions">
-                <button title="上移项目" @click.stop="moveProject(project.id, -1)"><ArrowUp :size="12" /></button>
-                <button title="下移项目" @click.stop="moveProject(project.id, 1)"><ArrowDown :size="12" /></button>
+              <span
+                v-if="sidebarState.project_sort === 'manual'"
+                class="row-move-actions"
+              >
+                <button
+                  title="上移项目"
+                  @click.stop="moveProject(project.id, -1)"
+                >
+                  <ArrowUp :size="12" />
+                </button>
+                <button
+                  title="下移项目"
+                  @click.stop="moveProject(project.id, 1)"
+                >
+                  <ArrowDown :size="12" />
+                </button>
               </span>
             </div>
             <template v-if="!isProjectCollapsed(project.id)">
@@ -425,39 +500,85 @@ onMounted(async () => {
                 @click="activateAndEmit(s.id)"
               >
                 <span class="session-status-slot" aria-hidden="true">
-                  <span v-if="rowIndicator(s) === 'running'" class="session-status-spinner" />
-                  <span v-else-if="rowIndicator(s) === 'attention'" class="session-status-dot" />
+                  <span
+                    v-if="rowIndicator(s) === 'running'"
+                    class="session-status-spinner"
+                  />
+                  <span
+                    v-else-if="rowIndicator(s) === 'attention'"
+                    class="session-status-dot"
+                  />
                 </span>
                 <div class="session-row-main">
                   <span v-if="editingId === s.id" class="session-rename-wrap">
-                    <input v-model="editTitle" @keyup.enter="doRename(s.id)" @keyup.escape="editingId = null" @click.stop />
+                    <input
+                      v-model="editTitle"
+                      @keyup.enter="doRename(s.id)"
+                      @keyup.escape="editingId = null"
+                      @click.stop
+                    />
                   </span>
-                  <span v-else class="session-title" @dblclick.stop="beginRename(s)">{{ s.title }}</span>
+                  <span
+                    v-else
+                    class="session-title"
+                    @dblclick.stop="beginRename(s)"
+                    >{{ s.title }}</span
+                  >
                   <small>{{ s.preview || relativeDate(s.updated_at) }}</small>
                 </div>
                 <span
                   v-if="rowIndicator(s) === 'pending'"
                   class="session-control-tag"
                   :data-tone="controlPendingTag(s)?.tone"
-                >{{ controlPendingTag(s)?.label }}</span>
-                <span v-if="sidebarState.project_sort === 'manual'" class="row-move-actions">
-                  <button title="上移" @click.stop="moveProjectSession(project, s.id, -1)"><ArrowUp :size="12" /></button>
-                  <button title="下移" @click.stop="moveProjectSession(project, s.id, 1)"><ArrowDown :size="12" /></button>
+                  >{{ controlPendingTag(s)?.label }}</span
+                >
+                <span
+                  v-if="sidebarState.project_sort === 'manual'"
+                  class="row-move-actions"
+                >
+                  <button
+                    title="上移"
+                    @click.stop="moveProjectSession(project, s.id, -1)"
+                  >
+                    <ArrowUp :size="12" />
+                  </button>
+                  <button
+                    title="下移"
+                    @click.stop="moveProjectSession(project, s.id, 1)"
+                  >
+                    <ArrowDown :size="12" />
+                  </button>
                 </span>
-                <button class="session-del-btn" title="归档" @click.stop="doArchive(s.id)">
+                <button
+                  class="session-del-btn"
+                  title="归档"
+                  @click.stop="doArchive(s.id)"
+                >
                   <Archive :size="13" />
                 </button>
-                <button class="session-del-btn" title="删除" @click.stop="doDelete(s.id)">
+                <button
+                  class="session-del-btn"
+                  title="删除"
+                  @click.stop="doDelete(s.id)"
+                >
                   <Trash2 :size="13" />
                 </button>
               </div>
             </template>
           </template>
         </template>
-        <div v-if="!projectsSectionCollapsed && !grouped.projects.length" class="session-empty-row">还没有绑定项目</div>
+        <div
+          v-if="!projectsSectionCollapsed && !grouped.projects.length"
+          class="session-empty-row"
+        >
+          还没有绑定项目
+        </div>
       </section>
 
-      <section v-if="sidebarState.section_order.includes('chats')" class="sidebar-section">
+      <section
+        v-if="sidebarState.section_order.includes('chats')"
+        class="sidebar-section"
+      >
         <div class="sidebar-section-head">
           <button
             class="sidebar-section-title"
@@ -470,10 +591,18 @@ onMounted(async () => {
             <ChevronDown :size="13" />
           </button>
           <div class="sidebar-section-actions">
-            <button class="sidebar-icon-button" title="对话排序" @click="chatMenuOpen = !chatMenuOpen">
+            <button
+              class="sidebar-icon-button"
+              title="对话排序"
+              @click="chatMenuOpen = !chatMenuOpen"
+            >
               <MoreHorizontal :size="15" />
             </button>
-            <button class="sidebar-icon-button" title="新对话" @click="doCreateChat">
+            <button
+              class="sidebar-icon-button"
+              title="新对话"
+              @click="doCreateChat"
+            >
               <Plus :size="15" />
             </button>
           </div>
@@ -484,12 +613,18 @@ onMounted(async () => {
               <span>Manual order</span>
             </button>
             <button @click="setChatSort('created_at')">
-              <Check v-if="sidebarState.chat_sort === 'created_at'" :size="14" />
+              <Check
+                v-if="sidebarState.chat_sort === 'created_at'"
+                :size="14"
+              />
               <span v-else class="menu-spacer" />
               <span>创建时间</span>
             </button>
             <button @click="setChatSort('updated_at')">
-              <Check v-if="sidebarState.chat_sort === 'updated_at'" :size="14" />
+              <Check
+                v-if="sidebarState.chat_sort === 'updated_at'"
+                :size="14"
+              />
               <span v-else class="menu-spacer" />
               <span>更新时间</span>
             </button>
@@ -505,43 +640,88 @@ onMounted(async () => {
             @click="activateAndEmit(s.id)"
           >
             <span class="session-status-slot" aria-hidden="true">
-              <span v-if="rowIndicator(s) === 'running'" class="session-status-spinner" />
-              <span v-else-if="rowIndicator(s) === 'attention'" class="session-status-dot" />
+              <span
+                v-if="rowIndicator(s) === 'running'"
+                class="session-status-spinner"
+              />
+              <span
+                v-else-if="rowIndicator(s) === 'attention'"
+                class="session-status-dot"
+              />
             </span>
             <div class="session-row-main">
               <span v-if="editingId === s.id" class="session-rename-wrap">
-                <input v-model="editTitle" @keyup.enter="doRename(s.id)" @keyup.escape="editingId = null" @click.stop />
+                <input
+                  v-model="editTitle"
+                  @keyup.enter="doRename(s.id)"
+                  @keyup.escape="editingId = null"
+                  @click.stop
+                />
               </span>
-              <span v-else class="session-title" @dblclick.stop="beginRename(s)">{{ s.title }}</span>
+              <span
+                v-else
+                class="session-title"
+                @dblclick.stop="beginRename(s)"
+                >{{ s.title }}</span
+              >
               <small>{{ s.preview || relativeDate(s.updated_at) }}</small>
             </div>
             <span
               v-if="rowIndicator(s) === 'pending'"
               class="session-control-tag"
               :data-tone="controlPendingTag(s)?.tone"
-            >{{ controlPendingTag(s)?.label }}</span>
-            <span v-if="sidebarState.chat_sort === 'manual'" class="row-move-actions">
-              <button title="上移" @click.stop="moveChat(s.id, -1)"><ArrowUp :size="12" /></button>
-              <button title="下移" @click.stop="moveChat(s.id, 1)"><ArrowDown :size="12" /></button>
+              >{{ controlPendingTag(s)?.label }}</span
+            >
+            <span
+              v-if="sidebarState.chat_sort === 'manual'"
+              class="row-move-actions"
+            >
+              <button title="上移" @click.stop="moveChat(s.id, -1)">
+                <ArrowUp :size="12" />
+              </button>
+              <button title="下移" @click.stop="moveChat(s.id, 1)">
+                <ArrowDown :size="12" />
+              </button>
             </span>
-            <button class="session-del-btn" title="归档" @click.stop="doArchive(s.id)">
+            <button
+              class="session-del-btn"
+              title="归档"
+              @click.stop="doArchive(s.id)"
+            >
               <Archive :size="13" />
             </button>
-            <button class="session-del-btn" title="删除" @click.stop="doDelete(s.id)">
+            <button
+              class="session-del-btn"
+              title="删除"
+              @click.stop="doDelete(s.id)"
+            >
               <Trash2 :size="13" />
             </button>
           </div>
         </template>
-        <div v-if="!chatsSectionCollapsed && !grouped.chats.length" class="session-empty-row">暂无对话</div>
+        <div
+          v-if="!chatsSectionCollapsed && !grouped.chats.length"
+          class="session-empty-row"
+        >
+          暂无对话
+        </div>
       </section>
     </div>
 
-    <button class="sidebar-settings-button" type="button" @click="go('/settings/general')">
+    <button
+      class="sidebar-settings-button"
+      type="button"
+      @click="go('/settings/general')"
+    >
       <Settings :size="16" />
       <span>设置</span>
     </button>
 
-    <div v-if="searchOpen" class="sidebar-search-backdrop" @click.self="closeSearch">
+    <div
+      v-if="searchOpen"
+      class="sidebar-search-backdrop"
+      @click.self="closeSearch"
+    >
       <div class="sidebar-search-panel" @keydown.esc="closeSearch">
         <div class="sidebar-search-input-wrap">
           <Search :size="16" />
@@ -569,7 +749,12 @@ onMounted(async () => {
             {{ result.subtitle }}
           </small>
         </button>
-        <div v-if="searchQuery && !searchResults.length" class="session-empty-row">没有匹配的会话</div>
+        <div
+          v-if="searchQuery && !searchResults.length"
+          class="session-empty-row"
+        >
+          没有匹配的会话
+        </div>
       </div>
     </div>
   </aside>

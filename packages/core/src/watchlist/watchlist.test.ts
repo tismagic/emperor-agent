@@ -1,4 +1,10 @@
-import { existsSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
+import {
+  existsSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  writeFileSync,
+} from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
@@ -27,26 +33,48 @@ describe('WatchlistStore', () => {
 plain text
 `)
     expect(store.activeItems()).toEqual(['检查项目 A', '跟进 PR'])
-    store.writeDecision(new WatchlistDecision({ action: 'run', reason: 'timely', message: 'Do it', checked_at: 10 }))
-    expect(store.payload().lastDecision).toMatchObject({ action: 'run', message: 'Do it' })
+    store.writeDecision(
+      new WatchlistDecision({
+        action: 'run',
+        reason: 'timely',
+        message: 'Do it',
+        checked_at: 10,
+      }),
+    )
+    expect(store.payload().lastDecision).toMatchObject({
+      action: 'run',
+      message: 'Do it',
+    })
 
     writeFileSync(store.statePath, '{bad', 'utf8')
     expect(store.readState()).toEqual({})
     // 审计 P1-5：损坏状态文件应先隔离备份，不能静默丢弃。
     const dir = join(root, 'memory')
-    expect(readdirSync(dir).some((f) => f.startsWith('watchlist_state.json.corrupt-'))).toBe(true)
+    expect(
+      readdirSync(dir).some((f) =>
+        f.startsWith('watchlist_state.json.corrupt-'),
+      ),
+    ).toBe(true)
   })
 })
 
 describe('WatchlistDecision and service', () => {
   it('parses strict or fenced JSON decisions and validates run messages', () => {
-    expect(parseWatchlistDecision('prefix {"action":"run","reason":" now ","message":" ping user "} suffix').toDict()).toMatchObject({
+    expect(
+      parseWatchlistDecision(
+        'prefix {"action":"run","reason":" now ","message":" ping user "} suffix',
+      ).toDict(),
+    ).toMatchObject({
       action: 'run',
       reason: 'now',
       message: 'ping user',
     })
-    expect(parseWatchlistDecision('{"action":"run","reason":"missing"}').action).toBe('skip')
-    expect(parseWatchlistDecision('not json').reason).toBe('watchlist model returned non-JSON decision')
+    expect(
+      parseWatchlistDecision('{"action":"run","reason":"missing"}').action,
+    ).toBe('skip')
+    expect(parseWatchlistDecision('not json').reason).toBe(
+      'watchlist model returned non-JSON decision',
+    )
   })
 
   it('skips empty lists and uses injected decider for active items', async () => {
@@ -55,17 +83,29 @@ describe('WatchlistDecision and service', () => {
     expect((await service.check()).reason).toBe('watchlist has no active items')
 
     service.write('- Review dashboard alerts')
-    service.decider = (_content, items) => new WatchlistDecision({ action: 'run', reason: items[0], message: 'Check alerts' })
+    service.decider = (_content, items) =>
+      new WatchlistDecision({
+        action: 'run',
+        reason: items[0],
+        message: 'Check alerts',
+      })
     const decision = await service.check()
     expect(decision.action).toBe('run')
     expect(decision.message).toBe('Check alerts')
-    expect(JSON.parse(readFileSync(join(root, 'memory', 'watchlist_state.json'), 'utf8')).lastDecision.action).toBe('run')
+    expect(
+      JSON.parse(
+        readFileSync(join(root, 'memory', 'watchlist_state.json'), 'utf8'),
+      ).lastDecision.action,
+    ).toBe('run')
   })
 
   it('uses model router secondary route with fallback and token tracking', async () => {
     const root = tmp('emperor-watchlist-model-')
     const tracker = new TokenTracker(join(root, 'memory', 'token_ledger.jsonl'))
-    const service = new WatchlistService(root, { modelRouter: fakeRouter(), tokenTracker: tracker })
+    const service = new WatchlistService(root, {
+      modelRouter: fakeRouter(),
+      tokenTracker: tracker,
+    })
     service.write('- Check incident queue')
 
     const decision = await service.check()
@@ -79,8 +119,14 @@ describe('WatchlistDecision and service', () => {
 })
 
 function fakeRouter(): ModelRouter {
-  const secondary = snapshot('secondary-model', 'secondary', async () => { throw new Error('secondary down') })
-  const main = snapshot('main-model', 'main', async () => response('{"action":"run","reason":"timely","message":"Check incident queue"}'))
+  const secondary = snapshot('secondary-model', 'secondary', async () => {
+    throw new Error('secondary down')
+  })
+  const main = snapshot('main-model', 'main', async () =>
+    response(
+      '{"action":"run","reason":"timely","message":"Check incident queue"}',
+    ),
+  )
   return {
     route: () => ({
       snapshot: secondary,
@@ -92,7 +138,11 @@ function fakeRouter(): ModelRouter {
   } as unknown as ModelRouter
 }
 
-function snapshot(model: string, role: 'main' | 'secondary', chat: (args: Record<string, unknown>) => Promise<LLMResponse>): ProviderSnapshot {
+function snapshot(
+  model: string,
+  role: 'main' | 'secondary',
+  chat: (args: Record<string, unknown>) => Promise<LLMResponse>,
+): ProviderSnapshot {
   return {
     provider: { chat } as never,
     providerName: 'fake',
@@ -106,10 +156,20 @@ function snapshot(model: string, role: 'main' | 'secondary', chat: (args: Record
     entryName: 'fake',
     entryLabel: 'Fake',
     modelRole: role,
-    routeReason: role === 'secondary' ? 'watchlist_check' : 'watchlist_check:fallback_main',
+    routeReason:
+      role === 'secondary'
+        ? 'watchlist_check'
+        : 'watchlist_check:fallback_main',
   }
 }
 
 function response(content: string): LLMResponse {
-  return { content, toolCalls: [], finishReason: 'stop', usage: { input: 3, output: 2 }, reasoningContent: null, thinkingBlocks: null }
+  return {
+    content,
+    toolCalls: [],
+    finishReason: 'stop',
+    usage: { input: 3, output: 2 },
+    reasoningContent: null,
+    thinkingBlocks: null,
+  }
 }

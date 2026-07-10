@@ -1,4 +1,10 @@
-import { inject, provide, type ComputedRef, type InjectionKey, type Ref } from 'vue'
+import {
+  inject,
+  provide,
+  type ComputedRef,
+  type InjectionKey,
+  type Ref,
+} from 'vue'
 import type {
   BootstrapPayload,
   ChatMessage,
@@ -52,14 +58,22 @@ export interface AppContext {
   loadEpisode: (date: string) => Promise<{ date: string; content: string }>
   saveEpisode: (date: string, content: string) => Promise<void>
   loadMemoryVersion: (id: string) => Promise<MemoryVersionDetail>
-  restoreMemoryVersion: (id: string) => Promise<{ restored: { path: string; content: string }; memory: BootstrapPayload['memory'] }>
+  restoreMemoryVersion: (id: string) => Promise<{
+    restored: { path: string; content: string }
+    memory: BootstrapPayload['memory']
+  }>
   saveWatchlist: (content: string) => Promise<void>
   checkWatchlist: () => Promise<WatchlistDecision>
   setDesktopPetEnabled: (enabled: boolean) => Promise<DesktopPetPayload>
 
-  setControlMode: (mode: 'ask_before_edit' | 'accept_edits' | 'auto' | 'plan') => Promise<{ ok: boolean; error?: string }>
+  setControlMode: (
+    mode: 'ask_before_edit' | 'accept_edits' | 'auto' | 'plan',
+  ) => Promise<{ ok: boolean; error?: string }>
   sendMessage: (payload: string | ChatSendPayload) => boolean
-  sendInteractionAnswer: (interactionId: string, answers: Record<string, unknown>) => boolean
+  sendInteractionAnswer: (
+    interactionId: string,
+    answers: Record<string, unknown>,
+  ) => boolean
   sendPlanComment: (interactionId: string, comment: string) => boolean
   approvePlan: (interactionId: string) => boolean
   cancelInteraction: (interactionId: string) => boolean
@@ -76,7 +90,9 @@ export interface AppContext {
   loadTokens: (silent?: boolean) => Promise<void>
 }
 
-export const APP_CONTEXT_KEY: InjectionKey<AppContext> = Symbol('emperor-agent:app-context')
+export const APP_CONTEXT_KEY: InjectionKey<AppContext> = Symbol(
+  'emperor-agent:app-context',
+)
 
 export function provideAppContext(context: AppContext) {
   provide(APP_CONTEXT_KEY, context)
@@ -85,7 +101,9 @@ export function provideAppContext(context: AppContext) {
 export function useAppContext(): AppContext {
   const ctx = inject(APP_CONTEXT_KEY)
   if (!ctx) {
-    throw new Error('useAppContext() called outside of <App>; provideAppContext must run first.')
+    throw new Error(
+      'useAppContext() called outside of <App>; provideAppContext must run first.',
+    )
   }
   return ctx
 }

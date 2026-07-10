@@ -14,13 +14,19 @@ export class EventBus<E extends EventMap> {
   #handlers: { [K in keyof E]?: Set<(payload: E[K]) => void> } = {}
   #any: Set<(name: keyof E, payload: E[keyof E]) => void> = new Set()
 
-  on<K extends keyof E>(name: K, handler: (payload: E[K]) => void): Unsubscribe {
+  on<K extends keyof E>(
+    name: K,
+    handler: (payload: E[K]) => void,
+  ): Unsubscribe {
     const set = (this.#handlers[name] ??= new Set())
     set.add(handler)
     return () => set.delete(handler)
   }
 
-  once<K extends keyof E>(name: K, handler: (payload: E[K]) => void): Unsubscribe {
+  once<K extends keyof E>(
+    name: K,
+    handler: (payload: E[K]) => void,
+  ): Unsubscribe {
     const off = this.on(name, (payload) => {
       off()
       handler(payload)

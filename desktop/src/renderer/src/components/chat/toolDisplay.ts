@@ -45,7 +45,9 @@ export function toolPurpose(name: string) {
   return purposes[name] || '工具执行'
 }
 
-export function toolTargetLabel(tool: Pick<ToolSegment, 'name' | 'arguments' | 'metadata'>) {
+export function toolTargetLabel(
+  tool: Pick<ToolSegment, 'name' | 'arguments' | 'metadata'>,
+) {
   const args = tool.arguments || {}
   const metadata = tool.metadata || {}
   const target = rawToolTarget(tool.name, args, metadata)
@@ -53,13 +55,19 @@ export function toolTargetLabel(tool: Pick<ToolSegment, 'name' | 'arguments' | '
   return isFileTool(tool.name) ? fileName(target) : shortenTarget(target)
 }
 
-export function toolTitle(tool: Pick<ToolSegment, 'name' | 'displayName' | 'arguments' | 'metadata'>) {
+export function toolTitle(
+  tool: Pick<ToolSegment, 'name' | 'displayName' | 'arguments' | 'metadata'>,
+) {
   const name = tool.displayName || toolDisplayName(tool.name)
   const target = toolTargetLabel(tool)
   return target ? `${name} · ${target}` : `${name} · ${toolPurpose(tool.name)}`
 }
 
-function rawToolTarget(name: string, args: Record<string, unknown>, metadata: Record<string, unknown>) {
+function rawToolTarget(
+  name: string,
+  args: Record<string, unknown>,
+  metadata: Record<string, unknown>,
+) {
   if (isFileTool(name)) {
     return firstString(metadata.path, args.path)
   }
@@ -112,12 +120,16 @@ function shortenTarget(value: string) {
   }
 
   const head = normalized.slice(0, 24).trimEnd()
-  const tail = normalized.slice(-(MAX_TARGET_LENGTH - head.length - 3)).trimStart()
+  const tail = normalized
+    .slice(-(MAX_TARGET_LENGTH - head.length - 3))
+    .trimStart()
   return `${head}...${tail}`
 }
 
 /** 截断输出的完整内容 ref（Wave3.1）：仅当输出被截断且后端已落盘时可回看。 */
-export function fullOutputRef(tool: Pick<ToolSegment, 'outputTruncated' | 'metadata'>): string {
+export function fullOutputRef(
+  tool: Pick<ToolSegment, 'outputTruncated' | 'metadata'>,
+): string {
   if (!tool.outputTruncated) return ''
   return String(tool.metadata?.full_output_ref ?? '')
 }

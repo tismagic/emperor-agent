@@ -7,7 +7,9 @@ export type ThemeName = (typeof THEMES)[number]
 export const DEFAULT_THEME: ThemeName = 'dark'
 
 export function isTheme(value: unknown): value is ThemeName {
-  return typeof value === 'string' && (THEMES as readonly string[]).includes(value)
+  return (
+    typeof value === 'string' && (THEMES as readonly string[]).includes(value)
+  )
 }
 
 // Apply a theme to the document root by setting data-theme. Returns the theme

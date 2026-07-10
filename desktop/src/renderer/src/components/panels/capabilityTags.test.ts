@@ -6,7 +6,8 @@ describe('capability tags', () => {
   it('derives bounded decorative tags from skill metadata', () => {
     const skill: SkillInfo = {
       name: 'github-web-design-audit',
-      description: 'Audit GitHub projects and produce high-quality visual Web artifacts.',
+      description:
+        'Audit GitHub projects and produce high-quality visual Web artifacts.',
       path: 'skills/github-web-design-audit/SKILL.md',
       tags: 'always design',
     }

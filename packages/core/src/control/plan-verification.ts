@@ -3,7 +3,12 @@
  * 命令型 step 验证 + 独立 reviewer 流程。
  */
 import { nowTs } from '../util/time'
-import { PlanStatus, PlanStepStatus, planToDict, type PlanRecord } from '../plans/models'
+import {
+  PlanStatus,
+  PlanStepStatus,
+  planToDict,
+  type PlanRecord,
+} from '../plans/models'
 import { requirementsForStep } from '../plans/verification'
 import { ControlMode, InteractionStatus } from './models'
 import {
@@ -42,7 +47,9 @@ function reviewRequestToDict(r: ReviewRequest): Record<string, unknown> {
 
 export class PlanVerificationManager {
   private readonly cm: ControlManagerHost
-  constructor(cm: ControlManagerHost) { this.cm = cm }
+  constructor(cm: ControlManagerHost) {
+    this.cm = cm
+  }
 
   planVerificationTarget(command: string): Record<string, string> | null {
     const record = this.cm.latestExecutablePlan()
@@ -53,14 +60,23 @@ export class PlanVerificationManager {
       for (const requirement of requirementsForStep(step)) {
         if (requirement.kind !== 'command' || !requirement.command) continue
         if (normalizeCommand(requirement.command) === requested) {
-          return { plan_id: record.id, step_id: step.id, command: requirement.command, requirement_id: requirement.id }
+          return {
+            plan_id: record.id,
+            step_id: step.id,
+            command: requirement.command,
+            requirement_id: requirement.id,
+          }
         }
       }
     }
     return null
   }
 
-  recordPlanVerificationResult(opts: { planId: string; stepId: string; result: Record<string, unknown> }): PlanRecord | null {
+  recordPlanVerificationResult(opts: {
+    planId: string
+    stepId: string
+    result: Record<string, unknown>
+  }): PlanRecord | null {
     const record = this.cm.planStore.get(opts.planId)
     if (record === null) return null
     const now = nowTs()
@@ -70,13 +86,25 @@ export class PlanVerificationManager {
         : step,
     )
     const metadata = { ...record.metadata }
-    const updated = { ...record, status: PlanStatus.EXECUTING, updatedAt: now, steps, metadata }
+    const updated = {
+      ...record,
+      status: PlanStatus.EXECUTING,
+      updatedAt: now,
+      steps,
+      metadata,
+    }
     this.cm.planStore.save(updated)
-    this.cm.appendPlanStepVerification(updated, { stepId: opts.stepId, result: opts.result })
+    this.cm.appendPlanStepVerification(updated, {
+      stepId: opts.stepId,
+      result: opts.result,
+    })
     return updated
   }
 
-  recordIndependentVerificationResult(opts: { planId: string; result: Record<string, unknown> }): PlanRecord | null {
+  recordIndependentVerificationResult(opts: {
+    planId: string
+    result: Record<string, unknown>
+  }): PlanRecord | null {
     const record = this.cm.planStore.get(opts.planId)
     if (record === null) return null
     const now = nowTs()
@@ -84,16 +112,26 @@ export class PlanVerificationManager {
     payload.source = String(payload.source ?? INDEPENDENT_VERIFICATION_SOURCE)
     payload.checked_at = Number(payload.checked_at ?? now) || now
     if ('commands' in payload) {
-      payload.commands = dedupeStrings(((payload.commands as unknown[]) ?? []).map((item) => String(item)))
+      payload.commands = dedupeStrings(
+        ((payload.commands as unknown[]) ?? []).map((item) => String(item)),
+      )
     }
     const metadata = { ...record.metadata }
     metadata.independent_verification_latest = payload
-    const updated = { ...record, updatedAt: now, verification: [...record.verification, payload], metadata }
+    const updated = {
+      ...record,
+      updatedAt: now,
+      verification: [...record.verification, payload],
+      metadata,
+    }
     this.cm.planStore.save(updated)
     return updated
   }
 
-  waiveIndependentVerification(opts: { planId: string; reason: string }): PlanRecord | null {
+  waiveIndependentVerification(opts: {
+    planId: string
+    reason: string
+  }): PlanRecord | null {
     const record = this.cm.planStore.get(opts.planId)
     if (record === null) return null
     const text = String(opts.reason ?? '').trim()
@@ -109,29 +147,46 @@ export class PlanVerificationManager {
     }
     const metadata = { ...record.metadata }
     metadata.independent_verification_waiver = payload
-    const updated = { ...record, updatedAt: now, verification: [...record.verification, payload], metadata }
+    const updated = {
+      ...record,
+      updatedAt: now,
+      verification: [...record.verification, payload],
+      metadata,
+    }
     this.cm.planStore.save(updated)
     return updated
   }
 
-  planIndependentVerificationFollowup(opts?: { dispatchAvailable?: boolean }): Record<string, unknown> | null {
+  planIndependentVerificationFollowup(opts?: {
+    dispatchAvailable?: boolean
+  }): Record<string, unknown> | null {
     let record = this.cm.latestReviewablePlan()
-    if (record === null || !record.steps.length || !planStepsFinished(record)) return null
+    if (record === null || !record.steps.length || !planStepsFinished(record))
+      return null
     const request = this.independentVerificationRequest(record)
     if (request === null) return null
     record = this.persistIndependentVerificationRequest(record, request)
     const latest = latestIndependentVerificationEvidence(record)
-    if (latest !== null && latest.source === INDEPENDENT_VERIFICATION_WAIVER_SOURCE) return null
+    if (
+      latest !== null &&
+      latest.source === INDEPENDENT_VERIFICATION_WAIVER_SOURCE
+    )
+      return null
     if (latest !== null && latest.passed === false) {
       return {
         status: 'failed',
         plan_id: record.id,
         request: reviewRequestToDict(request),
-        message: this.independentVerificationFailedMessage(record, request, latest),
+        message: this.independentVerificationFailedMessage(
+          record,
+          request,
+          latest,
+        ),
         plan: planToDict(record),
       }
     }
-    if (latest !== null && latest.passed === true && hasCommandEvidence(latest)) return null
+    if (latest !== null && latest.passed === true && hasCommandEvidence(latest))
+      return null
     const status = latest === null ? 'required' : 'missing_command_evidence'
     return {
       status,
@@ -145,7 +200,9 @@ export class PlanVerificationManager {
     }
   }
 
-  private independentVerificationRequest(record: PlanRecord): ReviewRequest | null {
+  private independentVerificationRequest(
+    record: PlanRecord,
+  ): ReviewRequest | null {
     const changedFiles = planChangedFiles(record)
     const riskSignals = independentVerificationRiskSignals(record, changedFiles)
     if (!riskSignals.length) return null
@@ -165,9 +222,16 @@ export class PlanVerificationManager {
     }
   }
 
-  private persistIndependentVerificationRequest(record: PlanRecord, request: ReviewRequest): PlanRecord {
+  private persistIndependentVerificationRequest(
+    record: PlanRecord,
+    request: ReviewRequest,
+  ): PlanRecord {
     const payload = reviewRequestToDict(request)
-    if (JSON.stringify(record.metadata.independent_verification_request) === JSON.stringify(payload)) return record
+    if (
+      JSON.stringify(record.metadata.independent_verification_request) ===
+      JSON.stringify(payload)
+    )
+      return record
     const metadata = { ...record.metadata }
     metadata.independent_verification_request = payload
     const updated = { ...record, updatedAt: nowTs(), metadata }
@@ -181,8 +245,12 @@ export class PlanVerificationManager {
     opts: { dispatchAvailable: boolean; missingCommandEvidence: boolean },
   ): string {
     const state = this.cm.store.load()
-    const hasPending = Boolean(state.pending && state.pending.status === InteractionStatus.WAITING)
-    const canDispatch = Boolean(opts.dispatchAvailable && state.mode !== ControlMode.PLAN && !hasPending)
+    const hasPending = Boolean(
+      state.pending && state.pending.status === InteractionStatus.WAITING,
+    )
+    const canDispatch = Boolean(
+      opts.dispatchAvailable && state.mode !== ControlMode.PLAN && !hasPending,
+    )
     const lines = [
       '[PLAN_INDEPENDENT_VERIFICATION_REQUIRED]',
       `plan_id: ${record.id}`,
@@ -191,14 +259,17 @@ export class PlanVerificationManager {
       '',
       '该计划属于非平凡或敏感项目变更，不能在没有独立复核证据时最终答复。',
     ]
-    if (opts.missingCommandEvidence) lines.push('已有复核声明缺少 command evidence，因此不能视为 PASS。')
+    if (opts.missingCommandEvidence)
+      lines.push('已有复核声明缺少 command evidence，因此不能视为 PASS。')
     if (request.changedFiles.length) {
       lines.push('', 'changed_files:')
-      for (const path of request.changedFiles.slice(0, 12)) lines.push(`- ${path}`)
+      for (const path of request.changedFiles.slice(0, 12))
+        lines.push(`- ${path}`)
     }
     if (request.commands.length) {
       lines.push('', 'commands_to_spot_check:')
-      for (const command of request.commands.slice(0, 8)) lines.push(`- ${command}`)
+      for (const command of request.commands.slice(0, 8))
+        lines.push(`- ${command}`)
     }
     lines.push('')
     if (canDispatch) {
@@ -217,8 +288,14 @@ export class PlanVerificationManager {
     return lines.join('\n')
   }
 
-  private independentVerificationFailedMessage(record: PlanRecord, request: ReviewRequest, latest: Record<string, unknown>): string {
-    const summary = String(latest.summary ?? latest.reason ?? 'independent verification failed').trim()
+  private independentVerificationFailedMessage(
+    record: PlanRecord,
+    request: ReviewRequest,
+    latest: Record<string, unknown>,
+  ): string {
+    const summary = String(
+      latest.summary ?? latest.reason ?? 'independent verification failed',
+    ).trim()
     const lines = [
       '[PLAN_INDEPENDENT_VERIFICATION_FAILED]',
       `plan_id: ${record.id}`,

@@ -16,15 +16,32 @@ describe('ContextAssembler', () => {
       activeMemoryBinding: { longTerm: { kind: 'global' } },
       items: [
         item('section:bootstrap', 'bootstrap', 'include', 'include bootstrap'),
-        item('section:long_term_memory', 'global_memory', 'include', 'include global memory'),
-        item('dynamic:session_history', 'session_history', 'include', 'chat policy includes active session transcript'),
-        item('section:project_agents', 'project_memory', 'omit', 'chat mode has no active bound project memory'),
+        item(
+          'section:long_term_memory',
+          'global_memory',
+          'include',
+          'include global memory',
+        ),
+        item(
+          'dynamic:session_history',
+          'session_history',
+          'include',
+          'chat policy includes active session transcript',
+        ),
+        item(
+          'section:project_agents',
+          'project_memory',
+          'omit',
+          'chat mode has no active bound project memory',
+        ),
       ],
-      omitted: [{
-        kind: 'project_memory',
-        source: 'projects/project_1/AGENTS.local.md',
-        reason: 'chat mode has no active bound project memory',
-      }],
+      omitted: [
+        {
+          kind: 'project_memory',
+          source: 'projects/project_1/AGENTS.local.md',
+          reason: 'chat mode has no active bound project memory',
+        },
+      ],
     } as any
 
     const assembled = new ContextAssembler().assemble({ sections, contextPlan })
@@ -33,16 +50,26 @@ describe('ContextAssembler', () => {
     expect(assembled.prompt).toContain('# Global Memory')
     expect(assembled.prompt).not.toContain('project-only fact')
     expect(assembled.prompt).not.toContain('session/history.jsonl')
-    expect(assembled.prompt.indexOf('# Bootstrap')).toBeLessThan(assembled.prompt.indexOf('# Global Memory'))
-    expect(assembled.rendered.map((entry) => entry.id)).toEqual(['section:bootstrap', 'section:long_term_memory', 'dynamic:session_history'])
-    expect(assembled.omitted.some((entry) => entry.id === 'dynamic:session_history')).toBe(false)
-    expect(assembled.omitted).toEqual(expect.arrayContaining([
-      expect.objectContaining({
-        id: 'section:project_agents',
-        kind: 'project_memory',
-        reason: 'chat mode has no active bound project memory',
-      }),
-    ]))
+    expect(assembled.prompt.indexOf('# Bootstrap')).toBeLessThan(
+      assembled.prompt.indexOf('# Global Memory'),
+    )
+    expect(assembled.rendered.map((entry) => entry.id)).toEqual([
+      'section:bootstrap',
+      'section:long_term_memory',
+      'dynamic:session_history',
+    ])
+    expect(
+      assembled.omitted.some((entry) => entry.id === 'dynamic:session_history'),
+    ).toBe(false)
+    expect(assembled.omitted).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: 'section:project_agents',
+          kind: 'project_memory',
+          reason: 'chat mode has no active bound project memory',
+        }),
+      ]),
+    )
   })
 })
 
@@ -58,7 +85,12 @@ function section(name: string, content: string): ContextSection {
   }
 }
 
-function item(id: string, kind: string, action: 'include' | 'omit', reason: string): Record<string, unknown> {
+function item(
+  id: string,
+  kind: string,
+  action: 'include' | 'omit',
+  reason: string,
+): Record<string, unknown> {
   return {
     id,
     kind,

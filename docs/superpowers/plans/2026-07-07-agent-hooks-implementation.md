@@ -46,20 +46,20 @@ Several correctness defects must be fixed before adding more events: `Permission
 
 ### 1.4 Constraints and Defaults
 
-| Area | Decision |
-|---|---|
-| Stack | TypeScript strict, Node.js 22+, Electron, Vue 3, Vitest |
-| Validation | Add `zod` as a direct `@emperor/core` dependency; do not rely on a transitive install |
-| Storage | Global private state remains under `stateRoot`; project hook files remain read-only to Core |
-| Config ownership | Emperor v2 is canonical; existing Emperor v1 is migration input only |
-| Project execution | Requires global project-hooks enablement and current per-project digest trust |
-| Concurrency | Default 4 handlers, hard maximum 16 |
-| Failure mode | `open` by default; `closed` only on blocking events and trusted sources |
-| Stop continuation | At most one hook-requested continuation per runner invocation |
-| Context budget | 8 KiB aggregate additional context per event |
-| Process output | 64 KiB each for stdout and stderr, measured in bytes |
-| HTTP response | 1 MiB maximum body; redirects and proxies unsupported in v2 |
-| Audit retention | Daily JSONL files, 30-day best-effort retention, redacted by default |
+| Area              | Decision                                                                                    |
+| ----------------- | ------------------------------------------------------------------------------------------- |
+| Stack             | TypeScript strict, Node.js 22+, Electron, Vue 3, Vitest                                     |
+| Validation        | Add `zod` as a direct `@emperor/core` dependency; do not rely on a transitive install       |
+| Storage           | Global private state remains under `stateRoot`; project hook files remain read-only to Core |
+| Config ownership  | Emperor v2 is canonical; existing Emperor v1 is migration input only                        |
+| Project execution | Requires global project-hooks enablement and current per-project digest trust               |
+| Concurrency       | Default 4 handlers, hard maximum 16                                                         |
+| Failure mode      | `open` by default; `closed` only on blocking events and trusted sources                     |
+| Stop continuation | At most one hook-requested continuation per runner invocation                               |
+| Context budget    | 8 KiB aggregate additional context per event                                                |
+| Process output    | 64 KiB each for stdout and stderr, measured in bytes                                        |
+| HTTP response     | 1 MiB maximum body; redirects and proxies unsupported in v2                                 |
+| Audit retention   | Daily JSONL files, 30-day best-effort retention, redacted by default                        |
 
 ### 1.5 Document Update Boundary
 
@@ -71,18 +71,18 @@ The reference root used for this analysis is `/Users/anhuike/Documents/workspace
 
 ### 2.1 Source Map
 
-| Concern | Claude Code reference | Adaptation target |
-|---|---|---|
-| Event list and common input | `src/entrypoints/sdk/coreTypes.ts`, `coreSchemas.ts` | Typed Emperor event map and common envelope |
-| Persistent handler schema | `src/schemas/hooks.ts` | Emperor v2 Zod schemas |
-| Event-specific outputs | `src/types/hooks.ts`, `coreSchemas.ts` | Per-event output parsers and reducers |
-| Matching and orchestration | `src/utils/hooks.ts` | Matcher compiler, execution plan, bounded orchestrator |
-| Source snapshots and policy | `src/utils/hooks/hooksConfigSnapshot.ts`, `hooksSettings.ts`, `sessionHooks.ts` | Source resolver, snapshot revision, trust and session registry |
-| Command/HTTP/prompt/agent | `src/utils/hooks.ts`, `execHttpHook.ts`, `execPromptHook.ts`, `execAgentHook.ts` | Executor registry with Emperor security policy |
-| Async lifecycle | `src/utils/hooks/AsyncHookRegistry.ts`, `hookEvents.ts` | Background registry and correlated runtime events |
-| Tool/permission order | `src/services/tools/toolExecution.ts`, `toolHooks.ts`, `src/utils/permissions/permissions.ts` | `AgentRunner` tool lifecycle and revalidation |
-| Stop/compact/subagent | `src/query.ts`, `src/query/stopHooks.ts`, `src/services/compact/compact.ts`, `src/tools/AgentTool/runAgent.ts` | Main runner, compaction service, dispatch/team runners |
-| Task/Team/MCP events | `src/tools/TaskCreateTool`, `TaskUpdateTool`, `src/services/mcp/elicitationHandler.ts` | Only Task/Team domains that already exist in Emperor |
+| Concern                     | Claude Code reference                                                                                          | Adaptation target                                              |
+| --------------------------- | -------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------- |
+| Event list and common input | `src/entrypoints/sdk/coreTypes.ts`, `coreSchemas.ts`                                                           | Typed Emperor event map and common envelope                    |
+| Persistent handler schema   | `src/schemas/hooks.ts`                                                                                         | Emperor v2 Zod schemas                                         |
+| Event-specific outputs      | `src/types/hooks.ts`, `coreSchemas.ts`                                                                         | Per-event output parsers and reducers                          |
+| Matching and orchestration  | `src/utils/hooks.ts`                                                                                           | Matcher compiler, execution plan, bounded orchestrator         |
+| Source snapshots and policy | `src/utils/hooks/hooksConfigSnapshot.ts`, `hooksSettings.ts`, `sessionHooks.ts`                                | Source resolver, snapshot revision, trust and session registry |
+| Command/HTTP/prompt/agent   | `src/utils/hooks.ts`, `execHttpHook.ts`, `execPromptHook.ts`, `execAgentHook.ts`                               | Executor registry with Emperor security policy                 |
+| Async lifecycle             | `src/utils/hooks/AsyncHookRegistry.ts`, `hookEvents.ts`                                                        | Background registry and correlated runtime events              |
+| Tool/permission order       | `src/services/tools/toolExecution.ts`, `toolHooks.ts`, `src/utils/permissions/permissions.ts`                  | `AgentRunner` tool lifecycle and revalidation                  |
+| Stop/compact/subagent       | `src/query.ts`, `src/query/stopHooks.ts`, `src/services/compact/compact.ts`, `src/tools/AgentTool/runAgent.ts` | Main runner, compaction service, dispatch/team runners         |
+| Task/Team/MCP events        | `src/tools/TaskCreateTool`, `TaskUpdateTool`, `src/services/mcp/elicitationHandler.ts`                         | Only Task/Team domains that already exist in Emperor           |
 
 ### 2.2 Confirmed Architectural Behaviors
 
@@ -97,18 +97,18 @@ The reference root used for this analysis is `/Users/anhuike/Documents/workspace
 
 ### 2.3 Intentional Emperor Deviations
 
-| Claude behavior or gap | Emperor v2 decision |
-|---|---|
-| Noninteractive/headless sessions are implicitly trusted | All project hooks require explicit current digest trust in every mode |
-| `PermissionRequest.updatedInput` may reach `tool.call()` without full revalidation | Every transformed input restarts schema, Ask/Plan, workspace, and permission checks |
-| Stop recursion relies on a protocol flag without an engine limit | One hook continuation maximum per runner invocation |
-| Matching handlers run with no concurrency ceiling | Bounded concurrency with stable result order |
-| Command hooks inherit broad process environment | Fixed minimal environment plus policy/handler allowlist intersection |
-| HTTP proxy mode can bypass target SSRF checks | Proxy mode unsupported; DNS is validated and pinned |
-| Valid JSON may override a nonzero process exit | Timeout/abort and exit status are authoritative before JSON output |
-| Async timeout and `once` behavior are incomplete across sources | Central registry enforces deadline, cancellation, cleanup, and uniform once claims |
-| PreCompact documentation and implementation disagree about blocking | Emperor semantics are explicit: normal compact may defer; emergency compact may bypass with audit |
-| No durable tamper-resistant hook audit model | Correlated, rotated, redacted JSONL audit with hashes and source revision |
+| Claude behavior or gap                                                             | Emperor v2 decision                                                                               |
+| ---------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
+| Noninteractive/headless sessions are implicitly trusted                            | All project hooks require explicit current digest trust in every mode                             |
+| `PermissionRequest.updatedInput` may reach `tool.call()` without full revalidation | Every transformed input restarts schema, Ask/Plan, workspace, and permission checks               |
+| Stop recursion relies on a protocol flag without an engine limit                   | One hook continuation maximum per runner invocation                                               |
+| Matching handlers run with no concurrency ceiling                                  | Bounded concurrency with stable result order                                                      |
+| Command hooks inherit broad process environment                                    | Fixed minimal environment plus policy/handler allowlist intersection                              |
+| HTTP proxy mode can bypass target SSRF checks                                      | Proxy mode unsupported; DNS is validated and pinned                                               |
+| Valid JSON may override a nonzero process exit                                     | Timeout/abort and exit status are authoritative before JSON output                                |
+| Async timeout and `once` behavior are incomplete across sources                    | Central registry enforces deadline, cancellation, cleanup, and uniform once claims                |
+| PreCompact documentation and implementation disagree about blocking                | Emperor semantics are explicit: normal compact may defer; emergency compact may bypass with audit |
+| No durable tamper-resistant hook audit model                                       | Correlated, rotated, redacted JSONL audit with hashes and source revision                         |
 
 ## 3. Current Emperor Baseline
 
@@ -123,21 +123,21 @@ The reference root used for this analysis is `/Users/anhuike/Documents/workspace
 
 ### 3.2 Confirmed Gaps to Drive RED Tests
 
-| Gap | Current location | Required outcome |
-|---|---|---|
-| Generic input/output records | `packages/core/src/hooks/models.ts` | Event-specific compile-time and runtime contracts |
-| Permission matcher omits permission events | `packages/core/src/hooks/matcher.ts` | Permission events match `tool_name` |
-| Per-event disk load and runtime construction | `packages/core/src/hooks/runtime.ts`, `agent/loop.ts` | One service and one immutable turn snapshot |
-| Sequential handler loop | `packages/core/src/hooks/runtime.ts` | Bounded parallel execution, stable aggregation |
-| Telemetry is awaited before aggregation | `packages/core/src/hooks/runtime.ts` | Decision computation independent from audit/event failures |
-| Async result is discarded | `packages/core/src/hooks/executor.ts` | Trackable background lifecycle and one completion delivery |
-| HTTP uses unrestricted `fetch` | `packages/core/src/hooks/executor.ts` | URL policy, DNS pinning, no redirect, bounded response |
-| Plan Guard runs before transform only | `packages/core/src/agent/runner.ts` | Full restart after every accepted transform |
-| PermissionRequest allow remains followed by `!decision.allowed` | `packages/core/src/agent/runner.ts` | Allow resolves only an ask state and permits execution after revalidation |
-| Subagent runners receive no hook host | `packages/core/src/subagents/dispatch-runner.ts` | Scoped SubagentStart/Stop and tool hooks |
-| Manual compaction bypasses hooks | `packages/core/src/api/services/memory-service.ts` | Shared compact lifecycle for manual and automatic paths |
-| Project trust is one global enable flag | `packages/core/src/hooks/config.ts` | Canonical project path plus digest trust |
-| Settings UI test is hard-coded | `desktop/.../HooksPanel.vue` | Metadata-driven dry-run and effective-plan UI |
+| Gap                                                             | Current location                                      | Required outcome                                                          |
+| --------------------------------------------------------------- | ----------------------------------------------------- | ------------------------------------------------------------------------- |
+| Generic input/output records                                    | `packages/core/src/hooks/models.ts`                   | Event-specific compile-time and runtime contracts                         |
+| Permission matcher omits permission events                      | `packages/core/src/hooks/matcher.ts`                  | Permission events match `tool_name`                                       |
+| Per-event disk load and runtime construction                    | `packages/core/src/hooks/runtime.ts`, `agent/loop.ts` | One service and one immutable turn snapshot                               |
+| Sequential handler loop                                         | `packages/core/src/hooks/runtime.ts`                  | Bounded parallel execution, stable aggregation                            |
+| Telemetry is awaited before aggregation                         | `packages/core/src/hooks/runtime.ts`                  | Decision computation independent from audit/event failures                |
+| Async result is discarded                                       | `packages/core/src/hooks/executor.ts`                 | Trackable background lifecycle and one completion delivery                |
+| HTTP uses unrestricted `fetch`                                  | `packages/core/src/hooks/executor.ts`                 | URL policy, DNS pinning, no redirect, bounded response                    |
+| Plan Guard runs before transform only                           | `packages/core/src/agent/runner.ts`                   | Full restart after every accepted transform                               |
+| PermissionRequest allow remains followed by `!decision.allowed` | `packages/core/src/agent/runner.ts`                   | Allow resolves only an ask state and permits execution after revalidation |
+| Subagent runners receive no hook host                           | `packages/core/src/subagents/dispatch-runner.ts`      | Scoped SubagentStart/Stop and tool hooks                                  |
+| Manual compaction bypasses hooks                                | `packages/core/src/api/services/memory-service.ts`    | Shared compact lifecycle for manual and automatic paths                   |
+| Project trust is one global enable flag                         | `packages/core/src/hooks/config.ts`                   | Canonical project path plus digest trust                                  |
+| Settings UI test is hard-coded                                  | `desktop/.../HooksPanel.vue`                          | Metadata-driven dry-run and effective-plan UI                             |
 
 ## 4. Target Architecture
 
@@ -225,7 +225,8 @@ interface HookCommonInput {
 }
 
 type HookInput<E extends HookEventName> = HookCommonInput & HookInputByEvent[E]
-type HookOutput<E extends HookEventName> = HookCommonOutput & HookOutputByEvent[E]
+type HookOutput<E extends HookEventName> = HookCommonOutput &
+  HookOutputByEvent[E]
 
 interface HookEventSpec<E extends HookEventName> {
   name: E
@@ -242,26 +243,26 @@ The common output supports `continue`, `suppressOutput`, `stopReason`, `systemMe
 
 ### 4.4 Implemented Event Matrix
 
-| Event | Matcher target | Host timing and effect | Allowed handlers |
-|---|---|---|---|
-| SessionStart | `source` | Before first model request; context only, block ignored | command |
-| SessionEnd | `reason` | Before archive/delete/shutdown cleanup; observation only | command |
-| UserPromptSubmit | none | Before user message commit/model call; deny, update prompt, add context | command, http, prompt |
-| PreToolUse | `tool_name` | After original schema/guard validation and before permission; deny/ask/allow/update/context | all except agent |
-| PostToolUse | `tool_name` | After successful side effect; context, and MCP-only output replacement | command, http, prompt |
-| PostToolUseFailure | `tool_name` | After tool error; context only | command, http, prompt |
-| PermissionRequest | `tool_name` | Only for core ask state; allow/deny/update input | command, http, prompt |
-| PermissionDenied | `tool_name` | After authoritative core deny; observation/context only | command, http, prompt |
-| Stop | none | Before final return; one continuation maximum or explicit stop | command, http, prompt, agent |
-| StopFailure | `error_kind` | Model/provider failure; fire-and-forget observation | command, http |
-| SubagentStart | `agent_type` | Before first subagent model call; context only | command, http, prompt |
-| SubagentStop | `agent_type` | Before subagent final return; one continuation maximum | command, http, prompt, agent |
-| PreCompact | `trigger` | Before manual/auto compact; deny/defer and add compact instructions | command, http, prompt |
-| PostCompact | `trigger` | After compact result; observation only | command, http |
-| ConfigChange | `source` | Old snapshot reviews candidate before activation | command, http |
-| TaskCreated | `task_kind` | Candidate task before persistence; deny prevents creation | command, http, prompt |
-| TaskCompleted | `task_kind` | Before terminal status commit; deny preserves previous status | command, http, prompt, agent |
-| TeammateIdle | `agent_type` | Before member becomes idle; one continuation maximum | command, http, prompt, agent |
+| Event              | Matcher target | Host timing and effect                                                                      | Allowed handlers             |
+| ------------------ | -------------- | ------------------------------------------------------------------------------------------- | ---------------------------- |
+| SessionStart       | `source`       | Before first model request; context only, block ignored                                     | command                      |
+| SessionEnd         | `reason`       | Before archive/delete/shutdown cleanup; observation only                                    | command                      |
+| UserPromptSubmit   | none           | Before user message commit/model call; deny, update prompt, add context                     | command, http, prompt        |
+| PreToolUse         | `tool_name`    | After original schema/guard validation and before permission; deny/ask/allow/update/context | all except agent             |
+| PostToolUse        | `tool_name`    | After successful side effect; context, and MCP-only output replacement                      | command, http, prompt        |
+| PostToolUseFailure | `tool_name`    | After tool error; context only                                                              | command, http, prompt        |
+| PermissionRequest  | `tool_name`    | Only for core ask state; allow/deny/update input                                            | command, http, prompt        |
+| PermissionDenied   | `tool_name`    | After authoritative core deny; observation/context only                                     | command, http, prompt        |
+| Stop               | none           | Before final return; one continuation maximum or explicit stop                              | command, http, prompt, agent |
+| StopFailure        | `error_kind`   | Model/provider failure; fire-and-forget observation                                         | command, http                |
+| SubagentStart      | `agent_type`   | Before first subagent model call; context only                                              | command, http, prompt        |
+| SubagentStop       | `agent_type`   | Before subagent final return; one continuation maximum                                      | command, http, prompt, agent |
+| PreCompact         | `trigger`      | Before manual/auto compact; deny/defer and add compact instructions                         | command, http, prompt        |
+| PostCompact        | `trigger`      | After compact result; observation only                                                      | command, http                |
+| ConfigChange       | `source`       | Old snapshot reviews candidate before activation                                            | command, http                |
+| TaskCreated        | `task_kind`    | Candidate task before persistence; deny prevents creation                                   | command, http, prompt        |
+| TaskCompleted      | `task_kind`    | Before terminal status commit; deny preserves previous status                               | command, http, prompt, agent |
+| TeammateIdle       | `agent_type`   | Before member becomes idle; one continuation maximum                                        | command, http, prompt, agent |
 
 Deferred events are absent from the exported union until a real host exists: Setup, Notification, Elicitation, ElicitationResult, WorktreeCreate, WorktreeRemove, InstructionsLoaded, CwdChanged, FileChanged.
 
@@ -269,12 +270,12 @@ Deferred events are absent from the exported union until a real host exists: Set
 
 Source precedence is fixed and explicit:
 
-| Rank | Source | Mutability | Trust |
-|---:|---|---|---|
-| 100 | global `stateRoot/hooks_config.json` | editable | trusted user-private source |
-| 200 | project `.emperor/settings.json` | read-only | current project digest required |
-| 300 | project `.emperor/settings.local.json` | read-only | current project digest required |
-| 400 | in-memory session registration | runtime only | inherits registering Core host |
+| Rank | Source                                 | Mutability   | Trust                           |
+| ---: | -------------------------------------- | ------------ | ------------------------------- |
+|  100 | global `stateRoot/hooks_config.json`   | editable     | trusted user-private source     |
+|  200 | project `.emperor/settings.json`       | read-only    | current project digest required |
+|  300 | project `.emperor/settings.local.json` | read-only    | current project digest required |
+|  400 | in-memory session registration         | runtime only | inherits registering Core host  |
 
 - A higher source replaces an entire lower-source group only when event name and group `id` are equal. Different IDs all remain active. Handler payload equality is not used as identity.
 - v2 requires stable group and handler IDs. v1 entries become one-handler groups with deterministic IDs derived from event, legacy ID, and index.
@@ -432,15 +433,15 @@ flowchart TD
   UI --> QA["HOOK-V2-QA-013"]
 ```
 
-| Phase | Tasks | Parallelism |
-|---|---|---|
-| P0 Contracts | FND-001 | sequential foundation |
-| P1 Resolution | CFG-002, MATCH-003, EXEC-004 | parallel after FND |
-| P2 Executors | HTTP-005, MODEL-006 | parallel after EXEC |
-| P3 Runtime | ORCH-007 | joins CFG/MATCH/EXEC handlers |
-| P4 Hosts | TOOL-008, LIFE-009, AGENT-010 | parallel with disjoint hosts |
-| P5 Product | API-011 -> UI-012 | sequential contract then renderer |
-| P6 Receipt | QA-013 | after all implementation tasks |
+| Phase         | Tasks                         | Parallelism                       |
+| ------------- | ----------------------------- | --------------------------------- |
+| P0 Contracts  | FND-001                       | sequential foundation             |
+| P1 Resolution | CFG-002, MATCH-003, EXEC-004  | parallel after FND                |
+| P2 Executors  | HTTP-005, MODEL-006           | parallel after EXEC               |
+| P3 Runtime    | ORCH-007                      | joins CFG/MATCH/EXEC handlers     |
+| P4 Hosts      | TOOL-008, LIFE-009, AGENT-010 | parallel with disjoint hosts      |
+| P5 Product    | API-011 -> UI-012             | sequential contract then renderer |
+| P6 Receipt    | QA-013                        | after all implementation tasks    |
 
 ## 6. Standard TDD Workflow
 
@@ -665,20 +666,20 @@ Every task follows this sequence and records the commands/results in its impleme
 
 ## 8. Risk Register
 
-| ID | Severity | Risk | Affected tasks | Mitigation |
-|---|---|---|---|---|
-| R1 | H | Hook allow or transformed input bypasses core policy | TOOL-008 | Full restart invariant and adversarial tests |
-| R2 | H | Project command hook executes without valid trust | CFG-002, API-011 | Canonical realpath + digest trust in every execution mode |
-| R3 | H | HTTP hook enables SSRF or secret exfiltration | HTTP-005 | Global allowlist, DNS pinning, env intersection, no proxy/redirect |
-| R4 | H | Prompt/agent hooks recurse or gain write tools | MODEL-006 | Hook depth, fixed tool registry, max turns/time |
-| R5 | H | Stop/Team hooks create infinite model loops | LIFE-009, AGENT-010 | Engine-owned one-continuation cap |
-| R6 | M | Parallel completion produces nondeterministic decisions | ORCH-007 | Stable plan indexes and deterministic reducers |
-| R7 | M | Audit/event failure changes enforcement outcome | ORCH-007 | Effect-first computation and best-effort telemetry |
-| R8 | M | Background command leaks after cancellation/shutdown | EXEC-004, ORCH-007 | Process-tree control and registry finalization |
-| R9 | M | v1 migration changes existing user behavior | FND-001, CFG-002 | Fixtures, deterministic IDs, explicit-save migration only |
-| R10 | M | TaskManager async conversion regresses callers | AGENT-010 | Compile-time migration of all call sites and domain tests |
-| R11 | M | Snapshot change handling runs stale or corrupt config | CFG-002, LIFE-009 | Accepted/candidate split and revision tests |
-| R12 | L | UI exposes sensitive hook payloads | API-011, UI-012 | Redacted API contracts and no raw audit by default |
+| ID  | Severity | Risk                                                    | Affected tasks      | Mitigation                                                         |
+| --- | -------- | ------------------------------------------------------- | ------------------- | ------------------------------------------------------------------ |
+| R1  | H        | Hook allow or transformed input bypasses core policy    | TOOL-008            | Full restart invariant and adversarial tests                       |
+| R2  | H        | Project command hook executes without valid trust       | CFG-002, API-011    | Canonical realpath + digest trust in every execution mode          |
+| R3  | H        | HTTP hook enables SSRF or secret exfiltration           | HTTP-005            | Global allowlist, DNS pinning, env intersection, no proxy/redirect |
+| R4  | H        | Prompt/agent hooks recurse or gain write tools          | MODEL-006           | Hook depth, fixed tool registry, max turns/time                    |
+| R5  | H        | Stop/Team hooks create infinite model loops             | LIFE-009, AGENT-010 | Engine-owned one-continuation cap                                  |
+| R6  | M        | Parallel completion produces nondeterministic decisions | ORCH-007            | Stable plan indexes and deterministic reducers                     |
+| R7  | M        | Audit/event failure changes enforcement outcome         | ORCH-007            | Effect-first computation and best-effort telemetry                 |
+| R8  | M        | Background command leaks after cancellation/shutdown    | EXEC-004, ORCH-007  | Process-tree control and registry finalization                     |
+| R9  | M        | v1 migration changes existing user behavior             | FND-001, CFG-002    | Fixtures, deterministic IDs, explicit-save migration only          |
+| R10 | M        | TaskManager async conversion regresses callers          | AGENT-010           | Compile-time migration of all call sites and domain tests          |
+| R11 | M        | Snapshot change handling runs stale or corrupt config   | CFG-002, LIFE-009   | Accepted/candidate split and revision tests                        |
+| R12 | L        | UI exposes sensitive hook payloads                      | API-011, UI-012     | Redacted API contracts and no raw audit by default                 |
 
 ## 9. Verification Strategy
 
@@ -779,21 +780,21 @@ make check
 
 > 13 tasks total. Status: ☐ todo · ◐ wip · ☑ done · ⛔ blocked
 
-| ID | Title | Status | Depends On | Notes |
-|---|---|---|---|---|
-| HOOK-V2-FND-001 | Typed event and v2 schema foundation | ☑ | — | 8 v2 + 10 baseline tests, typecheck, ESLint |
-| HOOK-V2-CFG-002 | Source resolver, snapshot, revision, trust | ☑ | FND-001 | 7 tests, typecheck, ESLint |
-| HOOK-V2-MATCH-003 | Event-aware match plans | ☑ | FND-001, CFG interfaces | 4 tests, typecheck, ESLint |
-| HOOK-V2-EXEC-004 | Executor registry and command lifecycle | ☑ | FND-001 | 9 executor tests pass; typecheck/lint green |
-| HOOK-V2-HTTP-005 | Hardened HTTP transport | ☑ | EXEC-004 | 8 transport security tests pass |
-| HOOK-V2-MODEL-006 | Prompt and agent handlers | ☑ | EXEC-004 | 7 executor + 3 router tests pass |
-| HOOK-V2-ORCH-007 | Orchestrator, async registry, audit | ☑ | CFG-002, MATCH-003, EXEC-004, HTTP-005, MODEL-006 | 13 orchestrator + 2 audit tests pass |
-| HOOK-V2-TOOL-008 | Tool and permission pipeline | ☑ | ORCH-007 | 9 focused tests; full core 643/643 |
-| HOOK-V2-LIFE-009 | Turn/session/compact/config lifecycles | ☑ | ORCH-007 | 9 lifecycle + 6 service tests pass |
-| HOOK-V2-AGENT-010 | Subagent/Task/Team hosts | ☑ | ORCH-007 | 6 focused + Loop E2E; full core 663/663 |
-| HOOK-V2-API-011 | CoreApi, IPC, runtime contracts | ☑ | TOOL-008, LIFE-009, AGENT-010 | 39 CoreApi tests + Electron operation parity; cancellation and ConfigChange transactions covered |
-| HOOK-V2-UI-012 | Effective Hooks workspace | ☑ | API-011 | 5 model tests + 3 desktop/mobile Playwright scenarios |
-| HOOK-V2-QA-013 | Security and release receipt | ☑ | all | `make check`, 671 core, 266 desktop, build, and 3 Hooks Playwright scenarios pass |
+| ID                | Title                                      | Status | Depends On                                        | Notes                                                                                            |
+| ----------------- | ------------------------------------------ | ------ | ------------------------------------------------- | ------------------------------------------------------------------------------------------------ |
+| HOOK-V2-FND-001   | Typed event and v2 schema foundation       | ☑      | —                                                 | 8 v2 + 10 baseline tests, typecheck, ESLint                                                      |
+| HOOK-V2-CFG-002   | Source resolver, snapshot, revision, trust | ☑      | FND-001                                           | 7 tests, typecheck, ESLint                                                                       |
+| HOOK-V2-MATCH-003 | Event-aware match plans                    | ☑      | FND-001, CFG interfaces                           | 4 tests, typecheck, ESLint                                                                       |
+| HOOK-V2-EXEC-004  | Executor registry and command lifecycle    | ☑      | FND-001                                           | 9 executor tests pass; typecheck/lint green                                                      |
+| HOOK-V2-HTTP-005  | Hardened HTTP transport                    | ☑      | EXEC-004                                          | 8 transport security tests pass                                                                  |
+| HOOK-V2-MODEL-006 | Prompt and agent handlers                  | ☑      | EXEC-004                                          | 7 executor + 3 router tests pass                                                                 |
+| HOOK-V2-ORCH-007  | Orchestrator, async registry, audit        | ☑      | CFG-002, MATCH-003, EXEC-004, HTTP-005, MODEL-006 | 13 orchestrator + 2 audit tests pass                                                             |
+| HOOK-V2-TOOL-008  | Tool and permission pipeline               | ☑      | ORCH-007                                          | 9 focused tests; full core 643/643                                                               |
+| HOOK-V2-LIFE-009  | Turn/session/compact/config lifecycles     | ☑      | ORCH-007                                          | 9 lifecycle + 6 service tests pass                                                               |
+| HOOK-V2-AGENT-010 | Subagent/Task/Team hosts                   | ☑      | ORCH-007                                          | 6 focused + Loop E2E; full core 663/663                                                          |
+| HOOK-V2-API-011   | CoreApi, IPC, runtime contracts            | ☑      | TOOL-008, LIFE-009, AGENT-010                     | 39 CoreApi tests + Electron operation parity; cancellation and ConfigChange transactions covered |
+| HOOK-V2-UI-012    | Effective Hooks workspace                  | ☑      | API-011                                           | 5 model tests + 3 desktop/mobile Playwright scenarios                                            |
+| HOOK-V2-QA-013    | Security and release receipt               | ☑      | all                                               | `make check`, 671 core, 266 desktop, build, and 3 Hooks Playwright scenarios pass                |
 
 ## 12. Completion Definition
 

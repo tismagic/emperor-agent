@@ -13,7 +13,10 @@ export class MCPClient {
   private readonly tools: MCPToolAdapter[] = []
   private initialized = false
 
-  constructor(root: string, opts: { connectionFactory?: MCPConnectionFactory } = {}) {
+  constructor(
+    root: string,
+    opts: { connectionFactory?: MCPConnectionFactory } = {},
+  ) {
     this.root = root
     this.connectionFactory = opts.connectionFactory ?? createConnection
   }
@@ -32,16 +35,32 @@ export class MCPClient {
       const discovered = await conn.listTools()
       for (const tool of discovered) {
         const overrides = server.tool_overrides[tool.name] ?? {}
-        this.tools.push(new MCPToolAdapter({
-          serverName: server.name,
-          toolName: tool.name,
-          description: tool.description ?? '',
-          parametersSchema: tool.inputSchema ?? { type: 'object', properties: {}, required: [] },
-          connection: conn,
-          readOnly: booleanOption(overrides.read_only, defaults.read_only, false),
-          exclusive: booleanOption(overrides.exclusive, defaults.exclusive, false),
-          maxResultChars: positiveInt(overrides.max_result_chars ?? defaults.max_result_chars),
-        }))
+        this.tools.push(
+          new MCPToolAdapter({
+            serverName: server.name,
+            toolName: tool.name,
+            description: tool.description ?? '',
+            parametersSchema: tool.inputSchema ?? {
+              type: 'object',
+              properties: {},
+              required: [],
+            },
+            connection: conn,
+            readOnly: booleanOption(
+              overrides.read_only,
+              defaults.read_only,
+              false,
+            ),
+            exclusive: booleanOption(
+              overrides.exclusive,
+              defaults.exclusive,
+              false,
+            ),
+            maxResultChars: positiveInt(
+              overrides.max_result_chars ?? defaults.max_result_chars,
+            ),
+          }),
+        )
       }
     }
 
@@ -61,7 +80,8 @@ export class MCPClient {
   }
 
   async close(): Promise<void> {
-    for (const conn of this.connections.values()) await conn.disconnect().catch(() => {})
+    for (const conn of this.connections.values())
+      await conn.disconnect().catch(() => {})
     this.connections.clear()
     this.tools.length = 0
     this.initialized = false
@@ -69,10 +89,16 @@ export class MCPClient {
 }
 
 function createConnection(cfg: ServerConfig): MCPConnection {
-  return cfg.transport === 'sse' ? new SSEConnection(cfg.name, cfg) : new StdioConnection(cfg.name, cfg)
+  return cfg.transport === 'sse'
+    ? new SSEConnection(cfg.name, cfg)
+    : new StdioConnection(cfg.name, cfg)
 }
 
-function booleanOption(value: unknown, fallback: unknown, defaultValue: boolean): boolean {
+function booleanOption(
+  value: unknown,
+  fallback: unknown,
+  defaultValue: boolean,
+): boolean {
   if (typeof value === 'boolean') return value
   if (typeof fallback === 'boolean') return fallback
   return defaultValue
@@ -80,6 +106,7 @@ function booleanOption(value: unknown, fallback: unknown, defaultValue: boolean)
 
 function positiveInt(value: unknown): number | null {
   if (typeof value === 'boolean') return null
-  if (typeof value === 'number' && Number.isInteger(value) && value > 0) return value
+  if (typeof value === 'number' && Number.isInteger(value) && value > 0)
+    return value
   return null
 }

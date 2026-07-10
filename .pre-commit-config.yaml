@@ -3,9 +3,9 @@ repos:
   - repo: https://github.com/astral-sh/ruff-pre-commit
     rev: v0.15.13
     hooks:
-      - id: ruff          # lint
+      - id: ruff # lint
         args: [--fix]
-      - id: ruff-format   # format
+      - id: ruff-format # format
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v5.0.0
     hooks:

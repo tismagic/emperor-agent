@@ -16,14 +16,14 @@ function statusLabel(status?: ToolStatus) {
 }
 
 function agentTitle(sub: SubagentState) {
-  if (sub.kind === 'team') return `队友 ${sub.id || sub.agent_type || ''}`.trim()
+  if (sub.kind === 'team')
+    return `队友 ${sub.id || sub.agent_type || ''}`.trim()
   return sub.agent_type || 'subagent'
 }
 
 function agentKind(sub: SubagentState) {
   return sub.kind === 'team' ? 'Team Agent' : 'Agent'
 }
-
 
 function messageTitle(msg: { from: string; to: string; type: string }) {
   if (msg.to === 'lead') return `${msg.from} 回禀`
@@ -51,7 +51,11 @@ function fullJson(value: unknown) {
       open
     >
       <summary class="agent-node-head">
-        <component :is="avatarIcons.subagent" class="subagent-avatar" :size="16" />
+        <component
+          :is="avatarIcons.subagent"
+          class="subagent-avatar"
+          :size="16"
+        />
         <span class="agent-node-title">
           <span>{{ agentKind(sub) }}</span>
           <strong>Agent: {{ agentTitle(sub) }}</strong>
@@ -59,7 +63,9 @@ function fullJson(value: unknown) {
         </span>
         <span v-if="sub.role" class="agent-role-badge">{{ sub.role }}</span>
         <span class="agent-state-badge">{{ statusLabel(sub.status) }}</span>
-        <time v-if="durationLabel(sub.durationMs)" class="agent-duration">{{ durationLabel(sub.durationMs) }}</time>
+        <time v-if="durationLabel(sub.durationMs)" class="agent-duration">{{
+          durationLabel(sub.durationMs)
+        }}</time>
       </summary>
 
       <div class="agent-node-body">
@@ -68,7 +74,12 @@ function fullJson(value: unknown) {
         </div>
 
         <div v-if="sub.messages?.length" class="agent-message-stack">
-          <div v-for="msg in sub.messages" :key="msg.id" class="agent-message" :class="[msg.type, msg.to === 'lead' ? 'to-lead' : 'to-member']">
+          <div
+            v-for="msg in sub.messages"
+            :key="msg.id"
+            class="agent-message"
+            :class="[msg.type, msg.to === 'lead' ? 'to-lead' : 'to-member']"
+          >
             <div class="agent-message-head">
               <strong>{{ messageTitle(msg) }}</strong>
               <span>{{ msg.type }}</span>
@@ -82,15 +93,32 @@ function fullJson(value: unknown) {
         </div>
 
         <div v-if="sub.tools?.length" class="agent-tool-list">
-          <div v-for="tool in sub.tools" :key="tool.id || tool.name" class="mini-tool" :class="tool.status">
-            <component :is="toolIcon(tool.name)" class="mini-tool-icon" :size="14" />
+          <div
+            v-for="tool in sub.tools"
+            :key="tool.id || tool.name"
+            class="mini-tool"
+            :class="tool.status"
+          >
+            <component
+              :is="toolIcon(tool.name)"
+              class="mini-tool-icon"
+              :size="14"
+            />
             <div class="mini-tool-main">
               <div class="mini-tool-head">
                 <span>{{ tool.name }}</span>
                 <em>{{ statusLabel(tool.status) }}</em>
-                <time v-if="durationLabel(tool.durationMs)">{{ durationLabel(tool.durationMs) }}</time>
+                <time v-if="durationLabel(tool.durationMs)">{{
+                  durationLabel(tool.durationMs)
+                }}</time>
               </div>
-              <ExpandableText class="text-muted" :text="tool.summary || fullJson(tool.arguments) || '等待结果...'" :limit="120" />
+              <ExpandableText
+                class="text-muted"
+                :text="
+                  tool.summary || fullJson(tool.arguments) || '等待结果...'
+                "
+                :limit="120"
+              />
             </div>
           </div>
         </div>

@@ -1,6 +1,11 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
-import type { AssistantMessage, ControlInteraction, RuntimePlanRecord, ThoughtSegment } from '../../types'
+import type {
+  AssistantMessage,
+  ControlInteraction,
+  RuntimePlanRecord,
+  ThoughtSegment,
+} from '../../types'
 import { actionIcons, avatarIcons } from '../../icons'
 import { latestPlanForInteraction } from '../../runtime/handlers/plans'
 import MarkdownBlock from './MarkdownBlock.vue'
@@ -12,7 +17,10 @@ import ThoughtEvent from './ThoughtEvent.vue'
 import MediaBlock from './MediaBlock.vue'
 import { projectAssistantFlow } from './assistantFlowProjection'
 
-const props = defineProps<{ message: AssistantMessage; plans?: RuntimePlanRecord[] }>()
+const props = defineProps<{
+  message: AssistantMessage
+  plans?: RuntimePlanRecord[]
+}>()
 const copied = ref(false)
 const flowClock = ref(Date.now())
 let flowClockTimer: number | undefined
@@ -25,7 +33,9 @@ const messageText = computed(() => {
     .trim()
 })
 
-const flowBlocks = computed(() => projectAssistantFlow(props.message, { now: flowClock.value }))
+const flowBlocks = computed(() =>
+  projectAssistantFlow(props.message, { now: flowClock.value }),
+)
 
 const fallbackThought = computed<ThoughtSegment>(() => ({
   id: 'fallback-thought',
@@ -44,7 +54,9 @@ async function copyMessage() {
   if (!text) return
   await navigator.clipboard?.writeText(text)
   copied.value = true
-  window.setTimeout(() => { copied.value = false }, 1400)
+  window.setTimeout(() => {
+    copied.value = false
+  }, 1400)
 }
 
 function stopFlowClock() {
@@ -78,7 +90,11 @@ onBeforeUnmount(stopFlowClock)
       <div v-if="messageText" class="assistant-toolbar">
         <div class="message-meta assistant">
           <span aria-hidden="true">
-            <component :is="avatarIcons.eunuch" class="assistant-mini-avatar" :size="16" />
+            <component
+              :is="avatarIcons.eunuch"
+              class="assistant-mini-avatar"
+              :size="16"
+            />
           </span>
           <small>李 · 回奏</small>
         </div>
@@ -90,14 +106,24 @@ onBeforeUnmount(stopFlowClock)
       <div v-else class="assistant-toolbar ghost">
         <div class="message-meta assistant">
           <span aria-hidden="true">
-            <component :is="avatarIcons.eunuch" class="assistant-mini-avatar" :size="16" />
+            <component
+              :is="avatarIcons.eunuch"
+              class="assistant-mini-avatar"
+              :size="16"
+            />
           </span>
           <small>李 · 候旨</small>
         </div>
       </div>
 
-      <div class="assistant-timeline-shell" :class="{ streaming: props.message.streaming }">
-        <ThoughtEvent v-if="!flowBlocks.length && props.message.streaming" :segment="fallbackThought" />
+      <div
+        class="assistant-timeline-shell"
+        :class="{ streaming: props.message.streaming }"
+      >
+        <ThoughtEvent
+          v-if="!flowBlocks.length && props.message.streaming"
+          :segment="fallbackThought"
+        />
         <template v-for="block in flowBlocks" :key="block.id">
           <ThoughtEvent
             v-if="block.kind === 'thought'"
@@ -113,13 +139,27 @@ onBeforeUnmount(stopFlowClock)
           </div>
           <ToolGroup v-else-if="block.kind === 'tool_group'" :block="block" />
           <MediaBlock v-else-if="block.kind === 'media'" :items="block.items" />
-          <div v-else-if="block.kind === 'control' && block.segment.type === 'ask'" class="timeline-node control-node">
+          <div
+            v-else-if="block.kind === 'control' && block.segment.type === 'ask'"
+            class="timeline-node control-node"
+          >
             <AskHistoryCard :interaction="block.segment.interaction" />
           </div>
-          <div v-else-if="block.kind === 'control' && block.segment.type === 'plan'" class="timeline-node control-node">
-            <PlanCard :interaction="block.segment.interaction" :plan="planForInteraction(block.segment.interaction)" />
+          <div
+            v-else-if="
+              block.kind === 'control' && block.segment.type === 'plan'
+            "
+            class="timeline-node control-node"
+          >
+            <PlanCard
+              :interaction="block.segment.interaction"
+              :plan="planForInteraction(block.segment.interaction)"
+            />
           </div>
-          <div v-else-if="block.kind === 'todos'" class="timeline-node todo-fallback-node">
+          <div
+            v-else-if="block.kind === 'todos'"
+            class="timeline-node todo-fallback-node"
+          >
             <TodoPanel :todos="block.todos" />
           </div>
         </template>

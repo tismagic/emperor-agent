@@ -1,4 +1,14 @@
-import { app, BrowserWindow, dialog, ipcMain, protocol, net, shell, type OpenDialogOptions, type Rectangle } from 'electron'
+import {
+  app,
+  BrowserWindow,
+  dialog,
+  ipcMain,
+  protocol,
+  net,
+  shell,
+  type OpenDialogOptions,
+  type Rectangle,
+} from 'electron'
 import * as fs from 'node:fs'
 import * as path from 'node:path'
 import { pathToFileURL } from 'node:url'
@@ -12,7 +22,11 @@ import {
   runtimeDefaultsRoot,
 } from './runtime-root'
 import { readBounds, pickBounds } from './window-bounds'
-import { resolveAssetPath, resolveAttachmentRawPath, resolveMediaRawPath } from './protocol'
+import {
+  resolveAssetPath,
+  resolveAttachmentRawPath,
+  resolveMediaRawPath,
+} from './protocol'
 import { createCoreHost } from './core-host'
 import { CoreEventBridge } from './event-bridge'
 import { moduleDirFromUrl } from './esm-path'
@@ -36,7 +50,10 @@ let petWindow: BrowserWindow | null = null
 let didLoadRetry = false
 
 protocol.registerSchemesAsPrivileged([
-  { scheme: 'app', privileges: { standard: true, secure: true, supportFetchAPI: true } },
+  {
+    scheme: 'app',
+    privileges: { standard: true, secure: true, supportFetchAPI: true },
+  },
 ])
 
 ipcMain.handle('emperor:select-directory', async () => {
@@ -95,7 +112,9 @@ function mainBoundsPath(): string {
 }
 
 function prepareMainRuntime(): void {
-  const defaultRoot = app.isPackaged ? packagedRuntimeRoot(app.getPath('userData')) : undefined
+  const defaultRoot = app.isPackaged
+    ? packagedRuntimeRoot(app.getPath('userData'))
+    : undefined
   config = resolveConfig({ argv: mainArgv, env: process.env, defaultRoot })
   if (app.isPackaged) {
     initializePackagedRuntime({
@@ -123,12 +142,19 @@ function registerAppProtocol(): void {
   protocol.handle('app', async (request) => {
     const url = new URL(request.url)
     if (url.host === 'attachments') {
-      const attachmentPath = resolveAttachmentRawPath(request.url, { stateRoot: config.stateRoot, legacyRuntimeRoot: config.runtimeRoot })
-      if (!attachmentPath) return new Response('attachment not found', { status: 404 })
+      const attachmentPath = resolveAttachmentRawPath(request.url, {
+        stateRoot: config.stateRoot,
+        legacyRuntimeRoot: config.runtimeRoot,
+      })
+      if (!attachmentPath)
+        return new Response('attachment not found', { status: 404 })
       return net.fetch(pathToFileURL(attachmentPath).toString())
     }
     if (url.host === 'media') {
-      const mediaPath = resolveMediaRawPath(request.url, { stateRoot: config.stateRoot, legacyRuntimeRoot: config.runtimeRoot })
+      const mediaPath = resolveMediaRawPath(request.url, {
+        stateRoot: config.stateRoot,
+        legacyRuntimeRoot: config.runtimeRoot,
+      })
       if (!mediaPath) return new Response('media not found', { status: 404 })
       return net.fetch(pathToFileURL(mediaPath).toString())
     }
@@ -165,22 +191,29 @@ function createWindow(): void {
 
   mainWindow.once('ready-to-show', () => mainWindow?.show())
 
-  mainWindow.webContents.on('did-fail-load', (_event, errorCode, errorDescription) => {
-    console.error(`did-fail-load: ${errorCode} ${errorDescription}`)
-    if (!didLoadRetry) {
-      didLoadRetry = true
-      loadRenderer()
-    } else {
-      fail('页面加载失败', `无法加载前端（${errorDescription}）。`)
-    }
-  })
+  mainWindow.webContents.on(
+    'did-fail-load',
+    (_event, errorCode, errorDescription) => {
+      console.error(`did-fail-load: ${errorCode} ${errorDescription}`)
+      if (!didLoadRetry) {
+        didLoadRetry = true
+        loadRenderer()
+      } else {
+        fail('页面加载失败', `无法加载前端（${errorDescription}）。`)
+      }
+    },
+  )
 
   mainWindow.on('close', () => {
     if (!mainWindow) return
     try {
       fs.mkdirSync(path.dirname(boundsPath), { recursive: true })
       const payload = pickBounds(mainWindow.getBounds())
-      fs.writeFileSync(boundsPath, `${JSON.stringify(payload, null, 2)}\n`, 'utf8')
+      fs.writeFileSync(
+        boundsPath,
+        `${JSON.stringify(payload, null, 2)}\n`,
+        'utf8',
+      )
     } catch {
       // Best-effort persistence; never block window close on disk errors.
     }
@@ -202,12 +235,17 @@ function petStateDir(root: string): string {
   return path.join(root, 'memory', 'desktop_pet')
 }
 
-function readPetBounds(boundsPath: string): Partial<Rectangle> & { width: number; height: number } {
+function readPetBounds(
+  boundsPath: string,
+): Partial<Rectangle> & { width: number; height: number } {
   try {
     const raw = JSON.parse(fs.readFileSync(boundsPath, 'utf8'))
     const width = Math.max(Number(raw.width) || 300, 300)
     const height = Math.max(Number(raw.height) || 340, 340)
-    const bounds: Partial<Rectangle> & { width: number; height: number } = { width, height }
+    const bounds: Partial<Rectangle> & { width: number; height: number } = {
+      width,
+      height,
+    }
     if (Number.isFinite(raw.x) && Number.isFinite(raw.y)) {
       bounds.x = Math.round(raw.x)
       bounds.y = Math.round(raw.y)
@@ -222,7 +260,11 @@ function savePetBounds(win: BrowserWindow, boundsPath: string): void {
   if (!win || win.isDestroyed()) return
   try {
     fs.mkdirSync(path.dirname(boundsPath), { recursive: true })
-    fs.writeFileSync(boundsPath, `${JSON.stringify(win.getBounds(), null, 2)}\n`, 'utf8')
+    fs.writeFileSync(
+      boundsPath,
+      `${JSON.stringify(win.getBounds(), null, 2)}\n`,
+      'utf8',
+    )
   } catch {
     // Best-effort persistence; never block pet shutdown on disk errors.
   }
@@ -232,9 +274,13 @@ function createPetWindow(): void {
   const root =
     argValue(mainArgv, '--root') ||
     process.env.EMPEROR_AGENT_ROOT ||
-    (app.isPackaged ? packagedRuntimeRoot(app.getPath('userData')) : path.resolve(mainDir, '..', '..', '..'))
+    (app.isPackaged
+      ? packagedRuntimeRoot(app.getPath('userData'))
+      : path.resolve(mainDir, '..', '..', '..'))
   const petStateRoot = process.env.EMPEROR_CONFIG_DIR || defaultStateRoot()
-  const assetBaseUrl = pathToFileURL(path.join(root, 'assets', 'desktop-pet', 'clawd-tank') + path.sep).href
+  const assetBaseUrl = pathToFileURL(
+    path.join(root, 'assets', 'desktop-pet', 'clawd-tank') + path.sep,
+  ).href
   const boundsPath = path.join(petStateDir(petStateRoot), 'window.json')
   const rootDir = petRendererRoot()
   const win = new BrowserWindow({
@@ -292,7 +338,8 @@ function createPetWindow(): void {
 async function startup(): Promise<void> {
   app.setName('Emperor Agent')
   if (process.platform === 'darwin') app.dock?.setIcon(appIconPath)
-  if (process.platform === 'win32') app.setAppUserModelId('com.emperor.agent.desktop')
+  if (process.platform === 'win32')
+    app.setAppUserModelId('com.emperor.agent.desktop')
 
   prepareMainRuntime()
   registerAppProtocol()

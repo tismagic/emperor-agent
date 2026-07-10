@@ -12,9 +12,13 @@ import {
   type ModelRow,
 } from '../../../utils/tokens'
 
-const props = defineProps<{ tokens: TokensPayload | null; range: TokensRange }>()
+const props = defineProps<{
+  tokens: TokensPayload | null
+  range: TokensRange
+}>()
 
-type SortKey = 'total' | 'calls' | 'output' | 'cacheRead' | 'cacheMiss' | 'hitRate' | 'model'
+type SortKey =
+  'total' | 'calls' | 'output' | 'cacheRead' | 'cacheMiss' | 'hitRate' | 'model'
 const sortKey = ref<SortKey>('total')
 const sortAsc = ref(false)
 
@@ -83,7 +87,11 @@ const legendEntries = computed(() => {
     return { key, label: modelDisplayName(key, info), color: pickColor(key) }
   })
   if (otherKey) {
-    entries.push({ key: otherKey, label: '其他', color: 'rgb(var(--muted) / 0.65)' })
+    entries.push({
+      key: otherKey,
+      label: '其他',
+      color: 'rgb(var(--muted) / 0.65)',
+    })
   }
   return entries
 })
@@ -145,7 +153,11 @@ function hitRate(row: ModelRow): number {
           <p>柱状高度按日总量缩放，分段对应当天各模型 tokens。</p>
         </div>
         <div v-if="legendEntries.length" class="bars-legend">
-          <span v-for="entry in legendEntries" :key="entry.key" class="legend-item">
+          <span
+            v-for="entry in legendEntries"
+            :key="entry.key"
+            class="legend-item"
+          >
             <i class="legend-swatch" :style="{ background: entry.color }" />
             <em>{{ entry.label }}</em>
           </span>
@@ -153,13 +165,8 @@ function hitRate(row: ModelRow): number {
       </header>
 
       <div class="bars-frame">
-        <div class="bars-grid-lines">
-          <span /><span /><span />
-        </div>
-        <div
-          class="model-bars"
-          @mouseleave="onLeave"
-        >
+        <div class="bars-grid-lines"><span /><span /><span /></div>
+        <div class="model-bars" @mouseleave="onLeave">
           <div
             v-for="(col, idx) in stacked.columns"
             :key="col.date"
@@ -169,7 +176,12 @@ function hitRate(row: ModelRow): number {
             @focus="onEnter(col, idx)"
             tabindex="0"
           >
-            <div class="model-bar-fill" :style="{ height: `${maxColumnTotal ? (col.total / maxColumnTotal) * 100 : 0}%` }">
+            <div
+              class="model-bar-fill"
+              :style="{
+                height: `${maxColumnTotal ? (col.total / maxColumnTotal) * 100 : 0}%`,
+              }"
+            >
               <span
                 v-for="seg in col.segments"
                 :key="`${col.date}-${seg.model}`"
@@ -187,7 +199,9 @@ function hitRate(row: ModelRow): number {
             <ul>
               <li v-for="seg in hovered.segments" :key="seg.model">
                 <i class="tooltip-swatch" :style="{ background: seg.color }" />
-                <span>{{ segmentLabel(seg.model, props.tokens?.byModel?.[seg.model]) }}</span>
+                <span>{{
+                  segmentLabel(seg.model, props.tokens?.byModel?.[seg.model])
+                }}</span>
                 <em>{{ formatTokenCompact(seg.total) }}</em>
               </li>
             </ul>
@@ -199,7 +213,9 @@ function hitRate(row: ModelRow): number {
         <span
           v-for="label in xAxisLabels"
           :key="label.index"
-          :style="{ left: `${stacked.columns.length ? ((label.index + 0.5) / stacked.columns.length) * 100 : 0}%` }"
+          :style="{
+            left: `${stacked.columns.length ? ((label.index + 0.5) / stacked.columns.length) * 100 : 0}%`,
+          }"
         >
           {{ label.date.slice(5) }}
         </span>
@@ -211,18 +227,34 @@ function hitRate(row: ModelRow): number {
         <strong>模型明细</strong>
         <small>点击表头切换排序</small>
       </header>
-      <div v-if="emptyState()" class="empty-note compact">还没有 token 记录。发起一次真实模型调用后会自动出现统计。</div>
+      <div v-if="emptyState()" class="empty-note compact">
+        还没有 token 记录。发起一次真实模型调用后会自动出现统计。
+      </div>
       <table v-else class="model-list">
         <thead>
           <tr>
             <th class="col-rank">#</th>
-            <th class="sortable" @click="setSort('model')">模型 / 厂家 {{ sortIndicator('model') }}</th>
-            <th class="sortable num" @click="setSort('calls')">Calls {{ sortIndicator('calls') }}</th>
-            <th class="sortable num cache-col" @click="setSort('cacheRead')">缓存命中 {{ sortIndicator('cacheRead') }}</th>
-            <th class="sortable num cache-col" @click="setSort('cacheMiss')">缓存未命中 {{ sortIndicator('cacheMiss') }}</th>
-            <th class="sortable num" @click="setSort('output')">输出 {{ sortIndicator('output') }}</th>
-            <th class="sortable num" @click="setSort('total')">总 Token {{ sortIndicator('total') }}</th>
-            <th class="sortable num cache-col" @click="setSort('hitRate')">命中率 {{ sortIndicator('hitRate') }}</th>
+            <th class="sortable" @click="setSort('model')">
+              模型 / 厂家 {{ sortIndicator('model') }}
+            </th>
+            <th class="sortable num" @click="setSort('calls')">
+              Calls {{ sortIndicator('calls') }}
+            </th>
+            <th class="sortable num cache-col" @click="setSort('cacheRead')">
+              缓存命中 {{ sortIndicator('cacheRead') }}
+            </th>
+            <th class="sortable num cache-col" @click="setSort('cacheMiss')">
+              缓存未命中 {{ sortIndicator('cacheMiss') }}
+            </th>
+            <th class="sortable num" @click="setSort('output')">
+              输出 {{ sortIndicator('output') }}
+            </th>
+            <th class="sortable num" @click="setSort('total')">
+              总 Token {{ sortIndicator('total') }}
+            </th>
+            <th class="sortable num cache-col" @click="setSort('hitRate')">
+              命中率 {{ sortIndicator('hitRate') }}
+            </th>
             <th class="col-share">占比</th>
           </tr>
         </thead>
@@ -237,14 +269,37 @@ function hitRate(row: ModelRow): number {
               <small v-if="row.provider">{{ row.provider }}</small>
             </td>
             <td class="num">{{ formatTokenCompact(row.calls) }}</td>
-            <td class="num cache-value" :title="`${formatNumber(row.cacheRead)} tokens`">{{ formatTokenCompact(row.cacheRead) }}</td>
-            <td class="num cache-value miss" :title="`${formatNumber(row.cacheMiss)} tokens`">{{ formatTokenCompact(row.cacheMiss) }}</td>
-            <td class="num cache-value create" :title="`${formatNumber(row.output)} tokens`">{{ formatTokenCompact(row.output) }}</td>
-            <td class="num strong" :title="`${formatNumber(row.total)} tokens`">{{ formatTokenCompact(row.total) }}</td>
-            <td class="num cache-value">{{ formatPercent(row.cacheRead, row.cacheRead + row.cacheMiss) }}</td>
+            <td
+              class="num cache-value"
+              :title="`${formatNumber(row.cacheRead)} tokens`"
+            >
+              {{ formatTokenCompact(row.cacheRead) }}
+            </td>
+            <td
+              class="num cache-value miss"
+              :title="`${formatNumber(row.cacheMiss)} tokens`"
+            >
+              {{ formatTokenCompact(row.cacheMiss) }}
+            </td>
+            <td
+              class="num cache-value create"
+              :title="`${formatNumber(row.output)} tokens`"
+            >
+              {{ formatTokenCompact(row.output) }}
+            </td>
+            <td class="num strong" :title="`${formatNumber(row.total)} tokens`">
+              {{ formatTokenCompact(row.total) }}
+            </td>
+            <td class="num cache-value">
+              {{ formatPercent(row.cacheRead, row.cacheRead + row.cacheMiss) }}
+            </td>
             <td class="col-share">
               <div class="model-list-bar">
-                <span :style="{ width: `${totalTokens ? (row.total / totalTokens) * 100 : 0}%` }" />
+                <span
+                  :style="{
+                    width: `${totalTokens ? (row.total / totalTokens) * 100 : 0}%`,
+                  }"
+                />
               </div>
               <em>{{ formatPercent(row.total, totalTokens) }}</em>
             </td>

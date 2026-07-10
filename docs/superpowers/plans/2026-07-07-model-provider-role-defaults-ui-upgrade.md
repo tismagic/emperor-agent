@@ -43,34 +43,34 @@
 
 ### 1.4 Constraints
 
-| Type | Constraint | Reason |
-|------|------------|--------|
-| Stack | TypeScript / Electron / Vue 3 / Vitest | 项目主线技术栈 |
-| Storage | `model_config.json` 兼容旧字段 | 用户已有配置不能迁移失败 |
-| Security | 外链只允许 `http` / `https` | 防止 renderer 触发本地协议或 shell 注入 |
-| Network | 模型发现 15 秒超时，不落盘 | 避免 UI 卡死和泄露敏感数据 |
-| Provider payload | 不发送 `seq`、`turn_id`、`[1M]` 等本地字段 | provider 请求必须保持协议干净 |
-| Scope | 只使用主流官方清洗预设 | 避免长尾中转商污染配置体验 |
+| Type             | Constraint                                 | Reason                                  |
+| ---------------- | ------------------------------------------ | --------------------------------------- |
+| Stack            | TypeScript / Electron / Vue 3 / Vitest     | 项目主线技术栈                          |
+| Storage          | `model_config.json` 兼容旧字段             | 用户已有配置不能迁移失败                |
+| Security         | 外链只允许 `http` / `https`                | 防止 renderer 触发本地协议或 shell 注入 |
+| Network          | 模型发现 15 秒超时，不落盘                 | 避免 UI 卡死和泄露敏感数据              |
+| Provider payload | 不发送 `seq`、`turn_id`、`[1M]` 等本地字段 | provider 请求必须保持协议干净           |
+| Scope            | 只使用主流官方清洗预设                     | 避免长尾中转商污染配置体验              |
 
 ### 1.5 Reference Inventory
 
-| Source | Usage |
-|--------|-------|
-| `docs/roadmap/2026-07-07-cc-switch-model-vendor-research.md` | 本地调研，包含主流厂商 base URL、quirk、上下文、模型发现策略 |
-| `https://github.com/farion1231/cc-switch` | 参考项目 |
-| `cc-switch/src/config/claudeProviderPresets.ts` | 参考厂商默认模型、base URL、1M 能力、API key 页面 |
-| `cc-switch/src/config/claudeDesktopProviderPresets.ts` | 参考 Claude Desktop `modelRoutes[].supports1m` 明确 1M 声明 |
-| `cc-switch/src/components/providers/forms/shared/ModelInputWithFetch.tsx` | 参考“输入框 + 获取模型 + 下拉选择”交互 |
-| `cc-switch/src/components/providers/forms/hooks/useModelState.ts` | 参考模型映射状态管理 |
-| `cc-switch/src/components/providers/forms/ClaudeFormFields.tsx` | 参考哪些模型行允许声明 1M：Sonnet/Opus/Fable/Subagent 可勾，Haiku 不可勾 |
-| `cc-switch/src-tauri/src/proxy/model_mapper.rs` | 参考 `[1M]` marker 只在本地处理、请求前剥离的做法 |
-| `cc-switch/src-tauri/src/claude_desktop_config.rs` | 参考 `[1M]` 到 `supports1m` 的 import 边界翻译 |
-| `packages/core/src/config/model-config.ts` | Emperor 当前模型配置 schema、校验、保存 |
-| `packages/core/src/model/router.ts` | Emperor 当前 main/secondary 路由 |
-| `packages/core/src/providers/registry.ts` | 当前 ProviderSpec 与 providerOptions |
-| `packages/core/src/api/services/model-service.ts` | `model.getConfig`、`model.saveConfig`、`model.discoverModels` |
-| `desktop/src/renderer/src/components/panels/ModelPanel.vue` | 当前配置页、保存校验、datalist |
-| `desktop/src/main/index.ts` / `desktop/src/preload/index.ts` | 外链 IPC 应落点 |
+| Source                                                                    | Usage                                                                    |
+| ------------------------------------------------------------------------- | ------------------------------------------------------------------------ |
+| `docs/roadmap/2026-07-07-cc-switch-model-vendor-research.md`              | 本地调研，包含主流厂商 base URL、quirk、上下文、模型发现策略             |
+| `https://github.com/farion1231/cc-switch`                                 | 参考项目                                                                 |
+| `cc-switch/src/config/claudeProviderPresets.ts`                           | 参考厂商默认模型、base URL、1M 能力、API key 页面                        |
+| `cc-switch/src/config/claudeDesktopProviderPresets.ts`                    | 参考 Claude Desktop `modelRoutes[].supports1m` 明确 1M 声明              |
+| `cc-switch/src/components/providers/forms/shared/ModelInputWithFetch.tsx` | 参考“输入框 + 获取模型 + 下拉选择”交互                                   |
+| `cc-switch/src/components/providers/forms/hooks/useModelState.ts`         | 参考模型映射状态管理                                                     |
+| `cc-switch/src/components/providers/forms/ClaudeFormFields.tsx`           | 参考哪些模型行允许声明 1M：Sonnet/Opus/Fable/Subagent 可勾，Haiku 不可勾 |
+| `cc-switch/src-tauri/src/proxy/model_mapper.rs`                           | 参考 `[1M]` marker 只在本地处理、请求前剥离的做法                        |
+| `cc-switch/src-tauri/src/claude_desktop_config.rs`                        | 参考 `[1M]` 到 `supports1m` 的 import 边界翻译                           |
+| `packages/core/src/config/model-config.ts`                                | Emperor 当前模型配置 schema、校验、保存                                  |
+| `packages/core/src/model/router.ts`                                       | Emperor 当前 main/secondary 路由                                         |
+| `packages/core/src/providers/registry.ts`                                 | 当前 ProviderSpec 与 providerOptions                                     |
+| `packages/core/src/api/services/model-service.ts`                         | `model.getConfig`、`model.saveConfig`、`model.discoverModels`            |
+| `desktop/src/renderer/src/components/panels/ModelPanel.vue`               | 当前配置页、保存校验、datalist                                           |
+| `desktop/src/main/index.ts` / `desktop/src/preload/index.ts`              | 外链 IPC 应落点                                                          |
 
 ## 2. Architecture Context
 
@@ -96,26 +96,26 @@
 
 ### 2.2 Affected Modules
 
-| File | Action | Description |
-|------|--------|-------------|
-| `packages/core/src/providers/registry.ts` | Modify | 增加 `icon`、`iconColor`、`modelsUrl`、`roleDefaults` 等 ProviderSpec 字段 |
-| `packages/core/src/providers/registry.test.ts` | Modify | 验证 providerOptions 元数据、不可选 provider 过滤、默认预设 |
-| `packages/core/src/config/model-config.ts` | Modify | 增加 `roleModels`，解析 `[1M]`，Secondary 可空保存 |
-| `packages/core/src/config/model-config.test.ts` | Modify | 兼容 schema、校验、保存、masked key、1M 解析测试 |
-| `packages/core/src/model/router.ts` | Modify | 将 `main/secondary` 映射为 Emperor `simple/powerful` 双角色，保持旧 fallback |
-| `packages/core/src/model/router.test.ts` | Create/Modify | 覆盖角色路由、长上下文、provider payload 清洁 |
-| `packages/core/src/api/services/model-service.ts` | Modify | 返回 role payload，增强模型发现、测试角色 |
-| `packages/core/src/api/services/model-service.test.ts` | Modify | Core API 级模型配置和发现回归 |
-| `desktop/src/main/index.ts` | Modify | 新增 `emperor:open-external` 和窗口外链拦截 |
-| `desktop/src/preload/index.ts` | Modify | 暴露 `openExternalUrl` |
-| `desktop/src/renderer/src/api/backend.ts` | Modify | renderer 外链 helper |
-| `desktop/src/renderer/src/types.ts` | Modify | ProviderOption、ModelEntry、RoleModel 类型 |
-| `desktop/src/renderer/src/components/panels/ModelPanel.vue` | Refactor | 简化页面和角色编辑 |
-| `desktop/src/renderer/src/components/panels/model/ModelPickerInput.vue` | Create | 自定义模型 ID 选择控件 |
-| `desktop/src/renderer/src/components/panels/model/ProviderLogo.vue` | Create | 统一 provider logo 渲染 |
-| `desktop/src/renderer/src/components/onboarding/*` | Modify | onboarding 也使用可空 secondary、picker 和默认预设 |
-| `desktop/src/renderer/src/api/*.test.ts` / component tests | Modify/Create | 外链、picker、配置页、onboarding 覆盖 |
-| `assets/generated/PROMPTS.md` or provider asset notice | Modify | 记录引入/生成 logo 来源和授权 |
+| File                                                                    | Action        | Description                                                                  |
+| ----------------------------------------------------------------------- | ------------- | ---------------------------------------------------------------------------- |
+| `packages/core/src/providers/registry.ts`                               | Modify        | 增加 `icon`、`iconColor`、`modelsUrl`、`roleDefaults` 等 ProviderSpec 字段   |
+| `packages/core/src/providers/registry.test.ts`                          | Modify        | 验证 providerOptions 元数据、不可选 provider 过滤、默认预设                  |
+| `packages/core/src/config/model-config.ts`                              | Modify        | 增加 `roleModels`，解析 `[1M]`，Secondary 可空保存                           |
+| `packages/core/src/config/model-config.test.ts`                         | Modify        | 兼容 schema、校验、保存、masked key、1M 解析测试                             |
+| `packages/core/src/model/router.ts`                                     | Modify        | 将 `main/secondary` 映射为 Emperor `simple/powerful` 双角色，保持旧 fallback |
+| `packages/core/src/model/router.test.ts`                                | Create/Modify | 覆盖角色路由、长上下文、provider payload 清洁                                |
+| `packages/core/src/api/services/model-service.ts`                       | Modify        | 返回 role payload，增强模型发现、测试角色                                    |
+| `packages/core/src/api/services/model-service.test.ts`                  | Modify        | Core API 级模型配置和发现回归                                                |
+| `desktop/src/main/index.ts`                                             | Modify        | 新增 `emperor:open-external` 和窗口外链拦截                                  |
+| `desktop/src/preload/index.ts`                                          | Modify        | 暴露 `openExternalUrl`                                                       |
+| `desktop/src/renderer/src/api/backend.ts`                               | Modify        | renderer 外链 helper                                                         |
+| `desktop/src/renderer/src/types.ts`                                     | Modify        | ProviderOption、ModelEntry、RoleModel 类型                                   |
+| `desktop/src/renderer/src/components/panels/ModelPanel.vue`             | Refactor      | 简化页面和角色编辑                                                           |
+| `desktop/src/renderer/src/components/panels/model/ModelPickerInput.vue` | Create        | 自定义模型 ID 选择控件                                                       |
+| `desktop/src/renderer/src/components/panels/model/ProviderLogo.vue`     | Create        | 统一 provider logo 渲染                                                      |
+| `desktop/src/renderer/src/components/onboarding/*`                      | Modify        | onboarding 也使用可空 secondary、picker 和默认预设                           |
+| `desktop/src/renderer/src/api/*.test.ts` / component tests              | Modify/Create | 外链、picker、配置页、onboarding 覆盖                                        |
+| `assets/generated/PROMPTS.md` or provider asset notice                  | Modify        | 记录引入/生成 logo 来源和授权                                                |
 
 ### 2.3 Data Flow
 
@@ -149,21 +149,21 @@ flowchart LR
 
 ### 3.1 Upstream Dependencies
 
-| Plan/System | Status | Depends On |
-|-------------|--------|------------|
-| `PLAN-EA-MODEL-001` | implemented locally | 无模型配置启动提示、模型发现 API 基础 |
-| `docs/roadmap/2026-07-07-cc-switch-model-vendor-research.md` | available | cc-switch 主流厂商调研 |
-| Electron preload bridge | available | `window.emperor` bridge |
-| CoreApi `model.discoverModels` | available | 当前已注册 operation |
+| Plan/System                                                  | Status              | Depends On                            |
+| ------------------------------------------------------------ | ------------------- | ------------------------------------- |
+| `PLAN-EA-MODEL-001`                                          | implemented locally | 无模型配置启动提示、模型发现 API 基础 |
+| `docs/roadmap/2026-07-07-cc-switch-model-vendor-research.md` | available           | cc-switch 主流厂商调研                |
+| Electron preload bridge                                      | available           | `window.emperor` bridge               |
+| CoreApi `model.discoverModels`                               | available           | 当前已注册 operation                  |
 
 ### 3.2 Downstream Impact
 
-| System | Impact | Blocked On |
-|--------|--------|------------|
-| AgentLoop model selection | 可以按 Emperor role 路由模型 | `MODEL-ROUTE-003` |
-| Onboarding model setup | 可直接套用厂商默认 | `MODEL-UI-007` |
-| Future usage/cost panel | 可复用 provider icon、modelsUrl、role defaults | `MODEL-PRESET-001` |
-| Manual Electron QA | fresh state 模型配置路径可完整走通 | `MODEL-QA-008` |
+| System                    | Impact                                         | Blocked On         |
+| ------------------------- | ---------------------------------------------- | ------------------ |
+| AgentLoop model selection | 可以按 Emperor role 路由模型                   | `MODEL-ROUTE-003`  |
+| Onboarding model setup    | 可直接套用厂商默认                             | `MODEL-UI-007`     |
+| Future usage/cost panel   | 可复用 provider icon、modelsUrl、role defaults | `MODEL-PRESET-001` |
+| Manual Electron QA        | fresh state 模型配置路径可完整走通             | `MODEL-QA-008`     |
 
 ### 3.3 Task Dependency Graph
 
@@ -186,13 +186,13 @@ flowchart TD
 
 ### 3.4 Topological Sort
 
-| Phase | Tasks | Depends On | Parallel |
-|-------|-------|------------|----------|
-| P0 | `MODEL-PRESET-001`, `MODEL-LINK-005` | — | yes |
-| P1 | `MODEL-CONFIG-002`, `MODEL-DISC-004` | `MODEL-PRESET-001` | yes |
-| P2 | `MODEL-ROUTE-003`, `MODEL-UI-006` | `MODEL-CONFIG-002`, `MODEL-DISC-004` | yes |
-| P3 | `MODEL-UI-007` | `MODEL-LINK-005`, `MODEL-ROUTE-003`, `MODEL-UI-006` | no |
-| P4 | `MODEL-QA-008` | all previous | no |
+| Phase | Tasks                                | Depends On                                          | Parallel |
+| ----- | ------------------------------------ | --------------------------------------------------- | -------- |
+| P0    | `MODEL-PRESET-001`, `MODEL-LINK-005` | —                                                   | yes      |
+| P1    | `MODEL-CONFIG-002`, `MODEL-DISC-004` | `MODEL-PRESET-001`                                  | yes      |
+| P2    | `MODEL-ROUTE-003`, `MODEL-UI-006`    | `MODEL-CONFIG-002`, `MODEL-DISC-004`                | yes      |
+| P3    | `MODEL-UI-007`                       | `MODEL-LINK-005`, `MODEL-ROUTE-003`, `MODEL-UI-006` | no       |
+| P4    | `MODEL-QA-008`                       | all previous                                        | no       |
 
 ## 4. Task Decomposition
 
@@ -215,9 +215,7 @@ flowchart TD
 4. **Target Specification**
    - **Target (TS)**:
      ```typescript
-     export type EmperorModelRole =
-       | 'simple'
-       | 'powerful'
+     export type EmperorModelRole = 'simple' | 'powerful'
 
      export interface ProviderRoleDefault {
        modelId: string
@@ -225,7 +223,8 @@ flowchart TD
        contextWindowTokens?: number
        maxTokens?: number
        supportsLongContext?: boolean
-       longContextSource?: 'ccswitch_supports1m' | 'ccswitch_marker' | 'vendor_context' | 'manual'
+       longContextSource?:
+         'ccswitch_supports1m' | 'ccswitch_marker' | 'vendor_context' | 'manual'
      }
 
      export interface ProviderSpec {
@@ -244,7 +243,7 @@ flowchart TD
 
    ```typescript
    export const EMPEROR_MODEL_ROLES = ['simple', 'powerful'] as const
-   export type EmperorModelRole = typeof EMPEROR_MODEL_ROLES[number]
+   export type EmperorModelRole = (typeof EMPEROR_MODEL_ROLES)[number]
 
    export interface ProviderRoleDefault {
      modelId: string
@@ -252,33 +251,35 @@ flowchart TD
      contextWindowTokens?: number
      maxTokens?: number
      supportsLongContext?: boolean
-     longContextSource?: 'ccswitch_supports1m' | 'ccswitch_marker' | 'vendor_context' | 'manual'
+     longContextSource?:
+       'ccswitch_supports1m' | 'ccswitch_marker' | 'vendor_context' | 'manual'
    }
    ```
 
    #### Default Preset Table
 
-   | Provider | simple | powerful | Powerful Context |
-   |----------|--------|----------|------------------|
-   | `deepseek` | `deepseek-v4-flash` | `deepseek-v4-pro` | 1,000,000 |
-   | `dashscope` | `qwen3.5-plus` | `qwen3.5-plus` | 32,000 |
-   | `moonshot` | `kimi-k2.7-code` | `kimi-k2.7-code` | 262,144 |
-   | `zhipu` | `glm-5.1` | `glm-5.1` | 128,000 |
-   | `volcengine` | `doubao-seed-2-1-pro-260628` | `doubao-seed-2-1-pro-260628` | 262,144 |
-   | `volcengine_coding_plan` | `ark-code-latest` | `ark-code-latest` | 256,000 |
-   | `byteplus` | `ark-code-latest` | `ark-code-latest` | 256,000 |
-   | `minimax` | `MiniMax-M2.7` | `MiniMax-M2.7` | 200,000 |
-   | `stepfun` | `step-3.5-flash-2603` | `step-3.5-flash-2603` | 262,144 |
-   | `xiaomi_mimo` | `mimo-v2.5-pro` | `mimo-v2.5-pro` | 1,048,576 |
-   | `longcat` | `LongCat-2.0` | `LongCat-2.0` | 1,048,576 |
-   | `qianfan` | `qianfan-code-latest` | `qianfan-code-latest` | 131,072 |
-   | `openrouter` | `anthropic/claude-haiku-4.5` | `anthropic/claude-sonnet-5` | 1,000,000 |
-   | `siliconflow` | `Pro/MiniMaxAI/MiniMax-M2.7` | `Pro/MiniMaxAI/MiniMax-M2.7` | 200,000 |
-   | local/custom | empty | empty | manual |
+   | Provider                 | simple                       | powerful                     | Powerful Context |
+   | ------------------------ | ---------------------------- | ---------------------------- | ---------------- |
+   | `deepseek`               | `deepseek-v4-flash`          | `deepseek-v4-pro`            | 1,000,000        |
+   | `dashscope`              | `qwen3.5-plus`               | `qwen3.5-plus`               | 32,000           |
+   | `moonshot`               | `kimi-k2.7-code`             | `kimi-k2.7-code`             | 262,144          |
+   | `zhipu`                  | `glm-5.1`                    | `glm-5.1`                    | 128,000          |
+   | `volcengine`             | `doubao-seed-2-1-pro-260628` | `doubao-seed-2-1-pro-260628` | 262,144          |
+   | `volcengine_coding_plan` | `ark-code-latest`            | `ark-code-latest`            | 256,000          |
+   | `byteplus`               | `ark-code-latest`            | `ark-code-latest`            | 256,000          |
+   | `minimax`                | `MiniMax-M2.7`               | `MiniMax-M2.7`               | 200,000          |
+   | `stepfun`                | `step-3.5-flash-2603`        | `step-3.5-flash-2603`        | 262,144          |
+   | `xiaomi_mimo`            | `mimo-v2.5-pro`              | `mimo-v2.5-pro`              | 1,048,576        |
+   | `longcat`                | `LongCat-2.0`                | `LongCat-2.0`                | 1,048,576        |
+   | `qianfan`                | `qianfan-code-latest`        | `qianfan-code-latest`        | 131,072          |
+   | `openrouter`             | `anthropic/claude-haiku-4.5` | `anthropic/claude-sonnet-5`  | 1,000,000        |
+   | `siliconflow`            | `Pro/MiniMaxAI/MiniMax-M2.7` | `Pro/MiniMaxAI/MiniMax-M2.7` | 200,000          |
+   | local/custom             | empty                        | empty                        | manual           |
 
    #### Key Algorithms
 
    **providerOptions flow**:
+
    ```
    1. Iterate PROVIDERS.
    2. Skip provider when selectable === false.
@@ -290,6 +291,7 @@ flowchart TD
    ```
 
    **URL cleanup rule**:
+
    ```
    1. Only store official vendor URLs.
    2. Remove query params used for referral or affiliate tracking.
@@ -298,6 +300,7 @@ flowchart TD
    ```
 
    **1M source-of-truth rule**:
+
    ```
    1. First read cc-switch Claude Desktop presets:
       modelRoutes[].supports1m === true => supportsLongContext = true,
@@ -315,14 +318,13 @@ flowchart TD
 
    #### State Machine
 
-   | Current State | Event | New State | Side Effect |
-   |---------------|-------|-----------|-------------|
-   | Provider registered | providerOptions called | Visible option | Include icon/defaults if selectable |
-   | Provider registered | selectable false | Hidden option | Still findable by `findByName()` |
-   | Provider lacks role default | UI applies defaults | Manual role rows | No synthetic unknown model id |
+   | Current State               | Event                  | New State        | Side Effect                         |
+   | --------------------------- | ---------------------- | ---------------- | ----------------------------------- |
+   | Provider registered         | providerOptions called | Visible option   | Include icon/defaults if selectable |
+   | Provider registered         | selectable false       | Hidden option    | Still findable by `findByName()`    |
+   | Provider lacks role default | UI applies defaults    | Manual role rows | No synthetic unknown model id       |
 
    #### Invariants
-
    1. **No secret leak**: `assert(!('envKey' in providerOptions()[0]))`
    2. **OAuth hidden**: `assert(providerOptions().every(o => !['openai_codex','github_copilot'].includes(o.name)))`
    3. **Registry compatibility**: `assert(findByName('github_copilot') !== undefined)`
@@ -331,27 +333,25 @@ flowchart TD
 
    #### Edge Cases
 
-   | Scenario | Expected Behavior |
-   |----------|-------------------|
-   | Provider has no `modelsUrl` | `modelsUrl` is `null`; discovery falls back to apiBase logic |
-   | Provider has no logo | UI renders text/initial fallback |
-   | Provider has partial role defaults | Missing role derives from the other role in config layer |
-   | Provider has `selectable: false` | Not present in UI options, old configs still parse |
-   | URL includes referral query | Query removed before registry entry |
-   | Local provider has no API key URL | API Key link hidden |
-   | Unknown provider in old config | `findByName` fallback remains `custom` |
-   | Role default marks 1M through `supports1m` | `supportsLongContext: true`, `longContextSource: 'ccswitch_supports1m'`, no `[1M]` in `modelId` |
+   | Scenario                                    | Expected Behavior                                                                                   |
+   | ------------------------------------------- | --------------------------------------------------------------------------------------------------- |
+   | Provider has no `modelsUrl`                 | `modelsUrl` is `null`; discovery falls back to apiBase logic                                        |
+   | Provider has no logo                        | UI renders text/initial fallback                                                                    |
+   | Provider has partial role defaults          | Missing role derives from the other role in config layer                                            |
+   | Provider has `selectable: false`            | Not present in UI options, old configs still parse                                                  |
+   | URL includes referral query                 | Query removed before registry entry                                                                 |
+   | Local provider has no API key URL           | API Key link hidden                                                                                 |
+   | Unknown provider in old config              | `findByName` fallback remains `custom`                                                              |
+   | Role default marks 1M through `supports1m`  | `supportsLongContext: true`, `longContextSource: 'ccswitch_supports1m'`, no `[1M]` in `modelId`     |
    | Role default marks 1M through `[1M]` suffix | `supportsLongContext: true`, `longContextSource: 'ccswitch_marker'`, suffix stripped from `modelId` |
-   | Provider only has a large context number | Fill `contextWindowTokens`, keep `supportsLongContext` false unless user enables it |
+   | Provider only has a large context number    | Fill `contextWindowTokens`, keep `supportsLongContext` false unless user enables it                 |
 
    #### Compatibility
-
    - No disk schema change is required by this task.
    - `providerOptions()` remains an array of plain objects.
    - Existing renderer fields keep their current names.
 
    #### Library Selection
-
    - Do not install a large icon dependency for v1.
    - Import/copy only needed provider logo assets under project assets with license notice.
 
@@ -375,7 +375,6 @@ flowchart TD
 8. **Test Plan**
 
    #### New Tests
-
    1. Happy: `providerOptions()` includes `deepseek.icon`, `deepseek.modelsUrl`, `deepseek.roleDefaults.powerful`.
    2. Happy: preset with cc-switch `supports1m: true` maps to `roleDefaults.powerful.supportsLongContext === true` and `longContextSource === 'ccswitch_supports1m'`.
    3. Happy: local providers are selectable and have no required API key URL.
@@ -389,7 +388,6 @@ flowchart TD
    11. Regression: existing option fields `name/displayName/defaultApiBase/region` are unchanged.
 
    #### TDD Flow
-
    1. Write registry tests above.
    2. Run `npm test --workspace @emperor/core -- packages/core/src/providers/registry.test.ts` and confirm RED.
    3. Implement fields and presets.
@@ -405,13 +403,16 @@ flowchart TD
    - [ ] Logo asset source and license are documented.
 
 10. **Effort Estimate**
-   - 6 hours: registry/data modeling 2h, defaults 2h, logo assets 1h, tests 1h.
+
+- 6 hours: registry/data modeling 2h, defaults 2h, logo assets 1h, tests 1h.
 
 11. **Status**
-   - ☐ todo
+
+- ☐ todo
 
 12. **Notes**
-   - Default model names are seed values. The UI must allow manual overrides after applying defaults.
+
+- Default model names are seed values. The UI must allow manual overrides after applying defaults.
 
 ### MODEL-CONFIG-002 · 增加 roleModels schema 与兼容解析
 
@@ -436,7 +437,12 @@ flowchart TD
      contextWindowTokens: number | null
      maxTokens: number | null
      supportsLongContext: boolean
-     longContextSource: 'ccswitch_supports1m' | 'ccswitch_marker' | 'vendor_context' | 'manual' | null
+     longContextSource:
+       | 'ccswitch_supports1m'
+       | 'ccswitch_marker'
+       | 'vendor_context'
+       | 'manual'
+       | null
    }
 
    export interface ModelEntry {
@@ -459,15 +465,23 @@ flowchart TD
      contextWindowTokens: number | null
      maxTokens: number | null
      supportsLongContext: boolean
-     longContextSource: 'ccswitch_supports1m' | 'ccswitch_marker' | 'vendor_context' | 'manual' | null
+     longContextSource:
+       | 'ccswitch_supports1m'
+       | 'ccswitch_marker'
+       | 'vendor_context'
+       | 'manual'
+       | null
    }
 
-   type RawRoleModels = Partial<Record<EmperorModelRole, Partial<RoleModelConfig> | string>>
+   type RawRoleModels = Partial<
+     Record<EmperorModelRole, Partial<RoleModelConfig> | string>
+   >
    ```
 
    #### Key Algorithms
 
    **deriveRoleModels(entry, providerDefaults) flow**:
+
    ```
    1. Read raw roleModels when present.
    2. Normalize each role:
@@ -487,6 +501,7 @@ flowchart TD
    ```
 
    **strip marker flow**:
+
    ```
    1. Match trailing "[1M]" or "[1m]" with optional whitespace.
    2. Remove marker from modelId.
@@ -497,15 +512,14 @@ flowchart TD
 
    #### State Machine
 
-   | Current State | Event | New State | Side Effect |
-   |---------------|-------|-----------|-------------|
-   | Legacy entry | parse | Derived role entry | No disk write |
-   | Role entry | save | Mirrored role entry | `mainModelId` and `secondaryModelId` updated |
-   | Role entry with `[1M]` | parse | Clean role entry | Long-context flag set |
-   | Empty secondary | validate | Valid | Simple falls back to powerful |
+   | Current State          | Event    | New State           | Side Effect                                  |
+   | ---------------------- | -------- | ------------------- | -------------------------------------------- |
+   | Legacy entry           | parse    | Derived role entry  | No disk write                                |
+   | Role entry             | save     | Mirrored role entry | `mainModelId` and `secondaryModelId` updated |
+   | Role entry with `[1M]` | parse    | Clean role entry    | Long-context flag set                        |
+   | Empty secondary        | validate | Valid               | Simple falls back to powerful                |
 
    #### Invariants
-
    1. **Powerful required**: `assert(entry.roleModels.powerful?.modelId)`
    2. **Clean IDs**: `assert(!entry.roleModels.powerful.modelId.includes('[1M]'))`
    3. **Mirror main**: `assert(entry.mainModelId === entry.roleModels.powerful.modelId)`
@@ -514,25 +528,23 @@ flowchart TD
 
    #### Edge Cases
 
-   | Scenario | Expected Behavior |
-   |----------|-------------------|
-   | Old entry has only `mainModelId` | powerful and simple both derive from main |
-   | Old entry has main and secondary | powerful uses main, simple uses secondary |
-   | roleModels.powerful missing but main exists | powerful set from main |
-   | roleModels.simple same as powerful | `secondaryModelId` saved as empty string |
-   | model id `deepseek-v4-pro[1M]` | saved model id is `deepseek-v4-pro`, long context enabled |
-   | model id contains `[1M]` in middle | left unchanged unless trailing marker |
-   | roleModels has unknown role key | preserved in raw but ignored by typed router |
-   | Duplicate model entry name | existing dedupe behavior remains |
+   | Scenario                                    | Expected Behavior                                         |
+   | ------------------------------------------- | --------------------------------------------------------- |
+   | Old entry has only `mainModelId`            | powerful and simple both derive from main                 |
+   | Old entry has main and secondary            | powerful uses main, simple uses secondary                 |
+   | roleModels.powerful missing but main exists | powerful set from main                                    |
+   | roleModels.simple same as powerful          | `secondaryModelId` saved as empty string                  |
+   | model id `deepseek-v4-pro[1M]`              | saved model id is `deepseek-v4-pro`, long context enabled |
+   | model id contains `[1M]` in middle          | left unchanged unless trailing marker                     |
+   | roleModels has unknown role key             | preserved in raw but ignored by typed router              |
+   | Duplicate model entry name                  | existing dedupe behavior remains                          |
 
    #### Compatibility
-
    - Disk format remains JSON with 2-space indent and trailing newline.
    - Unknown raw fields remain preserved by `deepMerge` and `normalizedRaw`.
    - Existing renderer that only reads `mainModelId` / `secondaryModelId` still works.
 
    #### Library Selection
-
    - Native TypeScript helpers only. No schema library added.
 
 6. **Dependencies**
@@ -553,7 +565,6 @@ flowchart TD
 8. **Test Plan**
 
    #### New Tests
-
    1. Happy: old main/secondary config parses into powerful/simple roles.
    2. Happy: roleModels config saves and mirrors `mainModelId`.
    3. Happy: simple equal powerful saves `secondaryModelId: ''`.
@@ -566,7 +577,6 @@ flowchart TD
    10. Regression: onboarding draft accepts empty secondary.
 
    #### TDD Flow
-
    1. Write config and onboarding tests.
    2. Run targeted tests and confirm RED.
    3. Implement schema normalization and validation changes.
@@ -580,13 +590,16 @@ flowchart TD
    - [ ] Existing masked key flow still works.
 
 10. **Effort Estimate**
-   - 10 hours: schema 4h, validation 2h, onboarding compatibility 1h, tests 3h.
+
+- 10 hours: schema 4h, validation 2h, onboarding compatibility 1h, tests 3h.
 
 11. **Status**
-   - ☐ todo
+
+- ☐ todo
 
 12. **Notes**
-   - This task introduces the schema, but routing behavior is implemented in `MODEL-ROUTE-003`.
+
+- This task introduces the schema, but routing behavior is implemented in `MODEL-ROUTE-003`.
 
 ### MODEL-ROUTE-003 · 实现 Emperor 角色路由与干净 provider payload
 
@@ -617,18 +630,18 @@ flowchart TD
 
    Routing table:
 
-   | Use case / agent | Role |
-   |------------------|------|
-   | `main_agent` | `powerful` |
-   | `memory_compaction` | `simple`, unless estimated too large then `powerful` |
-   | `watchlist_check` | `simple` |
-   | `session_title` | `simple` |
-   | `subagent/team: neiguan_yingzao` | `powerful` |
-   | `subagent/team: dongchang_tanshi` | `powerful` |
-   | `subagent/team: shangbao_dianbu` | `powerful` |
-   | `subagent/team: sili_suitang` | `powerful` |
-   | `subagent/team: xiaohuangmen` | `simple` |
-   | unknown use case | `powerful` |
+   | Use case / agent                  | Role                                                 |
+   | --------------------------------- | ---------------------------------------------------- |
+   | `main_agent`                      | `powerful`                                           |
+   | `memory_compaction`               | `simple`, unless estimated too large then `powerful` |
+   | `watchlist_check`                 | `simple`                                             |
+   | `session_title`                   | `simple`                                             |
+   | `subagent/team: neiguan_yingzao`  | `powerful`                                           |
+   | `subagent/team: dongchang_tanshi` | `powerful`                                           |
+   | `subagent/team: shangbao_dianbu`  | `powerful`                                           |
+   | `subagent/team: sili_suitang`     | `powerful`                                           |
+   | `subagent/team: xiaohuangmen`     | `simple`                                             |
+   | unknown use case                  | `powerful`                                           |
 
 5. **Detailed Design**
 
@@ -647,6 +660,7 @@ flowchart TD
    #### Key Algorithms
 
    **selectRole flow**:
+
    ```
    1. Determine preferred role by useCase and agentType.
    2. Estimate tokens with roughTokenEstimate(task) when task is available.
@@ -660,6 +674,7 @@ flowchart TD
    ```
 
    **provider payload cleanliness**:
+
    ```
    1. buildProviderSnapshot receives selected role config.
    2. It uses role.modelId after stripLongContextMarker normalization.
@@ -670,15 +685,14 @@ flowchart TD
 
    #### State Machine
 
-   | Current State | Event | New State | Side Effect |
-   |---------------|-------|-----------|-------------|
-   | powerful route | normal main turn | powerful snapshot | no fallback |
-   | simple route | context too large | powerful snapshot | fallback reason recorded |
-   | simple route | simple missing | powerful snapshot | routeReason includes fallback |
-   | old config | route any use case | derived role snapshot | no disk write |
+   | Current State  | Event              | New State             | Side Effect                   |
+   | -------------- | ------------------ | --------------------- | ----------------------------- |
+   | powerful route | normal main turn   | powerful snapshot     | no fallback                   |
+   | simple route   | context too large  | powerful snapshot     | fallback reason recorded      |
+   | simple route   | simple missing     | powerful snapshot     | routeReason includes fallback |
+   | old config     | route any use case | derived role snapshot | no disk write                 |
 
    #### Invariants
-
    1. **Model never blank**: `assert(snapshot.model.trim().length > 0)`
    2. **No marker upstream**: `assert(!snapshot.model.match(/\[1m\]$/i))`
    3. **Simple fallback safe**: If simple missing, route returns powerful and no exception.
@@ -687,23 +701,21 @@ flowchart TD
 
    #### Edge Cases
 
-   | Scenario | Expected Behavior |
-   |----------|-------------------|
-   | No models configured | existing synthetic default behavior remains |
-   | roleModels absent | derive powerful from main and simple from secondary/main |
-   | simple context too small and powerful configured | route to powerful |
-   | powerful and simple use same model | snapshot role still records requested simple/powerful role |
-   | coding or review subagent | route to powerful |
-   | unknown agent type | powerful |
-   | model override passed | selected entry respected, then role selected within that entry |
+   | Scenario                                         | Expected Behavior                                              |
+   | ------------------------------------------------ | -------------------------------------------------------------- |
+   | No models configured                             | existing synthetic default behavior remains                    |
+   | roleModels absent                                | derive powerful from main and simple from secondary/main       |
+   | simple context too small and powerful configured | route to powerful                                              |
+   | powerful and simple use same model               | snapshot role still records requested simple/powerful role     |
+   | coding or review subagent                        | route to powerful                                              |
+   | unknown agent type                               | powerful                                                       |
+   | model override passed                            | selected entry respected, then role selected within that entry |
 
    #### Compatibility
-
    - `ModelRouter.payload()` keeps `mainModel`, `secondaryModel`, `fallbackToMain`.
    - `modelRole` string changes from `main/secondary` to Emperor role values; renderer must treat it as display metadata.
 
    #### Library Selection
-
    - No third-party routing library.
 
 6. **Dependencies**
@@ -724,7 +736,6 @@ flowchart TD
 8. **Test Plan**
 
    #### New Tests
-
    1. Happy: `main_agent` routes to `powerful`.
    2. Happy: `session_title` routes to `simple`.
    3. Happy: `neiguan_yingzao` routes to `powerful`.
@@ -737,7 +748,6 @@ flowchart TD
    10. Regression: snapshot.model never includes `[1M]`.
 
    #### TDD Flow
-
    1. Add router tests and service model test role assertions.
    2. Run targeted tests and confirm RED.
    3. Implement route selection and snapshot changes.
@@ -751,13 +761,16 @@ flowchart TD
    - [ ] Tests cover old and new config shapes.
 
 10. **Effort Estimate**
-   - 12 hours: route design 3h, implementation 4h, service compatibility 2h, tests 3h.
+
+- 12 hours: route design 3h, implementation 4h, service compatibility 2h, tests 3h.
 
 11. **Status**
-   - ☐ todo
+
+- ☐ todo
 
 12. **Notes**
-   - If future UI exposes per-turn manual role selection, it should call into this router rather than bypass it.
+
+- If future UI exposes per-turn manual role selection, it should call into this router rather than bypass it.
 
 ### MODEL-DISC-004 · 增强模型发现与候选数据
 
@@ -783,7 +796,12 @@ flowchart TD
      apiBase: string | null
      source: string
      models: Array<{ id: string; ownedBy?: string; created?: number | string }>
-     code?: 'credential_required' | 'unsupported_backend' | 'missing_api_base' | 'request_failed' | 'invalid_response'
+     code?:
+       | 'credential_required'
+       | 'unsupported_backend'
+       | 'missing_api_base'
+       | 'request_failed'
+       | 'invalid_response'
      message?: string
    }
    ```
@@ -798,13 +816,15 @@ flowchart TD
    ```typescript
    interface DiscoveryCandidate {
      url: string
-     source: 'provider_models_url' | 'api_base_models' | 'normalized_api_base_models'
+     source:
+       'provider_models_url' | 'api_base_models' | 'normalized_api_base_models'
    }
    ```
 
    #### Key Algorithms
 
    **candidate generation flow**:
+
    ```
    1. If spec.modelsUrl exists, push it first.
    2. Resolve apiBase from input, entry, provider config, spec.defaultApiBase.
@@ -825,6 +845,7 @@ flowchart TD
    ```
 
    **response normalization flow**:
+
    ```
    1. Accept OpenAI shape: { data: [{ id, owned_by, created }] }.
    2. Accept Anthropic shape: { data: [{ id, display_name, created_at }] }.
@@ -836,16 +857,15 @@ flowchart TD
 
    #### State Machine
 
-   | Current State | Event | New State | Side Effect |
-   |---------------|-------|-----------|-------------|
-   | idle | request with missing remote key | unavailable | no network |
-   | idle | local provider no key | fetching | network allowed |
-   | fetching | first candidate ok | success | models returned |
-   | fetching | candidate fails | fetching next | no throw until exhausted |
-   | fetching | all fail | failed | safe code/message |
+   | Current State | Event                           | New State     | Side Effect              |
+   | ------------- | ------------------------------- | ------------- | ------------------------ |
+   | idle          | request with missing remote key | unavailable   | no network               |
+   | idle          | local provider no key           | fetching      | network allowed          |
+   | fetching      | first candidate ok              | success       | models returned          |
+   | fetching      | candidate fails                 | fetching next | no throw until exhausted |
+   | fetching      | all fail                        | failed        | safe code/message        |
 
    #### Invariants
-
    1. **No disk writes**: discovery never calls `saveModelConfig`.
    2. **Masked key restore in memory only**: `***last4` can recover existing key for request.
    3. **Local providers allow no key**: `assert(spec.isLocal || apiKeyRequired)`.
@@ -854,24 +874,22 @@ flowchart TD
 
    #### Edge Cases
 
-   | Scenario | Expected Behavior |
-   |----------|-------------------|
-   | DeepSeek apiBase `https://api.deepseek.com/anthropic` | Try `modelsUrl` or normalized `/models` |
-   | DashScope `/apps/anthropic` | Strip subpath before compatible `/v1/models` candidates |
-   | StepFun `/step_plan` | Strip subpath and try `/v1/models` |
-   | Remote provider missing key | Return `credential_required` without network |
-   | Ollama missing key | Network request allowed |
-   | Masked key submitted | Existing real key used only in memory |
-   | Invalid JSON response | Return `invalid_response` |
-   | Network timeout | Return `request_failed` with timeout message |
+   | Scenario                                              | Expected Behavior                                       |
+   | ----------------------------------------------------- | ------------------------------------------------------- |
+   | DeepSeek apiBase `https://api.deepseek.com/anthropic` | Try `modelsUrl` or normalized `/models`                 |
+   | DashScope `/apps/anthropic`                           | Strip subpath before compatible `/v1/models` candidates |
+   | StepFun `/step_plan`                                  | Strip subpath and try `/v1/models`                      |
+   | Remote provider missing key                           | Return `credential_required` without network            |
+   | Ollama missing key                                    | Network request allowed                                 |
+   | Masked key submitted                                  | Existing real key used only in memory                   |
+   | Invalid JSON response                                 | Return `invalid_response`                               |
+   | Network timeout                                       | Return `request_failed` with timeout message            |
 
    #### Compatibility
-
    - Core operation key remains `model.discoverModels`.
    - Renderer wrapper signature remains compatible with existing call.
 
    #### Library Selection
-
    - Use built-in `fetch`/AbortController already available in Node/Electron runtime.
 
 6. **Dependencies**
@@ -892,7 +910,6 @@ flowchart TD
 8. **Test Plan**
 
    #### New Tests
-
    1. Happy: OpenAI-compatible `{ data }` returns deduped models.
    2. Happy: Anthropic models endpoint returns normalized models.
    3. Happy: `modelsUrl` is attempted before derived apiBase.
@@ -905,7 +922,6 @@ flowchart TD
    10. Regression: masked key restore does not write config.
 
    #### TDD Flow
-
    1. Add mocked service tests.
    2. Run targeted tests and confirm RED.
    3. Implement candidate generation and normalization.
@@ -919,13 +935,16 @@ flowchart TD
    - [ ] No disk writes occur during discovery.
 
 10. **Effort Estimate**
-   - 8 hours: endpoint logic 3h, result normalization 2h, tests 3h.
+
+- 8 hours: endpoint logic 3h, result normalization 2h, tests 3h.
 
 11. **Status**
-   - ☐ todo
+
+- ☐ todo
 
 12. **Notes**
-   - Manual QA should verify at least one real provider with a temporary config root.
+
+- Manual QA should verify at least one real provider with a temporary config root.
 
 ### MODEL-LINK-005 · 新增安全外链 IPC 并使用默认浏览器
 
@@ -969,6 +988,7 @@ flowchart TD
    #### Key Algorithms
 
    **safe external open flow**:
+
    ```
    1. Renderer calls openExternalUrl(raw).
    2. Main trims raw string.
@@ -980,6 +1000,7 @@ flowchart TD
    ```
 
    **window open interception**:
+
    ```
    1. In createWindow, set webContents.setWindowOpenHandler.
    2. If URL is http/https, shell.openExternal and return { action: 'deny' }.
@@ -989,15 +1010,14 @@ flowchart TD
 
    #### State Machine
 
-   | Current State | Event | New State | Side Effect |
-   |---------------|-------|-----------|-------------|
-   | renderer click | valid http URL | external opened | system browser |
-   | renderer click | invalid URL | rejected | inline error possible |
-   | window.open | valid external | denied in app | system browser |
-   | window.open | invalid protocol | denied | no shell call |
+   | Current State  | Event            | New State       | Side Effect           |
+   | -------------- | ---------------- | --------------- | --------------------- |
+   | renderer click | valid http URL   | external opened | system browser        |
+   | renderer click | invalid URL      | rejected        | inline error possible |
+   | window.open    | valid external   | denied in app   | system browser        |
+   | window.open    | invalid protocol | denied          | no shell call         |
 
    #### Invariants
-
    1. **No local protocol**: `assert(fileUrlRejected)`.
    2. **No in-app external navigation**: external HTTP never replaces Electron app URL.
    3. **Bridge stable**: `openPath` still works for diagnostics.
@@ -1005,23 +1025,21 @@ flowchart TD
 
    #### Edge Cases
 
-   | Scenario | Expected Behavior |
-   |----------|-------------------|
-   | Empty string | `{ ok:false, error:'url is required' }` |
-   | `javascript:alert(1)` | rejected |
-   | `file:///tmp/x` | rejected |
-   | `https://platform.deepseek.com/api_keys` | opened externally |
-   | `http://localhost:11434` | opened externally |
-   | `shell.openExternal` throws | return safe error |
-   | Browser-only test environment | helper throws bridge unavailable |
-   | Existing Diagnostics `openPath` | unchanged |
+   | Scenario                                 | Expected Behavior                       |
+   | ---------------------------------------- | --------------------------------------- |
+   | Empty string                             | `{ ok:false, error:'url is required' }` |
+   | `javascript:alert(1)`                    | rejected                                |
+   | `file:///tmp/x`                          | rejected                                |
+   | `https://platform.deepseek.com/api_keys` | opened externally                       |
+   | `http://localhost:11434`                 | opened externally                       |
+   | `shell.openExternal` throws              | return safe error                       |
+   | Browser-only test environment            | helper throws bridge unavailable        |
+   | Existing Diagnostics `openPath`          | unchanged                               |
 
    #### Compatibility
-
    - Adds a new bridge function; existing preload fields are unchanged.
 
    #### Library Selection
-
    - Use Electron `shell.openExternal`.
 
 6. **Dependencies**
@@ -1040,7 +1058,6 @@ flowchart TD
 8. **Test Plan**
 
    #### New Tests
-
    1. Happy: renderer helper delegates to `openExternalUrl`.
    2. Happy: valid https returns success.
    3. Happy: valid http returns success.
@@ -1052,7 +1069,6 @@ flowchart TD
    9. Regression: `target="_blank"` links no longer exist in ModelPanel provider meta.
 
    #### TDD Flow
-
    1. Add main/preload/backend tests.
    2. Run desktop tests and confirm RED.
    3. Implement IPC and link replacements.
@@ -1065,13 +1081,16 @@ flowchart TD
    - [ ] `openPath` 行为不变。
 
 10. **Effort Estimate**
-   - 5 hours: IPC 2h, link replacement 1h, tests 2h.
+
+- 5 hours: IPC 2h, link replacement 1h, tests 2h.
 
 11. **Status**
-   - ☐ todo
+
+- ☐ todo
 
 12. **Notes**
-   - 用户指定默认 Chrome 时，由操作系统默认浏览器配置决定；Electron 只调用系统默认浏览器。
+
+- 用户指定默认 Chrome 时，由操作系统默认浏览器配置决定；Electron 只调用系统默认浏览器。
 
 ### MODEL-UI-006 · 新增模型选择器与 ProviderLogo 组件
 
@@ -1122,6 +1141,7 @@ flowchart TD
    #### Key Algorithms
 
    **filter/group flow**:
+
    ```
    1. Read current input query.
    2. Normalize query lower-case.
@@ -1132,6 +1152,7 @@ flowchart TD
    ```
 
    **keyboard flow**:
+
    ```
    1. ArrowDown opens list and moves active index.
    2. ArrowUp moves active index.
@@ -1142,16 +1163,15 @@ flowchart TD
 
    #### State Machine
 
-   | Current State | Event | New State | Side Effect |
-   |---------------|-------|-----------|-------------|
-   | closed | focus/click button | open | compute filtered candidates |
-   | open | type | open | emit free input, update filter |
-   | open | click candidate | closed | emit selected id |
-   | open | escape | closed | no value change |
-   | open | blur outside | closed | keep typed value |
+   | Current State | Event              | New State | Side Effect                    |
+   | ------------- | ------------------ | --------- | ------------------------------ |
+   | closed        | focus/click button | open      | compute filtered candidates    |
+   | open          | type               | open      | emit free input, update filter |
+   | open          | click candidate    | closed    | emit selected id               |
+   | open          | escape             | closed    | no value change                |
+   | open          | blur outside       | closed    | keep typed value               |
 
    #### Invariants
-
    1. **Free input**: User can enter a model id not in candidates.
    2. **No layout jump**: dropdown is absolutely positioned inside stable wrapper.
    3. **Accessible label**: input has label or `aria-label`.
@@ -1159,24 +1179,22 @@ flowchart TD
 
    #### Edge Cases
 
-   | Scenario | Expected Behavior |
-   |----------|-------------------|
-   | No candidates | dropdown shows no list, input still works |
-   | 500 candidates | list limited/scrollable |
-   | duplicate ids | duplicates collapsed by parent result or local set |
-   | candidate ownedBy empty | group label `models` |
-   | click dropdown scrollbar | input retains focus enough to select |
-   | narrow panel | dropdown width matches input |
-   | provider icon missing | fallback rendered |
-   | icon fails to load | fallback rendered |
+   | Scenario                 | Expected Behavior                                  |
+   | ------------------------ | -------------------------------------------------- |
+   | No candidates            | dropdown shows no list, input still works          |
+   | 500 candidates           | list limited/scrollable                            |
+   | duplicate ids            | duplicates collapsed by parent result or local set |
+   | candidate ownedBy empty  | group label `models`                               |
+   | click dropdown scrollbar | input retains focus enough to select               |
+   | narrow panel             | dropdown width matches input                       |
+   | provider icon missing    | fallback rendered                                  |
+   | icon fails to load       | fallback rendered                                  |
 
    #### Compatibility
-
    - Component has no direct CoreApi dependency.
    - Can be reused by onboarding and ModelPanel.
 
    #### Library Selection
-
    - Vue component only; no headless UI dependency.
 
 6. **Dependencies**
@@ -1197,7 +1215,6 @@ flowchart TD
 8. **Test Plan**
 
    #### New Tests
-
    1. Happy: typing emits model value.
    2. Happy: click opens dropdown.
    3. Happy: click candidate selects id.
@@ -1209,7 +1226,6 @@ flowchart TD
    9. Regression: component does not render native `datalist`.
 
    #### TDD Flow
-
    1. Add component tests.
    2. Run desktop tests and confirm RED.
    3. Implement components.
@@ -1222,13 +1238,16 @@ flowchart TD
    - [ ] Provider logo renders without pixelation or layout shift.
 
 10. **Effort Estimate**
-   - 8 hours: picker 4h, provider logo 1h, styling 1h, tests 2h.
+
+- 8 hours: picker 4h, provider logo 1h, styling 1h, tests 2h.
 
 11. **Status**
-   - ☐ todo
+
+- ☐ todo
 
 12. **Notes**
-   - Keep visual style quiet and tool-like; avoid decorative card nesting.
+
+- Keep visual style quiet and tool-like; avoid decorative card nesting.
 
 ### MODEL-UI-007 · 简化模型配置页并接入角色默认
 
@@ -1280,6 +1299,7 @@ flowchart TD
    #### Key Algorithms
 
    **hydrate flow**:
+
    ```
    1. Read payload.config.models.
    2. Clone entries.
@@ -1289,6 +1309,7 @@ flowchart TD
    ```
 
    **apply provider defaults flow**:
+
    ```
    1. Read selected ProviderOption.roleDefaults.
    2. For simple and powerful:
@@ -1300,6 +1321,7 @@ flowchart TD
    ```
 
    **save flow**:
+
    ```
    1. Validate at least one entry.
    2. Validate unique non-empty entry names.
@@ -1313,16 +1335,15 @@ flowchart TD
 
    #### State Machine
 
-   | Current State | Event | New State | Side Effect |
-   |---------------|-------|-----------|-------------|
-   | clean | edit field | dirty | bottom save bar active |
-   | dirty | save success | clean | payload refresh |
-   | dirty | save validation fail | dirty | inline/toast error |
-   | provider changed | apply defaults | dirty | role rows replaced |
-   | discovery success | select candidate | dirty | role model id updated |
+   | Current State     | Event                | New State | Side Effect            |
+   | ----------------- | -------------------- | --------- | ---------------------- |
+   | clean             | edit field           | dirty     | bottom save bar active |
+   | dirty             | save success         | clean     | payload refresh        |
+   | dirty             | save validation fail | dirty     | inline/toast error     |
+   | provider changed  | apply defaults       | dirty     | role rows replaced     |
+   | discovery success | select candidate     | dirty     | role model id updated  |
 
    #### Invariants
-
    1. **Powerful visible**: powerful role row is always shown.
    2. **Simple optional**: empty simple row never blocks save.
    3. **Advanced collapsed**: capacity/reasoning/extras/test are not first visual block.
@@ -1331,25 +1352,23 @@ flowchart TD
 
    #### Edge Cases
 
-   | Scenario | Expected Behavior |
-   |----------|-------------------|
-   | No model entries | Show empty state and add/config guide |
-   | Fresh default entry synthesized by backend | UI can save it after user fills powerful |
-   | Provider has no defaults | Role rows stay manual, “套用默认” disabled or no-op with clear text |
-   | Model discovery fails | Candidate list clears, manual entry remains possible |
-   | API Key is masked | Save preserves existing key when unchanged |
-   | Narrow width | Sections stack, role rows remain readable |
-   | Long model id | Input truncates visually but full text selectable |
-   | User changes provider after filling roles | Warn via dirty state; do not erase roles unless user clicks apply defaults |
+   | Scenario                                   | Expected Behavior                                                          |
+   | ------------------------------------------ | -------------------------------------------------------------------------- |
+   | No model entries                           | Show empty state and add/config guide                                      |
+   | Fresh default entry synthesized by backend | UI can save it after user fills powerful                                   |
+   | Provider has no defaults                   | Role rows stay manual, “套用默认” disabled or no-op with clear text        |
+   | Model discovery fails                      | Candidate list clears, manual entry remains possible                       |
+   | API Key is masked                          | Save preserves existing key when unchanged                                 |
+   | Narrow width                               | Sections stack, role rows remain readable                                  |
+   | Long model id                              | Input truncates visually but full text selectable                          |
+   | User changes provider after filling roles  | Warn via dirty state; do not erase roles unless user clicks apply defaults |
 
    #### Compatibility
-
    - `emit('save', config)` signature unchanged.
    - Existing parent save handling remains.
    - Onboarding saves through existing `model.saveOnboardingConfig`.
 
    #### Library Selection
-
    - Vue components and existing CSS only.
 
 6. **Dependencies**
@@ -1370,7 +1389,6 @@ flowchart TD
 8. **Test Plan**
 
    #### New Tests
-
    1. Happy: existing entry hydrates into role rows.
    2. Happy: applying DeepSeek defaults fills powerful/simple and powerful long-context capability.
    3. Happy: save emits config with roleModels and mirrored main/secondary.
@@ -1385,7 +1403,6 @@ flowchart TD
    12. Visual: narrow viewport keeps buttons and text within containers.
 
    #### TDD Flow
-
    1. Add renderer tests for save, defaults, picker wiring, links, onboarding validation.
    2. Run `npm --prefix desktop run test` and confirm RED.
    3. Refactor UI and helpers.
@@ -1400,13 +1417,16 @@ flowchart TD
    - [ ] Onboarding 使用同一套可用模型配置语义。
 
 10. **Effort Estimate**
-   - 16 hours: layout refactor 6h, role editor 4h, onboarding 2h, CSS 2h, tests 2h.
+
+- 16 hours: layout refactor 6h, role editor 4h, onboarding 2h, CSS 2h, tests 2h.
 
 11. **Status**
-   - ☐ todo
+
+- ☐ todo
 
 12. **Notes**
-   - 视觉目标参考用户给出的主界面图：少解释、低装饰、信息分组清晰。
+
+- 视觉目标参考用户给出的主界面图：少解释、低装饰、信息分组清晰。
 
 ### MODEL-QA-008 · 完成端到端验收与防回归门禁
 
@@ -1461,6 +1481,7 @@ flowchart TD
    #### Key Algorithms
 
    **manual QA flow**:
+
    ```
    1. Start Electron with temporary EMPEROR_CONFIG_DIR.
    2. Open model setup from onboarding modal.
@@ -1476,14 +1497,13 @@ flowchart TD
 
    #### State Machine
 
-   | Current State | Event | New State | Side Effect |
-   |---------------|-------|-----------|-------------|
-   | tasks pending | task completed | progress updated | check script still fails until all done |
-   | all tasks done | check script run | success | exit 0 |
-   | fresh state | configure model | usable model | onboarding no longer blocks send |
+   | Current State  | Event            | New State        | Side Effect                             |
+   | -------------- | ---------------- | ---------------- | --------------------------------------- |
+   | tasks pending  | task completed   | progress updated | check script still fails until all done |
+   | all tasks done | check script run | success          | exit 0                                  |
+   | fresh state    | configure model  | usable model     | onboarding no longer blocks send        |
 
    #### Invariants
-
    1. **No real user data deletion**: manual QA uses temporary config dir.
    2. **No tracked runtime files**: `git status` does not include `model_config.json`, `sessions`, `memory`, or build output.
    3. **All gates pass** before claiming complete.
@@ -1491,24 +1511,22 @@ flowchart TD
 
    #### Edge Cases
 
-   | Scenario | Expected Behavior |
-   |----------|-------------------|
-   | No API key in fresh state | UI shows credential-required, save still possible for local/manual provider |
-   | Provider unsupported discovery | Inline message says manual model ID required |
-   | Build output generated | Ignored by git or not tracked |
-   | Test command fails | Do not mark plan complete |
+   | Scenario                            | Expected Behavior                                                                |
+   | ----------------------------------- | -------------------------------------------------------------------------------- |
+   | No API key in fresh state           | UI shows credential-required, save still possible for local/manual provider      |
+   | Provider unsupported discovery      | Inline message says manual model ID required                                     |
+   | Build output generated              | Ignored by git or not tracked                                                    |
+   | Test command fails                  | Do not mark plan complete                                                        |
    | Manual browser link opens wrong app | Document OS default browser setting issue, app behavior still shell.openExternal |
-   | App restart after save | Config persists in temp stateRoot |
-   | Dirty form after save | Dirty status clears |
-   | Candidate dropdown after restart | Empty until user fetches again because no disk cache |
+   | App restart after save              | Config persists in temp stateRoot                                                |
+   | Dirty form after save               | Dirty status clears                                                              |
+   | Candidate dropdown after restart    | Empty until user fetches again because no disk cache                             |
 
    #### Compatibility
-
    - Verification does not require live paid API unless testing real send.
    - Live key is not stored in repo and not printed in logs.
 
    #### Library Selection
-
    - Existing npm scripts and Electron dev workflow.
 
 6. **Dependencies**
@@ -1527,7 +1545,6 @@ flowchart TD
 8. **Test Plan**
 
    #### Required Verification Cases
-
    1. Happy: core unit tests pass.
    2. Happy: core typecheck passes.
    3. Happy: desktop tests pass.
@@ -1540,7 +1557,6 @@ flowchart TD
    10. Error: missing API key discovery shows `credential_required`.
 
    #### TDD Flow
-
    1. Add/adjust tests during prior tasks.
    2. Confirm each targeted suite RED before implementation and GREEN after.
    3. Run full gates in this task.
@@ -1554,26 +1570,29 @@ flowchart TD
    - [ ] check script exits 0 only when all tasks are done.
 
 10. **Effort Estimate**
-   - 6 hours: full gates 2h, manual QA 2h, fixes from verification 2h.
+
+- 6 hours: full gates 2h, manual QA 2h, fixes from verification 2h.
 
 11. **Status**
-   - ☐ todo
+
+- ☐ todo
 
 12. **Notes**
-   - If `make check` is affordable after required commands, run it as an additional confidence gate.
+
+- If `make check` is affordable after required commands, run it as an additional confidence gate.
 
 ## 5. Risk Register
 
-| Risk | Severity | Probability | Impact | Mitigation | Owner Task |
-|------|----------|-------------|--------|------------|------------|
-| cc-switch defaults become stale | M | M | 用户套用后不可用 | 默认只作 seed，保留模型发现和手填 | `MODEL-PRESET-001` |
-| Role schema breaks old config | H | M | 老用户无法启动模型配置 | old config parse tests + no migration | `MODEL-CONFIG-002` |
-| 1M marker leaks to provider | H | L | provider 报模型不存在 | parser/router tests assert clean model | `MODEL-CONFIG-002`, `MODEL-ROUTE-003` |
-| Simple-to-powerful route increases cost | M | M | 用户使用更贵模型 | 只在 context risk 时自动切换，UI 明示 | `MODEL-ROUTE-003`, `MODEL-UI-007` |
-| External link security regression | H | L | 打开本地或危险协议 | main 进程 protocol allowlist tests | `MODEL-LINK-005` |
-| Picker blur/click bug | M | M | 下拉仍无法选择 | pointerdown + keyboard tests | `MODEL-UI-006` |
-| ModelPanel refactor regressions | H | M | 保存、dirty、masked key 失效 | component tests + core save tests | `MODEL-UI-007` |
-| Live model discovery flaky | M | M | 手工验证不稳定 | 自动测试 mock，手工记录 provider/network state | `MODEL-DISC-004`, `MODEL-QA-008` |
+| Risk                                    | Severity | Probability | Impact                       | Mitigation                                     | Owner Task                            |
+| --------------------------------------- | -------- | ----------- | ---------------------------- | ---------------------------------------------- | ------------------------------------- |
+| cc-switch defaults become stale         | M        | M           | 用户套用后不可用             | 默认只作 seed，保留模型发现和手填              | `MODEL-PRESET-001`                    |
+| Role schema breaks old config           | H        | M           | 老用户无法启动模型配置       | old config parse tests + no migration          | `MODEL-CONFIG-002`                    |
+| 1M marker leaks to provider             | H        | L           | provider 报模型不存在        | parser/router tests assert clean model         | `MODEL-CONFIG-002`, `MODEL-ROUTE-003` |
+| Simple-to-powerful route increases cost | M        | M           | 用户使用更贵模型             | 只在 context risk 时自动切换，UI 明示          | `MODEL-ROUTE-003`, `MODEL-UI-007`     |
+| External link security regression       | H        | L           | 打开本地或危险协议           | main 进程 protocol allowlist tests             | `MODEL-LINK-005`                      |
+| Picker blur/click bug                   | M        | M           | 下拉仍无法选择               | pointerdown + keyboard tests                   | `MODEL-UI-006`                        |
+| ModelPanel refactor regressions         | H        | M           | 保存、dirty、masked key 失效 | component tests + core save tests              | `MODEL-UI-007`                        |
+| Live model discovery flaky              | M        | M           | 手工验证不稳定               | 自动测试 mock，手工记录 provider/network state | `MODEL-DISC-004`, `MODEL-QA-008`      |
 
 ## 6. Receipt Verification
 
@@ -1613,31 +1632,31 @@ git diff --check
 
 ## 7. Verification Strategy
 
-| Layer | Command/Test | Expected |
-|-------|--------------|----------|
-| Core registry | `npm test --workspace @emperor/core -- packages/core/src/providers/registry.test.ts` | Provider metadata and visibility pass |
-| Core config | `npm test --workspace @emperor/core -- packages/core/src/config/model-config.test.ts` | Role schema compatibility pass |
-| Core service | `npm test --workspace @emperor/core -- packages/core/src/api/services/model-service.test.ts` | Discovery/save payload pass |
-| Desktop API | `npm --prefix desktop run test -- backend` | bridge helpers pass |
-| Renderer components | `npm --prefix desktop run test -- Model` | picker/panel/onboarding pass |
-| Type safety | core + desktop typecheck | zero TS errors |
-| Build | `npm --prefix desktop run build` | renderer/main package builds |
-| Whitespace | `git diff --check` | no whitespace errors |
+| Layer               | Command/Test                                                                                 | Expected                              |
+| ------------------- | -------------------------------------------------------------------------------------------- | ------------------------------------- |
+| Core registry       | `npm test --workspace @emperor/core -- packages/core/src/providers/registry.test.ts`         | Provider metadata and visibility pass |
+| Core config         | `npm test --workspace @emperor/core -- packages/core/src/config/model-config.test.ts`        | Role schema compatibility pass        |
+| Core service        | `npm test --workspace @emperor/core -- packages/core/src/api/services/model-service.test.ts` | Discovery/save payload pass           |
+| Desktop API         | `npm --prefix desktop run test -- backend`                                                   | bridge helpers pass                   |
+| Renderer components | `npm --prefix desktop run test -- Model`                                                     | picker/panel/onboarding pass          |
+| Type safety         | core + desktop typecheck                                                                     | zero TS errors                        |
+| Build               | `npm --prefix desktop run build`                                                             | renderer/main package builds          |
+| Whitespace          | `git diff --check`                                                                           | no whitespace errors                  |
 
 ## 8. Progress Tracking
 
 ### 8.1 Status Table
 
-| Task | Status | Owner | Depends On |
-|------|--------|-------|------------|
-| `MODEL-PRESET-001` | ☐ todo | Core/provider | — |
-| `MODEL-CONFIG-002` | ☐ todo | Core/config | `MODEL-PRESET-001` |
-| `MODEL-ROUTE-003` | ☐ todo | Core/model | `MODEL-CONFIG-002` |
-| `MODEL-DISC-004` | ☐ todo | Core/API | `MODEL-PRESET-001` |
-| `MODEL-LINK-005` | ☐ todo | Desktop main/preload | — |
-| `MODEL-UI-006` | ☐ todo | Renderer components | `MODEL-PRESET-001`, `MODEL-DISC-004` |
-| `MODEL-UI-007` | ☐ todo | Renderer panel | `MODEL-CONFIG-002`, `MODEL-ROUTE-003`, `MODEL-LINK-005`, `MODEL-UI-006` |
-| `MODEL-QA-008` | ☐ todo | QA | all previous |
+| Task               | Status | Owner                | Depends On                                                              |
+| ------------------ | ------ | -------------------- | ----------------------------------------------------------------------- |
+| `MODEL-PRESET-001` | ☐ todo | Core/provider        | —                                                                       |
+| `MODEL-CONFIG-002` | ☐ todo | Core/config          | `MODEL-PRESET-001`                                                      |
+| `MODEL-ROUTE-003`  | ☐ todo | Core/model           | `MODEL-CONFIG-002`                                                      |
+| `MODEL-DISC-004`   | ☐ todo | Core/API             | `MODEL-PRESET-001`                                                      |
+| `MODEL-LINK-005`   | ☐ todo | Desktop main/preload | —                                                                       |
+| `MODEL-UI-006`     | ☐ todo | Renderer components  | `MODEL-PRESET-001`, `MODEL-DISC-004`                                    |
+| `MODEL-UI-007`     | ☐ todo | Renderer panel       | `MODEL-CONFIG-002`, `MODEL-ROUTE-003`, `MODEL-LINK-005`, `MODEL-UI-006` |
+| `MODEL-QA-008`     | ☐ todo | QA                   | all previous                                                            |
 
 ### 8.2 Progress File Contract
 

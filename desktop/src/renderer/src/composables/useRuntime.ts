@@ -1,5 +1,22 @@
 import { computed, reactive, ref, type Ref } from 'vue'
-import type { AssistantMessage, AttachmentRef, BootstrapPayload, ChatMessage, ChatSendPayload, ControlInteraction, PendingState, RequestedSkill, RuntimeEventEnvelope, RuntimeHistoryItem, RuntimeStatus, SessionInfo, TeamMessage, ThoughtSegment, ToolSegment, WsEvent } from '../types'
+import type {
+  AssistantMessage,
+  AttachmentRef,
+  BootstrapPayload,
+  ChatMessage,
+  ChatSendPayload,
+  ControlInteraction,
+  PendingState,
+  RequestedSkill,
+  RuntimeEventEnvelope,
+  RuntimeHistoryItem,
+  RuntimeStatus,
+  SessionInfo,
+  TeamMessage,
+  ThoughtSegment,
+  ToolSegment,
+  WsEvent,
+} from '../types'
 import {
   applyChatProjectionEvent,
   createProjectionRuntime,
@@ -10,7 +27,11 @@ import {
 } from '../runtime/chatProjection'
 import { sortRuntimeEvents } from '../runtime/events'
 import { replayRuntimeEvents } from '../runtime/reducer'
-import { findSubagent, findSubagentTool, findToolSegment } from '../runtime/selectors'
+import {
+  findSubagent,
+  findSubagentTool,
+  findToolSegment,
+} from '../runtime/selectors'
 import { applyPlanEvent, type PlanProjection } from '../runtime/handlers/plans'
 import { applySchedulerEventToBootstrap } from '../runtime/handlers/scheduler'
 import { applyTaskEvent, type TaskProjection } from '../runtime/handlers/tasks'
@@ -23,7 +44,10 @@ import { core } from '../api/http'
 import { compactJson } from '../utils/format'
 
 function nextId(prefix: string) {
-  const random = typeof crypto !== 'undefined' && 'randomUUID' in crypto ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(16).slice(2)}`
+  const random =
+    typeof crypto !== 'undefined' && 'randomUUID' in crypto
+      ? crypto.randomUUID()
+      : `${Date.now()}-${Math.random().toString(16).slice(2)}`
   return `${prefix}-${random}`
 }
 
@@ -34,9 +58,16 @@ export function useRuntime(options: {
   refreshMemory: (shouldToast?: boolean) => Promise<void>
   showToast: (message: string) => void
   resolveDraftSession?: (id: string) => SessionInfo | undefined
-  onSessionCreated?: (event: Extract<WsEvent, { event: 'session_created' }>) => void
-  onSessionTitleUpdated?: (event: Extract<WsEvent, { event: 'session_title_updated' }>) => void
-  onSessionControlPendingChanged?: (sessionId: string, interaction?: ControlInteraction | null) => void
+  onSessionCreated?: (
+    event: Extract<WsEvent, { event: 'session_created' }>,
+  ) => void
+  onSessionTitleUpdated?: (
+    event: Extract<WsEvent, { event: 'session_title_updated' }>,
+  ) => void
+  onSessionControlPendingChanged?: (
+    sessionId: string,
+    interaction?: ControlInteraction | null,
+  ) => void
   refreshSessions?: () => Promise<void>
 }) {
   const messages = ref<ChatMessage[]>([])
@@ -45,10 +76,15 @@ export function useRuntime(options: {
   const currentAssistantId = ref<string | null>(null)
   const sessionId = ref<string>('')
   const pending = reactive<PendingState>({ label: '', detail: '' })
-  const planProjection = reactive<PlanProjection>({ plans: [], entryDecisions: [] })
+  const planProjection = reactive<PlanProjection>({
+    plans: [],
+    entryDecisions: [],
+  })
   const taskProjection = reactive<TaskProjection>({ tasks: [] })
   // P1-7：per-session 瞬态运行/提醒状态，不落盘
-  const sessionRuntimeStates = reactive<Record<string, { running: boolean; attention: boolean }>>({})
+  const sessionRuntimeStates = reactive<
+    Record<string, { running: boolean; attention: boolean }>
+  >({})
   const lastSeq = ref(0)
   let pendingClearTimer: number | undefined
   let coreUnsubscribe: (() => void) | undefined
@@ -58,19 +94,41 @@ export function useRuntime(options: {
   // W2：live 与 replay 共用 chatProjection reducer；此 adapter 把 reducer 的 state 桥到响应式 refs
   let projectionRuntime = createProjectionRuntime()
   const liveProjection: ChatProjectionState = {
-    get messages() { return messages.value },
-    set messages(value) { messages.value = value },
-    get currentAssistantId() { return currentAssistantId.value },
-    set currentAssistantId(value) { currentAssistantId.value = value },
-    get lastSeq() { return lastSeq.value },
-    set lastSeq(value) { lastSeq.value = value },
+    get messages() {
+      return messages.value
+    },
+    set messages(value) {
+      messages.value = value
+    },
+    get currentAssistantId() {
+      return currentAssistantId.value
+    },
+    set currentAssistantId(value) {
+      currentAssistantId.value = value
+    },
+    get lastSeq() {
+      return lastSeq.value
+    },
+    set lastSeq(value) {
+      lastSeq.value = value
+    },
   }
   // live 侧计时语义：缺省 endedAt 取当前时刻（reducer 版缺省为 0）
-  function finishTimedState(state: { startedAt?: number; endedAt?: number; durationMs?: number }, endedAt = Date.now()) {
+  function finishTimedState(
+    state: { startedAt?: number; endedAt?: number; durationMs?: number },
+    endedAt = Date.now(),
+  ) {
     finishTimedStateAt(state, endedAt)
   }
 
-  const currentAssistant = computed(() => messages.value.find((message) => message.id === currentAssistantId.value && message.role === 'assistant') as AssistantMessage | undefined)
+  const currentAssistant = computed(
+    () =>
+      messages.value.find(
+        (message) =>
+          message.id === currentAssistantId.value &&
+          message.role === 'assistant',
+      ) as AssistantMessage | undefined,
+  )
 
   function runtimeText() {
     if (busy.value) return '正在办差'
@@ -85,7 +143,12 @@ export function useRuntime(options: {
     return `桌面 IPC：${status.value}`
   }
 
-  function updatePending(label = '', detail = '', tone: PendingState['tone'] = 'running', autoClearMs = 0) {
+  function updatePending(
+    label = '',
+    detail = '',
+    tone: PendingState['tone'] = 'running',
+    autoClearMs = 0,
+  ) {
     pendingVersion += 1
     const version = pendingVersion
     if (pendingClearTimer) {
@@ -140,14 +203,20 @@ export function useRuntime(options: {
   }
 
   function sendMessage(payload: string | ChatSendPayload) {
-    const normalized = typeof payload === 'string'
-      ? { content: payload, attachments: [] as AttachmentRef[], requestedSkills: [], displayContent: payload }
-      : {
-          content: payload.content,
-          attachments: payload.attachments || [],
-          requestedSkills: payload.requestedSkills || [],
-          displayContent: payload.displayContent || payload.content,
-        }
+    const normalized =
+      typeof payload === 'string'
+        ? {
+            content: payload,
+            attachments: [] as AttachmentRef[],
+            requestedSkills: [],
+            displayContent: payload,
+          }
+        : {
+            content: payload.content,
+            attachments: payload.attachments || [],
+            requestedSkills: payload.requestedSkills || [],
+            displayContent: payload.displayContent || payload.content,
+          }
     const text = normalized.content.trim()
     const displayText = normalized.displayContent.trim()
     const attachments = normalized.attachments
@@ -161,7 +230,12 @@ export function useRuntime(options: {
     }
     if (hasCoreBridge()) {
       connectCoreEvents()
-      return sendMessageViaCore({ text, displayText, attachments, requestedSkills: normalized.requestedSkills })
+      return sendMessageViaCore({
+        text,
+        displayText,
+        attachments,
+        requestedSkills: normalized.requestedSkills,
+      })
     }
     markCoreBridgeUnavailable(true)
     return false
@@ -189,15 +263,25 @@ export function useRuntime(options: {
     return userMsg
   }
 
-  function sendMessageViaCore(opts: { text: string; displayText: string; attachments: AttachmentRef[]; requestedSkills: RequestedSkill[] }) {
+  function sendMessageViaCore(opts: {
+    text: string
+    displayText: string
+    attachments: AttachmentRef[]
+    requestedSkills: RequestedSkill[]
+  }) {
     const activeSessionId = sessionId.value
     if (!activeSessionId) {
       updatePending('尚无会话', '请先创建会话', 'running', 3000)
       return false
     }
     // P1-6：draft 首条提交带上 client_draft_id 与项目元数据，由 Core 创建真实 session
-    const draftPayload = isDraftSessionId(activeSessionId) ? draftSubmitPayload(activeSessionId) : null
-    const userMsg = enqueueLocalTurn(opts.displayText || opts.text, opts.attachments)
+    const draftPayload = isDraftSessionId(activeSessionId)
+      ? draftSubmitPayload(activeSessionId)
+      : null
+    const userMsg = enqueueLocalTurn(
+      opts.displayText || opts.text,
+      opts.attachments,
+    )
     status.value = 'ready'
     void invokeCore('chat.submit', {
       content: opts.text,
@@ -228,7 +312,10 @@ export function useRuntime(options: {
     }
   }
 
-  function sendInteractionAnswer(interactionId: string, answers: Record<string, unknown>) {
+  function sendInteractionAnswer(
+    interactionId: string,
+    answers: Record<string, unknown>,
+  ) {
     return sendControlPayload(
       { type: 'interaction_answer', interaction_id: interactionId, answers },
       '已回答澄清问题',
@@ -268,26 +355,36 @@ export function useRuntime(options: {
       const data = await core<Record<string, unknown>>('chat.stopRuntime', {})
       return handleStopResult(data)
     } catch (err) {
-      updatePending('停止任务失败', err instanceof Error ? err.message : String(err), 'error')
+      updatePending(
+        '停止任务失败',
+        err instanceof Error ? err.message : String(err),
+        'error',
+      )
       return false
     }
   }
 
   function handleStopResult(data: Record<string, unknown>) {
     if (data.ok === false) {
-      const error = data.error && typeof data.error === 'object' ? data.error as Record<string, unknown> : null
+      const error =
+        data.error && typeof data.error === 'object'
+          ? (data.error as Record<string, unknown>)
+          : null
       throw new Error(String(error?.message || '停止任务失败'))
     }
     const count = Array.isArray(data.cancelled) ? data.cancelled.length : 0
     if (!count) {
-      const staleCleared = settleStaleStreamingAssistant('（后端没有正在运行的任务，上次回复已中断。）')
+      const staleCleared = settleStaleStreamingAssistant(
+        '（后端没有正在运行的任务，上次回复已中断。）',
+      )
       settleSessionRuntime(sessionId.value, false)
       updatePending('没有正在运行的任务', '', 'done')
       options.showToast('当前没有可停止的任务')
       return staleCleared
     }
     const assistant = currentAssistant.value
-    if (assistant) finishInterruptedAssistant(assistant, '（已请求停止当前任务。）')
+    if (assistant)
+      finishInterruptedAssistant(assistant, '（已请求停止当前任务。）')
     currentAssistantId.value = null
     busy.value = false
     settleSessionRuntime(sessionId.value, false)
@@ -295,7 +392,11 @@ export function useRuntime(options: {
     return true
   }
 
-  function sendControlPayload(payload: Record<string, unknown>, userLabel: string, expectAssistant: boolean) {
+  function sendControlPayload(
+    payload: Record<string, unknown>,
+    userLabel: string,
+    expectAssistant: boolean,
+  ) {
     if (busy.value) return false
     if (hasCoreBridge()) {
       connectCoreEvents()
@@ -305,7 +406,11 @@ export function useRuntime(options: {
     return false
   }
 
-  function sendControlPayloadViaCore(payload: Record<string, unknown>, userLabel: string, expectAssistant: boolean) {
+  function sendControlPayloadViaCore(
+    payload: Record<string, unknown>,
+    userLabel: string,
+    expectAssistant: boolean,
+  ) {
     const controlMessageId = nextId('control')
     const interactionId = String(payload.interaction_id || '')
     let optimisticAssistantId: string | null = null
@@ -323,18 +428,34 @@ export function useRuntime(options: {
       busy.value = true
       updatePending('正在继续执行...', userLabel)
     }
-    const resumeOpts = toPlainRecord({ clientMessageId: controlMessageId, displayContent: '', uiHidden: true })
+    const resumeOpts = toPlainRecord({
+      clientMessageId: controlMessageId,
+      displayContent: '',
+      uiHidden: true,
+    })
     let call: Promise<unknown>
     if (payload.type === 'interaction_answer') {
-      call = invokeCore('control.answerInteraction', interactionId, toPlainRecord(payload.answers || {}), resumeOpts)
+      call = invokeCore(
+        'control.answerInteraction',
+        interactionId,
+        toPlainRecord(payload.answers || {}),
+        resumeOpts,
+      )
     } else if (payload.type === 'plan_comment') {
-      call = invokeCore('control.commentPlan', interactionId, String(payload.comment || ''), resumeOpts)
+      call = invokeCore(
+        'control.commentPlan',
+        interactionId,
+        String(payload.comment || ''),
+        resumeOpts,
+      )
     } else if (payload.type === 'plan_approve') {
       call = invokeCore('control.approvePlan', interactionId, resumeOpts)
     } else if (payload.type === 'interaction_cancel') {
       call = invokeCore('control.cancelInteraction', interactionId)
     } else {
-      handleChatError(`unsupported control payload: ${String(payload.type || '')}`)
+      handleChatError(
+        `unsupported control payload: ${String(payload.type || '')}`,
+      )
       return false
     }
     void call.catch((err) => {
@@ -344,11 +465,17 @@ export function useRuntime(options: {
     return true
   }
 
-  async function handleControlPayloadError(error: unknown, optimisticAssistantId: string | null) {
+  async function handleControlPayloadError(
+    error: unknown,
+    optimisticAssistantId: string | null,
+  ) {
     if (optimisticAssistantId) {
-      const index = messages.value.findIndex((message) => message.id === optimisticAssistantId)
+      const index = messages.value.findIndex(
+        (message) => message.id === optimisticAssistantId,
+      )
       if (index >= 0) messages.value.splice(index, 1)
-      if (currentAssistantId.value === optimisticAssistantId) currentAssistantId.value = null
+      if (currentAssistantId.value === optimisticAssistantId)
+        currentAssistantId.value = null
     }
     busy.value = false
     status.value = hasCoreBridge() ? 'ready' : 'error'
@@ -359,7 +486,9 @@ export function useRuntime(options: {
 
   async function refreshControlAndSessions() {
     try {
-      const control = await invokeCore('control.get') as BootstrapPayload['control']
+      const control = (await invokeCore(
+        'control.get',
+      )) as BootstrapPayload['control']
       if (options.boot.value) options.boot.value.control = control
     } catch {
       // Keep the original control error as the visible failure; refresh is best-effort.
@@ -369,9 +498,10 @@ export function useRuntime(options: {
 
   function displayError(error: unknown) {
     const message = error instanceof Error ? error.message : String(error)
-    const errorId = error && typeof error === 'object' && 'errorId' in error
-      ? String((error as { errorId?: unknown }).errorId || '')
-      : ''
+    const errorId =
+      error && typeof error === 'object' && 'errorId' in error
+        ? String((error as { errorId?: unknown }).errorId || '')
+        : ''
     return errorId ? `${message} · ${errorId}` : message
   }
 
@@ -382,7 +512,8 @@ export function useRuntime(options: {
     status.value = hasCoreBridge() ? 'ready' : 'error'
     if (code === 'turn_busy') {
       const assistant = currentAssistant.value
-      if (assistant) finishInterruptedAssistant(assistant, '（已有任务正在运行，未发送。）')
+      if (assistant)
+        finishInterruptedAssistant(assistant, '（已有任务正在运行，未发送。）')
       currentAssistantId.value = null
       busy.value = false
       updatePending('已有任务正在运行', '请等待当前回复结束', 'done')
@@ -410,20 +541,38 @@ export function useRuntime(options: {
     return true
   }
 
-  function interruptionCode(error: unknown): 'turn_paused' | 'cancelled' | 'turn_busy' | '' {
+  function interruptionCode(
+    error: unknown,
+  ): 'turn_paused' | 'cancelled' | 'turn_busy' | '' {
     if (!error || typeof error !== 'object') return ''
-    const code = 'code' in error ? String((error as { code?: unknown }).code || '') : ''
-    if (code === 'turn_paused' || code === 'cancelled' || code === 'turn_busy') return code
+    const code =
+      'code' in error ? String((error as { code?: unknown }).code || '') : ''
+    if (code === 'turn_paused' || code === 'cancelled' || code === 'turn_busy')
+      return code
     return ''
   }
 
   // P1-7：session 行运行状态。运行事件点亮 spinner；终态事件熄灭，后台 session 完成时点提醒点。
   const SESSION_RUNNING_EVENTS = new Set([
-    'user_message', 'message_delta', 'agent_thought', 'plan_draft_delta',
-    'tool_call', 'tool_run_queued', 'tool_run_started', 'tool_result', 'tool_run_completed', 'tool_run_failed',
-    'hook_run_started', 'hook_run_progress',
+    'user_message',
+    'message_delta',
+    'agent_thought',
+    'plan_draft_delta',
+    'tool_call',
+    'tool_run_queued',
+    'tool_run_started',
+    'tool_result',
+    'tool_run_completed',
+    'tool_run_failed',
+    'hook_run_started',
+    'hook_run_progress',
   ])
-  const SESSION_TERMINAL_EVENTS = new Set(['assistant_done', 'turn_paused', 'runtime_task_cancelled', 'error'])
+  const SESSION_TERMINAL_EVENTS = new Set([
+    'assistant_done',
+    'turn_paused',
+    'runtime_task_cancelled',
+    'error',
+  ])
 
   function trackSessionRuntimeState(data: WsEvent): void {
     const owner = eventOwnerSessionId(data)
@@ -435,22 +584,31 @@ export function useRuntime(options: {
     if (SESSION_TERMINAL_EVENTS.has(data.event)) {
       const state = sessionRuntimeStateFor(owner)
       state.running = false
-      if (owner === String(sessionId.value || '').trim()) state.attention = false
+      if (owner === String(sessionId.value || '').trim())
+        state.attention = false
       else state.attention = true
     }
   }
 
-  function sessionRuntimeStateFor(id: string): { running: boolean; attention: boolean } {
-    if (!sessionRuntimeStates[id]) sessionRuntimeStates[id] = { running: false, attention: false }
+  function sessionRuntimeStateFor(id: string): {
+    running: boolean
+    attention: boolean
+  } {
+    if (!sessionRuntimeStates[id])
+      sessionRuntimeStates[id] = { running: false, attention: false }
     return sessionRuntimeStates[id]!
   }
 
-  function settleSessionRuntime(id: string | null | undefined, attention: boolean): void {
+  function settleSessionRuntime(
+    id: string | null | undefined,
+    attention: boolean,
+  ): void {
     const owner = String(id || '').trim()
     if (!owner) return
     const state = sessionRuntimeStateFor(owner)
     state.running = false
-    state.attention = owner === String(sessionId.value || '').trim() ? false : attention
+    state.attention =
+      owner === String(sessionId.value || '').trim() ? false : attention
   }
 
   function clearAllSessionRunning(): void {
@@ -480,7 +638,11 @@ export function useRuntime(options: {
     if (direct) return direct
     const owner = payload.owner
     if (owner && typeof owner === 'object' && !Array.isArray(owner)) {
-      return String((owner as Record<string, unknown>).session_id ?? (owner as Record<string, unknown>).sessionId ?? '').trim()
+      return String(
+        (owner as Record<string, unknown>).session_id ??
+          (owner as Record<string, unknown>).sessionId ??
+          '',
+      ).trim()
     }
     return ''
   }
@@ -488,7 +650,10 @@ export function useRuntime(options: {
   function syncSessionControlPendingFromEvent(data: WsEvent): void {
     const ownerSessionId = eventOwnerSessionId(data)
     if (!ownerSessionId) return
-    if ((data.event === 'ask_request' || data.event === 'plan_draft') && data.interaction) {
+    if (
+      (data.event === 'ask_request' || data.event === 'plan_draft') &&
+      data.interaction
+    ) {
       setBootControlPending(data.interaction)
       options.onSessionControlPendingChanged?.(ownerSessionId, data.interaction)
       return
@@ -522,16 +687,25 @@ export function useRuntime(options: {
 
   function toPlainRecord(value: unknown): Record<string, unknown> {
     const plain = toPlainIpcValue(value)
-    return plain && typeof plain === 'object' && !Array.isArray(plain) ? plain as Record<string, unknown> : {}
+    return plain && typeof plain === 'object' && !Array.isArray(plain)
+      ? (plain as Record<string, unknown>)
+      : {}
   }
 
   function toPlainIpcValue(value: unknown): unknown {
     if (value == null) return value
-    if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') return value
+    if (
+      typeof value === 'string' ||
+      typeof value === 'number' ||
+      typeof value === 'boolean'
+    )
+      return value
     if (Array.isArray(value)) return value.map((item) => toPlainIpcValue(item))
     if (typeof value === 'object') {
       const out: Record<string, unknown> = {}
-      for (const [key, item] of Object.entries(value as Record<string, unknown>)) {
+      for (const [key, item] of Object.entries(
+        value as Record<string, unknown>,
+      )) {
         const plain = toPlainIpcValue(item)
         if (plain !== undefined) out[key] = plain
       }
@@ -560,7 +734,9 @@ export function useRuntime(options: {
       id: nextId('command-result'),
       role: 'assistant',
       content,
-      segments: content ? [{ id: nextId('segment'), type: 'text', content }] : [],
+      segments: content
+        ? [{ id: nextId('segment'), type: 'text', content }]
+        : [],
       todos: null,
       streaming: false,
       local: true,
@@ -581,7 +757,12 @@ export function useRuntime(options: {
       .filter((item) => item.role === 'user' || item.role === 'assistant')
       .map((item) => {
         if (item.role === 'user') {
-          const meta = schedulerMessageMeta(item.content, '', item.source, item.scheduler)
+          const meta = schedulerMessageMeta(
+            item.content,
+            '',
+            item.source,
+            item.scheduler,
+          )
           const msg: ChatMessage = {
             id: nextId('user'),
             role: 'user',
@@ -596,7 +777,9 @@ export function useRuntime(options: {
           id: nextId('assistant'),
           role: 'assistant',
           content: item.content,
-          segments: item.content ? [{ id: nextId('segment'), type: 'text', content: item.content }] : [],
+          segments: item.content
+            ? [{ id: nextId('segment'), type: 'text', content: item.content }]
+            : [],
           todos: null,
           streaming: false,
         } satisfies ChatMessage
@@ -612,10 +795,16 @@ export function useRuntime(options: {
     projectionRuntime = createProjectionRuntime()
     rehydrating = true
     try {
-      const scope = sessionId.value || options.boot.value?.runtime?.sessionId || null
+      const scope =
+        sessionId.value || options.boot.value?.runtime?.sessionId || null
       for (const event of sortRuntimeEvents(events)) {
         if (isChatProjectionEvent(event)) {
-          applyChatProjectionEvent(liveProjection, event as WsEvent, projectionRuntime, { sessionId: scope })
+          applyChatProjectionEvent(
+            liveProjection,
+            event as WsEvent,
+            projectionRuntime,
+            { sessionId: scope },
+          )
         }
       }
       replayRuntimeEvents(
@@ -625,11 +814,16 @@ export function useRuntime(options: {
     } finally {
       rehydrating = false
     }
-    lastSeq.value = Math.max(lastSeq.value, Number(options.boot.value?.runtime?.latestSeq || 0))
+    lastSeq.value = Math.max(
+      lastSeq.value,
+      Number(options.boot.value?.runtime?.latestSeq || 0),
+    )
     const assistant = currentAssistant.value
     busy.value = Boolean(assistant?.streaming)
     if (assistant?.streaming && options.boot.value?.runtime?.busy === false) {
-      settleStaleStreamingAssistant('（后端没有正在运行的任务，上次回复已中断。）')
+      settleStaleStreamingAssistant(
+        '（后端没有正在运行的任务，上次回复已中断。）',
+      )
     }
     if (options.boot.value?.runtime?.busy === false) clearAllSessionRunning()
   }
@@ -662,7 +856,12 @@ export function useRuntime(options: {
     }
 
     if (data.event === 'record_degraded') {
-      updatePending(`状态记录降级: ${data.kind || ''}`, data.reason || '', 'error', 6000)
+      updatePending(
+        `状态记录降级: ${data.kind || ''}`,
+        data.reason || '',
+        'error',
+        6000,
+      )
       return
     }
 
@@ -674,7 +873,11 @@ export function useRuntime(options: {
     }
 
     if (data.event === 'session_created') {
-      if (data.client_draft_id && data.client_draft_id === sessionId.value && data.session?.id) {
+      if (
+        data.client_draft_id &&
+        data.client_draft_id === sessionId.value &&
+        data.session?.id
+      ) {
         sessionId.value = data.session.id
       }
       options.onSessionCreated?.(data)
@@ -698,7 +901,12 @@ export function useRuntime(options: {
         }
         // Wave4.3：备用模型降级不再静默
         if (data.used_fallback) {
-          updatePending('本轮已切换备用模型', String(data.fallback_reason || ''), 'error', 6000)
+          updatePending(
+            '本轮已切换备用模型',
+            String(data.fallback_reason || ''),
+            'error',
+            6000,
+          )
         }
       }
       return
@@ -715,7 +923,8 @@ export function useRuntime(options: {
     }
 
     if (data.event === 'control_mode_update') {
-      if (options.boot.value && data.control) options.boot.value.control = data.control
+      if (options.boot.value && data.control)
+        options.boot.value.control = data.control
       return
     }
 
@@ -737,11 +946,18 @@ export function useRuntime(options: {
       data.event === 'plan_verification_done'
     ) {
       const next = applyPlanEvent(
-        { plans: planProjection.plans, entryDecisions: planProjection.entryDecisions },
+        {
+          plans: planProjection.plans,
+          entryDecisions: planProjection.entryDecisions,
+        },
         data,
       )
       planProjection.plans.splice(0, planProjection.plans.length, ...next.plans)
-      planProjection.entryDecisions.splice(0, planProjection.entryDecisions.length, ...next.entryDecisions)
+      planProjection.entryDecisions.splice(
+        0,
+        planProjection.entryDecisions.length,
+        ...next.entryDecisions,
+      )
       return
     }
 
@@ -776,9 +992,16 @@ export function useRuntime(options: {
   }
 
   /** live 专属副作用（pending 条/busy/boot 同步/装饰性 thought）；投影本体已由 reducer 完成。 */
-  function applyLiveChatSideEffects(data: WsEvent, assistantBefore?: AssistantMessage) {
+  function applyLiveChatSideEffects(
+    data: WsEvent,
+    assistantBefore?: AssistantMessage,
+  ) {
     if (data.event === 'user_message') {
-      if ((data.ui_hidden || data.source === 'control') && currentAssistant.value?.streaming) busy.value = true
+      if (
+        (data.ui_hidden || data.source === 'control') &&
+        currentAssistant.value?.streaming
+      )
+        busy.value = true
       return
     }
     if (data.event === 'message_delta') {
@@ -791,8 +1014,12 @@ export function useRuntime(options: {
     }
     if (data.event === 'tool_run_queued' || data.event === 'tool_run_started') {
       updatePending(
-        data.event === 'tool_run_queued' ? `等待执行: ${data.name}` : `正在执行: ${data.name}`,
-        data.event === 'tool_run_queued' ? compactJson(data.arguments, 180) : '',
+        data.event === 'tool_run_queued'
+          ? `等待执行: ${data.name}`
+          : `正在执行: ${data.name}`,
+        data.event === 'tool_run_queued'
+          ? compactJson(data.arguments, 180)
+          : '',
       )
       return
     }
@@ -800,25 +1027,49 @@ export function useRuntime(options: {
       updatePending(`正在执行: ${data.name}`, compactJson(data.arguments, 180))
       return
     }
-    if (data.event === 'hook_run_started' || data.event === 'hook_run_progress') {
-      updatePending(`Hook: ${data.event_name || data.hook_id || 'running'}`, data.hook_id || '')
+    if (
+      data.event === 'hook_run_started' ||
+      data.event === 'hook_run_progress'
+    ) {
+      updatePending(
+        `Hook: ${data.event_name || data.hook_id || 'running'}`,
+        data.hook_id || '',
+      )
       return
     }
     if (data.event === 'hook_run_failed') {
-      updatePending(`Hook 失败: ${data.event_name || data.hook_id || ''}`, data.reason || '', 'error', 4000)
+      updatePending(
+        `Hook 失败: ${data.event_name || data.hook_id || ''}`,
+        data.reason || '',
+        'error',
+        4000,
+      )
       return
     }
     if (data.event === 'tool_result') {
       const assistant = assistantForTurn(data.turn_id)
-      const running = (assistant?.segments || []).filter((seg): seg is ToolSegment => seg.type === 'tool' && (seg.status === 'running' || seg.status === 'queued'))
-      if (running.length) updatePending(`正在执行: ${running[0].name}`, `剩余 ${running.length} 个工具`)
-      else if (assistant?.streaming) startThought(assistant, data, '整理工具结果')
+      const running = (assistant?.segments || []).filter(
+        (seg): seg is ToolSegment =>
+          seg.type === 'tool' &&
+          (seg.status === 'running' || seg.status === 'queued'),
+      )
+      if (running.length)
+        updatePending(
+          `正在执行: ${running[0].name}`,
+          `剩余 ${running.length} 个工具`,
+        )
+      else if (assistant?.streaming)
+        startThought(assistant, data, '整理工具结果')
       return
     }
     if (data.event === 'tool_error') {
       const assistant = assistantForTurn(data.turn_id)
       if (assistant?.streaming) startThought(assistant, data, '处理工具错误')
-      updatePending(`工具 ${data.name || ''} 执行出错`, data.message || '', 'error')
+      updatePending(
+        `工具 ${data.name || ''} 执行出错`,
+        data.message || '',
+        'error',
+      )
       return
     }
     if (data.event === 'assistant_done') {
@@ -831,19 +1082,35 @@ export function useRuntime(options: {
     if (data.event === 'turn_paused') {
       busy.value = false
       status.value = 'ready'
-      updatePending('等待你定夺', data.interaction?.kind === 'plan' ? '计划待预览' : '问题待回答', 'done')
+      updatePending(
+        '等待你定夺',
+        data.interaction?.kind === 'plan' ? '计划待预览' : '问题待回答',
+        'done',
+      )
       return
     }
     if (data.event === 'ask_request' || data.event === 'plan_draft') {
       if (!data.interaction) return
       setBootControlPending(data.interaction)
       const ownerSessionId = eventOwnerSessionId(data) || sessionId.value
-      if (ownerSessionId) options.onSessionControlPendingChanged?.(ownerSessionId, data.interaction)
-      updatePending(data.event === 'plan_draft' ? '计划待预览' : '等待你回答', data.interaction.title || data.interaction.context || '', 'done')
+      if (ownerSessionId)
+        options.onSessionControlPendingChanged?.(
+          ownerSessionId,
+          data.interaction,
+        )
+      updatePending(
+        data.event === 'plan_draft' ? '计划待预览' : '等待你回答',
+        data.interaction.title || data.interaction.context || '',
+        'done',
+      )
       return
     }
     if (data.event === 'plan_draft_delta') {
-      updatePending('正在生成计划...', data.interaction?.title || data.interaction?.summary || '', 'running')
+      updatePending(
+        '正在生成计划...',
+        data.interaction?.title || data.interaction?.summary || '',
+        'running',
+      )
       return
     }
     if (
@@ -852,23 +1119,38 @@ export function useRuntime(options: {
       data.event === 'plan_approved' ||
       data.event === 'interaction_cancelled'
     ) {
-      if ('control' in data && data.control && options.boot.value) options.boot.value.control = data.control
+      if ('control' in data && data.control && options.boot.value)
+        options.boot.value.control = data.control
       const ownerSessionId = eventOwnerSessionId(data) || sessionId.value
-      if (ownerSessionId) options.onSessionControlPendingChanged?.(ownerSessionId, null)
+      if (ownerSessionId)
+        options.onSessionControlPendingChanged?.(ownerSessionId, null)
       if (data.event === 'plan_approved') {
         const next = applyPlanEvent(
-          { plans: planProjection.plans, entryDecisions: planProjection.entryDecisions },
+          {
+            plans: planProjection.plans,
+            entryDecisions: planProjection.entryDecisions,
+          },
           data,
         )
-        planProjection.plans.splice(0, planProjection.plans.length, ...next.plans)
-        planProjection.entryDecisions.splice(0, planProjection.entryDecisions.length, ...next.entryDecisions)
+        planProjection.plans.splice(
+          0,
+          planProjection.plans.length,
+          ...next.plans,
+        )
+        planProjection.entryDecisions.splice(
+          0,
+          planProjection.entryDecisions.length,
+          ...next.entryDecisions,
+        )
         updatePending('计划已批准，开始执行', '', 'done')
       }
-      if (data.event === 'interaction_cancelled') updatePending('已取消等待', '', 'done')
+      if (data.event === 'interaction_cancelled')
+        updatePending('已取消等待', '', 'done')
       return
     }
     if (data.event === 'runtime_task_cancelled') {
-      const assistant = assistantForTurn(data.turn_id || data.task?.turnId) || assistantBefore
+      const assistant =
+        assistantForTurn(data.turn_id || data.task?.turnId) || assistantBefore
       if (assistant) appendInterruptionNotice(assistant, '（任务已停止。）')
       busy.value = false
       updatePending('任务已停止', data.task?.label || data.reason || '', 'done')
@@ -880,10 +1162,16 @@ export function useRuntime(options: {
     if (turnId) {
       const resumeId = projectionRuntime.resumeTurnTargets.get(turnId)
       const byResume = resumeId
-        ? messages.value.find((message): message is AssistantMessage => message.role === 'assistant' && message.id === resumeId)
+        ? messages.value.find(
+            (message): message is AssistantMessage =>
+              message.role === 'assistant' && message.id === resumeId,
+          )
         : undefined
       if (byResume) return byResume
-      const byTurn = messages.value.find((message): message is AssistantMessage => message.role === 'assistant' && message.turn_id === turnId)
+      const byTurn = messages.value.find(
+        (message): message is AssistantMessage =>
+          message.role === 'assistant' && message.turn_id === turnId,
+      )
       if (byTurn) return byTurn
       const current = currentAssistant.value
       return current && !current.turn_id ? current : undefined
@@ -900,14 +1188,19 @@ export function useRuntime(options: {
     if (serverRestarted) {
       lastSeq.value = latestSeq
       if (currentAssistant.value?.streaming) {
-        finishInterruptedAssistant(currentAssistant.value, '（服务重启后无法续接上一条回复，请重新发送。）')
+        finishInterruptedAssistant(
+          currentAssistant.value,
+          '（服务重启后无法续接上一条回复，请重新发送。）',
+        )
         currentAssistantId.value = null
         busy.value = false
         updatePending()
         options.showToast('服务已重启，上一条未完成回复已停止，请重新发送。')
       }
     } else if (currentAssistant.value?.streaming && !data.busy) {
-      settleStaleStreamingAssistant('（连接已恢复，但后端没有正在运行的回复，请重新发送。）')
+      settleStaleStreamingAssistant(
+        '（连接已恢复，但后端没有正在运行的回复，请重新发送。）',
+      )
     }
     if (!data.busy) clearAllSessionRunning()
 
@@ -917,22 +1210,32 @@ export function useRuntime(options: {
       if (data.control) options.boot.value.control = data.control
     }
     if (!serverRestarted && currentAssistant.value?.streaming && hasReplay) {
-      updatePending('事件通道已重连，正在补齐回复...', `回放 ${data.replay_count} 个事件`)
+      updatePending(
+        '事件通道已重连，正在补齐回复...',
+        `回放 ${data.replay_count} 个事件`,
+      )
     }
   }
 
-  function assistantForControlInteraction(interactionId: string): AssistantMessage | undefined {
+  function assistantForControlInteraction(
+    interactionId: string,
+  ): AssistantMessage | undefined {
     if (!interactionId) return undefined
-    return messages.value.find((message): message is AssistantMessage =>
-      message.role === 'assistant' &&
-      message.segments.some((segment) =>
-        (segment.type === 'ask' || segment.type === 'plan') &&
-        segment.interaction.id === interactionId,
-      )
+    return messages.value.find(
+      (message): message is AssistantMessage =>
+        message.role === 'assistant' &&
+        message.segments.some(
+          (segment) =>
+            (segment.type === 'ask' || segment.type === 'plan') &&
+            segment.interaction.id === interactionId,
+        ),
     )
   }
 
-  function createStreamingAssistant(assistantId: string, startedAt: number): AssistantMessage {
+  function createStreamingAssistant(
+    assistantId: string,
+    startedAt: number,
+  ): AssistantMessage {
     return {
       id: assistantId,
       role: 'assistant',
@@ -944,7 +1247,10 @@ export function useRuntime(options: {
     }
   }
 
-  function createThoughtSegment(startedAt: number, label = 'Thought'): ThoughtSegment {
+  function createThoughtSegment(
+    startedAt: number,
+    label = 'Thought',
+  ): ThoughtSegment {
     return {
       id: nextId('thought'),
       type: 'thought',
@@ -954,7 +1260,11 @@ export function useRuntime(options: {
     }
   }
 
-  function startThought(assistant: AssistantMessage, data?: { ts?: number }, label = 'Thought') {
+  function startThought(
+    assistant: AssistantMessage,
+    data?: { ts?: number },
+    label = 'Thought',
+  ) {
     const last = assistant.segments[assistant.segments.length - 1]
     if (last?.type === 'thought' && last.status === 'running') return
     assistant.segments.push(createThoughtSegment(eventTimeMs(data), label))
@@ -985,7 +1295,10 @@ export function useRuntime(options: {
           startedAt: eventTimeMs(data),
         })
       }
-      updatePending(`派遣小太监: ${data.agent_type || 'subagent'}`, data.purpose || '')
+      updatePending(
+        `派遣小太监: ${data.agent_type || 'subagent'}`,
+        data.purpose || '',
+      )
       return
     }
 
@@ -1000,14 +1313,25 @@ export function useRuntime(options: {
       const sub = findSubagent(assistant, data.parent_id, data.subagent_id)
       if (sub) {
         sub.tools ||= []
-        sub.tools.push({ id: data.id, name: data.name, arguments: data.arguments || {}, status: 'running', startedAt: eventTimeMs(data) })
+        sub.tools.push({
+          id: data.id,
+          name: data.name,
+          arguments: data.arguments || {},
+          status: 'running',
+          startedAt: eventTimeMs(data),
+        })
       }
       updatePending(`小太监调用: ${data.name}`, '')
       return
     }
 
     if (data.event === 'subagent_tool_result') {
-      const tool = findSubagentTool(assistant, data.parent_id, data.subagent_id, data.id)
+      const tool = findSubagentTool(
+        assistant,
+        data.parent_id,
+        data.subagent_id,
+        data.id,
+      )
       if (tool) {
         finishTimedState(tool, eventTimeMs(data))
         tool.summary = data.summary || '已完成'
@@ -1017,13 +1341,22 @@ export function useRuntime(options: {
     }
 
     if (data.event === 'subagent_tool_error') {
-      const tool = findSubagentTool(assistant, data.parent_id, data.subagent_id, data.id)
+      const tool = findSubagentTool(
+        assistant,
+        data.parent_id,
+        data.subagent_id,
+        data.id,
+      )
       if (tool) {
         finishTimedState(tool, eventTimeMs(data))
         tool.summary = data.message || '工具执行出错'
         tool.status = 'error'
       }
-      updatePending(`小太监工具 ${data.name || ''} 出错`, data.message || '', 'error')
+      updatePending(
+        `小太监工具 ${data.name || ''} 出错`,
+        data.message || '',
+        'error',
+      )
       return
     }
 
@@ -1045,7 +1378,11 @@ export function useRuntime(options: {
         sub.status = 'error'
         sub.error = data.message
       }
-      updatePending(`小太监 ${data.agent_type || ''} 出错`, data.message || '', 'error')
+      updatePending(
+        `小太监 ${data.agent_type || ''} 出错`,
+        data.message || '',
+        'error',
+      )
     }
   }
 
@@ -1054,7 +1391,12 @@ export function useRuntime(options: {
     const assistant = assistantForTurn((data as { turn_id?: string }).turn_id)
 
     if (data.event === 'team_member_update') {
-      updatePending(data.member?.status === 'working' ? `队友 ${data.member.name} 正在办差` : '', '')
+      updatePending(
+        data.member?.status === 'working'
+          ? `队友 ${data.member.name} 正在办差`
+          : '',
+        '',
+      )
       return
     }
 
@@ -1062,7 +1404,8 @@ export function useRuntime(options: {
       if (assistant && data.message) {
         attachTeamMessage(assistant, data.message)
       }
-      if (data.message?.to === 'lead') updatePending('队友有新回禀', data.message.from, 'done')
+      if (data.message?.to === 'lead')
+        updatePending('队友有新回禀', data.message.from, 'done')
       return
     }
 
@@ -1100,14 +1443,25 @@ export function useRuntime(options: {
       const sub = findSubagent(assistant, data.parent_id, data.teammate)
       if (sub) {
         sub.tools ||= []
-        sub.tools.push({ id: data.id, name: data.name, arguments: data.arguments || {}, status: 'running', startedAt: eventTimeMs(data) })
+        sub.tools.push({
+          id: data.id,
+          name: data.name,
+          arguments: data.arguments || {},
+          status: 'running',
+          startedAt: eventTimeMs(data),
+        })
       }
       updatePending(`队友调用: ${data.name}`, data.teammate || '')
       return
     }
 
     if (data.event === 'team_run_tool_result') {
-      const tool = findSubagentTool(assistant, data.parent_id, data.teammate, data.id)
+      const tool = findSubagentTool(
+        assistant,
+        data.parent_id,
+        data.teammate,
+        data.id,
+      )
       if (tool) {
         finishTimedState(tool, eventTimeMs(data))
         tool.summary = data.summary || '已完成'
@@ -1117,13 +1471,22 @@ export function useRuntime(options: {
     }
 
     if (data.event === 'team_run_tool_error') {
-      const tool = findSubagentTool(assistant, data.parent_id, data.teammate, data.id)
+      const tool = findSubagentTool(
+        assistant,
+        data.parent_id,
+        data.teammate,
+        data.id,
+      )
       if (tool) {
         finishTimedState(tool, eventTimeMs(data))
         tool.summary = data.message || '工具执行出错'
         tool.status = 'error'
       }
-      updatePending(`队友工具 ${data.name || ''} 出错`, data.message || '', 'error')
+      updatePending(
+        `队友工具 ${data.name || ''} 出错`,
+        data.message || '',
+        'error',
+      )
       return
     }
 
@@ -1145,7 +1508,11 @@ export function useRuntime(options: {
         sub.status = 'error'
         sub.error = data.message
       }
-      updatePending(`队友 ${data.teammate || ''} 出错`, data.message || '', 'error')
+      updatePending(
+        `队友 ${data.teammate || ''} 出错`,
+        data.message || '',
+        'error',
+      )
     }
   }
 
@@ -1158,23 +1525,45 @@ export function useRuntime(options: {
   function handleSchedulerEvent(data: WsEvent) {
     updateSchedulerBootstrap(data)
     if (data.event === 'scheduler_run_start') {
-      updatePending('Scheduler 正在执行任务', data.job?.name || data.job?.id || '')
+      updatePending(
+        'Scheduler 正在执行任务',
+        data.job?.name || data.job?.id || '',
+      )
       return
     }
     if (data.event === 'scheduler_run_done') {
-      updatePending('Scheduler 任务已完成', data.job?.name || data.job?.id || '', 'done', SCHEDULER_DONE_PENDING_MS)
+      updatePending(
+        'Scheduler 任务已完成',
+        data.job?.name || data.job?.id || '',
+        'done',
+        SCHEDULER_DONE_PENDING_MS,
+      )
       return
     }
     if (data.event === 'scheduler_run_error') {
-      updatePending('Scheduler 任务失败', data.error || data.job?.state?.lastError || '', 'error')
+      updatePending(
+        'Scheduler 任务失败',
+        data.error || data.job?.state?.lastError || '',
+        'error',
+      )
       return
     }
     if (data.event === 'scheduler_run_cancelled') {
-      updatePending('Scheduler 任务已停止', data.job?.name || data.job?.id || data.reason || '', 'done', SCHEDULER_DONE_PENDING_MS)
+      updatePending(
+        'Scheduler 任务已停止',
+        data.job?.name || data.job?.id || data.reason || '',
+        'done',
+        SCHEDULER_DONE_PENDING_MS,
+      )
       return
     }
     if (data.event === 'scheduler_job_update') {
-      updatePending('Scheduler 任务已更新', data.action || '', 'done', SCHEDULER_DONE_PENDING_MS)
+      updatePending(
+        'Scheduler 任务已更新',
+        data.action || '',
+        'done',
+        SCHEDULER_DONE_PENDING_MS,
+      )
     }
   }
 
@@ -1184,22 +1573,44 @@ export function useRuntime(options: {
     applySchedulerEventToBootstrap(boot, data)
   }
 
-  function handleChatError(message: string, opts: { code?: string; action?: string; ownerSessionId?: string; transport?: boolean } = {}) {
+  function handleChatError(
+    message: string,
+    opts: {
+      code?: string
+      action?: string
+      ownerSessionId?: string
+      transport?: boolean
+    } = {},
+  ) {
     const assistant = currentAssistant.value
     const content = `出错了：${message}`
     if (assistant) {
       if (!assistant.content) {
         assistant.content = content
-        assistant.segments.push({ id: nextId('segment'), type: 'text', content })
+        assistant.segments.push({
+          id: nextId('segment'),
+          type: 'text',
+          content,
+        })
       }
       assistant.streaming = false
       markRunningAsAborted(assistant)
     } else if (!lastAssistantAlreadyShows(content)) {
-      messages.value.push({ id: nextId('assistant'), role: 'assistant', content, segments: [{ id: nextId('segment'), type: 'text', content }], streaming: false })
+      messages.value.push({
+        id: nextId('assistant'),
+        role: 'assistant',
+        content,
+        segments: [{ id: nextId('segment'), type: 'text', content }],
+        streaming: false,
+      })
     }
     currentAssistantId.value = null
     busy.value = false
-    status.value = opts.transport ? 'error' : (hasCoreBridge() ? 'ready' : 'error')
+    status.value = opts.transport
+      ? 'error'
+      : hasCoreBridge()
+        ? 'ready'
+        : 'error'
     settleSessionRuntime(opts.ownerSessionId || sessionId.value, false)
   }
 
@@ -1209,7 +1620,8 @@ export function useRuntime(options: {
     const message = info.message
     if (isRuntimeCancellationError(message)) {
       const assistant = currentAssistant.value
-      if (assistant) finishInterruptedAssistant(assistant, '（已停止当前任务。）')
+      if (assistant)
+        finishInterruptedAssistant(assistant, '（已停止当前任务。）')
       currentAssistantId.value = null
       busy.value = false
       status.value = hasCoreBridge() ? 'ready' : 'error'
@@ -1217,10 +1629,18 @@ export function useRuntime(options: {
       updatePending('已停止当前任务', '', 'done', 2000)
       return
     }
-    handleChatError(message, { code: info.code, action: info.action, ownerSessionId: sessionId.value })
+    handleChatError(message, {
+      code: info.code,
+      action: info.action,
+      ownerSessionId: sessionId.value,
+    })
   }
 
-  function runtimeErrorInfo(error: unknown): { message: string; code?: string; action?: string } {
+  function runtimeErrorInfo(error: unknown): {
+    message: string
+    code?: string
+    action?: string
+  } {
     const message = error instanceof Error ? error.message : String(error)
     if (!error || typeof error !== 'object') return { message }
     const record = error as { code?: unknown; action?: unknown }
@@ -1233,12 +1653,20 @@ export function useRuntime(options: {
 
   function lastAssistantAlreadyShows(content: string): boolean {
     const last = messages.value[messages.value.length - 1]
-    return Boolean(last?.role === 'assistant' && !last.streaming && last.content.includes(content))
+    return Boolean(
+      last?.role === 'assistant' &&
+      !last.streaming &&
+      last.content.includes(content),
+    )
   }
 
   function isRuntimeCancellationError(message: string) {
     const text = message.toLowerCase()
-    return text.includes('active task cancelled') || text.includes('command cancelled') || text.includes('aborterror')
+    return (
+      text.includes('active task cancelled') ||
+      text.includes('command cancelled') ||
+      text.includes('aborterror')
+    )
   }
 
   function markRunningAsAborted(assistant?: AssistantMessage) {
@@ -1271,11 +1699,20 @@ export function useRuntime(options: {
     }
   }
 
-  function finishInterruptedAssistant(assistant: AssistantMessage, fallback: string) {
-    const hasText = assistant.segments.some((segment) => segment.type === 'text')
+  function finishInterruptedAssistant(
+    assistant: AssistantMessage,
+    fallback: string,
+  ) {
+    const hasText = assistant.segments.some(
+      (segment) => segment.type === 'text',
+    )
     if (!assistant.content && !hasText) {
       assistant.content = fallback
-      assistant.segments.push({ id: nextId('segment'), type: 'text', content: fallback })
+      assistant.segments.push({
+        id: nextId('segment'),
+        type: 'text',
+        content: fallback,
+      })
     }
     markRunningAsAborted(assistant)
   }
@@ -1301,25 +1738,41 @@ export function useRuntime(options: {
     return true
   }
 
-  function appendInterruptionNotice(assistant: AssistantMessage, fallback: string) {
+  function appendInterruptionNotice(
+    assistant: AssistantMessage,
+    fallback: string,
+  ) {
     const text = fallback.trim()
     if (!text) return
     if (!assistant.content) assistant.content = text
-    else if (!assistant.content.includes(text)) assistant.content = `${assistant.content}\n\n${text}`
-    const exists = assistant.segments.some((segment) => segment.type === 'text' && segment.content.includes(text))
-    if (!exists) assistant.segments.push({ id: nextId('segment'), type: 'text', content: text })
+    else if (!assistant.content.includes(text))
+      assistant.content = `${assistant.content}\n\n${text}`
+    const exists = assistant.segments.some(
+      (segment) => segment.type === 'text' && segment.content.includes(text),
+    )
+    if (!exists)
+      assistant.segments.push({
+        id: nextId('segment'),
+        type: 'text',
+        content: text,
+      })
   }
 
   function findTeamSubagent(assistant: AssistantMessage, teammate: string) {
     for (const segment of assistant.segments) {
       if (segment.type !== 'tool') continue
-      const sub = segment.subagents?.find((item) => item.kind === 'team' && item.id === teammate)
+      const sub = segment.subagents?.find(
+        (item) => item.kind === 'team' && item.id === teammate,
+      )
       if (sub) return sub
     }
     return undefined
   }
 
-  function attachTeamMessage(assistant: AssistantMessage, message: TeamMessage) {
+  function attachTeamMessage(
+    assistant: AssistantMessage,
+    message: TeamMessage,
+  ) {
     const teammate = message.to === 'lead' ? message.from : message.to
     if (!teammate || teammate === 'lead') return
     const sub = findTeamSubagent(assistant, teammate)

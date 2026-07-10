@@ -2,7 +2,10 @@
  * Plan 证据门 (MIG-CTRL-008)。对齐 Python `agent/plans/evidence.py`。
  * 评估 step 的 verification 是否满足证据要求；blocking_errors / risk_notes。
  */
-import { requirementsForStep, type VerificationRequirement } from './verification'
+import {
+  requirementsForStep,
+  type VerificationRequirement,
+} from './verification'
 import type { PlanStep } from './models'
 
 export class PlanEvidenceError extends Error {
@@ -18,7 +21,10 @@ export class PlanEvidenceError extends Error {
   }
 }
 
-export function formatPlanEvidenceError(code: string, opts: { stepId: string; reason: string }): string {
+export function formatPlanEvidenceError(
+  code: string,
+  opts: { stepId: string; reason: string },
+): string {
   return [
     `Error: ${code}`,
     `step: ${opts.stepId}`,
@@ -38,34 +44,48 @@ export function failedRequired(a: PlanVerificationAssessment): string[] {
 }
 
 export function missingRequired(a: PlanVerificationAssessment): string[] {
-  return a.blockingErrors.filter((item) => item.includes('missing required evidence'))
+  return a.blockingErrors.filter((item) =>
+    item.includes('missing required evidence'),
+  )
 }
 
-export function assessStepVerification(step: PlanStep): PlanVerificationAssessment {
+export function assessStepVerification(
+  step: PlanStep,
+): PlanVerificationAssessment {
   const requirements = requirementsForStep(step)
   const blockingErrors: string[] = []
   const riskNotes: string[] = []
   for (const requirement of requirements) {
     if (requirement.status === 'skipped') {
-      if (!requirement.reason) blockingErrors.push(`${requirement.id} skipped without reason`)
+      if (!requirement.reason)
+        blockingErrors.push(`${requirement.id} skipped without reason`)
       else riskNotes.push(`${requirement.id} skipped: ${requirement.reason}`)
       continue
     }
     if (requirement.required) {
       if (requirement.status === 'failed') {
-        blockingErrors.push(`${requirement.id} failed: ${requirementDetail(requirement)}`)
+        blockingErrors.push(
+          `${requirement.id} failed: ${requirementDetail(requirement)}`,
+        )
       } else if (requirement.status !== 'passed') {
         blockingErrors.push(`${requirement.id} missing required evidence`)
       }
       continue
     }
     if (requirement.status === 'failed') {
-      riskNotes.push(`${requirement.id} failed: ${requirementDetail(requirement)}`)
+      riskNotes.push(
+        `${requirement.id} failed: ${requirementDetail(requirement)}`,
+      )
     }
   }
   return { requirements, blockingErrors, riskNotes }
 }
 
 function requirementDetail(requirement: VerificationRequirement): string {
-  return requirement.reason || requirement.description || requirement.command || requirement.kind
+  return (
+    requirement.reason ||
+    requirement.description ||
+    requirement.command ||
+    requirement.kind
+  )
 }

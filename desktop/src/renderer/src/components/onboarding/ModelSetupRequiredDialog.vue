@@ -21,7 +21,11 @@ const closeIcon = actionIcons.close
 </script>
 
 <template>
-  <div v-if="open" class="onboarding-backdrop model-setup-backdrop" role="presentation">
+  <div
+    v-if="open"
+    class="onboarding-backdrop model-setup-backdrop"
+    role="presentation"
+  >
     <section
       class="model-setup-modal"
       role="dialog"
@@ -29,13 +33,24 @@ const closeIcon = actionIcons.close
       aria-labelledby="model-setup-title"
       aria-describedby="model-setup-description"
     >
-      <button class="model-setup-close" type="button" title="关闭" aria-label="关闭" @click="emit('close')">
+      <button
+        class="model-setup-close"
+        type="button"
+        title="关闭"
+        aria-label="关闭"
+        @click="emit('close')"
+      >
         <component :is="closeIcon" :size="16" />
       </button>
 
       <div class="model-setup-copy">
         <header class="model-setup-head">
-          <img class="model-setup-wordmark" :src="wordmarkUrl" :alt="content.brandAlt" draggable="false" />
+          <img
+            class="model-setup-wordmark"
+            :src="wordmarkUrl"
+            :alt="content.brandAlt"
+            draggable="false"
+          />
         </header>
 
         <div class="model-setup-intro">
@@ -53,7 +68,11 @@ const closeIcon = actionIcons.close
             <button class="tool-button" type="button" @click="emit('close')">
               {{ content.secondaryAction }}
             </button>
-            <button class="tool-button ink asset-button primary-action" type="button" @click="emit('configure')">
+            <button
+              class="tool-button ink asset-button primary-action"
+              type="button"
+              @click="emit('configure')"
+            >
               <component :is="modelIcon" class="action-icon" :size="16" />
               <span>{{ content.primaryAction }}</span>
             </button>
@@ -61,7 +80,10 @@ const closeIcon = actionIcons.close
         </footer>
       </div>
 
-      <aside class="model-setup-visual" aria-label="Emperor Agent product preview">
+      <aside
+        class="model-setup-visual"
+        aria-label="Emperor Agent product preview"
+      >
         <img :src="heroUrl" :alt="content.heroAlt" draggable="false" />
       </aside>
     </section>

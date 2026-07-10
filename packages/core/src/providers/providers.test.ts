@@ -20,10 +20,18 @@ describe('parseJsonArgs', () => {
 
 describe('classifyProviderError', () => {
   it('classifies context window errors before generic provider errors', () => {
-    expect(classifyProviderError(Object.assign(new Error('maximum context length exceeded'), { code: 'context_length_exceeded' })))
-      .toBe('context_overflow')
-    expect(classifyProviderError(new Error('This model context window is too small for the prompt')))
-      .toBe('context_overflow')
+    expect(
+      classifyProviderError(
+        Object.assign(new Error('maximum context length exceeded'), {
+          code: 'context_length_exceeded',
+        }),
+      ),
+    ).toBe('context_overflow')
+    expect(
+      classifyProviderError(
+        new Error('This model context window is too small for the prompt'),
+      ),
+    ).toBe('context_overflow')
   })
 })
 
@@ -36,26 +44,46 @@ describe('AnthropicProvider', () => {
   ]
 
   it('native endpoint caches system as block list + last tool', () => {
-    const prov = new AnthropicProvider({ apiKey: 'test', defaultModel: 'claude-opus-4-8' })
-    const kw = prov.kwargsFor({ messages: MESSAGES, tools: [{ name: 't1', description: 'd1' }] })
+    const prov = new AnthropicProvider({
+      apiKey: 'test',
+      defaultModel: 'claude-opus-4-8',
+    })
+    const kw = prov.kwargsFor({
+      messages: MESSAGES,
+      tools: [{ name: 't1', description: 'd1' }],
+    })
     expect(Array.isArray(kw.system)).toBe(true)
     const sys = kw.system as Array<Record<string, unknown>>
     expect(sys[0]!.text).toBe('稳定系统前缀')
     expect(sys[0]!.cache_control).toEqual({ type: 'ephemeral' })
     const tools = kw.tools as Array<Record<string, unknown>>
-    expect(tools[tools.length - 1]!.cache_control).toEqual({ type: 'ephemeral' })
+    expect(tools[tools.length - 1]!.cache_control).toEqual({
+      type: 'ephemeral',
+    })
   })
 
   it('third-party proxy stays uncached (system as string)', () => {
-    const prov = new AnthropicProvider({ apiKey: 'test', apiBase: 'https://proxy.example.com/v1', defaultModel: 'claude' })
-    const kw = prov.kwargsFor({ messages: MESSAGES, tools: [{ name: 't1', description: 'd1' }] })
+    const prov = new AnthropicProvider({
+      apiKey: 'test',
+      apiBase: 'https://proxy.example.com/v1',
+      defaultModel: 'claude',
+    })
+    const kw = prov.kwargsFor({
+      messages: MESSAGES,
+      tools: [{ name: 't1', description: 'd1' }],
+    })
     expect(kw.system).toBe('稳定系统前缀')
     const tools = kw.tools as Array<Record<string, unknown>>
-    expect(Object.keys(tools[tools.length - 1]!).includes('cache_control')).toBe(false)
+    expect(
+      Object.keys(tools[tools.length - 1]!).includes('cache_control'),
+    ).toBe(false)
   })
 
   it('enables retries from the shared constant', () => {
-    const prov = new AnthropicProvider({ apiKey: 'test', defaultModel: 'claude' })
+    const prov = new AnthropicProvider({
+      apiKey: 'test',
+      defaultModel: 'claude',
+    })
     expect(prov.client.maxRetries).toBe(DEFAULT_MAX_RETRIES)
   })
 })
@@ -64,7 +92,11 @@ describe('AnthropicProvider', () => {
 
 describe('OpenAICompatProvider', () => {
   it('temperature forbidden for gpt-5/o1/o3/o4 or with reasoning', () => {
-    const prov = new OpenAICompatProvider({ apiKey: 'test', spec: undefined, defaultModel: 'o1' })
+    const prov = new OpenAICompatProvider({
+      apiKey: 'test',
+      spec: undefined,
+      defaultModel: 'o1',
+    })
     expect(prov.temperatureForbidden('o1', null)).toBe(true)
     expect(prov.temperatureForbidden('gpt-4o', 'medium')).toBe(true)
     expect(prov.temperatureForbidden('gpt-4o', null)).toBe(false)
@@ -73,30 +105,62 @@ describe('OpenAICompatProvider', () => {
   it('extraBody maps thinkingStyle to vendor-specific keys', () => {
     const deepseek = findByName('deepseek')!
     const dashscope = findByName('dashscope')!
-    expect(new OpenAICompatProvider({ apiKey: 'test', spec: deepseek, defaultModel: 'x' }).extraBodyForReasoning('medium'))
-      .toEqual({ thinking: { type: 'enabled' } })
-    expect(new OpenAICompatProvider({ apiKey: 'test', spec: dashscope, defaultModel: 'x' }).extraBodyForReasoning('medium'))
-      .toEqual({ enable_thinking: true })
-    expect(new OpenAICompatProvider({ apiKey: 'test', spec: deepseek, defaultModel: 'x' }).extraBodyForReasoning('none'))
-      .toEqual({ thinking: { type: 'disabled' } })
+    expect(
+      new OpenAICompatProvider({
+        apiKey: 'test',
+        spec: deepseek,
+        defaultModel: 'x',
+      }).extraBodyForReasoning('medium'),
+    ).toEqual({ thinking: { type: 'enabled' } })
+    expect(
+      new OpenAICompatProvider({
+        apiKey: 'test',
+        spec: dashscope,
+        defaultModel: 'x',
+      }).extraBodyForReasoning('medium'),
+    ).toEqual({ enable_thinking: true })
+    expect(
+      new OpenAICompatProvider({
+        apiKey: 'test',
+        spec: deepseek,
+        defaultModel: 'x',
+      }).extraBodyForReasoning('none'),
+    ).toEqual({ thinking: { type: 'disabled' } })
   })
 
   it('usage parsing handles cached tokens', () => {
     const usage = OpenAICompatProvider.parseUsage({
       prompt_tokens: 1000,
       completion_tokens: 200,
-      prompt_tokens_details: { cached_tokens: 300, cache_creation_input_tokens: 100 },
+      prompt_tokens_details: {
+        cached_tokens: 300,
+        cache_creation_input_tokens: 100,
+      },
     })
-    expect(usage).toEqual({ input: 600, output: 200, cache_read: 300, cache_create: 100 })
+    expect(usage).toEqual({
+      input: 600,
+      output: 200,
+      cache_read: 300,
+      cache_create: 100,
+    })
   })
 
   it('enables retries from the shared constant', () => {
-    const prov = new OpenAICompatProvider({ apiKey: 'test', spec: undefined, defaultModel: 'gpt-x' })
+    const prov = new OpenAICompatProvider({
+      apiKey: 'test',
+      spec: undefined,
+      defaultModel: 'gpt-x',
+    })
     expect(prov.client.maxRetries).toBe(DEFAULT_MAX_RETRIES)
   })
 
   it('AzureOpenAI suffixes apiBase with /openai/v1/', () => {
-    const az = new AzureOpenAIProvider({ apiKey: 'test', spec: undefined, apiBase: 'https://res.openai.azure.com', defaultModel: 'x' })
+    const az = new AzureOpenAIProvider({
+      apiKey: 'test',
+      spec: undefined,
+      apiBase: 'https://res.openai.azure.com',
+      defaultModel: 'x',
+    })
     expect(az.client.baseURL).toContain('/openai/v1/')
   })
 })
@@ -117,7 +181,12 @@ describe('BedrockProvider', () => {
   })
 
   it('omits system key when there are no system messages', () => {
-    const req = BedrockProvider.converseRequest('model-x', [{ role: 'user', content: 'hi' }], 100, 0.5)
+    const req = BedrockProvider.converseRequest(
+      'model-x',
+      [{ role: 'user', content: 'hi' }],
+      100,
+      0.5,
+    )
     expect('system' in req).toBe(false)
   })
 })
@@ -132,7 +201,10 @@ describe('AbortSignal forwarding', () => {
   }
 
   it('AnthropicProvider.chatStream passes signal in request options', async () => {
-    const prov = new AnthropicProvider({ apiKey: 'test', defaultModel: 'claude' })
+    const prov = new AnthropicProvider({
+      apiKey: 'test',
+      defaultModel: 'claude',
+    })
     let receivedOptions: unknown = null
     ;(prov.client as any).messages = {
       stream: (_body: unknown, options: unknown) => {
@@ -141,12 +213,20 @@ describe('AbortSignal forwarding', () => {
       },
     }
     const controller = new AbortController()
-    await prov.chatStream({ messages: [{ role: 'user', content: 'hi' }], signal: controller.signal })
-    expect((receivedOptions as { signal?: AbortSignal })?.signal).toBe(controller.signal)
+    await prov.chatStream({
+      messages: [{ role: 'user', content: 'hi' }],
+      signal: controller.signal,
+    })
+    expect((receivedOptions as { signal?: AbortSignal })?.signal).toBe(
+      controller.signal,
+    )
   })
 
   it('AnthropicProvider.chat passes signal in request options', async () => {
-    const prov = new AnthropicProvider({ apiKey: 'test', defaultModel: 'claude' })
+    const prov = new AnthropicProvider({
+      apiKey: 'test',
+      defaultModel: 'claude',
+    })
     let receivedOptions: unknown = null
     ;(prov.client as any).messages = {
       create: async (_body: unknown, options: unknown) => {
@@ -155,12 +235,20 @@ describe('AbortSignal forwarding', () => {
       },
     }
     const controller = new AbortController()
-    await prov.chat({ messages: [{ role: 'user', content: 'hi' }], signal: controller.signal })
-    expect((receivedOptions as { signal?: AbortSignal })?.signal).toBe(controller.signal)
+    await prov.chat({
+      messages: [{ role: 'user', content: 'hi' }],
+      signal: controller.signal,
+    })
+    expect((receivedOptions as { signal?: AbortSignal })?.signal).toBe(
+      controller.signal,
+    )
   })
 
   it('AnthropicProvider omits request options when no signal given', async () => {
-    const prov = new AnthropicProvider({ apiKey: 'test', defaultModel: 'claude' })
+    const prov = new AnthropicProvider({
+      apiKey: 'test',
+      defaultModel: 'claude',
+    })
     let receivedOptions: unknown = 'sentinel'
     ;(prov.client as any).messages = {
       stream: (_body: unknown, options: unknown) => {
@@ -174,7 +262,9 @@ describe('AbortSignal forwarding', () => {
 
   it('BedrockProvider.sendOptions maps signal to abortSignal', () => {
     const controller = new AbortController()
-    expect(BedrockProvider.sendOptions({ messages: [], signal: controller.signal })).toEqual({ abortSignal: controller.signal })
+    expect(
+      BedrockProvider.sendOptions({ messages: [], signal: controller.signal }),
+    ).toEqual({ abortSignal: controller.signal })
     expect(BedrockProvider.sendOptions({ messages: [] })).toBeUndefined()
   })
 })
@@ -183,22 +273,37 @@ describe('AbortSignal forwarding', () => {
 
 describe('onToolCallComplete streaming (Wave5)', () => {
   it('AnthropicProvider fires onToolCallComplete for each tool_use content block', async () => {
-    const prov = new AnthropicProvider({ apiKey: 'test', defaultModel: 'claude' })
+    const prov = new AnthropicProvider({
+      apiKey: 'test',
+      defaultModel: 'claude',
+    })
     const handlers: Record<string, (arg: unknown) => void> = {}
     const final = {
       content: [
         { type: 'text', text: 'ok' },
-        { type: 'tool_use', id: 'toolu_1', name: 'read_file', input: { path: 'a.ts' } },
+        {
+          type: 'tool_use',
+          id: 'toolu_1',
+          name: 'read_file',
+          input: { path: 'a.ts' },
+        },
       ],
       stop_reason: 'tool_use',
       usage: { input_tokens: 1, output_tokens: 1 },
     }
     ;(prov.client as any).messages = {
       stream: () => ({
-        on: (event: string, cb: (arg: unknown) => void) => { handlers[event] = cb },
+        on: (event: string, cb: (arg: unknown) => void) => {
+          handlers[event] = cb
+        },
         finalMessage: async () => {
           handlers.contentBlock?.({ type: 'text', text: 'ok' })
-          handlers.contentBlock?.({ type: 'tool_use', id: 'toolu_1', name: 'read_file', input: { path: 'a.ts' } })
+          handlers.contentBlock?.({
+            type: 'tool_use',
+            id: 'toolu_1',
+            name: 'read_file',
+            input: { path: 'a.ts' },
+          })
           return final
         },
       }),
@@ -206,7 +311,9 @@ describe('onToolCallComplete streaming (Wave5)', () => {
     const completed: Array<{ id: string; name: string }> = []
     const resp = await prov.chatStream({
       messages: [{ role: 'user', content: 'hi' }],
-      onToolCallComplete: (call) => { completed.push({ id: call.id, name: call.name }) },
+      onToolCallComplete: (call) => {
+        completed.push({ id: call.id, name: call.name })
+      },
     })
     expect(completed).toEqual([{ id: 'toolu_1', name: 'read_file' }])
     expect(resp.toolCalls).toHaveLength(1)
@@ -215,7 +322,9 @@ describe('onToolCallComplete streaming (Wave5)', () => {
   it('OpenAICompatProvider assembleStreamingToolCall fires a completed call once its index finalizes', () => {
     const fired: Array<{ id: string; name: string }> = []
     const buf = { id: 'call_x', name: 'grep', arguments: '{"pattern":"x"}' }
-    OpenAICompatProvider.fireCompletedToolChunk(buf, (call) => { fired.push({ id: call.id, name: call.name }) })
+    OpenAICompatProvider.fireCompletedToolChunk(buf, (call) => {
+      fired.push({ id: call.id, name: call.name })
+    })
     expect(fired).toEqual([{ id: 'call_x', name: 'grep' }])
   })
 })
@@ -224,8 +333,26 @@ describe('onToolCallComplete streaming (Wave5)', () => {
 
 describe('createProvider', () => {
   it('routes to the correct backend class', () => {
-    expect(createProvider({ apiKey: 'k', defaultModel: 'x', spec: findByName('anthropic') })).toBeInstanceOf(AnthropicProvider)
-    expect(createProvider({ apiKey: 'k', defaultModel: 'x', spec: findByName('openai') })).toBeInstanceOf(OpenAICompatProvider)
-    expect(createProvider({ apiKey: 'k', defaultModel: 'x', spec: findByName('azure_openai')! })).toBeInstanceOf(AzureOpenAIProvider)
+    expect(
+      createProvider({
+        apiKey: 'k',
+        defaultModel: 'x',
+        spec: findByName('anthropic'),
+      }),
+    ).toBeInstanceOf(AnthropicProvider)
+    expect(
+      createProvider({
+        apiKey: 'k',
+        defaultModel: 'x',
+        spec: findByName('openai'),
+      }),
+    ).toBeInstanceOf(OpenAICompatProvider)
+    expect(
+      createProvider({
+        apiKey: 'k',
+        defaultModel: 'x',
+        spec: findByName('azure_openai')!,
+      }),
+    ).toBeInstanceOf(AzureOpenAIProvider)
   })
 })

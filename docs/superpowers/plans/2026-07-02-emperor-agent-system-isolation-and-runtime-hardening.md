@@ -29,18 +29,18 @@
 
 当前主要拼装点：
 
-| 来源 | 当前代码 | 作用域 | 风险 |
-|------|----------|--------|------|
-| `templates/SOUL.md` | `ContextBuilder.BOOTSTRAP_FILES` | 全局 | 强制人格前缀，技术排障和普通聊天中容易显得突兀 |
-| `templates/TOOL.md` | `ContextBuilder.BOOTSTRAP_FILES` | 全局 | 仍描述旧式工具偏好，需和 TS 工具协议对齐 |
-| `templates/USER.local.md` 或 `templates/init/USER.md` | `ContextBuilder.bootstrapPath()` + `ensureUserFile()` | 全局用户档案 | 当前写在 `templates/`，不应继续作为 runtime 私有数据位置 |
-| `templates/agent/identity.md` | `ContextBuilder.renderTemplate()` | 全局/会话 | 文案仍写 `memory/MEMORY.local.md`、`templates/USER.local.md`，与目标 `.emperor` 不一致 |
-| Chat 长期记忆 | `ContextBuilder.buildSections()` | Chat session | 全局记忆和项目 index summary 同时注入，缺少 source manifest |
-| Build 项目 AGENTS | `ContextBuilder.buildSections()` | Build session | 当前来自用户项目 `AGENTS.md`，且 `ProjectStore` 会写托管块 |
-| Skills summary | `FileSkillsLoader.summary()` | 全局 | 全量 summary 注入但没有 token budget/report |
-| Control prompt | `ControlManager.systemPrompt()` in `AgentRunner.askModel()` | 每轮动态 | 无快照，Plan/Ask 状态跨 session 归属需继续收紧 |
-| Clarification prompt | `AgentRunner.askModel()` | 每轮动态 | 作为临时段拼接，缺少 manifest |
-| Subagent/Team prompts | `templates/subagents/*`、`teamPrompt()` | 子运行体 | workspaceRoot 继承已开始修补，但需纳入 scope receipt |
+| 来源                                                  | 当前代码                                                    | 作用域        | 风险                                                                                   |
+| ----------------------------------------------------- | ----------------------------------------------------------- | ------------- | -------------------------------------------------------------------------------------- |
+| `templates/SOUL.md`                                   | `ContextBuilder.BOOTSTRAP_FILES`                            | 全局          | 强制人格前缀，技术排障和普通聊天中容易显得突兀                                         |
+| `templates/TOOL.md`                                   | `ContextBuilder.BOOTSTRAP_FILES`                            | 全局          | 仍描述旧式工具偏好，需和 TS 工具协议对齐                                               |
+| `templates/USER.local.md` 或 `templates/init/USER.md` | `ContextBuilder.bootstrapPath()` + `ensureUserFile()`       | 全局用户档案  | 当前写在 `templates/`，不应继续作为 runtime 私有数据位置                               |
+| `templates/agent/identity.md`                         | `ContextBuilder.renderTemplate()`                           | 全局/会话     | 文案仍写 `memory/MEMORY.local.md`、`templates/USER.local.md`，与目标 `.emperor` 不一致 |
+| Chat 长期记忆                                         | `ContextBuilder.buildSections()`                            | Chat session  | 全局记忆和项目 index summary 同时注入，缺少 source manifest                            |
+| Build 项目 AGENTS                                     | `ContextBuilder.buildSections()`                            | Build session | 当前来自用户项目 `AGENTS.md`，且 `ProjectStore` 会写托管块                             |
+| Skills summary                                        | `FileSkillsLoader.summary()`                                | 全局          | 全量 summary 注入但没有 token budget/report                                            |
+| Control prompt                                        | `ControlManager.systemPrompt()` in `AgentRunner.askModel()` | 每轮动态      | 无快照，Plan/Ask 状态跨 session 归属需继续收紧                                         |
+| Clarification prompt                                  | `AgentRunner.askModel()`                                    | 每轮动态      | 作为临时段拼接，缺少 manifest                                                          |
+| Subagent/Team prompts                                 | `templates/subagents/*`、`teamPrompt()`                     | 子运行体      | workspaceRoot 继承已开始修补，但需纳入 scope receipt                                   |
 
 需要新增：`PromptManifest`，记录每段 name/source/version/priority/budget/charCount/hash/scope/sessionId/projectId/turnId，并在 diagnostics 和开发 UI 中可查看。
 
@@ -48,17 +48,17 @@
 
 当前关键点：
 
-| 领域 | 当前位置 | 当前代码 | 主要问题 |
-|------|----------|----------|----------|
-| 全局长期记忆 | `memory/MEMORY.local.md` | `MemoryStore` | 与会话目录同级，仍在 runtime root 直接暴露 |
-| 用户档案 | `templates/USER.local.md` | `ensureUserFile()` | 私人运行数据写在模板目录，不符合 runtime state 隔离 |
-| Session history | `sessions/<id>/history.jsonl` | `ConversationStore` | 已独立，但仍在 runtime root 直下 |
-| Session runtime events | `sessions/<id>/runtime/events.jsonl` | `RuntimeEventStore(...sessionDirOverride)` | 有 seq，但归档 replay API 和 UI 投影不足 |
-| Project index | `memory/projects/index.json` | `ProjectStore` | 存在 runtime root，但 project memory 写回用户项目 AGENTS |
-| Project memory | 用户项目 `AGENTS.md` managed block | `ProjectStore.ensureAgents/updateMemory` | 会污染用户项目，且容易把项目源代码与 agent 运行态混淆 |
-| Attachments/media | runtime root 下的 attachments/media | `AttachmentStore`、`MediaStore` | 需要确认 `.emperor` 迁移后的 `app://` 协议路径 |
-| Team/tasks/scheduler/control | runtime root 下分散目录 | 多个 Store | 需要统一 state root，避免默认写进 workspace |
-| 工具工作区 | `ctx.workspaceRoot ?? ctx.root` | `ToolRegistry`、工具类 | 已修过一轮，但需要 schema 化和 diagnostics 证明 |
+| 领域                         | 当前位置                             | 当前代码                                   | 主要问题                                                 |
+| ---------------------------- | ------------------------------------ | ------------------------------------------ | -------------------------------------------------------- |
+| 全局长期记忆                 | `memory/MEMORY.local.md`             | `MemoryStore`                              | 与会话目录同级，仍在 runtime root 直接暴露               |
+| 用户档案                     | `templates/USER.local.md`            | `ensureUserFile()`                         | 私人运行数据写在模板目录，不符合 runtime state 隔离      |
+| Session history              | `sessions/<id>/history.jsonl`        | `ConversationStore`                        | 已独立，但仍在 runtime root 直下                         |
+| Session runtime events       | `sessions/<id>/runtime/events.jsonl` | `RuntimeEventStore(...sessionDirOverride)` | 有 seq，但归档 replay API 和 UI 投影不足                 |
+| Project index                | `memory/projects/index.json`         | `ProjectStore`                             | 存在 runtime root，但 project memory 写回用户项目 AGENTS |
+| Project memory               | 用户项目 `AGENTS.md` managed block   | `ProjectStore.ensureAgents/updateMemory`   | 会污染用户项目，且容易把项目源代码与 agent 运行态混淆    |
+| Attachments/media            | runtime root 下的 attachments/media  | `AttachmentStore`、`MediaStore`            | 需要确认 `.emperor` 迁移后的 `app://` 协议路径           |
+| Team/tasks/scheduler/control | runtime root 下分散目录              | 多个 Store                                 | 需要统一 state root，避免默认写进 workspace              |
+| 工具工作区                   | `ctx.workspaceRoot ?? ctx.root`      | `ToolRegistry`、工具类                     | 已修过一轮，但需要 schema 化和 diagnostics 证明          |
 
 目标分离：
 
@@ -112,15 +112,15 @@ runtimeRoot/
 
 当前关键点：
 
-| 领域 | 当前代码 | 风险 |
-|------|----------|------|
-| 后端事件 | `packages/core/src/runtime/events.ts`、`RuntimeEventStore` | 事件 schema 多为宽松 `Record<string, unknown>`，缺少 receipt/owner 字段约束 |
-| Bootstrap replay | `CoreApi.bootstrap()` | 只取 active turn events，archive/cross-session replay 不完整 |
-| 前端投影 | `desktop/src/renderer/src/composables/useRuntime.ts` | 一个 composable 处理太多副作用，难以证明 idempotent |
-| Reducer | `desktop/src/renderer/src/runtime/reducer.ts` | 目前只是排序后 dispatch，没有真正纯投影 |
-| Snapshot | `desktop/src/renderer/src/runtime/snapshot.ts` | 主要用 transcript 文本匹配，结构化 segments 可能丢失 |
-| 工具卡片 | `useRuntime.ts` + `toolStatus.ts` | queued/started/result/run-completed 混合，未知或缺结束事件时需要统一降级 |
-| Internal error | `desktop/src/main/ipc.ts` + `useRuntime.ts` | 已修 TurnPaused/CancelledTaskError 一轮，但需要 task/control 语义全链路固化 |
+| 领域             | 当前代码                                                   | 风险                                                                        |
+| ---------------- | ---------------------------------------------------------- | --------------------------------------------------------------------------- |
+| 后端事件         | `packages/core/src/runtime/events.ts`、`RuntimeEventStore` | 事件 schema 多为宽松 `Record<string, unknown>`，缺少 receipt/owner 字段约束 |
+| Bootstrap replay | `CoreApi.bootstrap()`                                      | 只取 active turn events，archive/cross-session replay 不完整                |
+| 前端投影         | `desktop/src/renderer/src/composables/useRuntime.ts`       | 一个 composable 处理太多副作用，难以证明 idempotent                         |
+| Reducer          | `desktop/src/renderer/src/runtime/reducer.ts`              | 目前只是排序后 dispatch，没有真正纯投影                                     |
+| Snapshot         | `desktop/src/renderer/src/runtime/snapshot.ts`             | 主要用 transcript 文本匹配，结构化 segments 可能丢失                        |
+| 工具卡片         | `useRuntime.ts` + `toolStatus.ts`                          | queued/started/result/run-completed 混合，未知或缺结束事件时需要统一降级    |
+| Internal error   | `desktop/src/main/ipc.ts` + `useRuntime.ts`                | 已修 TurnPaused/CancelledTaskError 一轮，但需要 task/control 语义全链路固化 |
 
 ## 3. 非目标
 
@@ -188,14 +188,14 @@ flowchart TD
 
 ## 6. 执行顺序
 
-| Phase | Tasks | 目的 |
-|-------|-------|------|
-| P0-A | EA-ISO-001, EA-ISO-002 | 先建立 `.emperor` state root 和迁移兼容层 |
-| P0-B | EA-PROMPT-001, EA-WS-001, EA-MEM-001 | 显式化 prompt/memory/workspace/session 边界 |
-| P0-C | EA-RUNTIME-001, EA-RUNTIME-004, EA-REL-001 | 消灭 Internal error 类控制流和假取消 |
-| P1-A | EA-RUNTIME-002, EA-RUNTIME-003, EA-MEM-002, EA-PROMPT-002 | 修 UI 丢段、工具卡片、项目记忆写入和提示词风格 |
-| P1-B | EA-REL-002, EA-PERM-001 | context/compaction/权限/路径 fence |
-| P2 | EA-CAP-001, EA-QA-001 | 参考差距报告补齐能力和全链路验收 |
+| Phase | Tasks                                                     | 目的                                           |
+| ----- | --------------------------------------------------------- | ---------------------------------------------- |
+| P0-A  | EA-ISO-001, EA-ISO-002                                    | 先建立 `.emperor` state root 和迁移兼容层      |
+| P0-B  | EA-PROMPT-001, EA-WS-001, EA-MEM-001                      | 显式化 prompt/memory/workspace/session 边界    |
+| P0-C  | EA-RUNTIME-001, EA-RUNTIME-004, EA-REL-001                | 消灭 Internal error 类控制流和假取消           |
+| P1-A  | EA-RUNTIME-002, EA-RUNTIME-003, EA-MEM-002, EA-PROMPT-002 | 修 UI 丢段、工具卡片、项目记忆写入和提示词风格 |
+| P1-B  | EA-REL-002, EA-PERM-001                                   | context/compaction/权限/路径 fence             |
+| P2    | EA-CAP-001, EA-QA-001                                     | 参考差距报告补齐能力和全链路验收               |
 
 ## 7. Task Decomposition
 
@@ -471,15 +471,15 @@ flowchart TD
 
 ## 8. 风险登记
 
-| Risk | Impact | Mitigation |
-|------|--------|------------|
-| 路径迁移破坏用户历史 | 高 | copy-then-marker，不删除旧数据，迁移日志可审计 |
-| Project memory 不再写 AGENTS 后用户找不到 | 中 | UI 明确 state path，并显示 legacy imported source |
-| Prompt snapshot 泄露敏感内容 | 高 | 默认 redacted，仅 hash/长度；开发开关需本地确认 |
-| Runtime reducer 重构引入 UI 回归 | 高 | characterization tests 先行，pure reducer 并行替换 |
-| 权限 fence 过严影响正常附件/跨目录读取 | 中 | ask/deny 可解释，diagnostics 显示 effective roots |
-| 真实取消 kill 子进程不完整 | 中 | macOS 优先测试 process group，失败记录 degraded |
-| 任务过大失焦 | 高 | 按 phase 执行，每个任务独立验收，不跨 phase 混改 |
+| Risk                                      | Impact | Mitigation                                         |
+| ----------------------------------------- | ------ | -------------------------------------------------- |
+| 路径迁移破坏用户历史                      | 高     | copy-then-marker，不删除旧数据，迁移日志可审计     |
+| Project memory 不再写 AGENTS 后用户找不到 | 中     | UI 明确 state path，并显示 legacy imported source  |
+| Prompt snapshot 泄露敏感内容              | 高     | 默认 redacted，仅 hash/长度；开发开关需本地确认    |
+| Runtime reducer 重构引入 UI 回归          | 高     | characterization tests 先行，pure reducer 并行替换 |
+| 权限 fence 过严影响正常附件/跨目录读取    | 中     | ask/deny 可解释，diagnostics 显示 effective roots  |
+| 真实取消 kill 子进程不完整                | 中     | macOS 优先测试 process group，失败记录 degraded    |
+| 任务过大失焦                              | 高     | 按 phase 执行，每个任务独立验收，不跨 phase 混改   |
 
 ## 9. 完成定义
 

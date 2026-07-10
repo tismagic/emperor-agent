@@ -2,15 +2,20 @@
 import { computed } from 'vue'
 import logoMarkUrl from '../../../../../../assets/generated/emperor-agent-logo-mark.png'
 
-const props = withDefaults(defineProps<{
-  size?: number | string
-  alt?: string
-}>(), {
-  size: 24,
-  alt: '',
-})
+const props = withDefaults(
+  defineProps<{
+    size?: number | string
+    alt?: string
+  }>(),
+  {
+    size: 24,
+    alt: '',
+  },
+)
 
-const dimension = computed(() => typeof props.size === 'number' ? `${props.size}px` : props.size)
+const dimension = computed(() =>
+  typeof props.size === 'number' ? `${props.size}px` : props.size,
+)
 </script>
 
 <template>

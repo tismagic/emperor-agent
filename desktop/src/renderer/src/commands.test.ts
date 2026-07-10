@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest'
 
-import { isPathLikeSlashToken, parseSkillSlashCommand, parseSlashCommand } from './commands'
+import {
+  isPathLikeSlashToken,
+  parseSkillSlashCommand,
+  parseSlashCommand,
+} from './commands'
 import type { SkillInfo } from './types'
 
 const skills: SkillInfo[] = [
@@ -13,7 +17,8 @@ const skills: SkillInfo[] = [
 
 describe('slash command parsing', () => {
   it('does not treat absolute filesystem paths as slash commands', () => {
-    const input = '/Users/anhuike/Documents/workspace/claude-code-source-code/给你源码 你去看看'
+    const input =
+      '/Users/anhuike/Documents/workspace/claude-code-source-code/给你源码 你去看看'
 
     expect(isPathLikeSlashToken('/Users/anhuike/Documents')).toBe(true)
     expect(parseSlashCommand(input)).toBeNull()
@@ -23,6 +28,9 @@ describe('slash command parsing', () => {
   it('still parses known commands and skill shortcuts', () => {
     expect(parseSlashCommand('/help')?.command?.name).toBe('/help')
     expect(parseSlashCommand('/missing')?.command).toBeUndefined()
-    expect(parseSkillSlashCommand('/code-audit 检查项目', skills)?.requestedSkill.name).toBe('code-audit')
+    expect(
+      parseSkillSlashCommand('/code-audit 检查项目', skills)?.requestedSkill
+        .name,
+    ).toBe('code-audit')
   })
 })

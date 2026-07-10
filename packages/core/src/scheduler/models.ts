@@ -14,11 +14,16 @@ export enum SchedulerStatus {
   CANCELLED = 'cancelled',
 }
 
-export function nowMs(): number { return Date.now() }
-export function newJobId(): string { return randomUUID().replace(/-/g, '').slice(0, 12) }
+export function nowMs(): number {
+  return Date.now()
+}
+export function newJobId(): string {
+  return randomUUID().replace(/-/g, '').slice(0, 12)
+}
 export function validateJobId(jobId: string): string {
   const safe = String(jobId || '').trim()
-  if (!JOB_ID_RE.test(safe)) throw new Error('job id must match [a-zA-Z0-9][a-zA-Z0-9_.-]{0,63}')
+  if (!JOB_ID_RE.test(safe))
+    throw new Error('job id must match [a-zA-Z0-9][a-zA-Z0-9_.-]{0,63}')
   return safe
 }
 
@@ -28,7 +33,13 @@ export class SchedulerSchedule {
   every_ms: number | null
   expr: string | null
   tz: string | null
-  constructor(opts: { kind: 'at' | 'every' | 'cron'; at_ms?: number | null; every_ms?: number | null; expr?: string | null; tz?: string | null }) {
+  constructor(opts: {
+    kind: 'at' | 'every' | 'cron'
+    at_ms?: number | null
+    every_ms?: number | null
+    expr?: string | null
+    tz?: string | null
+  }) {
     this.kind = opts.kind
     this.at_ms = intOrNull(opts.at_ms)
     this.every_ms = intOrNull(opts.every_ms)
@@ -37,7 +48,8 @@ export class SchedulerSchedule {
   }
   static fromDict(raw: Record<string, any>): SchedulerSchedule {
     const kind = String(raw.kind || 'every')
-    if (!['at', 'every', 'cron'].includes(kind)) throw new Error(`unsupported schedule kind: ${kind}`)
+    if (!['at', 'every', 'cron'].includes(kind))
+      throw new Error(`unsupported schedule kind: ${kind}`)
     return new SchedulerSchedule({
       kind: kind as 'at' | 'every' | 'cron',
       at_ms: raw.at_ms ?? raw.atMs,
@@ -47,7 +59,13 @@ export class SchedulerSchedule {
     })
   }
   toDict(): Record<string, unknown> {
-    return { kind: this.kind, atMs: this.at_ms, everyMs: this.every_ms, expr: this.expr, tz: this.tz }
+    return {
+      kind: this.kind,
+      atMs: this.at_ms,
+      everyMs: this.every_ms,
+      expr: this.expr,
+      tz: this.tz,
+    }
   }
 }
 
@@ -58,7 +76,16 @@ export class SchedulerPayload {
   project_id: string | null
   deliver: boolean
   meta: Record<string, unknown>
-  constructor(opts: { kind?: 'agent_turn' | 'team_wake' | 'system_event'; message?: string; target?: string | null; project_id?: string | null; deliver?: boolean; meta?: Record<string, unknown> } = {}) {
+  constructor(
+    opts: {
+      kind?: 'agent_turn' | 'team_wake' | 'system_event'
+      message?: string
+      target?: string | null
+      project_id?: string | null
+      deliver?: boolean
+      meta?: Record<string, unknown>
+    } = {},
+  ) {
     this.kind = opts.kind ?? 'agent_turn'
     this.message = String(opts.message ?? '')
     this.target = strOrNull(opts.target)
@@ -67,8 +94,10 @@ export class SchedulerPayload {
     this.meta = opts.meta ?? {}
   }
   static fromDict(raw: Record<string, any>): SchedulerPayload {
-    let kind = String(raw.kind || 'agent_turn') as 'agent_turn' | 'team_wake' | 'system_event'
-    if (!['agent_turn', 'team_wake', 'system_event'].includes(kind)) kind = 'agent_turn'
+    let kind = String(raw.kind || 'agent_turn') as
+      'agent_turn' | 'team_wake' | 'system_event'
+    if (!['agent_turn', 'team_wake', 'system_event'].includes(kind))
+      kind = 'agent_turn'
     return new SchedulerPayload({
       kind,
       message: raw.message,
@@ -79,7 +108,14 @@ export class SchedulerPayload {
     })
   }
   toDict(): Record<string, unknown> {
-    return { kind: this.kind, message: this.message, target: this.target, projectId: this.project_id, deliver: this.deliver, meta: this.meta }
+    return {
+      kind: this.kind,
+      message: this.message,
+      target: this.target,
+      projectId: this.project_id,
+      deliver: this.deliver,
+      meta: this.meta,
+    }
   }
 }
 
@@ -92,9 +128,18 @@ export class SchedulerRunRecord {
   status: string
   duration_ms: number
   error: string | null
-  constructor(opts: { run_at_ms: number; status: string; duration_ms?: number; error?: string | null }) {
+  constructor(opts: {
+    run_at_ms: number
+    status: string
+    duration_ms?: number
+    error?: string | null
+  }) {
     this.run_at_ms = Math.trunc(opts.run_at_ms)
-    this.status = Object.values(SchedulerStatus).includes(opts.status as SchedulerStatus) ? opts.status : SchedulerStatus.SKIPPED
+    this.status = Object.values(SchedulerStatus).includes(
+      opts.status as SchedulerStatus,
+    )
+      ? opts.status
+      : SchedulerStatus.SKIPPED
     this.duration_ms = Math.max(0, Math.trunc(opts.duration_ms ?? 0))
     this.error = strOrNull(opts.error)
   }
@@ -107,7 +152,12 @@ export class SchedulerRunRecord {
     })
   }
   toDict(): Record<string, unknown> {
-    return { runAtMs: this.run_at_ms, status: this.status, durationMs: this.duration_ms, error: this.error }
+    return {
+      runAtMs: this.run_at_ms,
+      status: this.status,
+      durationMs: this.duration_ms,
+      error: this.error,
+    }
   }
 }
 
@@ -120,12 +170,20 @@ export class SchedulerJobState {
   constructor(raw: Partial<SchedulerJobState> = {}) {
     this.next_run_at_ms = intOrNull(raw.next_run_at_ms)
     this.last_run_at_ms = intOrNull(raw.last_run_at_ms)
-    this.last_status = raw.last_status && Object.values(SchedulerStatus).includes(raw.last_status as SchedulerStatus) ? raw.last_status : null
+    this.last_status =
+      raw.last_status &&
+      Object.values(SchedulerStatus).includes(
+        raw.last_status as SchedulerStatus,
+      )
+        ? raw.last_status
+        : null
     this.last_error = strOrNull(raw.last_error)
     this.run_history = (raw.run_history ?? []).slice(-MAX_RUN_HISTORY)
   }
   static fromDict(raw: Record<string, any>): SchedulerJobState {
-    const history = (raw.run_history ?? raw.runHistory ?? []).filter(isObject).map(SchedulerRunRecord.fromDict)
+    const history = (raw.run_history ?? raw.runHistory ?? [])
+      .filter(isObject)
+      .map(SchedulerRunRecord.fromDict)
     return new SchedulerJobState({
       next_run_at_ms: raw.next_run_at_ms ?? raw.nextRunAtMs,
       last_run_at_ms: raw.last_run_at_ms ?? raw.lastRunAtMs,
@@ -140,15 +198,33 @@ export class SchedulerJobState {
       lastRunAtMs: this.last_run_at_ms,
       lastStatus: this.last_status,
       lastError: this.last_error,
-      runHistory: this.run_history.slice(-MAX_RUN_HISTORY).map((item) => item.toDict()),
+      runHistory: this.run_history
+        .slice(-MAX_RUN_HISTORY)
+        .map((item) => item.toDict()),
     }
   }
-  recordRun(opts: { runAtMs: number; status: string; durationMs?: number; error?: string | null }): void {
-    const status = Object.values(SchedulerStatus).includes(opts.status as SchedulerStatus) ? opts.status : SchedulerStatus.SKIPPED
+  recordRun(opts: {
+    runAtMs: number
+    status: string
+    durationMs?: number
+    error?: string | null
+  }): void {
+    const status = Object.values(SchedulerStatus).includes(
+      opts.status as SchedulerStatus,
+    )
+      ? opts.status
+      : SchedulerStatus.SKIPPED
     this.last_run_at_ms = Math.trunc(opts.runAtMs)
     this.last_status = status
     this.last_error = strOrNull(opts.error)
-    this.run_history.push(new SchedulerRunRecord({ run_at_ms: opts.runAtMs, status, duration_ms: opts.durationMs ?? 0, error: opts.error }))
+    this.run_history.push(
+      new SchedulerRunRecord({
+        run_at_ms: opts.runAtMs,
+        status,
+        duration_ms: opts.durationMs ?? 0,
+        error: opts.error,
+      }),
+    )
     this.run_history = this.run_history.slice(-MAX_RUN_HISTORY)
   }
 }
@@ -166,8 +242,17 @@ export class SchedulerJob {
   protected = false
   purpose: string | null = null
   constructor(opts: {
-    id: string; name: string; enabled?: boolean; schedule: SchedulerSchedule; payload: SchedulerPayload; state?: SchedulerJobState
-    created_at_ms?: number; updated_at_ms?: number; delete_after_run?: boolean; protected?: boolean; purpose?: string | null
+    id: string
+    name: string
+    enabled?: boolean
+    schedule: SchedulerSchedule
+    payload: SchedulerPayload
+    state?: SchedulerJobState
+    created_at_ms?: number
+    updated_at_ms?: number
+    delete_after_run?: boolean
+    protected?: boolean
+    purpose?: string | null
   }) {
     this.id = validateJobId(opts.id)
     this.name = String(opts.name || '')
@@ -181,7 +266,16 @@ export class SchedulerJob {
     this.protected = opts.protected ?? false
     this.purpose = strOrNull(opts.purpose)
   }
-  static create(opts: { name: string; schedule: SchedulerSchedule; payload: SchedulerPayload; jobId?: string | null; deleteAfterRun?: boolean; protected?: boolean; purpose?: string | null; now?: number }): SchedulerJob {
+  static create(opts: {
+    name: string
+    schedule: SchedulerSchedule
+    payload: SchedulerPayload
+    jobId?: string | null
+    deleteAfterRun?: boolean
+    protected?: boolean
+    purpose?: string | null
+    now?: number
+  }): SchedulerJob {
     const stamp = Math.trunc(opts.now ?? nowMs())
     return new SchedulerJob({
       id: validateJobId(opts.jobId || newJobId()),
@@ -205,52 +299,79 @@ export class SchedulerJob {
       state: SchedulerJobState.fromDict(raw.state || {}),
       created_at_ms: Number(raw.created_at_ms ?? raw.createdAtMs ?? nowMs()),
       updated_at_ms: Number(raw.updated_at_ms ?? raw.updatedAtMs ?? nowMs()),
-      delete_after_run: Boolean(raw.delete_after_run ?? raw.deleteAfterRun ?? false),
+      delete_after_run: Boolean(
+        raw.delete_after_run ?? raw.deleteAfterRun ?? false,
+      ),
       protected: Boolean(raw.protected ?? false),
       purpose: raw.purpose,
     })
   }
   toDict(): Record<string, unknown> {
     return {
-      id: this.id, name: this.name, enabled: this.enabled, schedule: this.schedule.toDict(),
-      payload: this.payload.toDict(), state: this.state.toDict(),
-      createdAtMs: this.created_at_ms, updatedAtMs: this.updated_at_ms,
-      deleteAfterRun: this.delete_after_run, protected: this.protected, purpose: this.purpose,
+      id: this.id,
+      name: this.name,
+      enabled: this.enabled,
+      schedule: this.schedule.toDict(),
+      payload: this.payload.toDict(),
+      state: this.state.toDict(),
+      createdAtMs: this.created_at_ms,
+      updatedAtMs: this.updated_at_ms,
+      deleteAfterRun: this.delete_after_run,
+      protected: this.protected,
+      purpose: this.purpose,
     }
   }
 }
 
-export function computeNextRunMs(schedule: SchedulerSchedule, currentMs: number): number | null {
-  if (schedule.kind === 'at') return schedule.at_ms && schedule.at_ms > currentMs ? schedule.at_ms : null
-  if (schedule.kind === 'every') return schedule.every_ms && schedule.every_ms > 0 ? currentMs + schedule.every_ms : null
+export function computeNextRunMs(
+  schedule: SchedulerSchedule,
+  currentMs: number,
+): number | null {
+  if (schedule.kind === 'at')
+    return schedule.at_ms && schedule.at_ms > currentMs ? schedule.at_ms : null
+  if (schedule.kind === 'every')
+    return schedule.every_ms && schedule.every_ms > 0
+      ? currentMs + schedule.every_ms
+      : null
   if (schedule.kind === 'cron') return nextCronMs(schedule, currentMs)
   return null
 }
 
 export function validateSchedule(schedule: SchedulerSchedule): void {
   if (schedule.kind === 'at') {
-    if (!schedule.at_ms || schedule.at_ms <= 0) throw new Error('at schedule requires at_ms')
+    if (!schedule.at_ms || schedule.at_ms <= 0)
+      throw new Error('at schedule requires at_ms')
     if (schedule.tz) throw new Error('tz can only be used with cron schedules')
     return
   }
   if (schedule.kind === 'every') {
-    if (!schedule.every_ms || schedule.every_ms <= 0) throw new Error('every schedule requires every_ms > 0')
+    if (!schedule.every_ms || schedule.every_ms <= 0)
+      throw new Error('every schedule requires every_ms > 0')
     if (schedule.tz) throw new Error('tz can only be used with cron schedules')
     return
   }
   if (schedule.kind === 'cron') {
     if (!schedule.expr) throw new Error('cron schedule requires expr')
     if (schedule.tz) validateTimeZone(schedule.tz)
-    if (!isValidCron(schedule.expr)) throw new Error(`invalid cron expression '${schedule.expr}'`)
+    if (!isValidCron(schedule.expr))
+      throw new Error(`invalid cron expression '${schedule.expr}'`)
     return
   }
-  throw new Error(`unsupported schedule kind: ${(schedule as SchedulerSchedule).kind}`)
+  throw new Error(
+    `unsupported schedule kind: ${(schedule as SchedulerSchedule).kind}`,
+  )
 }
 
-function nextCronMs(schedule: SchedulerSchedule, currentMs: number): number | null {
+function nextCronMs(
+  schedule: SchedulerSchedule,
+  currentMs: number,
+): number | null {
   if (!schedule.expr) return null
   try {
-    const cron = new Cron(schedule.expr, { paused: true, timezone: schedule.tz ?? undefined })
+    const cron = new Cron(schedule.expr, {
+      paused: true,
+      timezone: schedule.tz ?? undefined,
+    })
     return cron.nextRun(new Date(currentMs))?.getTime() ?? null
   } catch {
     return null
@@ -267,7 +388,11 @@ function isValidCron(expr: string): boolean {
 }
 
 function validateTimeZone(tz: string): void {
-  try { new Intl.DateTimeFormat('en-US', { timeZone: tz }).format(new Date()) } catch { throw new Error(`unknown timezone '${tz}'`) }
+  try {
+    new Intl.DateTimeFormat('en-US', { timeZone: tz }).format(new Date())
+  } catch {
+    throw new Error(`unknown timezone '${tz}'`)
+  }
 }
 
 function intOrNull(value: unknown): number | null {

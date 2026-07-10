@@ -65,14 +65,23 @@ function refresh() {
             {{ r.label }}
           </button>
         </div>
-        <button class="tool-button asset-button refresh-action" title="刷新" @click="refresh">
+        <button
+          class="tool-button asset-button refresh-action"
+          title="刷新"
+          @click="refresh"
+        >
           <component :is="actionIcons.refresh" class="action-icon" :size="16" />
           <span>刷新</span>
         </button>
       </div>
     </header>
     <div class="view-body tokens-body">
-      <div v-if="!ctx.tokens.value && ctx.tokensLoading.value" class="empty-note">加载 Token 统计中...</div>
+      <div
+        v-if="!ctx.tokens.value && ctx.tokensLoading.value"
+        class="empty-note"
+      >
+        加载 Token 统计中...
+      </div>
       <OverviewSubPanel
         v-else-if="tab === 'overview'"
         :tokens="ctx.tokens.value"
@@ -83,11 +92,7 @@ function refresh() {
         :tokens="ctx.tokens.value"
         :range="range"
       />
-      <CacheSubPanel
-        v-else
-        :tokens="ctx.tokens.value"
-        :range="range"
-      />
+      <CacheSubPanel v-else :tokens="ctx.tokens.value" :range="range" />
     </div>
   </section>
 </template>

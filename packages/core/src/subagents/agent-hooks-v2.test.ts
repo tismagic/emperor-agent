@@ -11,18 +11,33 @@ import { ToolRegistry } from '../tools/registry'
 import { toolParamsSchema } from '../tools/schema'
 import { SubagentRegistry } from './registry'
 
-const TEMPLATES = join(__dirname, '..', '..', '..', '..', 'templates', 'subagents')
+const TEMPLATES = join(
+  __dirname,
+  '..',
+  '..',
+  '..',
+  '..',
+  'templates',
+  'subagents',
+)
 
 class ReadTool extends Tool {
   readonly name = 'read_file'
   readonly description = 'read'
   readonly parameters = toolParamsSchema({})
   override readOnly = true
-  execute(): string { return 'read' }
+  execute(): string {
+    return 'read'
+  }
 }
 
 function pass(context = ''): HookAggregateDecision {
-  return { decision: 'passthrough', reason: '', results: [], additionalContext: context }
+  return {
+    decision: 'passthrough',
+    reason: '',
+    results: [],
+    additionalContext: context,
+  }
 }
 
 function root(prefix: string): string {
@@ -31,8 +46,12 @@ function root(prefix: string): string {
 
 function dispatchArgs(): Record<string, unknown> {
   return {
-    agent_type: 'sili_suitang', task: 'inspect docs', purpose: 'read',
-    expected_output: 'summary', evidence_required: 'paths', scope_limit: 'readonly',
+    agent_type: 'sili_suitang',
+    task: 'inspect docs',
+    purpose: 'read',
+    expected_output: 'summary',
+    evidence_required: 'paths',
+    scope_limit: 'readonly',
   }
 }
 
@@ -49,26 +68,55 @@ describe('subagent hook lifecycle', () => {
       subagentRegistry: new SubagentRegistry(TEMPLATES),
       taskManager: new TaskManager(root('subagent-hooks-tasks-')),
       hooks: {
-        begin: async (opts) => { starts.push(opts.agentId); return pass(`scope:${opts.agentId}`) },
-        end: (agentId) => { ended.push(agentId) },
+        begin: async (opts) => {
+          starts.push(opts.agentId)
+          return pass(`scope:${opts.agentId}`)
+        },
+        end: (agentId) => {
+          ended.push(agentId)
+        },
       },
       runnerFactory: (args) => {
         factoryArgs.push(args as unknown as Record<string, unknown>)
-        return { step: (history) => { histories.push(history.map((message) => ({ ...message }))); return 'done' } }
+        return {
+          step: (history) => {
+            histories.push(history.map((message) => ({ ...message })))
+            return 'done'
+          },
+        }
       },
     })
 
     const [first, second] = await Promise.all([
-      tool.execute(dispatchArgs(), { root: '/repo', workspaceRoot: '/repo', arguments: {}, sessionId: 's1' }),
-      tool.execute(dispatchArgs(), { root: '/repo', workspaceRoot: '/repo', arguments: {}, sessionId: 's1' }),
+      tool.execute(dispatchArgs(), {
+        root: '/repo',
+        workspaceRoot: '/repo',
+        arguments: {},
+        sessionId: 's1',
+      }),
+      tool.execute(dispatchArgs(), {
+        root: '/repo',
+        workspaceRoot: '/repo',
+        arguments: {},
+        sessionId: 's1',
+      }),
     ])
 
     expect(first).toBe('done')
     expect(second).toBe('done')
     expect(new Set(starts).size).toBe(2)
     expect(ended.sort()).toEqual([...starts].sort())
-    expect(histories.every((history) => JSON.stringify(history[0]).includes('SubagentStart hook context'))).toBe(true)
-    expect(factoryArgs.every((args) => args.sessionId === 's1' && starts.includes(String(args.agentId)))).toBe(true)
+    expect(
+      histories.every((history) =>
+        JSON.stringify(history[0]).includes('SubagentStart hook context'),
+      ),
+    ).toBe(true)
+    expect(
+      factoryArgs.every(
+        (args) =>
+          args.sessionId === 's1' && starts.includes(String(args.agentId)),
+      ),
+    ).toBe(true)
   })
 
   it('clears a subagent scope when the nested runner fails', async () => {
@@ -80,13 +128,28 @@ describe('subagent hook lifecycle', () => {
       parentRegistry: parent,
       subagentRegistry: new SubagentRegistry(TEMPLATES),
       hooks: {
-        begin: async (opts) => { started = opts.agentId; return pass() },
-        end: (agentId) => { ended.push(agentId) },
+        begin: async (opts) => {
+          started = opts.agentId
+          return pass()
+        },
+        end: (agentId) => {
+          ended.push(agentId)
+        },
       },
-      runnerFactory: () => ({ step: () => { throw new Error('nested failed') } }),
+      runnerFactory: () => ({
+        step: () => {
+          throw new Error('nested failed')
+        },
+      }),
     })
 
-    expect(await tool.execute(dispatchArgs(), { root: '/repo', arguments: {}, sessionId: 's1' })).toContain('nested failed')
+    expect(
+      await tool.execute(dispatchArgs(), {
+        root: '/repo',
+        arguments: {},
+        sessionId: 's1',
+      }),
+    ).toContain('nested failed')
     expect(ended).toEqual([started])
   })
 })
@@ -105,8 +168,13 @@ describe('team hook lifecycle', () => {
         names: () => ['sili_suitang'],
       },
       hooks: {
-        begin: async (opts) => { starts.push(opts.agentId); return pass(`team:${opts.teammateName}`) },
-        end: (agentId) => { ended.push(agentId) },
+        begin: async (opts) => {
+          starts.push(opts.agentId)
+          return pass(`team:${opts.teammateName}`)
+        },
+        end: (agentId) => {
+          ended.push(agentId)
+        },
       },
       runnerFactory: () => ({
         step: (history) => {
@@ -117,12 +185,20 @@ describe('team hook lifecycle', () => {
       }),
     })
 
-    await manager.spawnTeammate({ name: 'alice', role: 'reader', task: 'first' })
+    await manager.spawnTeammate({
+      name: 'alice',
+      role: 'reader',
+      task: 'first',
+    })
     fail = true
     await manager.sendMessage({ to: 'alice', content: 'second', wake: true })
 
     expect(starts).toHaveLength(2)
     expect(ended.sort()).toEqual([...starts].sort())
-    expect(histories.every((history) => JSON.stringify(history).includes('SubagentStart hook context'))).toBe(true)
+    expect(
+      histories.every((history) =>
+        JSON.stringify(history).includes('SubagentStart hook context'),
+      ),
+    ).toBe(true)
   })
 })

@@ -4,10 +4,18 @@ import { HookConfigLoader } from './config'
 import { aggregateHookResults } from './decision'
 import { executeHook } from './executor'
 import { buildHookInput, findMatchingHooks } from './matcher'
-import type { HookAggregateDecision, HookAuditRecord, HookEventName, HookExecutionResult, HookSource } from './models'
+import type {
+  HookAggregateDecision,
+  HookAuditRecord,
+  HookEventName,
+  HookExecutionResult,
+  HookSource,
+} from './models'
 import * as hookEvents from '../runtime/events'
 
-export type HookRuntimeEmitter = (event: Record<string, unknown>) => void | Promise<void>
+export type HookRuntimeEmitter = (
+  event: Record<string, unknown>,
+) => void | Promise<void>
 
 export interface HookRuntimeRunOptions {
   sessionId: string
@@ -37,8 +45,13 @@ export class HookRuntime {
     this.emitEvent = opts.emit ?? null
   }
 
-  async run(eventName: HookEventName, opts: HookRuntimeRunOptions): Promise<HookAggregateDecision> {
-    const loaded = await this.loader.load({ projectRoot: opts.projectRoot ?? null })
+  async run(
+    eventName: HookEventName,
+    opts: HookRuntimeRunOptions,
+  ): Promise<HookAggregateDecision> {
+    const loaded = await this.loader.load({
+      projectRoot: opts.projectRoot ?? null,
+    })
     const input = buildHookInput(eventName, {
       ...opts,
       stateRoot: opts.stateRoot ?? this.stateRoot,
@@ -46,28 +59,60 @@ export class HookRuntime {
     const hooks = findMatchingHooks(loaded.config, input)
     const results: HookExecutionResult[] = []
     for (const hook of hooks) {
-      await this.emit(hookEvents.hookRunStarted({ hookId: hook.id, eventName, handlerType: hook.handler.type, source: hook.source ? { ...hook.source } : null }))
-      await this.emit(hookEvents.hookRunProgress({ hookId: hook.id, eventName, status: 'executing' }))
+      await this.emit(
+        hookEvents.hookRunStarted({
+          hookId: hook.id,
+          eventName,
+          handlerType: hook.handler.type,
+          source: hook.source ? { ...hook.source } : null,
+        }),
+      )
+      await this.emit(
+        hookEvents.hookRunProgress({
+          hookId: hook.id,
+          eventName,
+          status: 'executing',
+        }),
+      )
       const result = await executeHook(hook, input)
       results.push(result)
-      await this.audit.append(auditRecordFromResult(result, {
-        eventName,
-        handlerType: hook.handler.type,
-        source: hook.source ?? fallbackSource(this.loader.globalConfigPath),
-      }))
-      const event = result.status === 'completed' || result.status === 'skipped'
-        ? hookEvents.hookRunCompleted({ hookId: hook.id, eventName, status: result.status, decision: result.decision, reason: result.reason, durationMs: result.durationMs })
-        : hookEvents.hookRunFailed({ hookId: hook.id, eventName, status: result.status, decision: result.decision, reason: result.reason, durationMs: result.durationMs })
+      await this.audit.append(
+        auditRecordFromResult(result, {
+          eventName,
+          handlerType: hook.handler.type,
+          source: hook.source ?? fallbackSource(this.loader.globalConfigPath),
+        }),
+      )
+      const event =
+        result.status === 'completed' || result.status === 'skipped'
+          ? hookEvents.hookRunCompleted({
+              hookId: hook.id,
+              eventName,
+              status: result.status,
+              decision: result.decision,
+              reason: result.reason,
+              durationMs: result.durationMs,
+            })
+          : hookEvents.hookRunFailed({
+              hookId: hook.id,
+              eventName,
+              status: result.status,
+              decision: result.decision,
+              reason: result.reason,
+              durationMs: result.durationMs,
+            })
       await this.emit(event)
     }
     const decision = aggregateHookResults(results)
     if (results.length > 0) {
-      await this.emit(hookEvents.hookDecisionApplied({
-        eventName,
-        decision: decision.decision,
-        reason: decision.reason,
-        hookIds: results.map((result) => result.hookId),
-      }))
+      await this.emit(
+        hookEvents.hookDecisionApplied({
+          eventName,
+          decision: decision.decision,
+          reason: decision.reason,
+          hookIds: results.map((result) => result.hookId),
+        }),
+      )
     }
     return decision
   }
@@ -79,7 +124,11 @@ export class HookRuntime {
 
 function auditRecordFromResult(
   result: HookExecutionResult,
-  opts: { eventName: HookEventName; handlerType: HookAuditRecord['handlerType']; source: HookSource },
+  opts: {
+    eventName: HookEventName
+    handlerType: HookAuditRecord['handlerType']
+    source: HookSource
+  },
 ): HookAuditRecord {
   return {
     id: `hook_audit_${Date.now()}_${randomUUID().replace(/-/g, '').slice(0, 8)}`,

@@ -26,6 +26,7 @@ Each task is written to this 12-field specification. Compared to the 6-field W00
 **Requirement**: Exclusions are mandatory. When unsure about boundaries, put it in exclusions — better than missing it.
 
 **Example**:
+
 ```markdown
 - **Purpose**: Provide general-purpose atomic JSON file read/write, replacing repeated tmp-file write logic scattered across modules.
 - **Scope**: `readJson<T>` read, `writeJsonAtomic` atomic write, `isolateCorrupt` corruption isolation.
@@ -43,6 +44,7 @@ Each task is written to this 12-field specification. Compared to the 6-field W00
 **Requirement**: Precision at function/class level. No "etc." or "related code."
 
 **Example**:
+
 ```markdown
 - **Source (Python)**:
   - `agent/tasks/store.py` — `_atomic_write_text()` — atomic write pattern
@@ -54,16 +56,19 @@ Each task is written to this 12-field specification. Compared to the 6-field W00
 
 ### Field 4: Target Specification
 
-```markdown
+````markdown
 - **Target (TS)**:
   - `packages/core/src/store/atomic-json.ts` — main module
   - Public API:
     ```typescript
-    async function readJson<T>(path: string, defaultVal: T): Promise<T>;
-    async function writeJsonAtomic(path: string, data: unknown): Promise<void>;
-    async function isolateCorrupt(path: string, onDiagnostic?: (msg: string) => void): Promise<string>;
+    async function readJson<T>(path: string, defaultVal: T): Promise<T>
+    async function writeJsonAtomic(path: string, data: unknown): Promise<void>
+    async function isolateCorrupt(
+      path: string,
+      onDiagnostic?: (msg: string) => void,
+    ): Promise<string>
     ```
-```
+````
 
 **Requirement**: Public APIs must have complete type signatures. Internal helpers are optional.
 
@@ -75,18 +80,20 @@ This is the **most important field**. Must cover these sub-sections:
 
 Write concrete type definitions as code blocks — not descriptions.
 
-```markdown
+````markdown
 #### Data Models
 
 ```typescript
 interface StoreOptions {
   /** Normalize data before writing */
-  normalize?: <T>(data: T) => T;
+  normalize?: <T>(data: T) => T
   /** Callback on corrupt file, for diagnostics reporting */
-  onCorrupt?: (originalPath: string, corruptPath: string, error: Error) => void;
+  onCorrupt?: (originalPath: string, corruptPath: string, error: Error) => void
 }
 ```
-```
+````
+
+````
 
 #### 5.2 Key Algorithms / Logic
 
@@ -96,17 +103,20 @@ Pseudocode or decision tables. Branch conditions must be explicit.
 #### Key Algorithms
 
 **writeJsonAtomic flow**:
-```
+````
+
 1. Serialize data → JSON string (pretty print, 2-space indent)
 2. Write to <path>.tmp.<pid> (same directory, ensures same filesystem)
 3. fs.fsync(tmpFd) — force flush to disk
 4. fs.rename(tmpPath, path) — same-directory rename is atomic
 5. Return success
 6. Any step fails → fs.unlink(tmpPath) (best-effort) + rethrow original error
+
 ```
 
 **readJson corruption isolation flow**:
 ```
+
 1. fs.readFile(path, 'utf-8')
 2. JSON.parse(content)
 3. Success → return parsed result
@@ -114,7 +124,9 @@ Pseudocode or decision tables. Branch conditions must be explicit.
    a. Copy corrupt file to <path>.corrupt-<ISO8601-timestamp>
    b. Call onCorrupt(path, corruptPath, error)
    c. Return defaultVal
+
 ```
+
 ```
 
 #### 5.3 State Machines (if applicable)
@@ -122,13 +134,13 @@ Pseudocode or decision tables. Branch conditions must be explicit.
 ```markdown
 #### State Machine
 
-| Current State | Event | New State | Side Effect |
-|---------------|-------|-----------|-------------|
-| IDLE | write request | WRITING | Create tmp file |
-| WRITING | fsync OK | RENAMING | fs.rename |
-| WRITING | I/O error | ERROR | Clean up tmp |
-| RENAMING | rename OK | IDLE | Return success |
-| RENAMING | rename error | ERROR | Clean up tmp |
+| Current State | Event         | New State | Side Effect     |
+| ------------- | ------------- | --------- | --------------- |
+| IDLE          | write request | WRITING   | Create tmp file |
+| WRITING       | fsync OK      | RENAMING  | fs.rename       |
+| WRITING       | I/O error     | ERROR     | Clean up tmp    |
+| RENAMING      | rename OK     | IDLE      | Return success  |
+| RENAMING      | rename error  | ERROR     | Clean up tmp    |
 ```
 
 #### 5.4 Invariants
@@ -155,17 +167,17 @@ List concrete scenarios (not "handle edge cases"), with expected behavior.
 ```markdown
 #### Edge Cases
 
-| Scenario | Expected Behavior |
-|----------|-------------------|
-| Empty file (0 bytes) | `readJson` returns defaultVal, no corrupt backup created |
-| File content is non-JSON text | Create corrupt backup, return defaultVal |
-| Directory does not exist | `writeJsonAtomic` throws, error message includes path |
-| File locked by another process (Windows) | rename fails → clean up tmp → throw `FileLockError` |
-| Disk full | fsync fails → clean up tmp → throw, message includes available space |
-| 10 concurrent writeJsonAtomic to same path | All writes complete, final file is intact, 0 corrupt backups |
-| JSON contains undefined / circular ref | JSON.stringify throws → no tmp created → original file unchanged |
-| Path is a symlink | Follow symlink, write to target file |
-| Very large JSON (>100MB) | Functionally correct, warn log emitted (suggest using JSONL) |
+| Scenario                                   | Expected Behavior                                                    |
+| ------------------------------------------ | -------------------------------------------------------------------- |
+| Empty file (0 bytes)                       | `readJson` returns defaultVal, no corrupt backup created             |
+| File content is non-JSON text              | Create corrupt backup, return defaultVal                             |
+| Directory does not exist                   | `writeJsonAtomic` throws, error message includes path                |
+| File locked by another process (Windows)   | rename fails → clean up tmp → throw `FileLockError`                  |
+| Disk full                                  | fsync fails → clean up tmp → throw, message includes available space |
+| 10 concurrent writeJsonAtomic to same path | All writes complete, final file is intact, 0 corrupt backups         |
+| JSON contains undefined / circular ref     | JSON.stringify throws → no tmp created → original file unchanged     |
+| Path is a symlink                          | Follow symlink, write to target file                                 |
+| Very large JSON (>100MB)                   | Functionally correct, warn log emitted (suggest using JSONL)         |
 ```
 
 #### 5.6 Compatibility Requirements
@@ -196,6 +208,7 @@ List concrete scenarios (not "handle edge cases"), with expected behavior.
 ```
 
 **Example**:
+
 ```markdown
 - **Internal dependencies**: MIG-FND-001 (monorepo skeleton)
 - **External dependencies**: `proper-lockfile` (introduced by MIG-FND-003), Node.js `fs/promises`
@@ -210,12 +223,14 @@ List concrete scenarios (not "handle edge cases"), with expected behavior.
 ```
 
 **Complexity definitions**:
+
 - **S**: Pure logic, no external deps, single file, <100 lines
 - **M**: Involves I/O or multiple modules, single or few files, 100-300 lines
 - **L**: Cross-module, involves concurrency/network/platform differences, >300 lines
 - **XL**: Cross-system boundary, involves protocol design or data migration, requires multiple iterations
 
 **Example**:
+
 ```markdown
 - **Complexity**: M
 - **Risk sources**:
@@ -234,12 +249,12 @@ List concrete scenarios (not "handle edge cases"), with expected behavior.
 
 **Each task MUST have ≥8 test cases** (type/constant definition tasks can drop to 3-5):
 
-| Dimension | Minimum | Notes |
-|-----------|---------|-------|
-| Happy path | ≥3 | Cover main input variants |
-| Edge conditions | ≥3 | Empty/zero/max/boundary/single-element |
-| Error handling | ≥2 | Invalid input throws correct exception type + error message |
-| **Total** | **≥8** | |
+| Dimension       | Minimum | Notes                                                       |
+| --------------- | ------- | ----------------------------------------------------------- |
+| Happy path      | ≥3      | Cover main input variants                                   |
+| Edge conditions | ≥3      | Empty/zero/max/boundary/single-element                      |
+| Error handling  | ≥2      | Invalid input throws correct exception type + error message |
+| **Total**       | **≥8**  |                                                             |
 
 **TDD Flow** (must be written in the plan; skipping RED confirmation = tests are invalid):
 
@@ -259,26 +274,24 @@ List concrete scenarios (not "handle edge cases"), with expected behavior.
 #### New Tests (≥8)
 
 **Happy path (≥3)**:
+
 1. test_atomic_write_read_roundtrip — write then read yields equivalent data
 2. test_atomic_write_preserves_indent — 2-space indentation is consistent
 3. test_read_json_returns_typed_object — returns correct TypeScript type
 
-**Edge conditions (≥3)**:
-4. test_read_empty_file_returns_default — empty file → defaultVal, no corrupt created
-5. test_read_corrupt_json_isolates — corrupt JSON → corrupt backup + defaultVal
-6. test_concurrent_writes_no_corruption — 10 concurrent writes → file intact
+**Edge conditions (≥3)**: 4. test_read_empty_file_returns_default — empty file → defaultVal, no corrupt created 5. test_read_corrupt_json_isolates — corrupt JSON → corrupt backup + defaultVal 6. test_concurrent_writes_no_corruption — 10 concurrent writes → file intact
 
-**Error handling (≥2)**:
-7. test_write_to_nonexistent_dir_throws — dir doesn't exist → ENOENT
-8. test_windows_eperm_retry — mock EPERM → retries 3 times then throws FileLockError
+**Error handling (≥2)**: 7. test_write_to_nonexistent_dir_throws — dir doesn't exist → ENOENT 8. test_windows_eperm_retry — mock EPERM → retries 3 times then throws FileLockError
 
 #### TDD Flow
+
 1. Write the 8 tests above → `npx vitest run atomic-json.test.ts` confirm RED
 2. Implement `readJson` / `writeJsonAtomic` / `isolateCorrupt`
 3. Run tests confirm GREEN → all pass
 4. `npx tsc --noEmit` zero errors
 
 #### Golden Data
+
 - Python generates 100 random nested JSON → Python `_atomic_write_text` writes → TS `readJson` reads → deep compare
 ```
 
@@ -290,6 +303,7 @@ List concrete scenarios (not "handle edge cases"), with expected behavior.
 ## Acceptance Criteria
 
 ### Functional Correctness
+
 - [ ] `readJson<UserProfile>(path, default)` — normal file returns typed parsed object
 - [ ] `readJson<UserProfile>(path, default)` — corrupt file returns default, no exception thrown
 - [ ] `readJson<UserProfile>(path, default)` — empty file returns default, no corrupt backup
@@ -298,11 +312,13 @@ List concrete scenarios (not "handle edge cases"), with expected behavior.
 - [ ] `isolateCorrupt(path)` — copies file to `.corrupt-<ts>` and returns corrupt path
 
 ### Atomicity & Data Safety
+
 - [ ] SIGKILL during write — file is either old or new content (no half-written JSON)
 - [ ] Write failure (simulated disk full) — original file sha256 unchanged
 - [ ] 10 concurrent `writeJsonAtomic` to same path — file parseable by JSON.parse, 0 corrupt backups
 
 ### Edge Behaviors
+
 - [ ] Target directory doesn't exist → throws, error message includes path
 - [ ] Windows EPERM → auto-retry 3 times, throw `FileLockError` if all fail
 - [ ] JSON contains undefined → JSON.stringify omits, no tmp created, original file unchanged
@@ -310,12 +326,14 @@ List concrete scenarios (not "handle edge cases"), with expected behavior.
 - [ ] Very large JSON (>100MB) → functionally correct, warn log on stderr
 
 ### Compatibility
+
 - [ ] Correctly reads files generated by Python `json.dumps(indent=2)`
 - [ ] TS `writeJsonAtomic` output is correctly parsed by Python `json.load()`
 - [ ] Corrupt backup filename `<name>.corrupt-<ISO8601>` matches Python convention
 - [ ] Encoding is UTF-8 without BOM
 
 ### Code Quality
+
 - [ ] TypeScript strict mode zero errors
 - [ ] No `any` type (except JSON.parse return with explicit `as T` assertion)
 - [ ] Functions have JSDoc comments describing purpose and boundaries
@@ -329,6 +347,7 @@ List concrete scenarios (not "handle edge cases"), with expected behavior.
 ```
 
 **Example**:
+
 ```markdown
 - **Estimate**: 6 hours / 3 story points
 - **Rationale**: Core logic ~80 lines TS (2h), tests ~150 lines (2h), cross-platform verification + golden data (2h)
@@ -351,6 +370,7 @@ List concrete scenarios (not "handle edge cases"), with expected behavior.
 ```
 
 **Example**:
+
 ```markdown
 - **Design decisions**: Hand-written tmp+rename instead of `write-file-atomic`. The npm package has 50+ transitive dependencies for ~10 lines of core logic — not worth the supply-chain risk.
 - **Known limitations**: Does not handle atomicity on distributed filesystems like NFS (consistent with Python behavior).
@@ -379,24 +399,27 @@ Below is the full MIG-FND-002 task rewritten using this template, demonstrating 
   - `agent/local_config.py` — `_preserve_corrupt_local_config()` — corrupt file backup as `.corrupt-*` pattern
 
 - **Target (TS)**: `packages/core/src/store/atomic-json.ts`
+
   ```typescript
   // Public API
   export async function readJson<T>(
     path: string,
     defaultVal: T,
-    opts?: { onCorrupt?: (path: string, corruptPath: string, err: Error) => void }
-  ): Promise<T>;
+    opts?: {
+      onCorrupt?: (path: string, corruptPath: string, err: Error) => void
+    },
+  ): Promise<T>
 
   export async function writeJsonAtomic(
     path: string,
     data: unknown,
-    opts?: { pretty?: boolean; indent?: number }
-  ): Promise<void>;
+    opts?: { pretty?: boolean; indent?: number },
+  ): Promise<void>
 
   export async function isolateCorrupt(
     path: string,
-    onDiagnostic?: (msg: string) => void
-  ): Promise<string>; // returns corrupt file path
+    onDiagnostic?: (msg: string) => void,
+  ): Promise<string> // returns corrupt file path
   ```
 
 - **Internal dependencies**: MIG-FND-001 (monorepo skeleton), MIG-FND-008 (StoreCorruptError type)
@@ -404,12 +427,17 @@ Below is the full MIG-FND-002 task rewritten using this template, demonstrating 
 - **Detailed Design**:
 
   #### Data Models
+
   ```typescript
   interface AtomicJsonOptions {
     /** Indent spaces, default 2 (matches Python json.dumps(indent=2)) */
-    indent?: number;
+    indent?: number
     /** Callback on corrupt file, for diagnostics/logging */
-    onCorrupt?: (originalPath: string, corruptPath: string, error: Error) => void;
+    onCorrupt?: (
+      originalPath: string,
+      corruptPath: string,
+      error: Error,
+    ) => void
   }
 
   class StoreCorruptError extends Error {
@@ -417,10 +445,10 @@ Below is the full MIG-FND-002 task rewritten using this template, demonstrating 
       message: string,
       public readonly originalPath: string,
       public readonly corruptPath: string,
-      public readonly cause: Error
+      public readonly cause: Error,
     ) {
-      super(message);
-      this.name = 'StoreCorruptError';
+      super(message)
+      this.name = 'StoreCorruptError'
     }
   }
   ```
@@ -428,6 +456,7 @@ Below is the full MIG-FND-002 task rewritten using this template, demonstrating 
   #### Key Algorithms
 
   **writeJsonAtomic**:
+
   ```
   Input: path, data, opts
   1. serialized = JSON.stringify(data, null, opts.indent ?? 2)
@@ -445,6 +474,7 @@ Below is the full MIG-FND-002 task rewritten using this template, demonstrating 
   ```
 
   **readJson**:
+
   ```
   Input: path, defaultVal, opts
   1. content = await fs.readFile(path, 'utf-8')
@@ -467,17 +497,18 @@ Below is the full MIG-FND-002 task rewritten using this template, demonstrating 
      Verify: `path.dirname(tmpPath) === path.dirname(targetPath)`
 
   #### Edge Cases
-  | Scenario | Expected Behavior |
-  |----------|-------------------|
-  | Empty file (0 bytes) | `readJson` returns defaultVal, no corrupt backup |
-  | File content is non-JSON text | Create corrupt backup, return defaultVal |
-  | Target directory does not exist | Throw `ENOENT`, error message includes full path |
-  | Windows file locked by another process | `EPERM` → retry 3 times (100ms intervals) → throw `StoreCorruptError` |
-  | Disk full | `fsync` throws `ENOSPC` → clean up tmp → original file unchanged |
-  | 10 concurrent writeJsonAtomic to same path | All writes complete, final file is intact JSON, 0 corrupt backups |
-  | JSON contains undefined / Symbol | `JSON.stringify` auto-omits → written JSON lacks that field (JS standard behavior) |
-  | Path is a symlink | Follow symlink, write to target file |
-  | tmp file already exists (PID reuse + random collision) | Retry with new random, max 5 attempts |
+
+  | Scenario                                               | Expected Behavior                                                                  |
+  | ------------------------------------------------------ | ---------------------------------------------------------------------------------- |
+  | Empty file (0 bytes)                                   | `readJson` returns defaultVal, no corrupt backup                                   |
+  | File content is non-JSON text                          | Create corrupt backup, return defaultVal                                           |
+  | Target directory does not exist                        | Throw `ENOENT`, error message includes full path                                   |
+  | Windows file locked by another process                 | `EPERM` → retry 3 times (100ms intervals) → throw `StoreCorruptError`              |
+  | Disk full                                              | `fsync` throws `ENOSPC` → clean up tmp → original file unchanged                   |
+  | 10 concurrent writeJsonAtomic to same path             | All writes complete, final file is intact JSON, 0 corrupt backups                  |
+  | JSON contains undefined / Symbol                       | `JSON.stringify` auto-omits → written JSON lacks that field (JS standard behavior) |
+  | Path is a symlink                                      | Follow symlink, write to target file                                               |
+  | tmp file already exists (PID reuse + random collision) | Retry with new random, max 5 attempts                                              |
 
   #### Compatibility
   - **Disk format**: JSON indentation is 2-space (matching Python `json.dumps(data, indent=2)`)
@@ -505,14 +536,15 @@ Below is the full MIG-FND-002 task rewritten using this template, demonstrating 
 - **Test Plan**:
 
   #### Ported Tests (Python → vitest)
-  | Python Test | vitest Equivalent |
-  |-------------|-------------------|
-  | `tests/unit/test_store.py::test_atomic_write_success` | `atomic-json.test.ts::writeJsonAtomic` normal write |
-  | `tests/unit/test_store.py::test_atomic_write_failure_cleanup` | `atomic-json.test.ts::writeJsonAtomic` failure cleans tmp |
-  | `tests/unit/test_store.py::test_concurrent_atomic_write` | `atomic-json.test.ts::concurrent write` |
-  | `tests/unit/test_local_config.py::test_preserve_corrupt` | `atomic-json.test.ts::readJson` corrupt isolation |
-  | `tests/unit/test_local_config.py::test_corrupt_returns_default` | `atomic-json.test.ts::readJson` returns default |
-  | `tests/unit/test_local_config.py::test_corrupt_backup_content` | `atomic-json.test.ts::corrupt` content byte-preserved |
+
+  | Python Test                                                     | vitest Equivalent                                         |
+  | --------------------------------------------------------------- | --------------------------------------------------------- |
+  | `tests/unit/test_store.py::test_atomic_write_success`           | `atomic-json.test.ts::writeJsonAtomic` normal write       |
+  | `tests/unit/test_store.py::test_atomic_write_failure_cleanup`   | `atomic-json.test.ts::writeJsonAtomic` failure cleans tmp |
+  | `tests/unit/test_store.py::test_concurrent_atomic_write`        | `atomic-json.test.ts::concurrent write`                   |
+  | `tests/unit/test_local_config.py::test_preserve_corrupt`        | `atomic-json.test.ts::readJson` corrupt isolation         |
+  | `tests/unit/test_local_config.py::test_corrupt_returns_default` | `atomic-json.test.ts::readJson` returns default           |
+  | `tests/unit/test_local_config.py::test_corrupt_backup_content`  | `atomic-json.test.ts::corrupt` content byte-preserved     |
 
   #### New vitest Cases
   - **Empty file**: 0-byte file readJson returns defaultVal, no corrupt created

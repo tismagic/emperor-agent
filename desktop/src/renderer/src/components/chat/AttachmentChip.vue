@@ -9,8 +9,12 @@ const emit = defineEmits<{ (e: 'remove'): void }>()
 
 const isImage = computed(() => props.data.kind === 'image')
 const thumbFailed = ref(false)
-const previewUrl = computed(() => (isImage.value && !thumbFailed.value ? attachmentRawUrl(props.data.id) : null))
-const iconComp = computed(() => attachmentIcon(props.data.kind, props.data.mime, props.data.name))
+const previewUrl = computed(() =>
+  isImage.value && !thumbFailed.value ? attachmentRawUrl(props.data.id) : null,
+)
+const iconComp = computed(() =>
+  attachmentIcon(props.data.kind, props.data.mime, props.data.name),
+)
 
 function formatBytes(n: number): string {
   if (n < 1024) return `${n} B`
@@ -36,7 +40,8 @@ function formatBytes(n: number): string {
     <div class="attach-meta">
       <div class="attach-name">{{ data.name }}</div>
       <div class="attach-sub">
-        {{ formatBytes(data.size) }} · {{ data.kind }}<span v-if="data.hasText"> · 已抽文本</span>
+        {{ formatBytes(data.size) }} · {{ data.kind
+        }}<span v-if="data.hasText"> · 已抽文本</span>
       </div>
     </div>
     <button
@@ -46,6 +51,8 @@ function formatBytes(n: number): string {
       title="移除"
       aria-label="移除附件"
       @click="emit('remove')"
-    >×</button>
+    >
+      ×
+    </button>
   </div>
 </template>

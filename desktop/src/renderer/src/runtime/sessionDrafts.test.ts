@@ -16,7 +16,8 @@ function session(extra: Record<string, unknown> = {}) {
 
 describe('session draft helpers', () => {
   it('creates a local draft session without backend fields changing shape', async () => {
-    const { createDraftSession, isDraftSessionId } = await import('./sessionDrafts')
+    const { createDraftSession, isDraftSessionId } =
+      await import('./sessionDrafts')
 
     const draft = createDraftSession()
 
@@ -43,14 +44,20 @@ describe('session draft helpers', () => {
   })
 
   it('replaces a draft with the committed backend session', async () => {
-    const { applySessionCreated, createDraftSession } = await import('./sessionDrafts')
+    const { applySessionCreated, createDraftSession } =
+      await import('./sessionDrafts')
     const draft = createDraftSession()
     const sessions = [draft, session({ id: 'old', title: '旧会话' })]
 
     const next = applySessionCreated(sessions, {
       event: 'session_created',
       client_draft_id: draft.id,
-      session: session({ id: 'real', title: '新会话', preview: 'hello', title_status: 'pending' }),
+      session: session({
+        id: 'real',
+        title: '新会话',
+        preview: 'hello',
+        title_status: 'pending',
+      }),
     })
 
     expect(next.map((session) => session.id)).toEqual(['real', 'old'])
@@ -59,7 +66,8 @@ describe('session draft helpers', () => {
   })
 
   it('preserves build metadata when replacing a draft with a committed session', async () => {
-    const { applySessionCreated, createDraftSession } = await import('./sessionDrafts')
+    const { applySessionCreated, createDraftSession } =
+      await import('./sessionDrafts')
     const draft = createDraftSession({
       mode: 'build',
       projectId: 'proj_1',
@@ -91,11 +99,17 @@ describe('session draft helpers', () => {
 
   it('applies generated title updates in place', async () => {
     const { applySessionTitleUpdated } = await import('./sessionDrafts')
-    const sessions = [session({ id: 'real', title: '新会话', title_status: 'pending' })]
+    const sessions = [
+      session({ id: 'real', title: '新会话', title_status: 'pending' }),
+    ]
 
     const next = applySessionTitleUpdated(sessions, {
       event: 'session_title_updated',
-      session: session({ id: 'real', title: '界面重塑', title_status: 'generated' }),
+      session: session({
+        id: 'real',
+        title: '界面重塑',
+        title_status: 'generated',
+      }),
     })
 
     expect(next[0].title).toBe('界面重塑')

@@ -1,6 +1,18 @@
 import { ref } from 'vue'
 import { cloneJson, core } from '../api/http'
-import type { BootstrapPayload, CompactResult, DesktopPetPayload, MemoryPayload, MemoryVersionDetail, ModelConfigPayload, ModelConfigRaw, McpConfigPayload, SkillInfo, WatchlistDecision, WatchlistPayload } from '../types'
+import type {
+  BootstrapPayload,
+  CompactResult,
+  DesktopPetPayload,
+  MemoryPayload,
+  MemoryVersionDetail,
+  ModelConfigPayload,
+  ModelConfigRaw,
+  McpConfigPayload,
+  SkillInfo,
+  WatchlistDecision,
+  WatchlistPayload,
+} from '../types'
 
 export function useBootstrap(showToast: (message: string) => void) {
   const boot = ref<BootstrapPayload | null>(null)
@@ -16,8 +28,11 @@ export function useBootstrap(showToast: (message: string) => void) {
     try {
       if (showLoading) loading.value = true
       error.value = ''
-      boot.value = await core<BootstrapPayload>('bootstrap', { sessionId: sessionId || null })
-      modelDraftProvider.value = boot.value.modelConfig?.config?.agents?.defaults?.provider || null
+      boot.value = await core<BootstrapPayload>('bootstrap', {
+        sessionId: sessionId || null,
+      })
+      modelDraftProvider.value =
+        boot.value.modelConfig?.config?.agents?.defaults?.provider || null
     } catch (err) {
       error.value = err instanceof Error ? err.message : String(err)
     } finally {
@@ -35,8 +50,10 @@ export function useBootstrap(showToast: (message: string) => void) {
     if (!boot.value) return
     boot.value.modelConfig = await core<ModelConfigPayload>('model.getConfig')
     boot.value.model = boot.value.modelConfig.current?.model || boot.value.model
-    boot.value.provider = boot.value.modelConfig.current?.provider || boot.value.provider
-    modelDraftProvider.value = boot.value.modelConfig.config?.agents?.defaults?.provider || null
+    boot.value.provider =
+      boot.value.modelConfig.current?.provider || boot.value.provider
+    modelDraftProvider.value =
+      boot.value.modelConfig.config?.agents?.defaults?.provider || null
   }
 
   async function saveModelConfig(config: ModelConfigRaw) {
@@ -45,11 +62,13 @@ export function useBootstrap(showToast: (message: string) => void) {
       boot.value.modelConfig = data
       boot.value.model = data.current?.model || boot.value.model
       boot.value.provider = data.current?.provider || boot.value.provider
-      boot.value.providerLabel = data.current?.providerLabel || boot.value.providerLabel
+      boot.value.providerLabel =
+        data.current?.providerLabel || boot.value.providerLabel
     }
     modelDraftProvider.value = data.config?.agents?.defaults?.provider || null
     const label = data.current?.entryLabel || data.current?.entryName
-    const provider = data.current?.provider || boot.value?.provider || 'provider'
+    const provider =
+      data.current?.provider || boot.value?.provider || 'provider'
     const model = data.current?.model || boot.value?.model || 'model'
     if (label) {
       showToast(`已切换到「${label}」· ${provider}/${model}`)
@@ -68,7 +87,10 @@ export function useBootstrap(showToast: (message: string) => void) {
   }
 
   async function loadSkill(name: string) {
-    const data = await core<{ name: string; content: string }>('skills.get', name)
+    const data = await core<{ name: string; content: string }>(
+      'skills.get',
+      name,
+    )
     activeSkill.value = data.name
     skillContent.value = data.content
   }
@@ -98,7 +120,8 @@ export function useBootstrap(showToast: (message: string) => void) {
 
   async function importSkill(formData: FormData) {
     const file = formData.get('file')
-    if (!(file instanceof File)) throw new Error("Expected multipart field 'file'")
+    if (!(file instanceof File))
+      throw new Error("Expected multipart field 'file'")
     const data = await core<{ imported: string }>('skills.importArchive', {
       name: file.name,
       mime: file.type || 'application/zip',
@@ -131,7 +154,9 @@ export function useBootstrap(showToast: (message: string) => void) {
     try {
       parsed = JSON.parse(content) as McpConfigPayload
     } catch (e) {
-      throw new Error('JSON 格式错误：' + (e instanceof Error ? e.message : String(e)))
+      throw new Error(
+        'JSON 格式错误：' + (e instanceof Error ? e.message : String(e)),
+      )
     }
     await core<{ saved: boolean }>('mcp.saveConfig', parsed)
     await loadBootstrap(false)
@@ -150,7 +175,11 @@ export function useBootstrap(showToast: (message: string) => void) {
   }
 
   async function saveEpisode(date: string, content: string) {
-    await core<{ date: string; content: string }>('memory.saveEpisode', content, date)
+    await core<{ date: string; content: string }>(
+      'memory.saveEpisode',
+      content,
+      date,
+    )
     await refreshMemory(false)
     showToast(`情景记忆 ${date} 已保存`)
   }
@@ -160,20 +189,29 @@ export function useBootstrap(showToast: (message: string) => void) {
   }
 
   async function restoreMemoryVersion(id: string) {
-    const payload = await core<{ restored: { path: string; content: string }; memory: MemoryPayload }>('memory.restoreVersion', id)
+    const payload = await core<{
+      restored: { path: string; content: string }
+      memory: MemoryPayload
+    }>('memory.restoreVersion', id)
     if (boot.value) boot.value.memory = payload.memory
     showToast(`已恢复 ${payload.restored.path}`)
     return payload
   }
 
   async function saveWatchlist(content: string) {
-    const payload = await core<WatchlistPayload>('memory.saveWatchlist', content)
+    const payload = await core<WatchlistPayload>(
+      'memory.saveWatchlist',
+      content,
+    )
     if (boot.value?.memory) boot.value.memory.watchlist = payload
     showToast('Watchlist 已保存')
   }
 
   async function checkWatchlist() {
-    const payload = await core<{ decision: WatchlistDecision; watchlist: WatchlistPayload }>('memory.checkWatchlist')
+    const payload = await core<{
+      decision: WatchlistDecision
+      watchlist: WatchlistPayload
+    }>('memory.checkWatchlist')
     if (boot.value?.memory) boot.value.memory.watchlist = payload.watchlist
     const action = payload.decision.action === 'run' ? '建议主动执行' : '跳过'
     showToast(`Watchlist 检查完成：${action}`)
@@ -181,14 +219,19 @@ export function useBootstrap(showToast: (message: string) => void) {
   }
 
   async function setDesktopPetEnabled(enabled: boolean) {
-    const payload = await core<DesktopPetPayload>('desktopPet.setEnabled', enabled)
+    const payload = await core<DesktopPetPayload>(
+      'desktopPet.setEnabled',
+      enabled,
+    )
     if (boot.value) boot.value.desktopPet = payload
 
     // Open or close the companion pet window via main-process IPC.
     if (enabled) {
       const emperor = (window as any).emperor
       await emperor?.openPet?.()
-      showToast(payload.lastError ? `桌宠未启动：${payload.lastError}` : '桌宠已启动')
+      showToast(
+        payload.lastError ? `桌宠未启动：${payload.lastError}` : '桌宠已启动',
+      )
     } else {
       const emperor = (window as any).emperor
       await emperor?.closePet?.()

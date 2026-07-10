@@ -12,11 +12,21 @@ describe('CoreDiagnosticsService (MIG-IPC-007 / MIG-APP-002)', () => {
   it('summarizes diagnostics without mutating missing or corrupt config files', async () => {
     const root = tmp('emperor-diagnostics-service-')
     writeFileSync(join(root, 'emperor.local.json'), '{bad json', 'utf8')
-    writeFileSync(join(root, 'emperor.local.json.corrupt-1'), '{old bad json', 'utf8')
+    writeFileSync(
+      join(root, 'emperor.local.json.corrupt-1'),
+      '{old bad json',
+      'utf8',
+    )
     mkdirSync(join(root, 'desktop', 'out', 'renderer'), { recursive: true })
-    writeFileSync(join(root, 'desktop', 'out', 'renderer', 'index.html'), '<html></html>', 'utf8')
+    writeFileSync(
+      join(root, 'desktop', 'out', 'renderer', 'index.html'),
+      '<html></html>',
+      'utf8',
+    )
     const service = new CoreDiagnosticsService(root, {
-      schedulerDiagnostics: () => ({ jobsFile: join(root, 'scheduler', 'jobs.json') }),
+      schedulerDiagnostics: () => ({
+        jobsFile: join(root, 'scheduler', 'jobs.json'),
+      }),
       runtimeStats: () => ({ events: 2, archiveFiles: 1 }),
       externalPayload: () => ({ running: true, store: { exists: true } }),
       activeTasks: () => [{ id: 'turn:1', status: 'running' }],
@@ -39,9 +49,13 @@ describe('CoreDiagnosticsService (MIG-IPC-007 / MIG-APP-002)', () => {
       status: 'corrupt',
     })
     expect((payload.localConfig as any).corruptBackups).toEqual([
-      expect.objectContaining({ path: join(root, 'emperor.local.json.corrupt-1') }),
+      expect.objectContaining({
+        path: join(root, 'emperor.local.json.corrupt-1'),
+      }),
     ])
-    expect(payload.scheduler).toMatchObject({ jobsFile: join(root, 'scheduler', 'jobs.json') })
+    expect(payload.scheduler).toMatchObject({
+      jobsFile: join(root, 'scheduler', 'jobs.json'),
+    })
     expect(payload.runtime).toMatchObject({ events: 2, archiveFiles: 1 })
     expect(payload.external).toMatchObject({ running: true })
     expect(payload.activeTasks).toHaveLength(1)
@@ -107,29 +121,62 @@ describe('CoreDiagnosticsService (MIG-IPC-007 / MIG-APP-002)', () => {
   it('exposes the legacy state migration report when supplied, and a safe empty default otherwise', async () => {
     const root = tmp('emperor-diagnostics-legacy-migration-')
 
-    const withoutMigration = await new CoreDiagnosticsService(root, {}).payload()
-    expect(withoutMigration.legacyStateMigration).toEqual({ legacyStateRoots: [], copied: 0, skipped: 0 })
+    const withoutMigration = await new CoreDiagnosticsService(
+      root,
+      {},
+    ).payload()
+    expect(withoutMigration.legacyStateMigration).toEqual({
+      legacyStateRoots: [],
+      copied: 0,
+      skipped: 0,
+    })
 
     const withMigration = await new CoreDiagnosticsService(root, {
       legacyStateMigration: {
         copied: 3,
         skipped: 1,
         logPath: join(root, '.emperor', 'migration-log.jsonl'),
-        reportPath: join(root, '.emperor', 'migrations', 'state-root-migration.json'),
+        reportPath: join(
+          root,
+          '.emperor',
+          'migrations',
+          'state-root-migration.json',
+        ),
         entries: [],
         legacyStateRoots: [
-          { path: join(root, 'memory'), kind: 'ancient-bare-runtime-root', existed: false },
-          { path: join(root, '.emperor'), kind: 'previous-dotemperor-root', existed: true },
+          {
+            path: join(root, 'memory'),
+            kind: 'ancient-bare-runtime-root',
+            existed: false,
+          },
+          {
+            path: join(root, '.emperor'),
+            kind: 'previous-dotemperor-root',
+            existed: true,
+          },
         ],
       },
     }).payload()
     expect(withMigration.legacyStateMigration).toMatchObject({
       copied: 3,
       skipped: 1,
-      reportPath: join(root, '.emperor', 'migrations', 'state-root-migration.json'),
+      reportPath: join(
+        root,
+        '.emperor',
+        'migrations',
+        'state-root-migration.json',
+      ),
       legacyStateRoots: [
-        { path: join(root, 'memory'), kind: 'ancient-bare-runtime-root', existed: false },
-        { path: join(root, '.emperor'), kind: 'previous-dotemperor-root', existed: true },
+        {
+          path: join(root, 'memory'),
+          kind: 'ancient-bare-runtime-root',
+          existed: false,
+        },
+        {
+          path: join(root, '.emperor'),
+          kind: 'previous-dotemperor-root',
+          existed: true,
+        },
       ],
     })
   })

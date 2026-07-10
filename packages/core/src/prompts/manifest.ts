@@ -1,5 +1,12 @@
 import { createHash } from 'node:crypto'
-import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
+import {
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  statSync,
+  writeFileSync,
+} from 'node:fs'
 import { join } from 'node:path'
 
 export interface PromptSectionInput {
@@ -103,7 +110,9 @@ export interface PromptSnapshot {
   }
 }
 
-export function toPromptManifestSection(section: PromptSectionInput): PromptManifestSection {
+export function toPromptManifestSection(
+  section: PromptSectionInput,
+): PromptManifestSection {
   const content = String(section.content ?? '')
   const budgetChars = section.budgetChars ?? null
   return {
@@ -116,7 +125,10 @@ export function toPromptManifestSection(section: PromptSectionInput): PromptMani
     hash: createHash('sha256').update(content, 'utf8').digest('hex'),
     charCount: content.length,
     tokenEstimate: estimateTokens(content),
-    clipped: budgetChars !== null && (content.length >= budgetChars || content.includes('clipped by ContextBuilder')),
+    clipped:
+      budgetChars !== null &&
+      (content.length >= budgetChars ||
+        content.includes('clipped by ContextBuilder')),
     redacted: true,
   }
 }
@@ -155,24 +167,44 @@ export function writePromptSnapshot(opts: {
     contextPlan: buildContextPlan(sections, opts.contextPlan ?? null),
     totals: {
       charCount: sections.reduce((sum, section) => sum + section.charCount, 0),
-      tokenEstimate: sections.reduce((sum, section) => sum + section.tokenEstimate, 0),
+      tokenEstimate: sections.reduce(
+        (sum, section) => sum + section.tokenEstimate,
+        0,
+      ),
     },
   }
-  writeFileSync(join(opts.dir, `${safeName(opts.turnId)}.json`), JSON.stringify(snapshot, null, 2) + '\n', 'utf8')
+  writeFileSync(
+    join(opts.dir, `${safeName(opts.turnId)}.json`),
+    JSON.stringify(snapshot, null, 2) + '\n',
+    'utf8',
+  )
   return snapshot
 }
 
-function buildContextPlan(sections: PromptManifestSection[], plan?: PromptContextPlan | null): PromptContextPlan {
-  const plannedItems = new Map((plan?.items ?? []).map((item) => [item.id, item]))
-  const sectionIds = new Set(sections.map((section) => `section:${section.name}`))
-  const dynamicItems = (plan?.items ?? []).filter((item) => !sectionIds.has(item.id))
+function buildContextPlan(
+  sections: PromptManifestSection[],
+  plan?: PromptContextPlan | null,
+): PromptContextPlan {
+  const plannedItems = new Map(
+    (plan?.items ?? []).map((item) => [item.id, item]),
+  )
+  const sectionIds = new Set(
+    sections.map((section) => `section:${section.name}`),
+  )
+  const dynamicItems = (plan?.items ?? []).filter(
+    (item) => !sectionIds.has(item.id),
+  )
   return {
     version: 1,
     ...(plan?.mode ? { mode: plan.mode } : {}),
     ...(plan?.policyId ? { policyId: plan.policyId } : {}),
-    ...(plan?.activeMemoryBinding ? { activeMemoryBinding: plan.activeMemoryBinding } : {}),
+    ...(plan?.activeMemoryBinding
+      ? { activeMemoryBinding: plan.activeMemoryBinding }
+      : {}),
     items: [
-      ...sections.map((section) => promptPlanItem(section, plannedItems.get(`section:${section.name}`))),
+      ...sections.map((section) =>
+        promptPlanItem(section, plannedItems.get(`section:${section.name}`)),
+      ),
       ...dynamicItems.map((item) => ({ ...item })),
     ],
     omitted: plan?.omitted ? [...plan.omitted] : [],
@@ -180,7 +212,10 @@ function buildContextPlan(sections: PromptManifestSection[], plan?: PromptContex
   }
 }
 
-function promptPlanItem(section: PromptManifestSection, planned: PromptContextPlanItem | undefined): PromptContextPlanItem {
+function promptPlanItem(
+  section: PromptManifestSection,
+  planned: PromptContextPlanItem | undefined,
+): PromptContextPlanItem {
   return {
     id: `section:${section.name}`,
     kind: planned?.kind ?? section.name,
@@ -194,16 +229,22 @@ function promptPlanItem(section: PromptManifestSection, planned: PromptContextPl
   }
 }
 
-export function listRecentPromptSnapshots(sessionsRoot: string, limit = 5): { count: number; recent: PromptSnapshot[] } {
+export function listRecentPromptSnapshots(
+  sessionsRoot: string,
+  limit = 5,
+): { count: number; recent: PromptSnapshot[] } {
   const snapshots: PromptSnapshot[] = []
   if (!existsSync(sessionsRoot)) return { count: 0, recent: [] }
   for (const sessionName of readdirSync(sessionsRoot)) {
     const snapshotDir = join(sessionsRoot, sessionName, 'prompt-snapshots')
-    if (!existsSync(snapshotDir) || !statSync(snapshotDir).isDirectory()) continue
+    if (!existsSync(snapshotDir) || !statSync(snapshotDir).isDirectory())
+      continue
     for (const name of readdirSync(snapshotDir)) {
       if (!name.endsWith('.json')) continue
       try {
-        const parsed = JSON.parse(readFileSync(join(snapshotDir, name), 'utf8') || '{}')
+        const parsed = JSON.parse(
+          readFileSync(join(snapshotDir, name), 'utf8') || '{}',
+        )
         if (isPromptSnapshot(parsed)) snapshots.push(parsed)
       } catch {
         // Diagnostics should not fail because one snapshot file is corrupt.
@@ -215,17 +256,28 @@ export function listRecentPromptSnapshots(sessionsRoot: string, limit = 5): { co
 }
 
 function isPromptSnapshot(value: unknown): value is PromptSnapshot {
-  return Boolean(value && typeof value === 'object' && !Array.isArray(value) && Array.isArray((value as PromptSnapshot).sections))
+  return Boolean(
+    value &&
+    typeof value === 'object' &&
+    !Array.isArray(value) &&
+    Array.isArray((value as PromptSnapshot).sections),
+  )
 }
 
 function estimateTokens(text: string): number {
   return Math.max(1, Math.ceil(text.length / 4))
 }
 
-function buildHistoryRange(messages: Array<Record<string, unknown>>): PromptHistoryRange {
-  const historyMessages = messages.filter((message) => String(message.role ?? '') !== 'system')
+function buildHistoryRange(
+  messages: Array<Record<string, unknown>>,
+): PromptHistoryRange {
+  const historyMessages = messages.filter(
+    (message) => String(message.role ?? '') !== 'system',
+  )
   const seqs = historyMessages
-    .map((message) => Number(message.seq ?? message.history_seq ?? message.historySeq))
+    .map((message) =>
+      Number(message.seq ?? message.history_seq ?? message.historySeq),
+    )
     .filter((value) => Number.isFinite(value) && value > 0)
     .map((value) => Math.trunc(value))
   const turnIds: string[] = []
@@ -244,12 +296,16 @@ function buildHistoryRange(messages: Array<Record<string, unknown>>): PromptHist
   }
 }
 
-function summarizeCheckpoint(value: Record<string, unknown> | null): PromptCheckpointSummary {
+function summarizeCheckpoint(
+  value: Record<string, unknown> | null,
+): PromptCheckpointSummary {
   if (!value) return { status: 'not_captured' }
   return {
     status: 'captured',
     phase: nullableString(value.phase),
-    baseHistorySeq: nullableNumber(value.baseHistorySeq ?? value.base_history_seq),
+    baseHistorySeq: nullableNumber(
+      value.baseHistorySeq ?? value.base_history_seq,
+    ),
     partialMessages: Array.isArray(value.partialMessages)
       ? value.partialMessages.length
       : nullableNumber(value.partialMessages ?? value.partial_messages),
@@ -259,7 +315,9 @@ function summarizeCheckpoint(value: Record<string, unknown> | null): PromptCheck
   }
 }
 
-function summarizeMemoryVersions(value: Array<Record<string, unknown>> | null): PromptMemoryVersionSummary[] {
+function summarizeMemoryVersions(
+  value: Array<Record<string, unknown>> | null,
+): PromptMemoryVersionSummary[] {
   if (!Array.isArray(value)) return []
   return value.map((item) => {
     const out: PromptMemoryVersionSummary = {}
@@ -280,14 +338,19 @@ function summarizeMemoryVersions(value: Array<Record<string, unknown>> | null): 
 }
 
 function hashJson(value: unknown): string {
-  return createHash('sha256').update(stableStringify(value), 'utf8').digest('hex')
+  return createHash('sha256')
+    .update(stableStringify(value), 'utf8')
+    .digest('hex')
 }
 
 function stableStringify(value: unknown): string {
   if (value === null || typeof value !== 'object') return JSON.stringify(value)
   if (Array.isArray(value)) return `[${value.map(stableStringify).join(',')}]`
   const record = value as Record<string, unknown>
-  return `{${Object.keys(record).sort().map((key) => `${JSON.stringify(key)}:${stableStringify(record[key])}`).join(',')}}`
+  return `{${Object.keys(record)
+    .sort()
+    .map((key) => `${JSON.stringify(key)}:${stableStringify(record[key])}`)
+    .join(',')}}`
 }
 
 function nullableString(value: unknown): string | null {
@@ -300,5 +363,9 @@ function nullableNumber(value: unknown): number | null {
 }
 
 function safeName(value: string): string {
-  return String(value || 'turn').replace(/[^a-zA-Z0-9_.-]/g, '_').slice(0, 120) || 'turn'
+  return (
+    String(value || 'turn')
+      .replace(/[^a-zA-Z0-9_.-]/g, '_')
+      .slice(0, 120) || 'turn'
+  )
 }

@@ -40,7 +40,10 @@ describe('withLock', () => {
     const target = join(dir, 's.json')
     await writeFile(`${target}.lock`, '99999', 'utf8')
     // staleMs=0 → 立刻视为 stale 回收
-    const out = await withLock(target, async () => 'ok', { staleMs: 0, timeoutMs: 1000 })
+    const out = await withLock(target, async () => 'ok', {
+      staleMs: 0,
+      timeoutMs: 1000,
+    })
     expect(out).toBe('ok')
   })
 })

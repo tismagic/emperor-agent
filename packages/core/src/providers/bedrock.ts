@@ -3,7 +3,13 @@
  * 对齐 Python `agent/providers/bedrock_provider.py`：system 透传、拒 tools 清晰报错、retries。
  * 当前为最小文本端口；主 agent 回合必带 tools → Bedrock 不承载主回合（fail-fast）。
  */
-import { DEFAULT_MAX_RETRIES, LLMProvider, type LLMResponse, type ChatArgs, type OpenAiMessage } from './base'
+import {
+  DEFAULT_MAX_RETRIES,
+  LLMProvider,
+  type LLMResponse,
+  type ChatArgs,
+  type OpenAiMessage,
+} from './base'
 
 export class BedrockProvider extends LLMProvider {
   readonly client: any
@@ -11,20 +17,30 @@ export class BedrockProvider extends LLMProvider {
   constructor(cfg: ConstructorParameters<typeof LLMProvider>[0]) {
     super(cfg)
     try {
-      const { BedrockRuntimeClient } = require('@aws-sdk/client-bedrock-runtime')
+      const {
+        BedrockRuntimeClient,
+      } = require('@aws-sdk/client-bedrock-runtime')
 
-      const { StandardRetryStrategy } = require('@aws-sdk/middleware-retry') as any
+      const { StandardRetryStrategy } =
+        require('@aws-sdk/middleware-retry') as any
       // Fall back to a simple client if retry strategy isn't available.
       try {
         this.client = new BedrockRuntimeClient({
           ...(this.apiBase ? { endpoint: this.apiBase } : {}),
-          retryStrategy: new StandardRetryStrategy(async () => DEFAULT_MAX_RETRIES + 1, {}),
+          retryStrategy: new StandardRetryStrategy(
+            async () => DEFAULT_MAX_RETRIES + 1,
+            {},
+          ),
         })
       } catch {
-        this.client = new BedrockRuntimeClient({ ...(this.apiBase ? { endpoint: this.apiBase } : {}) })
+        this.client = new BedrockRuntimeClient({
+          ...(this.apiBase ? { endpoint: this.apiBase } : {}),
+        })
       }
     } catch {
-      throw new Error('Bedrock provider requires @aws-sdk/client-bedrock-runtime')
+      throw new Error(
+        'Bedrock provider requires @aws-sdk/client-bedrock-runtime',
+      )
     }
   }
 
@@ -32,20 +48,32 @@ export class BedrockProvider extends LLMProvider {
     if (args.tools?.length) {
       throw new Error(
         'Bedrock backend does not support tool calling, which the main agent loop ' +
-        'requires; use an Anthropic/OpenAI-compatible provider.',
+          'requires; use an Anthropic/OpenAI-compatible provider.',
       )
     }
     const model = args.model || this.defaultModel
-    const request = BedrockProvider.converseRequest(model, args.messages, args.maxTokens ?? 4096, args.temperature ?? 0.7)
+    const request = BedrockProvider.converseRequest(
+      model,
+      args.messages,
+      args.maxTokens ?? 4096,
+      args.temperature ?? 0.7,
+    )
     const { ConverseCommand } = require('@aws-sdk/client-bedrock-runtime')
-    const resp = await this.client.send(new ConverseCommand(request), BedrockProvider.sendOptions(args))
-    const content: Array<{ text?: string }> = resp.output?.message?.content ?? []
+    const resp = await this.client.send(
+      new ConverseCommand(request),
+      BedrockProvider.sendOptions(args),
+    )
+    const content: Array<{ text?: string }> =
+      resp.output?.message?.content ?? []
     const text = content.map((b) => b.text ?? '').join('')
     return {
       content: text,
       toolCalls: [],
       finishReason: 'stop',
-      usage: { input: resp.usage?.inputTokens ?? 0, output: resp.usage?.outputTokens ?? 0 },
+      usage: {
+        input: resp.usage?.inputTokens ?? 0,
+        output: resp.usage?.outputTokens ?? 0,
+      },
       reasoningContent: null,
       thinkingBlocks: null,
     }
@@ -55,7 +83,12 @@ export class BedrockProvider extends LLMProvider {
     return args.signal ? { abortSignal: args.signal } : undefined
   }
 
-  static converseRequest(model: string, messages: OpenAiMessage[], maxTokens: number, temperature: number): Record<string, unknown> {
+  static converseRequest(
+    model: string,
+    messages: OpenAiMessage[],
+    maxTokens: number,
+    temperature: number,
+  ): Record<string, unknown> {
     const request: Record<string, unknown> = {
       modelId: model,
       messages: BedrockProvider.messages(messages),

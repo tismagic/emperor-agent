@@ -2,7 +2,11 @@ import { describe, expect, it, vi } from 'vitest'
 import { createLogger, type LogLevel } from './log'
 
 function capture(level: LogLevel) {
-  const lines: { level: LogLevel; msg: string; fields: Record<string, unknown> }[] = []
+  const lines: {
+    level: LogLevel
+    msg: string
+    fields: Record<string, unknown>
+  }[] = []
   const log = createLogger({ level, sink: (l) => lines.push(l) })
   return { log, lines }
 }

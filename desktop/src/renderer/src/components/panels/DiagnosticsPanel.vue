@@ -12,19 +12,27 @@ import { core } from '../../api/http'
 import { openPath } from '../../api/backend'
 import { useAppContext } from '../../composables/useAppContext'
 import type { DiagnosticsPayload } from '../../types'
-import {
-  diagnosticRows,
-  type DiagnosticTone,
-} from './diagnosticsPanelModel'
+import { diagnosticRows, type DiagnosticTone } from './diagnosticsPanelModel'
 
 const ctx = useAppContext()
-const diagnostics = ref<DiagnosticsPayload | null>(ctx.boot.value?.diagnostics || null)
+const diagnostics = ref<DiagnosticsPayload | null>(
+  ctx.boot.value?.diagnostics || null,
+)
 const loading = ref(false)
 const error = ref('')
 
-const groups = computed(() => diagnosticRows(diagnostics.value || ctx.boot.value?.diagnostics || null))
-const rootPath = computed(() => diagnostics.value?.root || ctx.boot.value?.diagnostics?.root || '')
-const dataRootPath = computed(() => diagnostics.value?.paths?.stateRoot || ctx.boot.value?.diagnostics?.paths?.stateRoot || '')
+const groups = computed(() =>
+  diagnosticRows(diagnostics.value || ctx.boot.value?.diagnostics || null),
+)
+const rootPath = computed(
+  () => diagnostics.value?.root || ctx.boot.value?.diagnostics?.root || '',
+)
+const dataRootPath = computed(
+  () =>
+    diagnostics.value?.paths?.stateRoot ||
+    ctx.boot.value?.diagnostics?.paths?.stateRoot ||
+    '',
+)
 const activeProjectPath = computed(() => {
   const current = diagnostics.value || ctx.boot.value?.diagnostics || null
   const workspaceRoot = current?.workspacePolicy?.workspaceRoot || ''
@@ -74,7 +82,9 @@ async function revealPath(target: string) {
 </script>
 
 <template>
-  <section class="main-view view-readable settings-simple-view diagnostics-view">
+  <section
+    class="main-view view-readable settings-simple-view diagnostics-view"
+  >
     <header class="view-head">
       <div class="min-w-0">
         <h1>诊断</h1>
@@ -99,7 +109,12 @@ async function revealPath(target: string) {
           <FolderOpen class="action-icon" :size="16" />
           <span>项目目录</span>
         </button>
-        <button class="tool-button asset-button refresh-action" :disabled="loading" title="刷新" @click="refresh">
+        <button
+          class="tool-button asset-button refresh-action"
+          :disabled="loading"
+          title="刷新"
+          @click="refresh"
+        >
           <RefreshCcw class="action-icon" :size="16" />
           <span>{{ loading ? '刷新中' : '刷新' }}</span>
         </button>
@@ -117,7 +132,11 @@ async function revealPath(target: string) {
           <code>error</code>
         </div>
 
-        <section v-for="group in groups" :key="group.id" class="diagnostics-group">
+        <section
+          v-for="group in groups"
+          :key="group.id"
+          class="diagnostics-group"
+        >
           <div class="diagnostics-group-head">
             <strong>{{ group.title }}</strong>
             <span>{{ group.rows.length }} 项</span>

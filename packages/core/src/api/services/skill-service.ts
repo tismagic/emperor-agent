@@ -1,5 +1,14 @@
 import { inflateRawSync } from 'node:zlib'
-import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import {
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  readdirSync,
+  renameSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from 'node:fs'
 import { dirname, join, relative, resolve } from 'node:path'
 import type { ToolRegistry } from '../../tools/registry'
 
@@ -45,7 +54,7 @@ export class CoreSkillService {
         exclusive: Boolean(tool?.exclusive),
         concurrency_safe: Boolean(tool?.concurrencySafe),
         source: isMcp ? 'mcp' : 'builtin',
-        server: isMcp ? definition.name.split('_', 3)[1] ?? '' : '',
+        server: isMcp ? (definition.name.split('_', 3)[1] ?? '') : '',
       }
     })
   }
@@ -104,7 +113,10 @@ export class CoreSkillService {
   private skillNames(): string[] {
     if (!existsSync(this.skillsDir)) return []
     return readdirSync(this.skillsDir)
-      .filter((name) => !name.startsWith('.') && safeSkillName(name) && this.skillPath(name))
+      .filter(
+        (name) =>
+          !name.startsWith('.') && safeSkillName(name) && this.skillPath(name),
+      )
       .sort()
   }
 
@@ -129,7 +141,11 @@ function parseFrontmatter(content: string): Dict {
 }
 
 function boolMeta(value: unknown): boolean {
-  return String(value ?? '').trim().toLowerCase() === 'true'
+  return (
+    String(value ?? '')
+      .trim()
+      .toLowerCase() === 'true'
+  )
 }
 
 function safeSkillName(name: string): string {
@@ -149,15 +165,20 @@ function installSkillArchive(root: string, input: unknown): Dict {
   const entries = readZipEntries(archive)
   if (!entries.length) throw new Error('Empty zip file')
   const roots = new Set(entries.map((entry) => entry.name.split('/')[0] || ''))
-  if (roots.size !== 1) throw new Error('Skill archive must contain a single root directory')
+  if (roots.size !== 1)
+    throw new Error('Skill archive must contain a single root directory')
   const rootName = [...roots][0]!
-  if (!safeSkillName(rootName)) throw new Error(`Invalid skill root directory: ${rootName}`)
+  if (!safeSkillName(rootName))
+    throw new Error(`Invalid skill root directory: ${rootName}`)
   if (!entries.some((entry) => entry.name === `${rootName}/SKILL.md`)) {
     throw new Error(`Missing SKILL.md in zip root (${rootName})`)
   }
 
   const skillsDir = join(root, 'skills')
-  const stage = join(skillsDir, `.skill-import-${Date.now()}-${Math.random().toString(16).slice(2)}`)
+  const stage = join(
+    skillsDir,
+    `.skill-import-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+  )
   mkdirSync(stage, { recursive: true })
   try {
     for (const entry of entries) {
@@ -167,13 +188,19 @@ function installSkillArchive(root: string, input: unknown): Dict {
       writeFileSync(target, data)
     }
     const target = join(skillsDir, rootName)
-    const backup = existsSync(target) ? join(skillsDir, `.${rootName}.bak-${Date.now()}-${Math.random().toString(16).slice(2)}`) : ''
+    const backup = existsSync(target)
+      ? join(
+          skillsDir,
+          `.${rootName}.bak-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+        )
+      : ''
     if (backup) renameSync(target, backup)
     try {
       renameSync(join(stage, rootName), target)
       if (backup) rmSync(backup, { recursive: true, force: true })
     } catch (error) {
-      if (backup && !existsSync(target) && existsSync(backup)) renameSync(backup, target)
+      if (backup && !existsSync(target) && existsSync(backup))
+        renameSync(backup, target)
       throw error
     }
   } finally {
@@ -199,16 +226,20 @@ function readZipEntries(buf: Buffer): ZipEntry[] {
   let offset = buf.readUInt32LE(eocd + 16)
   const entries: ZipEntry[] = []
   for (let i = 0; i < entryCount; i += 1) {
-    if (buf.readUInt32LE(offset) !== 0x02014b50) throw new Error('Invalid zip central directory')
+    if (buf.readUInt32LE(offset) !== 0x02014b50)
+      throw new Error('Invalid zip central directory')
     const method = buf.readUInt16LE(offset + 10)
     const compressedSize = buf.readUInt32LE(offset + 20)
     const nameLen = buf.readUInt16LE(offset + 28)
     const extraLen = buf.readUInt16LE(offset + 30)
     const commentLen = buf.readUInt16LE(offset + 32)
     const localOffset = buf.readUInt32LE(offset + 42)
-    const rawName = buf.subarray(offset + 46, offset + 46 + nameLen).toString('utf8')
+    const rawName = buf
+      .subarray(offset + 46, offset + 46 + nameLen)
+      .toString('utf8')
     const name = normalizeZipMember(rawName)
-    if (name && !rawName.endsWith('/')) entries.push({ name, method, compressedSize, localOffset })
+    if (name && !rawName.endsWith('/'))
+      entries.push({ name, method, compressedSize, localOffset })
     offset += 46 + nameLen + extraLen + commentLen
   }
   return entries
@@ -226,13 +257,15 @@ function normalizeZipMember(raw: string): string {
   const clean = raw.replace(/\\/g, '/').trim().replace(/\/+$/, '')
   if (!clean) return ''
   const parts = clean.split('/')
-  if (parts.some((part) => !part || part === '.' || part === '..')) throw new Error(`unsafe path in skill zip: ${raw}`)
+  if (parts.some((part) => !part || part === '.' || part === '..'))
+    throw new Error(`unsafe path in skill zip: ${raw}`)
   return parts.join('/')
 }
 
 function extractZipEntry(buf: Buffer, entry: ZipEntry): Buffer {
   const offset = entry.localOffset
-  if (buf.readUInt32LE(offset) !== 0x04034b50) throw new Error('Invalid zip local header')
+  if (buf.readUInt32LE(offset) !== 0x04034b50)
+    throw new Error('Invalid zip local header')
   const nameLen = buf.readUInt16LE(offset + 26)
   const extraLen = buf.readUInt16LE(offset + 28)
   const start = offset + 30 + nameLen + extraLen

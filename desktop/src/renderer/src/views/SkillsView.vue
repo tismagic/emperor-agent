@@ -49,7 +49,11 @@ async function onImport(formData: FormData) {
         <h1>能力包 · Skills</h1>
         <p>查看、编辑、导入与删除当前 Agent 可加载的 SKILL.md</p>
       </div>
-      <button class="tool-button asset-button refresh-action" title="刷新" @click="ctx.refreshAll()">
+      <button
+        class="tool-button asset-button refresh-action"
+        title="刷新"
+        @click="ctx.refreshAll()"
+      >
         <component :is="actionIcons.refresh" class="action-icon" :size="16" />
         <span>刷新</span>
       </button>

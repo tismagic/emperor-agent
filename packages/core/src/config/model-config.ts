@@ -75,7 +75,12 @@ type RawConfig = Record<string, any>
 function buildDefaultProviders(): RawConfig {
   const out: RawConfig = {}
   for (const s of PROVIDERS) {
-    out[s.name] = { apiKey: '', apiBase: s.defaultApiBase ?? '', extraHeaders: null, extraBody: null }
+    out[s.name] = {
+      apiKey: '',
+      apiBase: s.defaultApiBase ?? '',
+      extraHeaders: null,
+      extraBody: null,
+    }
   }
   return out
 }
@@ -106,11 +111,16 @@ function nullableStr(value: unknown): string | null {
 }
 
 function dictOrNone(value: unknown): Record<string, any> | null {
-  return value && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, any>) : null
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? (value as Record<string, any>)
+    : null
 }
 
 function toInt(value: unknown, def: number): number {
-  const n = typeof value === 'number' ? Math.trunc(value) : Number.parseInt(String(value), 10)
+  const n =
+    typeof value === 'number'
+      ? Math.trunc(value)
+      : Number.parseInt(String(value), 10)
   return Number.isFinite(n) ? n : def
 }
 
@@ -121,7 +131,10 @@ function toFloat(value: unknown, def: number): number {
 
 function optionalInt(value: unknown): number | null {
   if (value === null || value === undefined || value === '') return null
-  const n = typeof value === 'number' ? Math.trunc(value) : Number.parseInt(String(value), 10)
+  const n =
+    typeof value === 'number'
+      ? Math.trunc(value)
+      : Number.parseInt(String(value), 10)
   return Number.isFinite(n) ? n : null
 }
 
@@ -134,7 +147,14 @@ function optionalFloat(value: unknown): number | null {
 function deepMerge(target: RawConfig, source: RawConfig): RawConfig {
   for (const [key, value] of Object.entries(source ?? {})) {
     const cur = target[key]
-    if (value && typeof value === 'object' && !Array.isArray(value) && cur && typeof cur === 'object' && !Array.isArray(cur)) {
+    if (
+      value &&
+      typeof value === 'object' &&
+      !Array.isArray(value) &&
+      cur &&
+      typeof cur === 'object' &&
+      !Array.isArray(cur)
+    ) {
       deepMerge(cur, value as RawConfig)
     } else {
       target[key] = value
@@ -149,7 +169,10 @@ function isRawRecord(value: unknown): value is RawConfig {
 
 function findRawEntry(models: unknown[], name: string): RawConfig | undefined {
   if (!name) return undefined
-  return models.find((item): item is RawConfig => isRawRecord(item) && String(item.name ?? '') === name)
+  return models.find(
+    (item): item is RawConfig =>
+      isRawRecord(item) && String(item.name ?? '') === name,
+  )
 }
 
 export function maskSecret(value: string | null | undefined): string {
@@ -173,14 +196,19 @@ export function buildWizardModelConfig(
   }
 
   const currentName = String(raw.agents.defaults.model ?? '')
-  const existingEntry = findRawEntry(models, currentName) ?? (isRawRecord(models[0]) ? models[0] : {})
-  const previousKey = isRawRecord(existingEntry) ? String(existingEntry.apiKey ?? '') : ''
+  const existingEntry =
+    findRawEntry(models, currentName) ??
+    (isRawRecord(models[0]) ? models[0] : {})
+  const previousKey = isRawRecord(existingEntry)
+    ? String(existingEntry.apiKey ?? '')
+    : ''
   const provider = findByName(settings.provider)
   const apiBase = settings.apiBase || provider?.defaultApiBase || ''
   const submittedKey = settings.apiKey.trim()
   // 掩码占位符（getConfig() 回传的 '***xxxx'）和空字符串一样代表"未修改"，必须回退到
   // 旧密钥，不能把占位符本身当成新密钥存盘（审计 P1-2）。
-  const apiKey = submittedKey && !submittedKey.startsWith('***') ? submittedKey : previousKey
+  const apiKey =
+    submittedKey && !submittedKey.startsWith('***') ? submittedKey : previousKey
   const entry: RawConfig = {
     name: settings.name.trim(),
     label: settings.label.trim(),
@@ -197,9 +225,14 @@ export function buildWizardModelConfig(
   entry.id = entry.mainModelId
 
   let replaced = false
-  const oldName = isRawRecord(existingEntry) ? String(existingEntry.name ?? '') : ''
+  const oldName = isRawRecord(existingEntry)
+    ? String(existingEntry.name ?? '')
+    : ''
   for (const [index, item] of models.entries()) {
-    if (isRawRecord(item) && new Set([oldName, entry.name]).has(String(item.name ?? ''))) {
+    if (
+      isRawRecord(item) &&
+      new Set([oldName, entry.name]).has(String(item.name ?? ''))
+    ) {
       models[index] = entry
       replaced = true
       break
@@ -212,7 +245,9 @@ export function buildWizardModelConfig(
   raw.agents.defaults.maxTokens = Math.trunc(Number(settings.maxTokens))
   raw.agents.defaults.temperature = Number(settings.temperature)
   raw.agents.defaults.reasoningEffort = settings.reasoningEffort || null
-  raw.agents.defaults.contextWindowTokens = Math.trunc(Number(settings.contextWindowTokens))
+  raw.agents.defaults.contextWindowTokens = Math.trunc(
+    Number(settings.contextWindowTokens),
+  )
 
   const providerBlock = (raw.providers[settings.provider] ??= {})
   if (isRawRecord(providerBlock)) {
@@ -232,9 +267,16 @@ function normalizedRaw(raw: RawConfig): RawConfig {
   deepMerge(normalized, raw ?? {})
   const providers = (normalized.providers ??= {})
   for (const s of PROVIDERS) {
-    providers[s.name] ??= { apiKey: '', apiBase: s.defaultApiBase ?? '', extraHeaders: null, extraBody: null }
+    providers[s.name] ??= {
+      apiKey: '',
+      apiBase: s.defaultApiBase ?? '',
+      extraHeaders: null,
+      extraBody: null,
+    }
   }
-  ;(normalized.agents ??= {}).defaults ??= structuredClone(defaultModelConfig().agents.defaults)
+  ;(normalized.agents ??= {}).defaults ??= structuredClone(
+    defaultModelConfig().agents.defaults,
+  )
   normalized.models ??= []
   for (const item of normalized.models as any[]) {
     if (!item || typeof item !== 'object') continue
@@ -266,7 +308,10 @@ function parseEntry(item: RawConfig): ModelEntry {
     provider: String(item.provider ?? 'custom'),
     apiKey: nullableStr(item.apiKey),
     apiBase: nullableStr(item.apiBase),
-    extraHeaders: dictOrNone(item.extraHeaders) as Record<string, string> | null,
+    extraHeaders: dictOrNone(item.extraHeaders) as Record<
+      string,
+      string
+    > | null,
     extraBody: dictOrNone(item.extraBody),
     maxTokens: optionalInt(item.maxTokens),
     temperature: optionalFloat(item.temperature),
@@ -290,7 +335,10 @@ function dedupeEntryNames(entries: ModelEntry[]): ModelEntry[] {
     const next = count + 1
     seen.set(entry.name, next)
     const newName = `${entry.name}-${next}`
-    logger.warn('Duplicate model entry name; renamed', { from: entry.name, to: newName })
+    logger.warn('Duplicate model entry name; renamed', {
+      from: entry.name,
+      to: newName,
+    })
     out.push({ ...entry, name: newName })
   }
   return out
@@ -314,16 +362,24 @@ export function parseModelConfig(raw: RawConfig): ModelConfig {
     providers[s.name] = {
       apiKey: nullableStr(item.apiKey),
       apiBase: nullableStr(item.apiBase),
-      extraHeaders: dictOrNone(item.extraHeaders) as Record<string, string> | null,
+      extraHeaders: dictOrNone(item.extraHeaders) as Record<
+        string,
+        string
+      > | null,
       extraBody: dictOrNone(item.extraBody),
     }
   }
   const modelsRaw = (normalized.models ?? []) as any[]
-  const models = dedupeEntryNames(modelsRaw.filter((m) => m && typeof m === 'object').map(parseEntry))
+  const models = dedupeEntryNames(
+    modelsRaw.filter((m) => m && typeof m === 'object').map(parseEntry),
+  )
   return { defaults, models, providers, raw: normalized }
 }
 
-export function findEntry(config: ModelConfig, name: string | null | undefined): ModelEntry | undefined {
+export function findEntry(
+  config: ModelConfig,
+  name: string | null | undefined,
+): ModelEntry | undefined {
   if (!name) return undefined
   return config.models.find((e) => e.name === name)
 }
@@ -341,14 +397,17 @@ export function resolveProviderName(
   if (provider && !['auto', 'default'].includes(provider.toLowerCase())) {
     const spec = findByName(provider)
     if (!spec) {
-      logger.warn("Unknown provider in defaults; falling back to 'custom'", { provider })
+      logger.warn("Unknown provider in defaults; falling back to 'custom'", {
+        provider,
+      })
       return 'custom'
     }
     return spec.name
   }
   const normalizedModel = (model || '').toLowerCase().replace(/_/g, '-')
   for (const s of PROVIDERS) {
-    if (s.keywords.some((kw) => kw && normalizedModel.includes(kw))) return s.name
+    if (s.keywords.some((kw) => kw && normalizedModel.includes(kw)))
+      return s.name
   }
   for (const [name, p] of Object.entries(providers)) {
     if (p.apiKey) return name
@@ -358,19 +417,23 @@ export function resolveProviderName(
 
 export function validateCompleteModelEntries(raw: RawConfig): void {
   const models = raw.models
-  if (!Array.isArray(models) || models.length === 0) throw new ValidationError('请至少添加一个模型条目')
+  if (!Array.isArray(models) || models.length === 0)
+    throw new ValidationError('请至少添加一个模型条目')
   const names = new Set<string>()
   models.forEach((item: any, idx0: number) => {
     const index = idx0 + 1
-    if (!item || typeof item !== 'object') throw new ValidationError(`第 ${index} 个模型条目格式无效`)
+    if (!item || typeof item !== 'object')
+      throw new ValidationError(`第 ${index} 个模型条目格式无效`)
     const name = String(item.name ?? '').trim()
     const mainModelId = String(item.mainModelId ?? item.id ?? '').trim()
     const secondaryModelId = String(item.secondaryModelId ?? '').trim()
     if (!name) throw new ValidationError(`第 ${index} 个模型条目的名称不能为空`)
     if (names.has(name)) throw new ValidationError(`模型条目名称重复: ${name}`)
     names.add(name)
-    if (!mainModelId) throw new ValidationError(`模型条目 ${name} 必须填写 Main Model ID`)
-    if (!secondaryModelId) throw new ValidationError(`模型条目 ${name} 必须填写 Secondary Model ID`)
+    if (!mainModelId)
+      throw new ValidationError(`模型条目 ${name} 必须填写 Main Model ID`)
+    if (!secondaryModelId)
+      throw new ValidationError(`模型条目 ${name} 必须填写 Secondary Model ID`)
   })
 }
 
@@ -382,7 +445,8 @@ function serialize(data: RawConfig): string {
 
 export async function ensureModelConfig(root: string): Promise<string> {
   const path = join(root, MODEL_CONFIG_FILE)
-  if (!existsSync(path)) await writeFile(path, serialize(defaultModelConfig()), 'utf8')
+  if (!existsSync(path))
+    await writeFile(path, serialize(defaultModelConfig()), 'utf8')
   return path
 }
 
@@ -395,7 +459,10 @@ export async function ensureExampleConfig(root: string): Promise<string> {
   return path
 }
 
-export async function loadModelConfig(root: string, opts: { create?: boolean } = {}): Promise<ModelConfig> {
+export async function loadModelConfig(
+  root: string,
+  opts: { create?: boolean } = {},
+): Promise<ModelConfig> {
   const r = resolve(root)
   if (opts.create !== false) {
     await ensureModelConfig(r)
@@ -421,11 +488,20 @@ export async function saveModelConfig(
   return config
 }
 
-export async function markEntryVision(root: string, entryName: string, value = true): Promise<ModelConfig> {
+export async function markEntryVision(
+  root: string,
+  entryName: string,
+  value = true,
+): Promise<ModelConfig> {
   const config = await loadModelConfig(root)
   const raw = structuredClone(config.raw)
-  const found = (raw.models as any[] | undefined)?.find((m) => m && typeof m === 'object' && m.name === entryName)
-  if (!found) throw new ValidationError(`entry '${entryName}' not found in model_config.json`)
+  const found = (raw.models as any[] | undefined)?.find(
+    (m) => m && typeof m === 'object' && m.name === entryName,
+  )
+  if (!found)
+    throw new ValidationError(
+      `entry '${entryName}' not found in model_config.json`,
+    )
   found.supportsVision = Boolean(value)
   return saveModelConfig(root, raw)
 }

@@ -13,12 +13,18 @@ const presentation = computed(() => askHistoryPresentation(props.interaction))
       <span class="ask-history-dot" />
       <div class="min-w-0">
         <div class="ask-history-title">{{ presentation.title }}</div>
-        <div v-if="presentation.detail" class="ask-history-detail">{{ presentation.detail }}</div>
+        <div v-if="presentation.detail" class="ask-history-detail">
+          {{ presentation.detail }}
+        </div>
       </div>
     </div>
     <span class="ask-history-status">{{ presentation.status }}</span>
     <div v-if="presentation.answers.length" class="ask-history-answers">
-      <div v-for="answer in presentation.answers" :key="answer.header" class="ask-history-answer">
+      <div
+        v-for="answer in presentation.answers"
+        :key="answer.header"
+        class="ask-history-answer"
+      >
         <span>{{ answer.header }}</span>
         <strong>{{ answer.value }}</strong>
       </div>

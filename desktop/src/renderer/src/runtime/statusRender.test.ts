@@ -18,11 +18,20 @@ function bootStub(): BootstrapPayload {
     model: 'main-model',
     provider: 'prov',
     skills: [{ name: 's1', path: 'skills/s1' }],
-    tools: [{ name: 'grep', description: '搜索', read_only: true, concurrency_safe: true }],
+    tools: [
+      {
+        name: 'grep',
+        description: '搜索',
+        read_only: true,
+        concurrency_safe: true,
+      },
+    ],
     control: { mode: 'auto', pending: null },
     memory: { tokenTotals: { total: 1234, calls: 5 } },
     unarchivedHistory: [{ role: 'user', content: 'x' }],
-    modelConfig: { current: { name: 'e', provider: 'prov', mainModelId: 'main-model' } },
+    modelConfig: {
+      current: { name: 'e', provider: 'prov', mainModelId: 'main-model' },
+    },
   } as unknown as BootstrapPayload
 }
 
@@ -48,27 +57,37 @@ describe('statusRender pure formatters (W6)', () => {
     expect(renderMemoryInfo(boot)).toContain('记忆状态')
     expect(renderModeStatus(boot.control)).toContain('`auto`')
     expect(renderCommandHelp()).toContain('斜杠命令')
-    expect(renderCompactResult({
-      status: 'compacted',
-      count: 3,
-      message: 'ok',
-      unarchivedHistory: [],
-      compaction: {
-        cursor: { compactedUntilSeq: 8, archivedUntilSeq: 8 },
-        applied: [
-          { scope: { kind: 'project', projectId: 'project_1' }, path: '/state/projects/project_1/AGENTS.local.md', operationCount: 2 },
-        ],
-        discarded: [{ reason: 'duplicate' }],
-      },
-    } as unknown as CompactResult)).toContain('全局私有项目记忆')
-    expect(renderCompactResult({
-      status: 'degraded',
-      count: 3,
-      message: '记忆压缩失败，已保留当前会话历史。',
-      error: 'invalid draft',
-      unarchivedHistory: [],
-    } as unknown as CompactResult)).toContain('失败但已保留历史')
-    expect(renderStats({ m1: { total: 10, calls: 2 } }, 'model')).toContain('m1')
+    expect(
+      renderCompactResult({
+        status: 'compacted',
+        count: 3,
+        message: 'ok',
+        unarchivedHistory: [],
+        compaction: {
+          cursor: { compactedUntilSeq: 8, archivedUntilSeq: 8 },
+          applied: [
+            {
+              scope: { kind: 'project', projectId: 'project_1' },
+              path: '/state/projects/project_1/AGENTS.local.md',
+              operationCount: 2,
+            },
+          ],
+          discarded: [{ reason: 'duplicate' }],
+        },
+      } as unknown as CompactResult),
+    ).toContain('全局私有项目记忆')
+    expect(
+      renderCompactResult({
+        status: 'degraded',
+        count: 3,
+        message: '记忆压缩失败，已保留当前会话历史。',
+        error: 'invalid draft',
+        unarchivedHistory: [],
+      } as unknown as CompactResult),
+    ).toContain('失败但已保留历史')
+    expect(renderStats({ m1: { total: 10, calls: 2 } }, 'model')).toContain(
+      'm1',
+    )
     expect(renderStats(undefined, 'date')).toBe('- 暂无记录')
     expect(inlineCode('x')).toBe('`x`')
   })

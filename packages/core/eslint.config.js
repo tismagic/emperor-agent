@@ -9,7 +9,10 @@ export default tseslint.config(
   {
     rules: {
       // 迁移期沿用了 Python 磁盘格式的 snake_case 键名，unused-vars 用 _ 前缀放行占位参数。
-      '@typescript-eslint/no-unused-vars': ['warn', { argsIgnorePattern: '^_', varsIgnorePattern: '^_' }],
+      '@typescript-eslint/no-unused-vars': [
+        'warn',
+        { argsIgnorePattern: '^_', varsIgnorePattern: '^_' },
+      ],
       '@typescript-eslint/no-explicit-any': 'off',
       'no-empty': ['warn', { allowEmptyCatch: true }],
     },

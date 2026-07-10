@@ -18,11 +18,15 @@ function onSaveWatchlist(content: string) {
 }
 
 function onCheckWatchlist() {
-  void ctx.runSafely(() => ctx.checkWatchlist().then(() => ctx.refreshMemory(false)))
+  void ctx.runSafely(() =>
+    ctx.checkWatchlist().then(() => ctx.refreshMemory(false)),
+  )
 }
 
 function onRestoreVersion(id: string) {
-  void ctx.runSafely(() => ctx.restoreMemoryVersion(id).then(() => ctx.refreshMemory(false)))
+  void ctx.runSafely(() =>
+    ctx.restoreMemoryVersion(id).then(() => ctx.refreshMemory(false)),
+  )
 }
 </script>
 
@@ -33,7 +37,11 @@ function onRestoreVersion(id: string) {
         <h1>记忆层 · Memory</h1>
         <p>长期记忆与情景记忆的查看、编辑与管理</p>
       </div>
-      <button class="tool-button asset-button refresh-action" title="刷新" @click="ctx.runSafely(() => ctx.refreshMemory(true))">
+      <button
+        class="tool-button asset-button refresh-action"
+        title="刷新"
+        @click="ctx.runSafely(() => ctx.refreshMemory(true))"
+      >
         <component :is="actionIcons.refresh" class="action-icon" :size="16" />
         <span>刷新</span>
       </button>

@@ -6,17 +6,17 @@
 
 ## 修复状态（2026-07-05 当日全部完成，commits a400646..771fc7d）
 
-| 项 | 修复 | 落地位置 |
-|---|---|---|
-| B1 | 复活 `syncPlanFromTodos` 并接上 update_todos 成功后的活链路；新计划批准时 supersede 旧 executing 计划（CANCELLED + superseded_by） | `control/plan-execution.ts`、`control/manager.ts`、`agent/runner-plan-recording.ts` |
-| B4.1 | 拒绝计数改单桶（不分 pattern），换解释器重试同类危险命令同样计入 | `agent/runner-helpers.ts` |
-| B4.3 | `tool_run_failed` 事件加 `reason_kind`（safety_refusal/error），UI 显示"被安全策略拦截"而非通用失败；顺带修了 registry 默认 `mapResult` 从不给 `Error:` 前缀字符串设 `isError` 的潜伏 bug | `tools/execution.ts`、`tools/registry.ts`、桌面端 `chatProjection.ts` |
-| B4.2 | 计划宣称完工但验证要求无证据时，一次性注入诚实性 followup，要求执行验证或明确声明未验证；同计划不重复提醒 | `control/manager.ts` (`claimUnverifiedPlanSteps`)、`agent/runner-pause.ts`/`runner-plan-recording.ts` |
-| B5 + B2a | `update_todos`/`write_file`/`edit_file` 描述层导向：清单更新须与工作工具同批并行；已存在文件的增量修改必须用 edit_file；write_file 覆盖已有文件时附加提示 | `tools/builtin.ts`、`tools/filesystem.ts` |
-| B8 | `finalParts` 不再收集伴随工具批次的过场白，只保留终局 stop 内容 | `agent/runner.ts` |
-| B7 | 可见长度 <4 的首条消息延迟到回合结束，用回复摘要做标题材料 | `api/chat-service.ts` |
-| B6 | `plan_draft_delta` 100ms 时间窗节流（1421→约270 条）；`RuntimeEventStore.append` 的 index 重写降为 500ms 节流 + 终态事件强制落盘 | `agent/model-caller.ts`、`runtime/store.ts` |
-| B3 | `shrinkOldToolResults`/`microcompact` 的 cutoff 由「相对当前长度」改为 turn 内冻结的 `stableBoundary`（runner 在 `stepAsync` 入口捕获一次）；plan_draft 上下文从投影头部移到尾部 | `context/pipeline.ts`、`context/tool-results.ts`、`agent/runner.ts` |
+| 项       | 修复                                                                                                                                                                                      | 落地位置                                                                                              |
+| -------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
+| B1       | 复活 `syncPlanFromTodos` 并接上 update_todos 成功后的活链路；新计划批准时 supersede 旧 executing 计划（CANCELLED + superseded_by）                                                        | `control/plan-execution.ts`、`control/manager.ts`、`agent/runner-plan-recording.ts`                   |
+| B4.1     | 拒绝计数改单桶（不分 pattern），换解释器重试同类危险命令同样计入                                                                                                                          | `agent/runner-helpers.ts`                                                                             |
+| B4.3     | `tool_run_failed` 事件加 `reason_kind`（safety_refusal/error），UI 显示"被安全策略拦截"而非通用失败；顺带修了 registry 默认 `mapResult` 从不给 `Error:` 前缀字符串设 `isError` 的潜伏 bug | `tools/execution.ts`、`tools/registry.ts`、桌面端 `chatProjection.ts`                                 |
+| B4.2     | 计划宣称完工但验证要求无证据时，一次性注入诚实性 followup，要求执行验证或明确声明未验证；同计划不重复提醒                                                                                 | `control/manager.ts` (`claimUnverifiedPlanSteps`)、`agent/runner-pause.ts`/`runner-plan-recording.ts` |
+| B5 + B2a | `update_todos`/`write_file`/`edit_file` 描述层导向：清单更新须与工作工具同批并行；已存在文件的增量修改必须用 edit_file；write_file 覆盖已有文件时附加提示                                 | `tools/builtin.ts`、`tools/filesystem.ts`                                                             |
+| B8       | `finalParts` 不再收集伴随工具批次的过场白，只保留终局 stop 内容                                                                                                                           | `agent/runner.ts`                                                                                     |
+| B7       | 可见长度 <4 的首条消息延迟到回合结束，用回复摘要做标题材料                                                                                                                                | `api/chat-service.ts`                                                                                 |
+| B6       | `plan_draft_delta` 100ms 时间窗节流（1421→约270 条）；`RuntimeEventStore.append` 的 index 重写降为 500ms 节流 + 终态事件强制落盘                                                          | `agent/model-caller.ts`、`runtime/store.ts`                                                           |
+| B3       | `shrinkOldToolResults`/`microcompact` 的 cutoff 由「相对当前长度」改为 turn 内冻结的 `stableBoundary`（runner 在 `stepAsync` 入口捕获一次）；plan_draft 上下文从投影头部移到尾部          | `context/pipeline.ts`、`context/tool-results.ts`、`agent/runner.ts`                                   |
 
 **已知限制（有意不修）**：`replaceAggregateToolResults` 按 turn_id 累加整个 turn 的组总量，决策非单调（新批次挤入会让早前条目重新超预算），简单冻结边界解决不了，需要记忆化层或分组语义改动才能根治；该机制在审计会话里从未实际触发（`aggregate_replaced_tool_results` 全程为 0），本轮记为已知限制而非强行修复。
 
@@ -57,6 +57,7 @@
 **证据**：iteration 17/18 `node -e`、`python3 -c` 先后被 safety policy 拒绝（P1-4 的替代方案文案已生效）。模型没有按提示写临时脚本，iteration 19 直接 stop，交付报告写**"括号匹配：人工review通过，未发现语法问题"**——实际只执行过 `wc -l` 与 `grep -c`，JS 语法从未被校验。
 
 **三个子弊端**：
+
 1. **换马甲绕过 nudge**：P1-4 的重复拒绝计数按 pattern 隔离（node -e 与 python3 -c 各计 1 次），"换个解释器重试同类行为"不触发强化提示。应按拒绝类别（inline-eval 类）聚合计数。
 2. **收尾无诚实性约束**：终局回复对"计划内验证要求未完成"没有强制披露。计划每步带 verification 要求但 evidence=0（与 B1 同根），收尾时无人对账"验证要求 vs 实际执行"。应在 turn 收尾注入核对：未执行的验证必须在答复中如实声明。
 3. **事件语义错报**：策略拒绝被执行引擎包装成 `tool_run_failed: "run_command exit non-zero: ..."`，而同一调用的 tool_result 文本是 "refused by safety policy"。UI 时间线显示"命令失败"而非"被安全策略拦截"，误导排障。应给策略拒绝独立的失败原因字段/事件语义。

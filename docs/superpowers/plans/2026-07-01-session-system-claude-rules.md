@@ -36,16 +36,16 @@ Emperor currently treats `sessions/index.json` and renderer-side `draft:*` sessi
 
 ### 1.4 Constraints
 
-| Type | Constraint | Reason |
-|------|------------|--------|
-| Runtime | Electron main owns `@emperor/core`; renderer uses preload IPC | Confirmed product direction |
-| Disk compatibility | Existing `memory/sessions/index.json`, `history.jsonl`, `_checkpoint.json`, and `runtime/events.jsonl` remain readable | User data safety |
-| Fact source | Session directory files are authoritative; central index is cache | Matches Claude Code principle |
-| Write safety | Metadata writes use append-only JSONL and cache writes use same-directory temp+rename | Avoid partial corruption |
-| UI safety | `draft:*` must not reach Core bootstrap, activate, submit, or persistent sidebar state | Prevent silent routing into active session |
-| Testing | Each implementation task uses TDD with RED confirmation before production edits | Prevent false-positive regression tests |
-| Performance | Listing 1,000 sessions should avoid loading full transcripts when meta cache is present | Sidebar must stay responsive |
-| Data scope | `memory/` remains gitignored and never committed | Project policy |
+| Type               | Constraint                                                                                                             | Reason                                     |
+| ------------------ | ---------------------------------------------------------------------------------------------------------------------- | ------------------------------------------ |
+| Runtime            | Electron main owns `@emperor/core`; renderer uses preload IPC                                                          | Confirmed product direction                |
+| Disk compatibility | Existing `memory/sessions/index.json`, `history.jsonl`, `_checkpoint.json`, and `runtime/events.jsonl` remain readable | User data safety                           |
+| Fact source        | Session directory files are authoritative; central index is cache                                                      | Matches Claude Code principle              |
+| Write safety       | Metadata writes use append-only JSONL and cache writes use same-directory temp+rename                                  | Avoid partial corruption                   |
+| UI safety          | `draft:*` must not reach Core bootstrap, activate, submit, or persistent sidebar state                                 | Prevent silent routing into active session |
+| Testing            | Each implementation task uses TDD with RED confirmation before production edits                                        | Prevent false-positive regression tests    |
+| Performance        | Listing 1,000 sessions should avoid loading full transcripts when meta cache is present                                | Sidebar must stay responsive               |
+| Data scope         | `memory/` remains gitignored and never committed                                                                       | Project policy                             |
 
 ## 2. Architecture Context
 
@@ -71,31 +71,31 @@ Emperor currently treats `sessions/index.json` and renderer-side `draft:*` sessi
 
 ### 2.2 Affected Modules
 
-| File | Action | Description |
-|------|--------|-------------|
-| `packages/core/src/sessions/store.ts` | Modify | Add `meta.jsonl`, authoritative reducer, index rebuild/cache, metadata mutation helpers |
-| `packages/core/src/sessions/migrate.ts` | Modify | Materialize legacy Default session metadata after moving legacy `memory/history.jsonl` |
-| `packages/core/src/sessions/sessions.test.ts` | Modify | Add recovery, rebuild, metadata, migration, and stale tag tests |
-| `packages/core/src/api/chat-service.ts` | Modify | Reject invalid UI session ids; require real session for user chat submit |
-| `packages/core/src/api/core-api.ts` | Modify | Harden `bootstrap`, `sessions.create`, `sessions.activate`, `chat.submit`, expose diagnostics |
-| `packages/core/src/api/core-api.test.ts` | Modify | Cover session create/build metadata and bootstrap diagnostics |
-| `packages/core/src/api/chat-service.test.ts` | Modify | Cover draft/unknown/missing submit rejection and no cross-write |
-| `packages/core/src/agent/loop.ts` | Modify | Keep `activateSession()` as sole atomic switch; converge pending tags from authority |
-| `packages/core/src/agent/loop.test.ts` | Modify | Verify activation store switching and control ownership |
-| `packages/core/src/runtime/events.ts` | Modify | Preserve `ui_hidden`/`source=control` handling if needed by control resume |
-| `desktop/src/renderer/src/composables/useSession.ts` | Modify | Make `create()` async, call Core first, remove persistent local draft authority |
-| `desktop/src/renderer/src/composables/useSession.test.ts` | Modify | Verify real id creation, build project metadata, failure rollback |
-| `desktop/src/renderer/src/composables/useRuntime.ts` | Modify | Enforce real session id before send/bootstrap/switch; no submit for `draft:*` |
-| `desktop/src/renderer/src/composables/useRuntime.test.ts` | Modify | Verify send payload session id and draft rejection |
-| `desktop/src/renderer/src/runtime/sessionDrafts.ts` | Modify | Keep compatibility helpers only for transient UI skeleton and old event replacement |
-| `desktop/src/renderer/src/runtime/sidebarModel.ts` | Modify | Render pending tags from real `control_pending`; separate project/build/chat grouping |
-| `desktop/src/renderer/src/runtime/sidebarModel.test.ts` | Modify | Add tag ownership and no draft persistence cases |
-| `desktop/src/renderer/src/components/chat/bottomControlPanel.ts` | Modify | Ensure bottom panel only appears for active session matching pending interaction id |
-| `desktop/src/renderer/src/components/chat/bottomControlPanel.test.ts` | Modify | Cover stale pending and cross-session visibility |
-| `desktop/src/renderer/src/views/ChatView.vue` | Modify | Use active session ownership to block composer only when appropriate |
-| `desktop/src/main/core-host.test.ts` | Modify | Confirm IPC path does not permit draft session submission |
-| `docs/superpowers/plans/progress.json` | Create | Machine-readable task state |
-| `docs/superpowers/plans/check_progress.py` | Create | Local progress verification helper |
+| File                                                                  | Action | Description                                                                                   |
+| --------------------------------------------------------------------- | ------ | --------------------------------------------------------------------------------------------- |
+| `packages/core/src/sessions/store.ts`                                 | Modify | Add `meta.jsonl`, authoritative reducer, index rebuild/cache, metadata mutation helpers       |
+| `packages/core/src/sessions/migrate.ts`                               | Modify | Materialize legacy Default session metadata after moving legacy `memory/history.jsonl`        |
+| `packages/core/src/sessions/sessions.test.ts`                         | Modify | Add recovery, rebuild, metadata, migration, and stale tag tests                               |
+| `packages/core/src/api/chat-service.ts`                               | Modify | Reject invalid UI session ids; require real session for user chat submit                      |
+| `packages/core/src/api/core-api.ts`                                   | Modify | Harden `bootstrap`, `sessions.create`, `sessions.activate`, `chat.submit`, expose diagnostics |
+| `packages/core/src/api/core-api.test.ts`                              | Modify | Cover session create/build metadata and bootstrap diagnostics                                 |
+| `packages/core/src/api/chat-service.test.ts`                          | Modify | Cover draft/unknown/missing submit rejection and no cross-write                               |
+| `packages/core/src/agent/loop.ts`                                     | Modify | Keep `activateSession()` as sole atomic switch; converge pending tags from authority          |
+| `packages/core/src/agent/loop.test.ts`                                | Modify | Verify activation store switching and control ownership                                       |
+| `packages/core/src/runtime/events.ts`                                 | Modify | Preserve `ui_hidden`/`source=control` handling if needed by control resume                    |
+| `desktop/src/renderer/src/composables/useSession.ts`                  | Modify | Make `create()` async, call Core first, remove persistent local draft authority               |
+| `desktop/src/renderer/src/composables/useSession.test.ts`             | Modify | Verify real id creation, build project metadata, failure rollback                             |
+| `desktop/src/renderer/src/composables/useRuntime.ts`                  | Modify | Enforce real session id before send/bootstrap/switch; no submit for `draft:*`                 |
+| `desktop/src/renderer/src/composables/useRuntime.test.ts`             | Modify | Verify send payload session id and draft rejection                                            |
+| `desktop/src/renderer/src/runtime/sessionDrafts.ts`                   | Modify | Keep compatibility helpers only for transient UI skeleton and old event replacement           |
+| `desktop/src/renderer/src/runtime/sidebarModel.ts`                    | Modify | Render pending tags from real `control_pending`; separate project/build/chat grouping         |
+| `desktop/src/renderer/src/runtime/sidebarModel.test.ts`               | Modify | Add tag ownership and no draft persistence cases                                              |
+| `desktop/src/renderer/src/components/chat/bottomControlPanel.ts`      | Modify | Ensure bottom panel only appears for active session matching pending interaction id           |
+| `desktop/src/renderer/src/components/chat/bottomControlPanel.test.ts` | Modify | Cover stale pending and cross-session visibility                                              |
+| `desktop/src/renderer/src/views/ChatView.vue`                         | Modify | Use active session ownership to block composer only when appropriate                          |
+| `desktop/src/main/core-host.test.ts`                                  | Modify | Confirm IPC path does not permit draft session submission                                     |
+| `docs/superpowers/plans/progress.json`                                | Create | Machine-readable task state                                                                   |
+| `docs/superpowers/plans/check_progress.py`                            | Create | Local progress verification helper                                                            |
 
 ### 2.3 Data Flow
 
@@ -130,21 +130,21 @@ Emperor adapts this by using `memory/sessions/<id>/meta.jsonl` as a fast durable
 
 ### 3.1 Upstream Dependencies
 
-| Plan/System | Status | Depends On |
-|-------------|--------|------------|
-| TypeScript migration | complete | Python runtime retired; CoreApi is TS |
-| Electron-only transport cleanup | complete enough for this plan | Renderer uses `window.emperor.invokeCore` |
-| Ask/Plan UI work | in working tree | Bottom panel and sidebar tag hooks exist |
-| Session audit finding | accepted | User confirmed sessions disappear and project work leaks into chat |
+| Plan/System                     | Status                        | Depends On                                                         |
+| ------------------------------- | ----------------------------- | ------------------------------------------------------------------ |
+| TypeScript migration            | complete                      | Python runtime retired; CoreApi is TS                              |
+| Electron-only transport cleanup | complete enough for this plan | Renderer uses `window.emperor.invokeCore`                          |
+| Ask/Plan UI work                | in working tree               | Bottom panel and sidebar tag hooks exist                           |
+| Session audit finding           | accepted                      | User confirmed sessions disappear and project work leaks into chat |
 
 ### 3.2 Downstream Impact
 
-| Plan/System | Impact | Blocked On |
-|-------------|--------|------------|
-| Stable Build sessions | First build prompt routes to correct project session | SES-002, SES-003 |
-| Ask/Plan polish | Stale bottom panel and wrong sidebar tag disappear | SES-004 |
-| Future transcript search | Can index from directory fact source | SES-001, SES-005 |
-| Session sync/export | Can rely on self-contained session directories | SES-001 |
+| Plan/System              | Impact                                               | Blocked On       |
+| ------------------------ | ---------------------------------------------------- | ---------------- |
+| Stable Build sessions    | First build prompt routes to correct project session | SES-002, SES-003 |
+| Ask/Plan polish          | Stale bottom panel and wrong sidebar tag disappear   | SES-004          |
+| Future transcript search | Can index from directory fact source                 | SES-001, SES-005 |
+| Session sync/export      | Can rely on self-contained session directories       | SES-001          |
 
 ### 3.3 Task Dependency Graph
 
@@ -161,12 +161,12 @@ flowchart TD
 
 ### 3.4 Topological Sort
 
-| Phase | Tasks | Depends On | Parallel |
-|-------|-------|------------|----------|
-| W01 | SES-001 | None | Foundation task runs alone |
-| W02 | SES-002, SES-005 | SES-001 | SES-002 and SES-005 can run in parallel after metadata APIs exist |
-| W03 | SES-003, SES-004 | SES-002 | Renderer draft retirement and control ownership can run in parallel |
-| W04 | SES-006 | SES-003, SES-004, SES-005 | Final verification only after all behavior changes land |
+| Phase | Tasks            | Depends On                | Parallel                                                            |
+| ----- | ---------------- | ------------------------- | ------------------------------------------------------------------- |
+| W01   | SES-001          | None                      | Foundation task runs alone                                          |
+| W02   | SES-002, SES-005 | SES-001                   | SES-002 and SES-005 can run in parallel after metadata APIs exist   |
+| W03   | SES-003, SES-004 | SES-002                   | Renderer draft retirement and control ownership can run in parallel |
+| W04   | SES-006          | SES-003, SES-004, SES-005 | Final verification only after all behavior changes land             |
 
 ## 4. Task Decomposition
 
@@ -320,15 +320,15 @@ type SessionMetaEvent =
 
 ##### State Machine
 
-| Current State | Event | New State | Side Effect |
-|---------------|-------|-----------|-------------|
-| No directory | `create()` | Active metadata | Create dir, append snapshot, refresh index |
-| Metadata exists | `touch()` | Metadata updated | Append snapshot with preview/message_count |
-| Metadata exists | `archive()` | Archived metadata | Append snapshot with `archived_at` |
-| Metadata exists | `restore()` | Active metadata | Append snapshot with `archived_at=null` |
-| Metadata exists | `delete()` | Deleted | Append `session_deleted` if possible, remove dir, refresh index |
-| Index corrupt | `list()` | Rebuilt cache | Quarantine index and rebuild from directories |
-| History-only dir | `list()` | Recovered metadata | Derive minimal entry and append snapshot |
+| Current State    | Event       | New State          | Side Effect                                                     |
+| ---------------- | ----------- | ------------------ | --------------------------------------------------------------- |
+| No directory     | `create()`  | Active metadata    | Create dir, append snapshot, refresh index                      |
+| Metadata exists  | `touch()`   | Metadata updated   | Append snapshot with preview/message_count                      |
+| Metadata exists  | `archive()` | Archived metadata  | Append snapshot with `archived_at`                              |
+| Metadata exists  | `restore()` | Active metadata    | Append snapshot with `archived_at=null`                         |
+| Metadata exists  | `delete()`  | Deleted            | Append `session_deleted` if possible, remove dir, refresh index |
+| Index corrupt    | `list()`    | Rebuilt cache      | Quarantine index and rebuild from directories                   |
+| History-only dir | `list()`    | Recovered metadata | Derive minimal entry and append snapshot                        |
 
 ##### Invariants
 
@@ -342,18 +342,18 @@ type SessionMetaEvent =
 
 ##### Edge Cases
 
-| Scenario | Expected Behavior |
-|----------|-------------------|
-| `index.json` missing | Rebuild from session directories; diagnostics source is `rebuilt` |
-| `index.json` invalid JSON | Rename to `index.corrupt-<timestamp>.json`, rebuild, no sessions lost |
-| Legacy index entry has no directory | Create directory and materialize `meta.jsonl` snapshot |
-| Directory has history but no metadata | Recover minimal chat entry and append snapshot |
-| Empty session directory | Skip from list and record rebuild reason |
-| Duplicate id in index and metadata | Metadata snapshot wins; one entry in list |
-| Archived session in metadata | Hidden from default list; visible with `includeArchived=true` |
-| Disk write fails during cache refresh | Metadata append remains; next list can rebuild cache |
-| Malformed line in meta.jsonl | Ignore bad line, use latest valid snapshot; if none valid, fallback to history recovery |
-| Runtime events exist without history | Recover title from id and preview empty; keep session visible |
+| Scenario                              | Expected Behavior                                                                       |
+| ------------------------------------- | --------------------------------------------------------------------------------------- |
+| `index.json` missing                  | Rebuild from session directories; diagnostics source is `rebuilt`                       |
+| `index.json` invalid JSON             | Rename to `index.corrupt-<timestamp>.json`, rebuild, no sessions lost                   |
+| Legacy index entry has no directory   | Create directory and materialize `meta.jsonl` snapshot                                  |
+| Directory has history but no metadata | Recover minimal chat entry and append snapshot                                          |
+| Empty session directory               | Skip from list and record rebuild reason                                                |
+| Duplicate id in index and metadata    | Metadata snapshot wins; one entry in list                                               |
+| Archived session in metadata          | Hidden from default list; visible with `includeArchived=true`                           |
+| Disk write fails during cache refresh | Metadata append remains; next list can rebuild cache                                    |
+| Malformed line in meta.jsonl          | Ignore bad line, use latest valid snapshot; if none valid, fallback to history recovery |
+| Runtime events exist without history  | Recover title from id and preview empty; keep session visible                           |
 
 ##### Compatibility
 
@@ -462,16 +462,16 @@ class MainlineTurnService {
 
 Decision table:
 
-| Source | `sessionId` | Behavior |
-|--------|-------------|----------|
-| `chat` | real known id | Activate id and run turn |
-| `chat` | `draft:*` | Throw `InvalidSessionError` |
-| `chat` | empty/null | Throw `InvalidSessionError` |
-| `chat` | unknown id | Throw `InvalidSessionError` |
-| `control` | real known id | Activate id and resume |
-| `control` | empty/null | Resolve owner from pending interaction metadata; throw if unresolved |
-| `scheduler` | empty/null | Use scheduler-target session if supplied by payload, otherwise current active session by existing policy |
-| `external` | empty/null | Use active session only if `ExternalBridgeService.canAcceptTurn()` allows it |
+| Source      | `sessionId`   | Behavior                                                                                                 |
+| ----------- | ------------- | -------------------------------------------------------------------------------------------------------- |
+| `chat`      | real known id | Activate id and run turn                                                                                 |
+| `chat`      | `draft:*`     | Throw `InvalidSessionError`                                                                              |
+| `chat`      | empty/null    | Throw `InvalidSessionError`                                                                              |
+| `chat`      | unknown id    | Throw `InvalidSessionError`                                                                              |
+| `control`   | real known id | Activate id and resume                                                                                   |
+| `control`   | empty/null    | Resolve owner from pending interaction metadata; throw if unresolved                                     |
+| `scheduler` | empty/null    | Use scheduler-target session if supplied by payload, otherwise current active session by existing policy |
+| `external`  | empty/null    | Use active session only if `ExternalBridgeService.canAcceptTurn()` allows it                             |
 
 #### 5. Detailed Design
 
@@ -480,7 +480,10 @@ Decision table:
 ```typescript
 class InvalidSessionError extends Error {
   readonly code = 'invalid_session'
-  constructor(message: string, readonly sessionId: string | null) {
+  constructor(
+    message: string,
+    readonly sessionId: string | null,
+  ) {
     super(message)
   }
 }
@@ -535,16 +538,16 @@ interface MainlineSubmitInput {
 
 ##### Edge Cases
 
-| Scenario | Expected Behavior |
-|----------|-------------------|
-| Renderer sends `draft:abc` to `chat.submit` | Reject with `invalid_session`, no history write |
-| Renderer sends no session id to `chat.submit` | Reject with clear error, no history write |
-| Renderer sends deleted session id | Reject, no active session fallback |
-| Bootstrap receives `draft:*` | Reject and surface error to renderer |
-| Build session first message | Activates build context and writes to build history |
-| Control answer after restart | Resolves owner from metadata pending tag |
-| Scheduler turn during active user turn | Existing active task guard remains in force |
-| External bridge turn with no active session | Existing `canAcceptTurn()` policy gates execution |
+| Scenario                                      | Expected Behavior                                   |
+| --------------------------------------------- | --------------------------------------------------- |
+| Renderer sends `draft:abc` to `chat.submit`   | Reject with `invalid_session`, no history write     |
+| Renderer sends no session id to `chat.submit` | Reject with clear error, no history write           |
+| Renderer sends deleted session id             | Reject, no active session fallback                  |
+| Bootstrap receives `draft:*`                  | Reject and surface error to renderer                |
+| Build session first message                   | Activates build context and writes to build history |
+| Control answer after restart                  | Resolves owner from metadata pending tag            |
+| Scheduler turn during active user turn        | Existing active task guard remains in force         |
+| External bridge turn with no active session   | Existing `canAcceptTurn()` policy gates execution   |
 
 #### 6. Dependencies
 
@@ -643,7 +646,9 @@ interface CreateSessionOptions {
   project?: ProjectInfo
 }
 
-async function create(options?: string | CreateSessionOptions): Promise<SessionInfo>
+async function create(
+  options?: string | CreateSessionOptions,
+): Promise<SessionInfo>
 ```
 
 Renderer contract:
@@ -720,16 +725,16 @@ interface SessionCreateInFlight {
 
 ##### Edge Cases
 
-| Scenario | Expected Behavior |
-|----------|-------------------|
-| App starts with no sessions | Renderer asks Core to create Default/new chat, not local draft |
-| User clicks new chat repeatedly | Second click reuses in-flight state or queues after first; no duplicate drafts |
-| Project resolve succeeds but session create fails | No build row persists; previous active stays active |
-| Session create succeeds but activate IPC fails | Row remains, error surfaced, user can retry activation |
-| Old `session_created` event has `client_draft_id` | Compatibility replacement works, but new flow does not depend on it |
-| User sends during create | Send blocked before local timeline append |
-| Active id missing after delete/archive | Select next real session or create a real session |
-| Sidebar tag exists on non-active session | Tag visible, bottom panel hidden until activation |
+| Scenario                                          | Expected Behavior                                                              |
+| ------------------------------------------------- | ------------------------------------------------------------------------------ |
+| App starts with no sessions                       | Renderer asks Core to create Default/new chat, not local draft                 |
+| User clicks new chat repeatedly                   | Second click reuses in-flight state or queues after first; no duplicate drafts |
+| Project resolve succeeds but session create fails | No build row persists; previous active stays active                            |
+| Session create succeeds but activate IPC fails    | Row remains, error surfaced, user can retry activation                         |
+| Old `session_created` event has `client_draft_id` | Compatibility replacement works, but new flow does not depend on it            |
+| User sends during create                          | Send blocked before local timeline append                                      |
+| Active id missing after delete/archive            | Select next real session or create a real session                              |
+| Sidebar tag exists on non-active session          | Tag visible, bottom panel hidden until activation                              |
 
 #### 6. Dependencies
 
@@ -904,16 +909,16 @@ interface BottomControlPanel {
 
 ##### Edge Cases
 
-| Scenario | Expected Behavior |
-|----------|-------------------|
-| User switches away from session with pending Ask | Sidebar tag remains; bottom panel disappears |
-| User switches back to owner session | Bottom panel reappears |
-| App restarts with pending interaction | Tag restored from meta; bottom panel appears only in owner session |
-| Global pending missing but session tag stale | Bootstrap clears all stale tags |
-| Two sessions have stale same tag | Keep the one matching pending owner if known; clear the rest |
-| User answers after session was archived | Core can still resolve owner; UI list may not show archived session by default |
-| Control API fails | Renderer refreshes control/session list and composer recovers |
-| Hidden control user event replays | No right-side user bubble appears |
+| Scenario                                         | Expected Behavior                                                              |
+| ------------------------------------------------ | ------------------------------------------------------------------------------ |
+| User switches away from session with pending Ask | Sidebar tag remains; bottom panel disappears                                   |
+| User switches back to owner session              | Bottom panel reappears                                                         |
+| App restarts with pending interaction            | Tag restored from meta; bottom panel appears only in owner session             |
+| Global pending missing but session tag stale     | Bootstrap clears all stale tags                                                |
+| Two sessions have stale same tag                 | Keep the one matching pending owner if known; clear the rest                   |
+| User answers after session was archived          | Core can still resolve owner; UI list may not show archived session by default |
+| Control API fails                                | Renderer refreshes control/session list and composer recovers                  |
+| Hidden control user event replays                | No right-side user bubble appears                                              |
 
 #### 6. Dependencies
 
@@ -1064,16 +1069,16 @@ interface SessionMigrationState {
 
 ##### Edge Cases
 
-| Scenario | Expected Behavior |
-|----------|-------------------|
-| Current data has only Default in index | Default gets `meta.jsonl` and remains chat |
-| Current data has project registry but no build session | No fake build session created |
-| Index valid but one session dir missing | Directory is created and metadata materialized |
-| Index valid but duplicate ids | First normalized entry materialized; duplicate skipped with reason |
-| Index corrupt and no session dirs | Quarantine index; list returns empty; Core may create Default |
-| `index.legacy-backup.json` already exists | Do not overwrite |
-| History message count disagrees with index | Recovered metadata uses history count when rebuilding from history |
-| Preview missing in index | Recover from latest history message if available |
+| Scenario                                               | Expected Behavior                                                  |
+| ------------------------------------------------------ | ------------------------------------------------------------------ |
+| Current data has only Default in index                 | Default gets `meta.jsonl` and remains chat                         |
+| Current data has project registry but no build session | No fake build session created                                      |
+| Index valid but one session dir missing                | Directory is created and metadata materialized                     |
+| Index valid but duplicate ids                          | First normalized entry materialized; duplicate skipped with reason |
+| Index corrupt and no session dirs                      | Quarantine index; list returns empty; Core may create Default      |
+| `index.legacy-backup.json` already exists              | Do not overwrite                                                   |
+| History message count disagrees with index             | Recovered metadata uses history count when rebuilding from history |
+| Preview missing in index                               | Recover from latest history message if available                   |
 
 #### 6. Dependencies
 
@@ -1229,14 +1234,14 @@ interface ManualAcceptanceRecord {
 
 ##### Edge Cases
 
-| Scenario | Expected Behavior |
-|----------|-------------------|
-| `npm --prefix desktop run test` includes existing unrelated dirty tests | Record failing test name and decide whether it is in scope |
-| Electron starts with no model config | Onboarding/config flow remains user-chosen, no forced config |
-| Session recovery works but preview differs | Accept if title/id/history correct; create follow-up for preview polish |
-| Stop button clicked when no active task | No crash; cancelled list empty |
-| `git diff --check` fails from existing unrelated files | Report file paths and do not claim clean |
-| Manual Ask/Plan unavailable because model not configured | Use mocked/unit tests as evidence and state manual gap |
+| Scenario                                                                | Expected Behavior                                                       |
+| ----------------------------------------------------------------------- | ----------------------------------------------------------------------- |
+| `npm --prefix desktop run test` includes existing unrelated dirty tests | Record failing test name and decide whether it is in scope              |
+| Electron starts with no model config                                    | Onboarding/config flow remains user-chosen, no forced config            |
+| Session recovery works but preview differs                              | Accept if title/id/history correct; create follow-up for preview polish |
+| Stop button clicked when no active task                                 | No crash; cancelled list empty                                          |
+| `git diff --check` fails from existing unrelated files                  | Report file paths and do not claim clean                                |
+| Manual Ask/Plan unavailable because model not configured                | Use mocked/unit tests as evidence and state manual gap                  |
 
 #### 6. Dependencies
 
@@ -1300,15 +1305,15 @@ This task is the release gate. It should not be started until implementation tas
 
 ## 5. Risk Register
 
-| ID | Severity | Description | Affected Tasks | Probability | Mitigation |
-|----|----------|-------------|----------------|-------------|------------|
-| R1 | H | Incorrect migration could hide existing user conversations | SES-001, SES-005 | Medium | Metadata append-only, index backup, directory scan recovery tests, no destructive split |
-| R2 | H | Strict submit validation could break scheduler/external/control flows | SES-002 | Medium | Apply strict requirement to `source=chat`; add scheduler/control compatibility tests |
-| R3 | H | Renderer async create conversion could leave UI without an active session | SES-003 | Medium | Add creating state, failure rollback, no-send guard, startup empty-list tests |
-| R4 | M | Listing many history-only sessions could slow startup | SES-001, SES-005 | Low | Read full history only when metadata is missing; write metadata after recovery |
-| R5 | M | Stale Ask/Plan pending could survive in old metadata | SES-004 | Medium | Bootstrap convergence clears all tags when global pending is null |
-| R6 | M | Existing dirty worktree may make full verification noisy | SES-006 | High | Keep task-scoped diffs, report unrelated failures separately, never revert user changes |
-| R7 | L | Diagnostics fields may expose internal rebuild reasons in UI | SES-005 | Low | Keep details in diagnostics payload/dev log; user UI can show only concise status |
+| ID  | Severity | Description                                                               | Affected Tasks   | Probability | Mitigation                                                                              |
+| --- | -------- | ------------------------------------------------------------------------- | ---------------- | ----------- | --------------------------------------------------------------------------------------- |
+| R1  | H        | Incorrect migration could hide existing user conversations                | SES-001, SES-005 | Medium      | Metadata append-only, index backup, directory scan recovery tests, no destructive split |
+| R2  | H        | Strict submit validation could break scheduler/external/control flows     | SES-002          | Medium      | Apply strict requirement to `source=chat`; add scheduler/control compatibility tests    |
+| R3  | H        | Renderer async create conversion could leave UI without an active session | SES-003          | Medium      | Add creating state, failure rollback, no-send guard, startup empty-list tests           |
+| R4  | M        | Listing many history-only sessions could slow startup                     | SES-001, SES-005 | Low         | Read full history only when metadata is missing; write metadata after recovery          |
+| R5  | M        | Stale Ask/Plan pending could survive in old metadata                      | SES-004          | Medium      | Bootstrap convergence clears all tags when global pending is null                       |
+| R6  | M        | Existing dirty worktree may make full verification noisy                  | SES-006          | High        | Keep task-scoped diffs, report unrelated failures separately, never revert user changes |
+| R7  | L        | Diagnostics fields may expose internal rebuild reasons in UI              | SES-005          | Low         | Keep details in diagnostics payload/dev log; user UI can show only concise status       |
 
 ## 6. Receipt Verification
 
@@ -1384,14 +1389,14 @@ npm --prefix desktop run typecheck
 
 Progress is tracked in `docs/superpowers/plans/progress.json`. A task is complete only after its tests have shown RED before implementation and GREEN after implementation.
 
-| Task | Status | Notes |
-|------|--------|-------|
+| Task    | Status | Notes                               |
+| ------- | ------ | ----------------------------------- |
 | SES-001 | ☐ todo | Metadata log and rebuild foundation |
-| SES-002 | ☐ todo | Core boundaries |
-| SES-003 | ☐ todo | Renderer draft retirement |
-| SES-004 | ☐ todo | Ask/Plan ownership |
-| SES-005 | ☐ todo | Migration and diagnostics |
-| SES-006 | ☐ todo | Verification and rollout |
+| SES-002 | ☐ todo | Core boundaries                     |
+| SES-003 | ☐ todo | Renderer draft retirement           |
+| SES-004 | ☐ todo | Ask/Plan ownership                  |
+| SES-005 | ☐ todo | Migration and diagnostics           |
+| SES-006 | ☐ todo | Verification and rollout            |
 
 Run:
 

@@ -11,11 +11,14 @@ export interface ModelSetupDialogContent {
 
 const DEFAULT_STATUS = '还没有可用模型，请先配置模型。'
 
-export function buildModelSetupDialogContent(message?: string | null): ModelSetupDialogContent {
+export function buildModelSetupDialogContent(
+  message?: string | null,
+): ModelSetupDialogContent {
   return {
     brandAlt: 'emperoragent',
     title: '把任务交给本地 Agent。',
-    subtitle: '先接入一个可用模型，Emperor Agent 才能在本机会话中对话、调用工具、保存记忆并执行任务。',
+    subtitle:
+      '先接入一个可用模型，Emperor Agent 才能在本机会话中对话、调用工具、保存记忆并执行任务。',
     status: message?.trim() || DEFAULT_STATUS,
     primaryAction: '去配置模型',
     secondaryAction: '稍后配置',

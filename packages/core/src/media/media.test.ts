@@ -11,15 +11,23 @@ function tmp(prefix: string): string {
 }
 
 function pngBytes(): Buffer {
-  return Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 1, 2, 3, 4])
+  return Buffer.from([
+    0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 1, 2, 3, 4,
+  ])
 }
 
 class StaticTool extends Tool {
   override readonly name = 'run_command'
   override readonly description = 'test tool'
-  override readonly parameters = { type: 'object', properties: {}, required: [] } as any
+  override readonly parameters = {
+    type: 'object',
+    properties: {},
+    required: [],
+  } as any
 
-  constructor(private readonly output: string) { super() }
+  constructor(private readonly output: string) {
+    super()
+  }
 
   override execute(): string {
     return this.output
@@ -33,7 +41,11 @@ describe('MediaStore', () => {
     writeFileSync(source, pngBytes())
 
     const store = new MediaStore(root)
-    const ref = store.importImagePath(source, { sourceTool: 'run_command', turnId: 'turn-1', toolCallId: 'call-1' })
+    const ref = store.importImagePath(source, {
+      sourceTool: 'run_command',
+      turnId: 'turn-1',
+      toolCallId: 'call-1',
+    })
 
     expect(ref.id).toMatch(/^media_\d{4}-\d{2}_[0-9a-f]{8}$/)
     expect(ref.kind).toBe('image')
@@ -56,7 +68,9 @@ describe('MediaStore', () => {
     const source = join(root, 'notes.txt')
     writeFileSync(source, 'not an image')
 
-    expect(() => new MediaStore(root).importImagePath(source)).toThrow(/unsupported media/)
+    expect(() => new MediaStore(root).importImagePath(source)).toThrow(
+      /unsupported media/,
+    )
   })
 })
 
@@ -128,7 +142,11 @@ describe('tool media ingestion', () => {
     const registry = new ToolRegistry(root)
     registry.register(new StaticTool('screen.png'))
 
-    const result = await registry.executeResult('run_command', {}, { workspaceRoot })
+    const result = await registry.executeResult(
+      'run_command',
+      {},
+      { workspaceRoot },
+    )
     const media = result.artifacts[0]?.media
 
     expect(media?.originalPath).toBe(source)

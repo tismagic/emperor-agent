@@ -28,12 +28,21 @@ declare global {
 }
 
 const screenshotDir = resolve(process.cwd(), 'screenshots', 'codex-v2')
-const visualProjectDir = resolve(process.cwd(), 'screenshots', 'fixtures', 'visual-build-project')
+const visualProjectDir = resolve(
+  process.cwd(),
+  'screenshots',
+  'fixtures',
+  'visual-build-project',
+)
 
 test.beforeAll(() => {
   mkdirSync(screenshotDir, { recursive: true })
   mkdirSync(visualProjectDir, { recursive: true })
-  writeFileSync(resolve(visualProjectDir, 'README.md'), '# Visual Build Project\n', 'utf8')
+  writeFileSync(
+    resolve(visualProjectDir, 'README.md'),
+    '# Visual Build Project\n',
+    'utf8',
+  )
 })
 
 test.beforeEach(async ({ page }) => {
@@ -41,27 +50,126 @@ test.beforeEach(async ({ page }) => {
 })
 
 const scenarios = [
-  { name: 'chat-empty-desktop', path: '/chat', width: 1440, height: 900, selector: '.composer' },
-  { name: 'chat-empty-mobile', path: '/chat', width: 390, height: 844, selector: '.composer' },
-  { name: 'build-project-sidebar', path: '/chat', width: 1440, height: 900, selector: '.project-row' },
-  { name: 'model-panel', path: '/model', width: 1024, height: 768, selector: '.view-body' },
-  { name: 'tokens-panel', path: '/tokens', width: 1024, height: 768, selector: '.tokens-body' },
-  { name: 'memory-context-panel', path: '/memory', width: 1024, height: 768, selector: '.memory-context-strip' },
-  { name: 'scheduler-panel', path: '/scheduler', width: 1280, height: 820, selector: '.scheduler-panel' },
-  { name: 'plugins-panel', path: '/plugins/skills', width: 1024, height: 768, selector: '.segmented-control' },
-  { name: 'settings-panel', path: '/settings/general', width: 1024, height: 768, selector: '.settings-shell' },
-  { name: 'settings-model', path: '/settings/model', width: 1024, height: 768, selector: '.model-panel-shell' },
-  { name: 'settings-model-mobile', path: '/settings/model', width: 390, height: 844, selector: '.model-panel-shell' },
-  { name: 'settings-hooks', path: '/settings/hooks', width: 1280, height: 820, selector: '.hooks-panel' },
-  { name: 'settings-hooks-mobile', path: '/settings/hooks', width: 390, height: 844, selector: '.hooks-panel' },
-  { name: 'settings-diagnostics', path: '/settings/diagnostics', width: 1280, height: 820, selector: '.diagnostics-list' },
-  { name: 'settings-diagnostics-mobile', path: '/settings/diagnostics', width: 390, height: 844, selector: '.diagnostics-list' },
-  { name: 'settings-appearance', path: '/settings/appearance', width: 1024, height: 768, selector: '.settings-shell' },
+  {
+    name: 'chat-empty-desktop',
+    path: '/chat',
+    width: 1440,
+    height: 900,
+    selector: '.composer',
+  },
+  {
+    name: 'chat-empty-mobile',
+    path: '/chat',
+    width: 390,
+    height: 844,
+    selector: '.composer',
+  },
+  {
+    name: 'build-project-sidebar',
+    path: '/chat',
+    width: 1440,
+    height: 900,
+    selector: '.project-row',
+  },
+  {
+    name: 'model-panel',
+    path: '/model',
+    width: 1024,
+    height: 768,
+    selector: '.view-body',
+  },
+  {
+    name: 'tokens-panel',
+    path: '/tokens',
+    width: 1024,
+    height: 768,
+    selector: '.tokens-body',
+  },
+  {
+    name: 'memory-context-panel',
+    path: '/memory',
+    width: 1024,
+    height: 768,
+    selector: '.memory-context-strip',
+  },
+  {
+    name: 'scheduler-panel',
+    path: '/scheduler',
+    width: 1280,
+    height: 820,
+    selector: '.scheduler-panel',
+  },
+  {
+    name: 'plugins-panel',
+    path: '/plugins/skills',
+    width: 1024,
+    height: 768,
+    selector: '.segmented-control',
+  },
+  {
+    name: 'settings-panel',
+    path: '/settings/general',
+    width: 1024,
+    height: 768,
+    selector: '.settings-shell',
+  },
+  {
+    name: 'settings-model',
+    path: '/settings/model',
+    width: 1024,
+    height: 768,
+    selector: '.model-panel-shell',
+  },
+  {
+    name: 'settings-model-mobile',
+    path: '/settings/model',
+    width: 390,
+    height: 844,
+    selector: '.model-panel-shell',
+  },
+  {
+    name: 'settings-hooks',
+    path: '/settings/hooks',
+    width: 1280,
+    height: 820,
+    selector: '.hooks-panel',
+  },
+  {
+    name: 'settings-hooks-mobile',
+    path: '/settings/hooks',
+    width: 390,
+    height: 844,
+    selector: '.hooks-panel',
+  },
+  {
+    name: 'settings-diagnostics',
+    path: '/settings/diagnostics',
+    width: 1280,
+    height: 820,
+    selector: '.diagnostics-list',
+  },
+  {
+    name: 'settings-diagnostics-mobile',
+    path: '/settings/diagnostics',
+    width: 390,
+    height: 844,
+    selector: '.diagnostics-list',
+  },
+  {
+    name: 'settings-appearance',
+    path: '/settings/appearance',
+    width: 1024,
+    height: 768,
+    selector: '.settings-shell',
+  },
 ] as const
 
 for (const scenario of scenarios) {
   test(`captures ${scenario.name}`, async ({ page }) => {
-    await page.setViewportSize({ width: scenario.width, height: scenario.height })
+    await page.setViewportSize({
+      width: scenario.width,
+      height: scenario.height,
+    })
     await page.goto(scenario.path)
     await expect(page.locator('.app-shell')).toBeVisible()
     await expect(page.locator(scenario.selector).first()).toBeVisible()
@@ -83,7 +191,9 @@ for (const scenario of scenarios) {
   })
 }
 
-test('model pickers select, reopen all candidates, and retain custom ids', async ({ page }) => {
+test('model pickers select, reopen all candidates, and retain custom ids', async ({
+  page,
+}) => {
   await page.setViewportSize({ width: 1280, height: 820 })
   await page.goto('/settings/model')
   await page.getByRole('button', { name: '获取模型' }).click()
@@ -91,14 +201,18 @@ test('model pickers select, reopen all candidates, and retain custom ids', async
 
   const main = page.getByRole('combobox', { name: 'Main Model ID' })
   await main.click()
-  await expect(page.getByRole('listbox', { name: 'Main Model ID候选模型' })).toBeVisible()
+  await expect(
+    page.getByRole('listbox', { name: 'Main Model ID候选模型' }),
+  ).toBeVisible()
   await expect(page.getByRole('option', { name: /visual-pro/ })).toBeVisible()
   await page.getByRole('option', { name: /visual-pro/ }).click()
   await expect(main).toHaveValue('visual-pro')
 
   await main.click()
   await expect(page.getByRole('option', { name: /visual-main/ })).toBeVisible()
-  await expect(page.getByRole('option', { name: /visual-secondary/ })).toBeVisible()
+  await expect(
+    page.getByRole('option', { name: /visual-secondary/ }),
+  ).toBeVisible()
   await expect(page.getByRole('option', { name: /visual-pro/ })).toBeVisible()
   await main.press('Escape')
 
@@ -113,37 +227,76 @@ test('model pickers select, reopen all candidates, and retain custom ids', async
   await secondary.press('Escape')
   await expect(secondary).toHaveValue('private-model-v2')
   await secondary.click()
-  await expect(page.getByRole('option', { name: /private-model-v2.*自定义/ })).toBeVisible()
+  await expect(
+    page.getByRole('option', { name: /private-model-v2.*自定义/ }),
+  ).toBeVisible()
   await expect(page.getByRole('option', { name: /visual-main/ })).toBeVisible()
 })
 
-test('settings pages keep their scroll contract without horizontal overflow', async ({ page }) => {
-  const routes = ['general', 'model', 'memory', 'tokens', 'configs', 'hooks', 'diagnostics', 'appearance', 'archived']
-  for (const viewport of [{ width: 1280, height: 820 }, { width: 390, height: 844 }]) {
+test('settings pages keep their scroll contract without horizontal overflow', async ({
+  page,
+}) => {
+  const routes = [
+    'general',
+    'model',
+    'memory',
+    'tokens',
+    'configs',
+    'hooks',
+    'diagnostics',
+    'appearance',
+    'archived',
+  ]
+  for (const viewport of [
+    { width: 1280, height: 820 },
+    { width: 390, height: 844 },
+  ]) {
     await page.setViewportSize(viewport)
     for (const route of routes) {
       await page.goto(`/settings/${route}`)
       await expect(page.locator('.settings-shell')).toBeVisible()
-      await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth + 1)).toBe(true)
+      await expect
+        .poll(() =>
+          page.evaluate(
+            () =>
+              document.documentElement.scrollWidth <=
+              document.documentElement.clientWidth + 1,
+          ),
+        )
+        .toBe(true)
 
       const scrollResult = await page.evaluate(() => {
-        const candidates = Array.from(document.querySelectorAll<HTMLElement>('.settings-content *'))
+        const candidates = Array.from(
+          document.querySelectorAll<HTMLElement>('.settings-content *'),
+        )
         const scrollHost = candidates.find((element) => {
           const style = window.getComputedStyle(element)
-          return /(auto|scroll)/.test(style.overflowY) && element.scrollHeight > element.clientHeight + 1
+          return (
+            /(auto|scroll)/.test(style.overflowY) &&
+            element.scrollHeight > element.clientHeight + 1
+          )
         })
         if (!scrollHost) return { found: false, scrolled: false }
-        scrollHost.scrollTop = Math.min(80, scrollHost.scrollHeight - scrollHost.clientHeight)
+        scrollHost.scrollTop = Math.min(
+          80,
+          scrollHost.scrollHeight - scrollHost.clientHeight,
+        )
         return { found: true, scrolled: scrollHost.scrollTop > 0 }
       })
 
-      if (route === 'diagnostics' || (route === 'model' && viewport.width < 980)) expect(scrollResult.found).toBe(true)
+      if (
+        route === 'diagnostics' ||
+        (route === 'model' && viewport.width < 980)
+      )
+        expect(scrollResult.found).toBe(true)
       if (scrollResult.found) expect(scrollResult.scrolled).toBe(true)
     }
   }
 })
 
-test('hooks workspace exposes effective, test, audit, and advanced views', async ({ page }) => {
+test('hooks workspace exposes effective, test, audit, and advanced views', async ({
+  page,
+}) => {
   await page.setViewportSize({ width: 1280, height: 820 })
   await page.goto('/settings/hooks')
   await expect(page.locator('.hooks-panel')).toBeVisible()
@@ -188,7 +341,9 @@ test('captures sidebar search overlay', async ({ page }) => {
   })
 })
 
-test('sidebar primary navigation buttons route to their panels', async ({ page }) => {
+test('sidebar primary navigation buttons route to their panels', async ({
+  page,
+}) => {
   await page.setViewportSize({ width: 1440, height: 900 })
   await page.goto('/chat')
   await expect(page.locator('.app-shell')).toBeVisible()
@@ -306,358 +461,607 @@ test('captures composer model menu on mobile', async ({ page }) => {
 })
 
 async function installVisualCoreBridge(page: Page) {
-  await page.addInitScript(({ projectDir }) => {
-    const now = '2026-06-26T12:00:00.000Z'
-    const project = {
-      project_id: 'visual_project',
-      project_path: projectDir,
-      project_name: 'Visual Build Project',
-      summary: 'Fixture project for renderer visual tests.',
-    }
-    const sessions = [
-      session('build-ui', '构建 Visual UI', 'build', project),
-      session('build-api', '构建 Visual API', 'build', project),
-      session('missing-path', '缺失项目路径', 'build', {
-        project_id: 'missing_visual_project',
-        project_path: `${projectDir}/missing`,
-        project_name: 'Missing visual project',
-      }),
-      session('chat-main', '普通对话', 'chat'),
-    ]
-    const modelConfig = {
-      current: {
-        provider: 'visual',
-        providerLabel: 'Visual Provider',
-        model: 'visual-main',
-        mainModelId: 'visual-main',
-        secondaryModelId: 'visual-secondary',
-        entryName: 'visual',
-        entryLabel: 'Visual Local',
-        supportsVision: true,
-        contextWindowTokens: 128000,
-        maxTokens: 4096,
-      },
-      secondary: {
-        provider: 'visual',
-        providerLabel: 'Visual Provider',
-        model: 'visual-secondary',
-        entryName: 'visual',
-        entryLabel: 'Visual Local',
-      },
-      routing: {
-        secondaryEnabled: true,
-        fallbackToMain: true,
-        mainEntry: 'visual',
-        mainModel: 'visual-main',
-        secondaryModel: 'visual-secondary',
-      },
-      config: {
-        agents: { defaults: { provider: 'visual', model: 'visual' } },
-        models: [
+  await page.addInitScript(
+    ({ projectDir }) => {
+      const now = '2026-06-26T12:00:00.000Z'
+      const project = {
+        project_id: 'visual_project',
+        project_path: projectDir,
+        project_name: 'Visual Build Project',
+        summary: 'Fixture project for renderer visual tests.',
+      }
+      const sessions = [
+        session('build-ui', '构建 Visual UI', 'build', project),
+        session('build-api', '构建 Visual API', 'build', project),
+        session('missing-path', '缺失项目路径', 'build', {
+          project_id: 'missing_visual_project',
+          project_path: `${projectDir}/missing`,
+          project_name: 'Missing visual project',
+        }),
+        session('chat-main', '普通对话', 'chat'),
+      ]
+      const modelConfig = {
+        current: {
+          provider: 'visual',
+          providerLabel: 'Visual Provider',
+          model: 'visual-main',
+          mainModelId: 'visual-main',
+          secondaryModelId: 'visual-secondary',
+          entryName: 'visual',
+          entryLabel: 'Visual Local',
+          supportsVision: true,
+          contextWindowTokens: 128000,
+          maxTokens: 4096,
+        },
+        secondary: {
+          provider: 'visual',
+          providerLabel: 'Visual Provider',
+          model: 'visual-secondary',
+          entryName: 'visual',
+          entryLabel: 'Visual Local',
+        },
+        routing: {
+          secondaryEnabled: true,
+          fallbackToMain: true,
+          mainEntry: 'visual',
+          mainModel: 'visual-main',
+          secondaryModel: 'visual-secondary',
+        },
+        config: {
+          agents: { defaults: { provider: 'visual', model: 'visual' } },
+          models: [
+            {
+              name: 'visual',
+              label: 'Visual Local',
+              provider: 'visual',
+              mainModelId: 'visual-main',
+              secondaryModelId: 'visual-secondary',
+              contextWindowTokens: 128000,
+              maxTokens: 4096,
+              supportsVision: true,
+            },
+          ],
+          providers: { visual: { apiKey: '' } },
+        },
+        providerOptions: [
           {
             name: 'visual',
-            label: 'Visual Local',
-            provider: 'visual',
-            mainModelId: 'visual-main',
-            secondaryModelId: 'visual-secondary',
-            contextWindowTokens: 128000,
-            maxTokens: 4096,
-            supportsVision: true,
+            displayName: 'Visual Provider',
+            backend: 'openai-compatible',
+            region: 'local',
+            isLocal: true,
+            modelDiscovery: 'supported',
           },
         ],
-        providers: { visual: { apiKey: '' } },
-      },
-      providerOptions: [
-        { name: 'visual', displayName: 'Visual Provider', backend: 'openai-compatible', region: 'local', isLocal: true, modelDiscovery: 'supported' },
-      ],
-    }
-    const memory = {
-      long_term: '偏好：保持界面紧凑，优先展示可操作状态。',
-      today_episode: '今天完成 TypeScript 迁移视觉检查。',
-      episodes: ['2026-06-26'],
-      context: {
-        mode: 'build',
-        session: sessions[0],
-        project,
-        projectMemory: '项目记忆：视觉测试使用固定 Core bridge fixture。',
-        projectIndexSummary: 'README.md: Visual Build Project',
-        sources: ['MEMORY.local.md', 'project/index.json'],
-      },
-      history: { active_lines: 4, active_bytes: 2048, archive_files: 1, archive_bytes: 8192 },
-      runtime: { events: 0, latestSeq: 1, archiveFiles: 0 },
-      schedulerMaintenance: { jobs: 1, enabled: 1, nextRunAtMs: Date.now() + 3600000 },
-      watchlist: {
-        content: '- [ ] 检查发布产物',
-        lastDecision: { action: 'skip', reason: 'visual fixture', checkedAt: Date.now() },
-      },
-      versions: { versions: [], count: 0 },
-      tokenTotals: { input: 1200, output: 640, total: 1840, calls: 3 },
-      tokensByModel: { 'visual-main': { input: 1200, output: 640, total: 1840, calls: 3 } },
-      tokensByUsageType: { chat: { input: 1200, output: 640, total: 1840, calls: 3 } },
-    }
-    const scheduler = {
-      status: { running: true, jobs: 1, enabled: 1, nextRunAtMs: Date.now() + 3600000, lastError: null },
-      jobs: [
-        {
-          id: 'memory-maintenance',
-          name: 'Memory maintenance',
-          enabled: true,
-          protected: true,
-          schedule: { kind: 'every', everyMs: 3600000 },
-          payload: { kind: 'system_event', message: 'memory-maintenance' },
-          state: { nextRunAtMs: Date.now() + 3600000, lastStatus: 'ok', lastRunAtMs: Date.now() - 3600000 },
-          purpose: 'Visual fixture',
-        },
-      ],
-      diagnostics: {},
-    }
-    const team = {
-      members: [
-        { name: 'reviewer', role: 'reviewer', agent_type: 'reviewer', status: 'idle', unread: 0, tools: ['read_file'] },
-      ],
-      leadUnread: 0,
-      leadInbox: [],
-      config: { version: 1, team_name: 'Visual Team', members: [] },
-    }
-    const hooksPayload = {
-      revision: 'visual-hooks-revision-20260710',
-      config: { version: 2, enabled: true, projectHooks: { enabled: true }, hooks: {} },
-      globalConfig: {
-        version: 2,
-        enabled: true,
-        projectHooks: { enabled: true },
-        hooks: {
-          PreToolUse: [{
-            id: 'guard-write', enabled: true, matcher: 'write_file', if: '', failureMode: 'closed',
-            handlers: [{ id: 'guard-command', type: 'command', enabled: true, command: 'node', args: ['guard.mjs'], timeoutMs: 10000 }],
-          }],
-        },
-      },
-      effectiveGroups: [
-        {
-          eventName: 'PreToolUse',
-          group: {
-            id: 'guard-write', enabled: true, matcher: 'write_file', if: '', failureMode: 'closed',
-            handlers: [{ id: 'guard-command', type: 'command', enabled: true, command: 'node', args: ['guard.mjs'], timeoutMs: 10000 }],
-          },
-          source: { id: 'global', kind: 'global', path: '/Users/visual/.emperor-agent/hooks_config.json', readonly: false, active: true },
-        },
-        {
-          eventName: 'Stop',
-          group: {
-            id: 'project-finish', enabled: true, matcher: '*', if: '', failureMode: 'open',
-            handlers: [{ id: 'finish-prompt', type: 'prompt', enabled: true, prompt: 'Check completion.', timeoutMs: 30000 }],
-          },
-          source: { id: 'project', kind: 'project', path: `${projectDir}/.emperor/settings.json`, readonly: true, active: false, blockedReason: 'project_trust_stale' },
-        },
-      ],
-      sources: [
-        { id: 'global', kind: 'global', path: '/Users/visual/.emperor-agent/hooks_config.json', readonly: false, active: true },
-        { id: 'project', kind: 'project', path: `${projectDir}/.emperor/settings.json`, readonly: true, active: false, blockedReason: 'project_trust_stale' },
-      ],
-      projectTrust: { canonicalRoot: projectDir, digest: 'visual-digest', status: 'stale' },
-      diagnostics: [{ code: 'candidate_rejected', path: `${projectDir}/.emperor/settings.json`, message: 'Project hook digest changed.' }],
-      summary: { total: 2, groups: 2, events: [{ eventName: 'PreToolUse', groups: 1, count: 1 }, { eventName: 'Stop', groups: 1, count: 1 }] },
-    }
-    const hooksMetadata = {
-      version: 2,
-      events: [
-        { eventName: 'PreToolUse', matcherField: 'tool_name', mode: 'transform', allowedHandlers: ['command', 'http', 'prompt'] },
-        { eventName: 'Stop', matcherField: null, mode: 'continue', allowedHandlers: ['command', 'http', 'prompt', 'agent'] },
-        { eventName: 'ConfigChange', matcherField: 'source', mode: 'block', allowedHandlers: ['command', 'http'] },
-      ],
-      handlers: { command: {}, http: {}, prompt: {}, agent: {} },
-    }
-    const hooksAudit = {
-      cursor: '0', nextCursor: null, total: 1, badLines: [],
-      records: [{
-        hookRunId: 'hook_run_visual', eventName: 'PreToolUse', groupId: 'guard-write', handlerId: 'audit-command', handlerType: 'command',
-        source: { id: 'global', kind: 'global' }, snapshotRevision: hooksPayload.revision, startedAt: now,
-        durationMs: 18, status: 'completed', outcome: 'deny', reason: 'visual fixture', inputHash: 'input-hash', outputHash: 'output-hash',
-      }],
-    }
-    const boot = {
-      app: 'Emperor Agent',
-      model: 'visual-main',
-      provider: 'visual',
-      providerLabel: 'Visual Provider',
-      tools: [
-        { name: 'read_file', description: 'Read a file', read_only: true, source: 'builtin' },
-        { name: 'run_command', description: 'Run a command', read_only: false, source: 'builtin' },
-      ],
-      skills: [{ name: 'visual-fixture', description: 'Fixture skill', path: 'skills/visual-fixture/SKILL.md' }],
-      memory,
-      modelConfig,
-      scheduler,
-      team,
-      control: { mode: 'ask_before_edit', pending: null },
-      desktopPet: { enabled: false, autoStartWithWebui: false, running: false, installCommand: 'npm install' },
-      diagnostics: {
-        root: projectDir,
-        modelConfig: { status: 'ok', exists: true, models: 1 },
-        localConfig: { status: 'ok', exists: true },
-        scheduler: { jobsFile: 'memory/scheduler/jobs.json' },
-        runtime: { events: 0, latestSeq: 1 },
-        desktopPet: { enabled: false, running: false, autoStartWithWebui: false, installCommand: 'npm install' },
-        dependencies: { nodeRuntime: true, desktopRenderer: true },
-      },
-      projects: [project],
-      runtime: { latestSeq: 1, scope: 'unarchived', events: [] },
-      unarchivedHistory: [],
-      context_used: 12000,
-    }
-
-    function session(id: string, title: string, mode: VisualSessionMode, projectInfo?: VisualProjectInfo) {
-      return {
-        id,
-        title,
-        created_at: now,
-        updated_at: now,
-        preview: mode === 'build' ? 'Visual build session' : 'Visual chat session',
-        mode,
-        project_id: projectInfo?.project_id ?? null,
-        project_path: projectInfo?.project_path ?? null,
-        project_name: projectInfo?.project_name ?? null,
-        message_count: 2,
-        title_status: 'ready',
-        archived_at: null,
-        version: 1,
       }
-    }
-
-    window.emperor = {
-      version: '0.1.0-visual',
-      platform: 'visual',
-      selectDirectory: async () => projectDir,
-      onCoreEvent: (listener: VisualCoreListener) => {
-        queueMicrotask(() => listener({ event: 'ready', seq: 1, latest_seq: 1, model: 'visual-main', provider: 'visual', control: boot.control }))
-        return () => {}
-      },
-      invokeCore: async (operationKey: string, ...args: unknown[]) => {
-        switch (operationKey) {
-          case 'bootstrap':
-            return boot
-          case 'sessions.list':
-            return sessions
-          case 'sessions.activate':
-            return { active: args[0], complete: true }
-          case 'sessions.create': {
-            const body = (args[0] ?? {}) as {
-              title?: string
-              mode?: VisualSessionMode
-              project?: VisualProjectInfo
-            }
-            const created = session(`created-${sessions.length}`, body.title || '新会话', body.mode || 'chat', body.project)
-            sessions.unshift(created)
-            return created
-          }
-          case 'projects.resolve':
-            return project
-          case 'projects.list':
-            return [project]
-          case 'memory.get':
-            return memory
-          case 'memory.tokens':
-            return {
-              totals: { input: 1200, output: 640, total: 1840, calls: 3 },
-              byDate: {},
-              byModel: { 'visual-main': { input: 1200, output: 640, total: 1840, calls: 3 } },
-              byUsageType: { chat: { input: 1200, output: 640, total: 1840, calls: 3 } },
-              byDateModel: {},
-              byHour: {},
-              streak: { active_days: 1, current_streak: 1, longest_streak: 1 },
-              sessions: sessions.length,
-              messages: 8,
-              generatedAt: now,
-            }
-          case 'model.getConfig':
-            return modelConfig
-          case 'model.discoverModels':
-            return {
-              ok: true,
-              provider: 'visual',
-              source: 'visual-fixture',
-              models: [
-                { id: 'visual-main', ownedBy: 'Visual Labs' },
-                { id: 'visual-secondary', ownedBy: 'Visual Labs' },
-                { id: 'visual-pro', ownedBy: 'Visual Research' },
-              ],
-            }
-          case 'config.get':
-            return { path: 'emperor.local.json', content: '{\\n  "webui": {}\\n}\\n' }
-          case 'mcp.getConfig':
-            return { servers: {} }
-          case 'scheduler.get':
-            return scheduler
-          case 'team.get':
-            return team
-          case 'team.getMember':
-            return { member: team.members[0], inbox: [], leadInbox: [], thread: [] }
-          case 'sidebar.get':
-            return {
-              section_order: ['projects', 'chats'],
-              project_sort: 'updated_at',
-              chat_sort: 'updated_at',
-              project_order: [],
-              chat_order: [],
-              project_session_order: {},
-              collapsed_project_ids: [],
-            }
-          case 'desktopPet.get':
-            return boot.desktopPet
-          case 'diagnostics.get':
-            return boot.diagnostics
-          case 'skills.list':
-            return boot.skills
-          case 'skills.tools':
-            return boot.tools
-          case 'control.get':
-            return boot.control
-          case 'control.setMode':
-            boot.control = { mode: String(args[0] || 'ask_before_edit'), pending: null }
-            return boot.control
-          case 'hooks.getConfig':
-            return hooksPayload
-          case 'hooks.getMetadata':
-            return hooksMetadata
-          case 'hooks.getAudit':
-            return hooksAudit
-          case 'hooks.testMatch':
-            return { revision: hooksPayload.revision, eventName: 'PreToolUse', items: [], diagnostics: [] }
-          case 'hooks.validateConfig':
-            return { valid: true, config: (args[0] as { config?: unknown } | undefined)?.config, diagnostics: [] }
-          case 'hooks.setProjectTrust': {
-            const body = (args[0] as { trusted?: boolean } | undefined) ?? {}
-            hooksPayload.projectTrust.status = body.trusted ? 'trusted' : 'untrusted'
-            hooksPayload.sources[1].active = Boolean(body.trusted)
-            hooksPayload.sources[1].blockedReason = body.trusted ? undefined : 'project_untrusted'
-            hooksPayload.effectiveGroups[1].source.active = Boolean(body.trusted)
-            hooksPayload.effectiveGroups[1].source.blockedReason = body.trusted ? undefined : 'project_untrusted'
-            return hooksPayload.projectTrust
-          }
-          case 'hooks.saveConfig':
-            return {
-              ok: false,
-              error: {
-                message: `stale hooks revision: expected ${(args[0] as { revision?: string } | undefined)?.revision}, current visual-new-revision`,
+      const memory = {
+        long_term: '偏好：保持界面紧凑，优先展示可操作状态。',
+        today_episode: '今天完成 TypeScript 迁移视觉检查。',
+        episodes: ['2026-06-26'],
+        context: {
+          mode: 'build',
+          session: sessions[0],
+          project,
+          projectMemory: '项目记忆：视觉测试使用固定 Core bridge fixture。',
+          projectIndexSummary: 'README.md: Visual Build Project',
+          sources: ['MEMORY.local.md', 'project/index.json'],
+        },
+        history: {
+          active_lines: 4,
+          active_bytes: 2048,
+          archive_files: 1,
+          archive_bytes: 8192,
+        },
+        runtime: { events: 0, latestSeq: 1, archiveFiles: 0 },
+        schedulerMaintenance: {
+          jobs: 1,
+          enabled: 1,
+          nextRunAtMs: Date.now() + 3600000,
+        },
+        watchlist: {
+          content: '- [ ] 检查发布产物',
+          lastDecision: {
+            action: 'skip',
+            reason: 'visual fixture',
+            checkedAt: Date.now(),
+          },
+        },
+        versions: { versions: [], count: 0 },
+        tokenTotals: { input: 1200, output: 640, total: 1840, calls: 3 },
+        tokensByModel: {
+          'visual-main': { input: 1200, output: 640, total: 1840, calls: 3 },
+        },
+        tokensByUsageType: {
+          chat: { input: 1200, output: 640, total: 1840, calls: 3 },
+        },
+      }
+      const scheduler = {
+        status: {
+          running: true,
+          jobs: 1,
+          enabled: 1,
+          nextRunAtMs: Date.now() + 3600000,
+          lastError: null,
+        },
+        jobs: [
+          {
+            id: 'memory-maintenance',
+            name: 'Memory maintenance',
+            enabled: true,
+            protected: true,
+            schedule: { kind: 'every', everyMs: 3600000 },
+            payload: { kind: 'system_event', message: 'memory-maintenance' },
+            state: {
+              nextRunAtMs: Date.now() + 3600000,
+              lastStatus: 'ok',
+              lastRunAtMs: Date.now() - 3600000,
+            },
+            purpose: 'Visual fixture',
+          },
+        ],
+        diagnostics: {},
+      }
+      const team = {
+        members: [
+          {
+            name: 'reviewer',
+            role: 'reviewer',
+            agent_type: 'reviewer',
+            status: 'idle',
+            unread: 0,
+            tools: ['read_file'],
+          },
+        ],
+        leadUnread: 0,
+        leadInbox: [],
+        config: { version: 1, team_name: 'Visual Team', members: [] },
+      }
+      const hooksPayload = {
+        revision: 'visual-hooks-revision-20260710',
+        config: {
+          version: 2,
+          enabled: true,
+          projectHooks: { enabled: true },
+          hooks: {},
+        },
+        globalConfig: {
+          version: 2,
+          enabled: true,
+          projectHooks: { enabled: true },
+          hooks: {
+            PreToolUse: [
+              {
+                id: 'guard-write',
+                enabled: true,
+                matcher: 'write_file',
+                if: '',
+                failureMode: 'closed',
+                handlers: [
+                  {
+                    id: 'guard-command',
+                    type: 'command',
+                    enabled: true,
+                    command: 'node',
+                    args: ['guard.mjs'],
+                    timeoutMs: 10000,
+                  },
+                ],
               },
-            }
-          case 'chat.stopRuntime':
-            return { cancelled: false }
-          default:
-            return {}
+            ],
+          },
+        },
+        effectiveGroups: [
+          {
+            eventName: 'PreToolUse',
+            group: {
+              id: 'guard-write',
+              enabled: true,
+              matcher: 'write_file',
+              if: '',
+              failureMode: 'closed',
+              handlers: [
+                {
+                  id: 'guard-command',
+                  type: 'command',
+                  enabled: true,
+                  command: 'node',
+                  args: ['guard.mjs'],
+                  timeoutMs: 10000,
+                },
+              ],
+            },
+            source: {
+              id: 'global',
+              kind: 'global',
+              path: '/Users/visual/.emperor-agent/hooks_config.json',
+              readonly: false,
+              active: true,
+            },
+          },
+          {
+            eventName: 'Stop',
+            group: {
+              id: 'project-finish',
+              enabled: true,
+              matcher: '*',
+              if: '',
+              failureMode: 'open',
+              handlers: [
+                {
+                  id: 'finish-prompt',
+                  type: 'prompt',
+                  enabled: true,
+                  prompt: 'Check completion.',
+                  timeoutMs: 30000,
+                },
+              ],
+            },
+            source: {
+              id: 'project',
+              kind: 'project',
+              path: `${projectDir}/.emperor/settings.json`,
+              readonly: true,
+              active: false,
+              blockedReason: 'project_trust_stale',
+            },
+          },
+        ],
+        sources: [
+          {
+            id: 'global',
+            kind: 'global',
+            path: '/Users/visual/.emperor-agent/hooks_config.json',
+            readonly: false,
+            active: true,
+          },
+          {
+            id: 'project',
+            kind: 'project',
+            path: `${projectDir}/.emperor/settings.json`,
+            readonly: true,
+            active: false,
+            blockedReason: 'project_trust_stale',
+          },
+        ],
+        projectTrust: {
+          canonicalRoot: projectDir,
+          digest: 'visual-digest',
+          status: 'stale',
+        },
+        diagnostics: [
+          {
+            code: 'candidate_rejected',
+            path: `${projectDir}/.emperor/settings.json`,
+            message: 'Project hook digest changed.',
+          },
+        ],
+        summary: {
+          total: 2,
+          groups: 2,
+          events: [
+            { eventName: 'PreToolUse', groups: 1, count: 1 },
+            { eventName: 'Stop', groups: 1, count: 1 },
+          ],
+        },
+      }
+      const hooksMetadata = {
+        version: 2,
+        events: [
+          {
+            eventName: 'PreToolUse',
+            matcherField: 'tool_name',
+            mode: 'transform',
+            allowedHandlers: ['command', 'http', 'prompt'],
+          },
+          {
+            eventName: 'Stop',
+            matcherField: null,
+            mode: 'continue',
+            allowedHandlers: ['command', 'http', 'prompt', 'agent'],
+          },
+          {
+            eventName: 'ConfigChange',
+            matcherField: 'source',
+            mode: 'block',
+            allowedHandlers: ['command', 'http'],
+          },
+        ],
+        handlers: { command: {}, http: {}, prompt: {}, agent: {} },
+      }
+      const hooksAudit = {
+        cursor: '0',
+        nextCursor: null,
+        total: 1,
+        badLines: [],
+        records: [
+          {
+            hookRunId: 'hook_run_visual',
+            eventName: 'PreToolUse',
+            groupId: 'guard-write',
+            handlerId: 'audit-command',
+            handlerType: 'command',
+            source: { id: 'global', kind: 'global' },
+            snapshotRevision: hooksPayload.revision,
+            startedAt: now,
+            durationMs: 18,
+            status: 'completed',
+            outcome: 'deny',
+            reason: 'visual fixture',
+            inputHash: 'input-hash',
+            outputHash: 'output-hash',
+          },
+        ],
+      }
+      const boot = {
+        app: 'Emperor Agent',
+        model: 'visual-main',
+        provider: 'visual',
+        providerLabel: 'Visual Provider',
+        tools: [
+          {
+            name: 'read_file',
+            description: 'Read a file',
+            read_only: true,
+            source: 'builtin',
+          },
+          {
+            name: 'run_command',
+            description: 'Run a command',
+            read_only: false,
+            source: 'builtin',
+          },
+        ],
+        skills: [
+          {
+            name: 'visual-fixture',
+            description: 'Fixture skill',
+            path: 'skills/visual-fixture/SKILL.md',
+          },
+        ],
+        memory,
+        modelConfig,
+        scheduler,
+        team,
+        control: { mode: 'ask_before_edit', pending: null },
+        desktopPet: {
+          enabled: false,
+          autoStartWithWebui: false,
+          running: false,
+          installCommand: 'npm install',
+        },
+        diagnostics: {
+          root: projectDir,
+          modelConfig: { status: 'ok', exists: true, models: 1 },
+          localConfig: { status: 'ok', exists: true },
+          scheduler: { jobsFile: 'memory/scheduler/jobs.json' },
+          runtime: { events: 0, latestSeq: 1 },
+          desktopPet: {
+            enabled: false,
+            running: false,
+            autoStartWithWebui: false,
+            installCommand: 'npm install',
+          },
+          dependencies: { nodeRuntime: true, desktopRenderer: true },
+        },
+        projects: [project],
+        runtime: { latestSeq: 1, scope: 'unarchived', events: [] },
+        unarchivedHistory: [],
+        context_used: 12000,
+      }
+
+      function session(
+        id: string,
+        title: string,
+        mode: VisualSessionMode,
+        projectInfo?: VisualProjectInfo,
+      ) {
+        return {
+          id,
+          title,
+          created_at: now,
+          updated_at: now,
+          preview:
+            mode === 'build' ? 'Visual build session' : 'Visual chat session',
+          mode,
+          project_id: projectInfo?.project_id ?? null,
+          project_path: projectInfo?.project_path ?? null,
+          project_name: projectInfo?.project_name ?? null,
+          message_count: 2,
+          title_status: 'ready',
+          archived_at: null,
+          version: 1,
         }
-      },
-    }
-  }, { projectDir: visualProjectDir })
+      }
+
+      window.emperor = {
+        version: '0.1.0-visual',
+        platform: 'visual',
+        selectDirectory: async () => projectDir,
+        onCoreEvent: (listener: VisualCoreListener) => {
+          queueMicrotask(() =>
+            listener({
+              event: 'ready',
+              seq: 1,
+              latest_seq: 1,
+              model: 'visual-main',
+              provider: 'visual',
+              control: boot.control,
+            }),
+          )
+          return () => {}
+        },
+        invokeCore: async (operationKey: string, ...args: unknown[]) => {
+          switch (operationKey) {
+            case 'bootstrap':
+              return boot
+            case 'sessions.list':
+              return sessions
+            case 'sessions.activate':
+              return { active: args[0], complete: true }
+            case 'sessions.create': {
+              const body = (args[0] ?? {}) as {
+                title?: string
+                mode?: VisualSessionMode
+                project?: VisualProjectInfo
+              }
+              const created = session(
+                `created-${sessions.length}`,
+                body.title || '新会话',
+                body.mode || 'chat',
+                body.project,
+              )
+              sessions.unshift(created)
+              return created
+            }
+            case 'projects.resolve':
+              return project
+            case 'projects.list':
+              return [project]
+            case 'memory.get':
+              return memory
+            case 'memory.tokens':
+              return {
+                totals: { input: 1200, output: 640, total: 1840, calls: 3 },
+                byDate: {},
+                byModel: {
+                  'visual-main': {
+                    input: 1200,
+                    output: 640,
+                    total: 1840,
+                    calls: 3,
+                  },
+                },
+                byUsageType: {
+                  chat: { input: 1200, output: 640, total: 1840, calls: 3 },
+                },
+                byDateModel: {},
+                byHour: {},
+                streak: {
+                  active_days: 1,
+                  current_streak: 1,
+                  longest_streak: 1,
+                },
+                sessions: sessions.length,
+                messages: 8,
+                generatedAt: now,
+              }
+            case 'model.getConfig':
+              return modelConfig
+            case 'model.discoverModels':
+              return {
+                ok: true,
+                provider: 'visual',
+                source: 'visual-fixture',
+                models: [
+                  { id: 'visual-main', ownedBy: 'Visual Labs' },
+                  { id: 'visual-secondary', ownedBy: 'Visual Labs' },
+                  { id: 'visual-pro', ownedBy: 'Visual Research' },
+                ],
+              }
+            case 'config.get':
+              return {
+                path: 'emperor.local.json',
+                content: '{\\n  "webui": {}\\n}\\n',
+              }
+            case 'mcp.getConfig':
+              return { servers: {} }
+            case 'scheduler.get':
+              return scheduler
+            case 'team.get':
+              return team
+            case 'team.getMember':
+              return {
+                member: team.members[0],
+                inbox: [],
+                leadInbox: [],
+                thread: [],
+              }
+            case 'sidebar.get':
+              return {
+                section_order: ['projects', 'chats'],
+                project_sort: 'updated_at',
+                chat_sort: 'updated_at',
+                project_order: [],
+                chat_order: [],
+                project_session_order: {},
+                collapsed_project_ids: [],
+              }
+            case 'desktopPet.get':
+              return boot.desktopPet
+            case 'diagnostics.get':
+              return boot.diagnostics
+            case 'skills.list':
+              return boot.skills
+            case 'skills.tools':
+              return boot.tools
+            case 'control.get':
+              return boot.control
+            case 'control.setMode':
+              boot.control = {
+                mode: String(args[0] || 'ask_before_edit'),
+                pending: null,
+              }
+              return boot.control
+            case 'hooks.getConfig':
+              return hooksPayload
+            case 'hooks.getMetadata':
+              return hooksMetadata
+            case 'hooks.getAudit':
+              return hooksAudit
+            case 'hooks.testMatch':
+              return {
+                revision: hooksPayload.revision,
+                eventName: 'PreToolUse',
+                items: [],
+                diagnostics: [],
+              }
+            case 'hooks.validateConfig':
+              return {
+                valid: true,
+                config: (args[0] as { config?: unknown } | undefined)?.config,
+                diagnostics: [],
+              }
+            case 'hooks.setProjectTrust': {
+              const body = (args[0] as { trusted?: boolean } | undefined) ?? {}
+              hooksPayload.projectTrust.status = body.trusted
+                ? 'trusted'
+                : 'untrusted'
+              hooksPayload.sources[1].active = Boolean(body.trusted)
+              hooksPayload.sources[1].blockedReason = body.trusted
+                ? undefined
+                : 'project_untrusted'
+              hooksPayload.effectiveGroups[1].source.active = Boolean(
+                body.trusted,
+              )
+              hooksPayload.effectiveGroups[1].source.blockedReason =
+                body.trusted ? undefined : 'project_untrusted'
+              return hooksPayload.projectTrust
+            }
+            case 'hooks.saveConfig':
+              return {
+                ok: false,
+                error: {
+                  message: `stale hooks revision: expected ${(args[0] as { revision?: string } | undefined)?.revision}, current visual-new-revision`,
+                },
+              }
+            case 'chat.stopRuntime':
+              return { cancelled: false }
+            default:
+              return {}
+          }
+        },
+      }
+    },
+    { projectDir: visualProjectDir },
+  )
 }
 
 async function assertComposerShellTrimmed(page: Page) {
   await expect(page.locator('.slash-hint-button')).toHaveCount(0)
 
-  const actionRowBorderTop = await page.locator('.composer-action-row').evaluate((el) =>
-    window.getComputedStyle(el).borderTopWidth,
-  )
+  const actionRowBorderTop = await page
+    .locator('.composer-action-row')
+    .evaluate((el) => window.getComputedStyle(el).borderTopWidth)
   expect(actionRowBorderTop).toBe('0px')
 
   const contextRing = page.locator('.context-ring')
@@ -670,7 +1074,10 @@ async function assertComposerShellTrimmed(page: Page) {
       expect(box.height).toBeGreaterThanOrEqual(19)
       expect(box.height).toBeLessThanOrEqual(21)
     }
-    await expect(contextRing.locator('.ring-arc')).toHaveAttribute('stroke', 'currentColor')
+    await expect(contextRing.locator('.ring-arc')).toHaveAttribute(
+      'stroke',
+      'currentColor',
+    )
   }
 
   const modelButton = page.locator('.model-button')
@@ -679,7 +1086,9 @@ async function assertComposerShellTrimmed(page: Page) {
     await expect(modelButton.locator('.model-button-meta')).toHaveCount(1)
     const viewport = page.viewportSize()
     if ((viewport?.width || 0) > 820) {
-      await expect(modelButton.locator('.model-button-meta').first()).toBeVisible()
+      await expect(
+        modelButton.locator('.model-button-meta').first(),
+      ).toBeVisible()
       await expect(modelButton).toContainText('·')
       await expect(modelButton).not.toContainText(/\b\d+k\b|1M|输出上限/)
     }
@@ -703,7 +1112,9 @@ async function assertFloatingModeMenu(page: Page) {
     await expect(menu.getByText(label, { exact: true })).toBeVisible()
   }
 
-  const position = await menu.evaluate((el) => window.getComputedStyle(el).position)
+  const position = await menu.evaluate(
+    (el) => window.getComputedStyle(el).position,
+  )
   expect(position).toBe('fixed')
 
   const menuBox = await menu.boundingBox()
@@ -718,7 +1129,8 @@ async function assertFloatingModeMenu(page: Page) {
   expect(menuBox.y + menuBox.height).toBeLessThanOrEqual(viewport.height - 8)
 
   const hit = await page.evaluate(
-    ({ x, y }) => Boolean(document.elementFromPoint(x, y)?.closest('.mode-menu')),
+    ({ x, y }) =>
+      Boolean(document.elementFromPoint(x, y)?.closest('.mode-menu')),
     {
       x: menuBox.x + menuBox.width / 2,
       y: menuBox.y + menuBox.height / 2,
@@ -737,9 +1149,13 @@ async function assertFloatingModelMenu(page: Page) {
   await expect(menu.locator('.reasoning-control')).toBeVisible()
   await expect(menu.locator('.reasoning-choice')).toHaveCount(5)
   await expect(menu.locator('.model-option').first()).toBeVisible()
-  await expect(menu.locator('.model-option').first().locator('.model-option-meta')).toBeVisible()
+  await expect(
+    menu.locator('.model-option').first().locator('.model-option-meta'),
+  ).toBeVisible()
 
-  const position = await menu.evaluate((el) => window.getComputedStyle(el).position)
+  const position = await menu.evaluate(
+    (el) => window.getComputedStyle(el).position,
+  )
   expect(position).toBe('fixed')
 
   const menuBox = await menu.boundingBox()
@@ -754,7 +1170,8 @@ async function assertFloatingModelMenu(page: Page) {
   expect(menuBox.y + menuBox.height).toBeLessThanOrEqual(viewport.height - 8)
 
   const hit = await page.evaluate(
-    ({ x, y }) => Boolean(document.elementFromPoint(x, y)?.closest('.model-menu')),
+    ({ x, y }) =>
+      Boolean(document.elementFromPoint(x, y)?.closest('.model-menu')),
     {
       x: menuBox.x + menuBox.width / 2,
       y: menuBox.y + menuBox.height / 2,
@@ -767,8 +1184,12 @@ async function assertComposerAddMenu(page: Page) {
   const menu = page.locator('.composer-palette')
   const composer = page.locator('.composer')
   await expect(menu).toBeVisible()
-  await expect(menu.locator('.composer-palette-item').first()).toContainText('文件与图片')
-  await expect(menu.locator('.composer-palette-item-icon').first()).toBeVisible()
+  await expect(menu.locator('.composer-palette-item').first()).toContainText(
+    '文件与图片',
+  )
+  await expect(
+    menu.locator('.composer-palette-item-icon').first(),
+  ).toBeVisible()
 
   const menuBox = await menu.boundingBox()
   const composerBox = await composer.boundingBox()

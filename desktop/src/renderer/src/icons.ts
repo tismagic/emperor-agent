@@ -117,8 +117,14 @@ export const toolIconMap = {
 
 export function toolIcon(name: string): IconComponent {
   const lower = name.toLowerCase()
-  if (lower.includes('dispatch') || lower.includes('subagent')) return toolIconMap.subagent
-  if (lower.includes('team') || lower.includes('teammate') || lower.includes('broadcast')) return toolIconMap.subagent
+  if (lower.includes('dispatch') || lower.includes('subagent'))
+    return toolIconMap.subagent
+  if (
+    lower.includes('team') ||
+    lower.includes('teammate') ||
+    lower.includes('broadcast')
+  )
+    return toolIconMap.subagent
   if (lower.includes('todo')) return toolIconMap.todo
   if (lower.includes('grep')) return toolIconMap.grep
   if (lower.includes('glob')) return toolIconMap.glob
@@ -127,7 +133,12 @@ export function toolIcon(name: string): IconComponent {
   if (lower.includes('edit')) return toolIconMap.edit
   if (lower.includes('skill')) return toolIconMap.skill
   if (lower.includes('web') || lower.includes('fetch')) return toolIconMap.web
-  if (lower.includes('run') || lower.includes('command') || lower.includes('shell')) return toolIconMap.shell
+  if (
+    lower.includes('run') ||
+    lower.includes('command') ||
+    lower.includes('shell')
+  )
+    return toolIconMap.shell
   return toolIconMap.default
 }
 
@@ -155,17 +166,23 @@ export const avatarIcons = {
 } satisfies Record<string, IconComponent>
 
 // ── Attachments ─────────────────────────────────────────────────────────────
-export function attachmentIcon(kind: string, mime?: string, name?: string): IconComponent {
+export function attachmentIcon(
+  kind: string,
+  mime?: string,
+  name?: string,
+): IconComponent {
   const lowerMime = (mime || '').toLowerCase()
   const lowerName = (name || '').toLowerCase()
   if (kind === 'image' || lowerMime.startsWith('image/')) return ImageIcon
-  if (lowerMime === 'application/pdf' || lowerName.endsWith('.pdf')) return FileType
+  if (lowerMime === 'application/pdf' || lowerName.endsWith('.pdf'))
+    return FileType
   if (
     lowerMime.includes('markdown') ||
     lowerName.endsWith('.md') ||
     lowerName.endsWith('.markdown') ||
     lowerName.endsWith('.mdx')
-  ) return FileText
+  )
+    return FileText
   if (
     kind === 'text' ||
     lowerMime.startsWith('text/') ||
@@ -173,6 +190,7 @@ export function attachmentIcon(kind: string, mime?: string, name?: string): Icon
     lowerName.endsWith('.json') ||
     lowerName.endsWith('.csv') ||
     lowerName.endsWith('.txt')
-  ) return FileText
+  )
+    return FileText
   return FileIcon
 }

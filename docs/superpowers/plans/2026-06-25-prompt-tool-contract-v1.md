@@ -15,6 +15,7 @@
 ### Task 1: 保存计划文件
 
 **Files:**
+
 - Create: `docs/superpowers/plans/2026-06-25-prompt-tool-contract-v1.md`
 
 - [ ] 写入本计划文件。
@@ -28,6 +29,7 @@
 ### Task 2: Prompt 合同测试与模板升级
 
 **Files:**
+
 - Modify: `tests/unit/test_agent_prompt_contracts.py`
 - Modify: `templates/agent/identity.md`
 - Modify: `templates/TOOL.md`
@@ -44,6 +46,7 @@
 ### Task 3: Todo active_form 字段
 
 **Files:**
+
 - Create: `tests/unit/test_todo_tool.py`
 - Modify: `agent/tools/todo.py`
 
@@ -59,6 +62,7 @@
 ### Task 4: 工具描述升级
 
 **Files:**
+
 - Modify: `tests/unit/test_tool_descriptions.py`
 - Modify: `agent/tools/filesystem.py`
 - Modify: `agent/tools/search.py`

@@ -20,7 +20,9 @@ export interface EffectiveHookRow {
   blockedReason: string
 }
 
-export function effectiveHookRows(payload: HooksPayload | null | undefined): EffectiveHookRow[] {
+export function effectiveHookRows(
+  payload: HooksPayload | null | undefined,
+): EffectiveHookRow[] {
   return (payload?.effectiveGroups ?? []).map((entry, index) => {
     const group = entry.group ?? {}
     const source = entry.source ?? {}
@@ -35,8 +37,12 @@ export function effectiveHookRows(payload: HooksPayload | null | undefined): Eff
       condition: String(group.if || ''),
       failureMode: String(group.failureMode || 'open'),
       handlerCount: handlers.length,
-      enabledHandlerCount: handlers.filter((handler) => handler.enabled !== false).length,
-      handlerTypes: handlers.map((handler) => String(handler.type || 'unknown')),
+      enabledHandlerCount: handlers.filter(
+        (handler) => handler.enabled !== false,
+      ).length,
+      handlerTypes: handlers.map((handler) =>
+        String(handler.type || 'unknown'),
+      ),
       sourceId: String(source.id || source.kind || 'source'),
       sourceKind: String(source.kind || 'unknown'),
       sourcePath: String(source.path || ''),
@@ -54,26 +60,55 @@ export function hooksTrustTone(status: unknown): HooksTone {
   return 'muted'
 }
 
-export function dryRunInput(eventName: string, matcherField: string | null): Record<string, unknown> {
-  if (['PreToolUse', 'PostToolUse', 'PostToolUseFailure', 'PermissionRequest', 'PermissionDenied'].includes(eventName)) {
-    return { tool_name: 'read_file', tool_input: { path: 'README.md' }, tool_use_id: 'dry-run' }
+export function dryRunInput(
+  eventName: string,
+  matcherField: string | null,
+): Record<string, unknown> {
+  if (
+    [
+      'PreToolUse',
+      'PostToolUse',
+      'PostToolUseFailure',
+      'PermissionRequest',
+      'PermissionDenied',
+    ].includes(eventName)
+  ) {
+    return {
+      tool_name: 'read_file',
+      tool_input: { path: 'README.md' },
+      tool_use_id: 'dry-run',
+    }
   }
-  if (eventName === 'ConfigChange') return { source: 'hooks.testMatch', candidate_revision: 'dry-run' }
-  if (eventName === 'SubagentStart' || eventName === 'SubagentStop' || eventName === 'TeammateIdle') {
+  if (eventName === 'ConfigChange')
+    return { source: 'hooks.testMatch', candidate_revision: 'dry-run' }
+  if (
+    eventName === 'SubagentStart' ||
+    eventName === 'SubagentStop' ||
+    eventName === 'TeammateIdle'
+  ) {
     return { agent_type: 'general-purpose', agent_id: 'dry-run-agent' }
   }
-  if (eventName === 'TaskCreated' || eventName === 'TaskCompleted') return { task_kind: 'agent', task_id: 'dry-run-task' }
-  if (eventName === 'PreCompact' || eventName === 'PostCompact') return { trigger: 'manual' }
+  if (eventName === 'TaskCreated' || eventName === 'TaskCompleted')
+    return { task_kind: 'agent', task_id: 'dry-run-task' }
+  if (eventName === 'PreCompact' || eventName === 'PostCompact')
+    return { trigger: 'manual' }
   if (eventName === 'SessionStart') return { source: 'startup' }
   if (eventName === 'SessionEnd') return { reason: 'completed' }
   if (eventName === 'UserPromptSubmit') return { prompt: 'Review this prompt.' }
-  if (eventName === 'StopFailure') return { error_kind: 'provider_error', error: 'dry-run' }
+  if (eventName === 'StopFailure')
+    return { error_kind: 'provider_error', error: 'dry-run' }
   if (eventName === 'Stop') return { reason: 'completed' }
   return matcherField ? { [matcherField]: '*' } : {}
 }
 
-export function defaultDryRunInput(event: HookEventMetadataPayload | null | undefined): string {
-  return JSON.stringify(dryRunInput(String(event?.eventName || ''), event?.matcherField ?? null), null, 2)
+export function defaultDryRunInput(
+  event: HookEventMetadataPayload | null | undefined,
+): string {
+  return JSON.stringify(
+    dryRunInput(String(event?.eventName || ''), event?.matcherField ?? null),
+    null,
+    2,
+  )
 }
 
 export function auditQuery(filters: {
@@ -94,7 +129,9 @@ export function auditQuery(filters: {
 }
 
 export function isStaleHooksError(error: unknown): boolean {
-  return /stale hooks revision/i.test(error instanceof Error ? error.message : String(error))
+  return /stale hooks revision/i.test(
+    error instanceof Error ? error.message : String(error),
+  )
 }
 
 export function cancellableRunIds(result: unknown): string[] {
@@ -104,6 +141,9 @@ export function cancellableRunIds(result: unknown): string[] {
   return runs.flatMap((run) => {
     if (!run || typeof run !== 'object' || Array.isArray(run)) return []
     const record = run as Record<string, unknown>
-    return record.asyncRewakeEligible === true && typeof record.hookRunId === 'string' ? [record.hookRunId] : []
+    return record.asyncRewakeEligible === true &&
+      typeof record.hookRunId === 'string'
+      ? [record.hookRunId]
+      : []
   })
 }

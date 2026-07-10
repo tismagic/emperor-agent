@@ -65,55 +65,72 @@ const handlerBaseShape = {
   once: z.boolean().default(false),
 }
 
-const commandHandlerV2Schema = z.object({
-  ...handlerBaseShape,
-  type: z.literal('command'),
-  command: nonEmptyTextSchema,
-  args: stringListSchema,
-  shell: z.enum(['none', 'bash', 'powershell']).default('none'),
-  allowedEnv: stringListSchema,
-  async: z.boolean().default(false),
-  asyncRewake: z.boolean().default(false),
-}).strict().superRefine((value, context) => {
-  if (value.shell !== 'none' && value.args.length > 0) {
-    context.addIssue({ code: 'custom', path: ['args'], message: 'args must be empty when shell is enabled' })
-  }
-}).transform((value): HookCommandHandlerV2 => ({
-  ...value,
-  timeoutMs: value.timeoutMs ?? V2_DEFAULT_POLICY.command.defaultTimeoutMs,
-}))
+const commandHandlerV2Schema = z
+  .object({
+    ...handlerBaseShape,
+    type: z.literal('command'),
+    command: nonEmptyTextSchema,
+    args: stringListSchema,
+    shell: z.enum(['none', 'bash', 'powershell']).default('none'),
+    allowedEnv: stringListSchema,
+    async: z.boolean().default(false),
+    asyncRewake: z.boolean().default(false),
+  })
+  .strict()
+  .superRefine((value, context) => {
+    if (value.shell !== 'none' && value.args.length > 0) {
+      context.addIssue({
+        code: 'custom',
+        path: ['args'],
+        message: 'args must be empty when shell is enabled',
+      })
+    }
+  })
+  .transform((value): HookCommandHandlerV2 => ({
+    ...value,
+    timeoutMs: value.timeoutMs ?? V2_DEFAULT_POLICY.command.defaultTimeoutMs,
+  }))
 
-const httpHandlerV2Schema = z.object({
-  ...handlerBaseShape,
-  type: z.literal('http'),
-  url: z.url(),
-  headers: stringMapSchema,
-  allowedEnv: stringListSchema,
-}).strict().transform((value): HookHttpHandlerV2 => ({
-  ...value,
-  timeoutMs: value.timeoutMs ?? V2_DEFAULT_POLICY.http.defaultTimeoutMs,
-}))
+const httpHandlerV2Schema = z
+  .object({
+    ...handlerBaseShape,
+    type: z.literal('http'),
+    url: z.url(),
+    headers: stringMapSchema,
+    allowedEnv: stringListSchema,
+  })
+  .strict()
+  .transform((value): HookHttpHandlerV2 => ({
+    ...value,
+    timeoutMs: value.timeoutMs ?? V2_DEFAULT_POLICY.http.defaultTimeoutMs,
+  }))
 
-const promptHandlerV2Schema = z.object({
-  ...handlerBaseShape,
-  type: z.literal('prompt'),
-  prompt: nonEmptyTextSchema,
-  modelRole: z.enum(['secondary', 'main']).default('secondary'),
-}).strict().transform((value): HookPromptHandlerV2 => ({
-  ...value,
-  timeoutMs: value.timeoutMs ?? V2_DEFAULT_POLICY.prompt.defaultTimeoutMs,
-}))
+const promptHandlerV2Schema = z
+  .object({
+    ...handlerBaseShape,
+    type: z.literal('prompt'),
+    prompt: nonEmptyTextSchema,
+    modelRole: z.enum(['secondary', 'main']).default('secondary'),
+  })
+  .strict()
+  .transform((value): HookPromptHandlerV2 => ({
+    ...value,
+    timeoutMs: value.timeoutMs ?? V2_DEFAULT_POLICY.prompt.defaultTimeoutMs,
+  }))
 
-const agentHandlerV2Schema = z.object({
-  ...handlerBaseShape,
-  type: z.literal('agent'),
-  prompt: nonEmptyTextSchema,
-  modelRole: z.enum(['secondary', 'main']).default('secondary'),
-  maxTurns: z.number().int().min(1).max(12).default(12),
-}).strict().transform((value): HookAgentHandlerV2 => ({
-  ...value,
-  timeoutMs: value.timeoutMs ?? V2_DEFAULT_POLICY.agent.defaultTimeoutMs,
-}))
+const agentHandlerV2Schema = z
+  .object({
+    ...handlerBaseShape,
+    type: z.literal('agent'),
+    prompt: nonEmptyTextSchema,
+    modelRole: z.enum(['secondary', 'main']).default('secondary'),
+    maxTurns: z.number().int().min(1).max(12).default(12),
+  })
+  .strict()
+  .transform((value): HookAgentHandlerV2 => ({
+    ...value,
+    timeoutMs: value.timeoutMs ?? V2_DEFAULT_POLICY.agent.defaultTimeoutMs,
+  }))
 
 const handlerV2Schema = z.union([
   commandHandlerV2Schema,
@@ -122,44 +139,60 @@ const handlerV2Schema = z.union([
   agentHandlerV2Schema,
 ])
 
-const hookGroupV2Schema = z.object({
-  id: nonEmptyTextSchema,
-  enabled: z.boolean().default(true),
-  matcher: z.string().trim().default('*'),
-  if: z.string().trim().default(''),
-  failureMode: z.enum(['open', 'closed']).default('open'),
-  handlers: z.array(handlerV2Schema).min(1),
-}).strict()
+const hookGroupV2Schema = z
+  .object({
+    id: nonEmptyTextSchema,
+    enabled: z.boolean().default(true),
+    matcher: z.string().trim().default('*'),
+    if: z.string().trim().default(''),
+    failureMode: z.enum(['open', 'closed']).default('open'),
+    handlers: z.array(handlerV2Schema).min(1),
+  })
+  .strict()
 
-const partialPolicySchema = z.object({
-  maxConcurrency: z.number().int().min(1).max(16).optional(),
-  maxContextBytes: z.number().int().min(1).max(1_048_576).optional(),
-  command: z.object({
-    defaultTimeoutMs: z.number().int().positive().optional(),
-    maxTimeoutMs: z.number().int().positive().optional(),
-    maxOutputBytes: z.number().int().positive().optional(),
-    allowShell: z.boolean().optional(),
-    allowedEnv: z.array(nonEmptyTextSchema).optional(),
-  }).strict().optional(),
-  http: z.object({
-    defaultTimeoutMs: z.number().int().positive().optional(),
-    maxTimeoutMs: z.number().int().positive().optional(),
-    maxResponseBytes: z.number().int().positive().optional(),
-    allowedUrlPatterns: z.array(nonEmptyTextSchema).optional(),
-    allowedEnv: z.array(nonEmptyTextSchema).optional(),
-    allowLoopback: z.boolean().optional(),
-    allowPrivateNetworks: z.boolean().optional(),
-  }).strict().optional(),
-  prompt: z.object({
-    defaultTimeoutMs: z.number().int().positive().optional(),
-    maxTimeoutMs: z.number().int().positive().optional(),
-  }).strict().optional(),
-  agent: z.object({
-    defaultTimeoutMs: z.number().int().positive().optional(),
-    maxTimeoutMs: z.number().int().positive().optional(),
-    maxTurns: z.number().int().min(1).max(12).optional(),
-  }).strict().optional(),
-}).strict()
+const partialPolicySchema = z
+  .object({
+    maxConcurrency: z.number().int().min(1).max(16).optional(),
+    maxContextBytes: z.number().int().min(1).max(1_048_576).optional(),
+    command: z
+      .object({
+        defaultTimeoutMs: z.number().int().positive().optional(),
+        maxTimeoutMs: z.number().int().positive().optional(),
+        maxOutputBytes: z.number().int().positive().optional(),
+        allowShell: z.boolean().optional(),
+        allowedEnv: z.array(nonEmptyTextSchema).optional(),
+      })
+      .strict()
+      .optional(),
+    http: z
+      .object({
+        defaultTimeoutMs: z.number().int().positive().optional(),
+        maxTimeoutMs: z.number().int().positive().optional(),
+        maxResponseBytes: z.number().int().positive().optional(),
+        allowedUrlPatterns: z.array(nonEmptyTextSchema).optional(),
+        allowedEnv: z.array(nonEmptyTextSchema).optional(),
+        allowLoopback: z.boolean().optional(),
+        allowPrivateNetworks: z.boolean().optional(),
+      })
+      .strict()
+      .optional(),
+    prompt: z
+      .object({
+        defaultTimeoutMs: z.number().int().positive().optional(),
+        maxTimeoutMs: z.number().int().positive().optional(),
+      })
+      .strict()
+      .optional(),
+    agent: z
+      .object({
+        defaultTimeoutMs: z.number().int().positive().optional(),
+        maxTimeoutMs: z.number().int().positive().optional(),
+        maxTurns: z.number().int().min(1).max(12).optional(),
+      })
+      .strict()
+      .optional(),
+  })
+  .strict()
 
 const outputMessageShape = {
   suppressOutput: z.boolean().optional(),
@@ -175,29 +208,37 @@ const outputDecisionShape = {
 }
 const recordSchema = z.record(z.string(), z.unknown())
 const observeOutputSchema = z.object(outputMessageShape).strict()
-const contextOutputSchema = z.object({ ...outputReasonShape, additionalContext: z.string().optional() }).strict()
-const transformInputOutputSchema = z.object({
-  ...outputDecisionShape,
-  additionalContext: z.string().optional(),
-  updatedInput: recordSchema.optional(),
-}).strict()
-const continueOutputSchema = z.object({
-  ...outputDecisionShape,
-  continue: z.boolean().optional(),
-  stopReason: z.string().optional(),
-  additionalContext: z.string().optional(),
-}).strict()
+const contextOutputSchema = z
+  .object({ ...outputReasonShape, additionalContext: z.string().optional() })
+  .strict()
+const transformInputOutputSchema = z
+  .object({
+    ...outputDecisionShape,
+    additionalContext: z.string().optional(),
+    updatedInput: recordSchema.optional(),
+  })
+  .strict()
+const continueOutputSchema = z
+  .object({
+    ...outputDecisionShape,
+    continue: z.boolean().optional(),
+    stopReason: z.string().optional(),
+    additionalContext: z.string().optional(),
+  })
+  .strict()
 
 const HOOK_OUTPUT_SCHEMAS = {
   SessionStart: contextOutputSchema,
   SessionEnd: observeOutputSchema,
   UserPromptSubmit: transformInputOutputSchema,
   PreToolUse: transformInputOutputSchema,
-  PostToolUse: z.object({
-    ...outputReasonShape,
-    additionalContext: z.string().optional(),
-    updatedToolOutput: z.unknown().optional(),
-  }).strict(),
+  PostToolUse: z
+    .object({
+      ...outputReasonShape,
+      additionalContext: z.string().optional(),
+      updatedToolOutput: z.unknown().optional(),
+    })
+    .strict(),
   PostToolUseFailure: contextOutputSchema,
   PermissionRequest: transformInputOutputSchema,
   PermissionDenied: contextOutputSchema,
@@ -205,14 +246,26 @@ const HOOK_OUTPUT_SCHEMAS = {
   StopFailure: observeOutputSchema,
   SubagentStart: contextOutputSchema,
   SubagentStop: continueOutputSchema,
-  PreCompact: z.object({
-    ...outputDecisionShape,
-    compactInstructions: z.string().optional(),
-  }).strict(),
+  PreCompact: z
+    .object({
+      ...outputDecisionShape,
+      compactInstructions: z.string().optional(),
+    })
+    .strict(),
   PostCompact: observeOutputSchema,
   ConfigChange: z.object(outputDecisionShape).strict(),
-  TaskCreated: z.object({ ...outputDecisionShape, additionalContext: z.string().optional() }).strict(),
-  TaskCompleted: z.object({ ...outputDecisionShape, additionalContext: z.string().optional() }).strict(),
+  TaskCreated: z
+    .object({
+      ...outputDecisionShape,
+      additionalContext: z.string().optional(),
+    })
+    .strict(),
+  TaskCompleted: z
+    .object({
+      ...outputDecisionShape,
+      additionalContext: z.string().optional(),
+    })
+    .strict(),
   TeammateIdle: continueOutputSchema,
 } as const satisfies Record<HookEventName, z.ZodType>
 
@@ -242,10 +295,14 @@ export function parseHooksConfigV2(
   const data = objectOrNull(raw)
   if (!data) return { config: defaultHooksConfigV2(), diagnostics: [] }
   const sourceKind = String(opts.sourceKind ?? 'global')
-  return isV1Config(data) ? parseV1AsV2(data, sourceKind) : parseNativeV2(data, sourceKind)
+  return isV1Config(data)
+    ? parseV1AsV2(data, sourceKind)
+    : parseNativeV2(data, sourceKind)
 }
 
-export function serializeHooksConfigV2(config: HooksConfigV2): Record<string, unknown> {
+export function serializeHooksConfigV2(
+  config: HooksConfigV2,
+): Record<string, unknown> {
   const hooks: Record<string, HookGroup[]> = {}
   for (const eventName of HOOK_EVENT_NAMES) {
     const groups = config.hooks[eventName]
@@ -267,7 +324,13 @@ export function parseHookOutput(
   if (!isHookEventName(eventName)) {
     return {
       output: null,
-      diagnostics: [{ code: 'invalid_event', path: 'hook_event_name', message: `Unsupported hook event: ${eventName}` }],
+      diagnostics: [
+        {
+          code: 'invalid_event',
+          path: 'hook_event_name',
+          message: `Unsupported hook event: ${eventName}`,
+        },
+      ],
     }
   }
   const parsed = HOOK_OUTPUT_SCHEMAS[eventName].safeParse(raw)
@@ -284,7 +347,10 @@ export function parseHookOutput(
   return { output: parsed.data, diagnostics: [] }
 }
 
-export function parseHooksConfig(raw: unknown, opts: { source?: HookSource | null } = {}): ParseHooksConfigResult {
+export function parseHooksConfig(
+  raw: unknown,
+  opts: { source?: HookSource | null } = {},
+): ParseHooksConfigResult {
   const diagnostics: HookDiagnostic[] = []
   const data = objectOrNull(raw)
   if (!data) return { config: defaultHooksConfig(), diagnostics }
@@ -293,7 +359,11 @@ export function parseHooksConfig(raw: unknown, opts: { source?: HookSource | nul
     version: 1,
     enabled: data.enabled === undefined ? true : Boolean(data.enabled),
     projectHooks: {
-      enabled: Boolean(objectOrNull(data.projectHooks)?.enabled ?? objectOrNull(data.project_hooks)?.enabled ?? false),
+      enabled: Boolean(
+        objectOrNull(data.projectHooks)?.enabled ??
+        objectOrNull(data.project_hooks)?.enabled ??
+        false,
+      ),
     },
     hooks: {},
   }
@@ -302,23 +372,39 @@ export function parseHooksConfig(raw: unknown, opts: { source?: HookSource | nul
   if (!hooks) return { config, diagnostics }
   for (const [eventName, entries] of Object.entries(hooks)) {
     if (!isHookEventName(eventName)) {
-      diagnostics.push({ code: 'invalid_event', path: `hooks.${eventName}`, message: `Unsupported hook event: ${eventName}` })
+      diagnostics.push({
+        code: 'invalid_event',
+        path: `hooks.${eventName}`,
+        message: `Unsupported hook event: ${eventName}`,
+      })
       continue
     }
     if (!Array.isArray(entries)) {
-      diagnostics.push({ code: 'invalid_hooks_list', path: `hooks.${eventName}`, message: 'Hook event value must be an array' })
+      diagnostics.push({
+        code: 'invalid_hooks_list',
+        path: `hooks.${eventName}`,
+        message: 'Hook event value must be an array',
+      })
       continue
     }
     const normalized: HookDefinition[] = []
     for (let index = 0; index < entries.length; index++) {
       const entry = objectOrNull(entries[index])
       if (!entry) {
-        diagnostics.push({ code: 'invalid_hook', path: `hooks.${eventName}.${index}`, message: 'Hook entry must be an object' })
+        diagnostics.push({
+          code: 'invalid_hook',
+          path: `hooks.${eventName}.${index}`,
+          message: 'Hook entry must be an object',
+        })
         continue
       }
       const handler = parseHandler(entry.handler)
       if (!handler) {
-        diagnostics.push({ code: 'invalid_handler', path: `hooks.${eventName}.${index}.handler`, message: 'Hook handler must be command or http' })
+        diagnostics.push({
+          code: 'invalid_handler',
+          path: `hooks.${eventName}.${index}.handler`,
+          message: 'Hook handler must be command or http',
+        })
         continue
       }
       normalized.push({
@@ -326,7 +412,8 @@ export function parseHooksConfig(raw: unknown, opts: { source?: HookSource | nul
         eventName,
         enabled: entry.enabled === undefined ? true : Boolean(entry.enabled),
         matcher: nonEmptyString(entry.matcher) ?? '*',
-        condition: nonEmptyString(entry.if) ?? nonEmptyString(entry.condition) ?? '',
+        condition:
+          nonEmptyString(entry.if) ?? nonEmptyString(entry.condition) ?? '',
         handler,
         source: opts.source ?? null,
       })
@@ -336,32 +423,52 @@ export function parseHooksConfig(raw: unknown, opts: { source?: HookSource | nul
   return { config, diagnostics }
 }
 
-function parseNativeV2(data: Record<string, unknown>, sourceKind: string): ParseHooksConfigV2Result {
+function parseNativeV2(
+  data: Record<string, unknown>,
+  sourceKind: string,
+): ParseHooksConfigV2Result {
   const diagnostics: HookDiagnostic[] = []
   const config = defaultHooksConfigV2()
   config.enabled = data.enabled === undefined ? true : Boolean(data.enabled)
-  config.projectHooks.enabled = Boolean(objectOrNull(data.projectHooks)?.enabled ?? false)
+  config.projectHooks.enabled = Boolean(
+    objectOrNull(data.projectHooks)?.enabled ?? false,
+  )
   config.policy = parseV2Policy(data.policy, sourceKind, diagnostics)
   config.hooks = parseV2Groups(data.hooks, diagnostics)
   return { config, diagnostics }
 }
 
-function parseV1AsV2(data: Record<string, unknown>, sourceKind: string): ParseHooksConfigV2Result {
+function parseV1AsV2(
+  data: Record<string, unknown>,
+  sourceKind: string,
+): ParseHooksConfigV2Result {
   const diagnostics: HookDiagnostic[] = []
   const config = defaultHooksConfigV2()
   config.enabled = data.enabled === undefined ? true : Boolean(data.enabled)
-  config.projectHooks.enabled = Boolean(objectOrNull(data.projectHooks)?.enabled ?? objectOrNull(data.project_hooks)?.enabled ?? false)
+  config.projectHooks.enabled = Boolean(
+    objectOrNull(data.projectHooks)?.enabled ??
+    objectOrNull(data.project_hooks)?.enabled ??
+    false,
+  )
   config.policy = parseV2Policy(data.policy, sourceKind, diagnostics)
   const hooks = objectOrNull(data.hooks)
   if (!hooks) return { config, diagnostics }
 
   for (const [eventName, entries] of Object.entries(hooks)) {
     if (!isHookEventName(eventName)) {
-      diagnostics.push({ code: 'invalid_event', path: `hooks.${eventName}`, message: `Unsupported hook event: ${eventName}` })
+      diagnostics.push({
+        code: 'invalid_event',
+        path: `hooks.${eventName}`,
+        message: `Unsupported hook event: ${eventName}`,
+      })
       continue
     }
     if (!Array.isArray(entries)) {
-      diagnostics.push({ code: 'invalid_hooks_list', path: `hooks.${eventName}`, message: 'Hook event value must be an array' })
+      diagnostics.push({
+        code: 'invalid_hooks_list',
+        path: `hooks.${eventName}`,
+        message: 'Hook event value must be an array',
+      })
       continue
     }
     const groups: HookGroup[] = []
@@ -369,26 +476,44 @@ function parseV1AsV2(data: Record<string, unknown>, sourceKind: string): ParseHo
     for (let index = 0; index < entries.length; index++) {
       const entry = objectOrNull(entries[index])
       if (!entry) {
-        diagnostics.push({ code: 'invalid_hook', path: `hooks.${eventName}.${index}`, message: 'Hook entry must be an object' })
+        diagnostics.push({
+          code: 'invalid_hook',
+          path: `hooks.${eventName}.${index}`,
+          message: 'Hook entry must be an object',
+        })
         continue
       }
       const groupId = nonEmptyString(entry.id) ?? `${eventName}-${index + 1}`
       if (seenGroups.has(groupId)) {
-        diagnostics.push({ code: 'duplicate_group_id', path: `hooks.${eventName}.${index}.id`, message: `Duplicate hook group id: ${groupId}` })
+        diagnostics.push({
+          code: 'duplicate_group_id',
+          path: `hooks.${eventName}.${index}.id`,
+          message: `Duplicate hook group id: ${groupId}`,
+        })
         continue
       }
       const legacyHandler = objectOrNull(entry.handler)
       if (!legacyHandler) {
-        diagnostics.push({ code: 'invalid_handler', path: `hooks.${eventName}.${index}.handler`, message: 'Hook handler must be an object' })
+        diagnostics.push({
+          code: 'invalid_handler',
+          path: `hooks.${eventName}.${index}.handler`,
+          message: 'Hook handler must be an object',
+        })
         continue
       }
-      const handler = parseLegacyHandlerV2(groupId, legacyHandler, `hooks.${eventName}.${index}.handler`, diagnostics)
+      const handler = parseLegacyHandlerV2(
+        groupId,
+        legacyHandler,
+        `hooks.${eventName}.${index}.handler`,
+        diagnostics,
+      )
       if (!handler) continue
       seenGroups.add(groupId)
       groups.push({
         id: groupId,
         enabled: entry.enabled === undefined ? true : Boolean(entry.enabled),
-        matcher: typeof entry.matcher === 'string' ? entry.matcher.trim() || '*' : '*',
+        matcher:
+          typeof entry.matcher === 'string' ? entry.matcher.trim() || '*' : '*',
         if: nonEmptyString(entry.if) ?? nonEmptyString(entry.condition) ?? '',
         failureMode: entry.failureMode === 'closed' ? 'closed' : 'open',
         handlers: [handler],
@@ -399,17 +524,28 @@ function parseV1AsV2(data: Record<string, unknown>, sourceKind: string): ParseHo
   return { config, diagnostics }
 }
 
-function parseV2Groups(raw: unknown, diagnostics: HookDiagnostic[]): HooksConfigV2['hooks'] {
+function parseV2Groups(
+  raw: unknown,
+  diagnostics: HookDiagnostic[],
+): HooksConfigV2['hooks'] {
   const hooks = objectOrNull(raw)
   if (!hooks) return {}
   const normalized: HooksConfigV2['hooks'] = {}
   for (const [eventName, entries] of Object.entries(hooks)) {
     if (!isHookEventName(eventName)) {
-      diagnostics.push({ code: 'invalid_event', path: `hooks.${eventName}`, message: `Unsupported hook event: ${eventName}` })
+      diagnostics.push({
+        code: 'invalid_event',
+        path: `hooks.${eventName}`,
+        message: `Unsupported hook event: ${eventName}`,
+      })
       continue
     }
     if (!Array.isArray(entries)) {
-      diagnostics.push({ code: 'invalid_hooks_list', path: `hooks.${eventName}`, message: 'Hook event value must be an array' })
+      diagnostics.push({
+        code: 'invalid_hooks_list',
+        path: `hooks.${eventName}`,
+        message: 'Hook event value must be an array',
+      })
       continue
     }
     const groups: HookGroup[] = []
@@ -417,17 +553,31 @@ function parseV2Groups(raw: unknown, diagnostics: HookDiagnostic[]): HooksConfig
     for (let index = 0; index < entries.length; index++) {
       const parsed = hookGroupV2Schema.safeParse(entries[index])
       if (!parsed.success) {
-        diagnostics.push(...zodDiagnostics(parsed.error, `hooks.${eventName}.${index}`, 'invalid_hook_group'))
+        diagnostics.push(
+          ...zodDiagnostics(
+            parsed.error,
+            `hooks.${eventName}.${index}`,
+            'invalid_hook_group',
+          ),
+        )
         continue
       }
       const group = parsed.data
       if (seenGroups.has(group.id)) {
-        diagnostics.push({ code: 'duplicate_group_id', path: `hooks.${eventName}.${index}.id`, message: `Duplicate hook group id: ${group.id}` })
+        diagnostics.push({
+          code: 'duplicate_group_id',
+          path: `hooks.${eventName}.${index}.id`,
+          message: `Duplicate hook group id: ${group.id}`,
+        })
         continue
       }
       const handlers: HookHandlerV2[] = []
       const seenHandlers = new Set<string>()
-      for (let handlerIndex = 0; handlerIndex < group.handlers.length; handlerIndex++) {
+      for (
+        let handlerIndex = 0;
+        handlerIndex < group.handlers.length;
+        handlerIndex++
+      ) {
         const handler = group.handlers[handlerIndex]!
         if (seenHandlers.has(handler.id)) {
           diagnostics.push({
@@ -461,7 +611,8 @@ function parseLegacyHandlerV2(
     id: `${groupId}-handler-1`,
     enabled: handler.enabled === undefined ? true : Boolean(handler.enabled),
     timeoutMs: positiveIntOrUndefined(handler.timeoutMs),
-    statusMessage: typeof handler.statusMessage === 'string' ? handler.statusMessage : '',
+    statusMessage:
+      typeof handler.statusMessage === 'string' ? handler.statusMessage : '',
     once: Boolean(handler.once ?? false),
   }
   let candidate: Record<string, unknown>
@@ -470,7 +621,10 @@ function parseLegacyHandlerV2(
       ...base,
       type,
       args: stringArray(handler.args),
-      shell: handler.shell === 'bash' || handler.shell === 'powershell' ? handler.shell : 'none',
+      shell:
+        handler.shell === 'bash' || handler.shell === 'powershell'
+          ? handler.shell
+          : 'none',
       allowedEnv: stringArray(handler.allowedEnv ?? handler.allowed_env),
       async: Boolean(handler.async ?? false),
       asyncRewake: Boolean(handler.asyncRewake ?? false),
@@ -488,10 +642,16 @@ function parseLegacyHandlerV2(
       ...base,
       type,
       modelRole: handler.modelRole === 'main' ? 'main' : 'secondary',
-      ...(type === 'agent' ? { maxTurns: positiveInt(handler.maxTurns, 12) } : {}),
+      ...(type === 'agent'
+        ? { maxTurns: positiveInt(handler.maxTurns, 12) }
+        : {}),
     }
   } else {
-    diagnostics.push({ code: 'invalid_handler', path, message: `Unsupported hook handler: ${String(type ?? '')}` })
+    diagnostics.push({
+      code: 'invalid_handler',
+      path,
+      message: `Unsupported hook handler: ${String(type ?? '')}`,
+    })
     return null
   }
   if (candidate.timeoutMs === undefined) delete candidate.timeoutMs
@@ -503,22 +663,36 @@ function parseLegacyHandlerV2(
   return parsed.data
 }
 
-function parseV2Policy(raw: unknown, sourceKind: string, diagnostics: HookDiagnostic[]): HookPolicy {
+function parseV2Policy(
+  raw: unknown,
+  sourceKind: string,
+  diagnostics: HookDiagnostic[],
+): HookPolicy {
   if (raw === undefined) return clonePolicy(V2_DEFAULT_POLICY)
   if (sourceKind !== 'global') {
-    diagnostics.push({ code: 'policy_not_allowed', path: 'policy', message: 'Only the global hooks source may define policy' })
+    diagnostics.push({
+      code: 'policy_not_allowed',
+      path: 'policy',
+      message: 'Only the global hooks source may define policy',
+    })
     return clonePolicy(V2_DEFAULT_POLICY)
   }
   const parsed = partialPolicySchema.safeParse(raw)
   if (!parsed.success) {
-    diagnostics.push(...zodDiagnostics(parsed.error, 'policy', 'invalid_policy'))
+    diagnostics.push(
+      ...zodDiagnostics(parsed.error, 'policy', 'invalid_policy'),
+    )
     return clonePolicy(V2_DEFAULT_POLICY)
   }
   const value = parsed.data
   return {
     maxConcurrency: value.maxConcurrency ?? V2_DEFAULT_POLICY.maxConcurrency,
     maxContextBytes: value.maxContextBytes ?? V2_DEFAULT_POLICY.maxContextBytes,
-    command: { ...V2_DEFAULT_POLICY.command, ...value.command, allowedEnv: [...(value.command?.allowedEnv ?? [])] },
+    command: {
+      ...V2_DEFAULT_POLICY.command,
+      ...value.command,
+      allowedEnv: [...(value.command?.allowedEnv ?? [])],
+    },
     http: {
       ...V2_DEFAULT_POLICY.http,
       ...value.http,
@@ -535,7 +709,11 @@ function isV1Config(data: Record<string, unknown>): boolean {
   if (data.version === 2) return false
   const hooks = objectOrNull(data.hooks)
   if (!hooks) return false
-  return Object.values(hooks).some((entries) => Array.isArray(entries) && entries.some((entry) => Boolean(objectOrNull(entry)?.handler)))
+  return Object.values(hooks).some(
+    (entries) =>
+      Array.isArray(entries) &&
+      entries.some((entry) => Boolean(objectOrNull(entry)?.handler)),
+  )
 }
 
 function clonePolicy(policy: HookPolicy): HookPolicy {
@@ -559,13 +737,24 @@ function cloneGroup(group: HookGroup): HookGroup {
     handlers: group.handlers.map((handler) => ({
       ...handler,
       ...('args' in handler ? { args: [...handler.args] } : {}),
-      ...('headers' in handler ? { headers: { ...handler.headers }, allowedEnv: [...handler.allowedEnv] } : {}),
-      ...('type' in handler && handler.type === 'command' ? { allowedEnv: [...handler.allowedEnv] } : {}),
+      ...('headers' in handler
+        ? {
+            headers: { ...handler.headers },
+            allowedEnv: [...handler.allowedEnv],
+          }
+        : {}),
+      ...('type' in handler && handler.type === 'command'
+        ? { allowedEnv: [...handler.allowedEnv] }
+        : {}),
     })) as HookHandlerV2[],
   }
 }
 
-function zodDiagnostics(error: z.ZodError, prefix: string, code: string): HookDiagnostic[] {
+function zodDiagnostics(
+  error: z.ZodError,
+  prefix: string,
+  code: string,
+): HookDiagnostic[] {
   return error.issues.map((issue) => ({
     code,
     path: [prefix, ...issue.path.map(String)].filter(Boolean).join('.'),
@@ -615,7 +804,9 @@ function parseHandler(raw: unknown): HookHandler | null {
 }
 
 function objectOrNull(value: unknown): Record<string, unknown> | null {
-  return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : null
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : null
 }
 
 function nonEmptyString(value: unknown): string | null {
@@ -623,13 +814,21 @@ function nonEmptyString(value: unknown): string | null {
 }
 
 function positiveInt(value: unknown, fallback: number): number {
-  const num = typeof value === 'number' ? Math.trunc(value) : Number.parseInt(String(value), 10)
+  const num =
+    typeof value === 'number'
+      ? Math.trunc(value)
+      : Number.parseInt(String(value), 10)
   return Number.isFinite(num) && num > 0 ? num : fallback
 }
 
 function stringArray(value: unknown): string[] {
   if (!Array.isArray(value)) return []
-  return value.filter((item): item is string => typeof item === 'string' && item.trim().length > 0).map((item) => item.trim())
+  return value
+    .filter(
+      (item): item is string =>
+        typeof item === 'string' && item.trim().length > 0,
+    )
+    .map((item) => item.trim())
 }
 
 function stringRecord(value: unknown): Record<string, string> {

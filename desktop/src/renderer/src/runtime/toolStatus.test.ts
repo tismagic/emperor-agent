@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import type { ToolSegment } from '../types'
-import { applyToolResultToSegment, applyToolRunUpdateToSegment, settleRunningToolSegments } from './toolStatus'
+import {
+  applyToolResultToSegment,
+  applyToolRunUpdateToSegment,
+  settleRunningToolSegments,
+} from './toolStatus'
 
 function segment(): ToolSegment {
   return {
@@ -48,11 +52,22 @@ describe('toolStatus guards', () => {
 
     expect(seg.status).toBe('error_aborted')
     expect(seg.summary).toBe('')
-    expect(seg.artifacts).toEqual([{ path: 'ok.png', kind: 'image', bytes: 12 }])
+    expect(seg.artifacts).toEqual([
+      { path: 'ok.png', kind: 'image', bytes: 12 },
+    ])
     expect(seg.metadata).toEqual({ diff: 'patch' })
 
     const other = segment()
-    const count = settleRunningToolSegments({ id: 'a1', role: 'assistant', content: '', segments: [other], streaming: true } as any, { endedAt: 300 })
+    const count = settleRunningToolSegments(
+      {
+        id: 'a1',
+        role: 'assistant',
+        content: '',
+        segments: [other],
+        streaming: true,
+      } as any,
+      { endedAt: 300 },
+    )
     expect(count).toBe(1)
     expect(other.status).toBe('error_aborted')
     expect(other.summary).toBe('工具未返回结束事件')

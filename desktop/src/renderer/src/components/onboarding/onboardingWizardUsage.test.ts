@@ -6,7 +6,10 @@ const rendererRoot = join(__dirname, '..', '..')
 
 describe('OnboardingWizard model configuration UI', () => {
   it('keeps model discovery in the primary flow and moves advanced fields behind details', () => {
-    const source = readFileSync(join(rendererRoot, 'components/onboarding/OnboardingWizard.vue'), 'utf8')
+    const source = readFileSync(
+      join(rendererRoot, 'components/onboarding/OnboardingWizard.vue'),
+      'utf8',
+    )
 
     expect(source).toContain('discoverProviderModels')
     expect(source).toContain('获取模型')

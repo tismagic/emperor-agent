@@ -23,7 +23,10 @@ export interface BuildHookInputOptions {
   prompt?: string | null
   [key: string]: unknown
 }
-export function buildHookInput(eventName: HookEventName, opts: BuildHookInputOptions): HookInput {
+export function buildHookInput(
+  eventName: HookEventName,
+  opts: BuildHookInputOptions,
+): HookInput {
   const input: HookInput = {
     hook_event_name: eventName,
     session_id: opts.sessionId,
@@ -37,16 +40,38 @@ export function buildHookInput(eventName: HookEventName, opts: BuildHookInputOpt
   if (opts.permission) input.permission = opts.permission
   if (opts.prompt !== undefined) input.prompt = opts.prompt
   for (const [key, value] of Object.entries(opts)) {
-    if (['sessionId', 'cwd', 'stateRoot', 'source', 'toolName', 'toolInput', 'toolResult', 'permission', 'prompt', 'signal'].includes(key)) continue
+    if (
+      [
+        'sessionId',
+        'cwd',
+        'stateRoot',
+        'source',
+        'toolName',
+        'toolInput',
+        'toolResult',
+        'permission',
+        'prompt',
+        'signal',
+      ].includes(key)
+    )
+      continue
     if (value !== undefined) input[toSnakeCase(key)] = value
   }
   return input
 }
 
-export function findMatchingHooks(config: HooksConfig, input: HookInput): HookDefinition[] {
+export function findMatchingHooks(
+  config: HooksConfig,
+  input: HookInput,
+): HookDefinition[] {
   if (!config.enabled) return []
   const hooks = config.hooks[input.hook_event_name] ?? []
-  return hooks.filter((hook) => hook.enabled && matcherMatches(hook.matcher, input) && conditionMatches(hook.condition, input))
+  return hooks.filter(
+    (hook) =>
+      hook.enabled &&
+      matcherMatches(hook.matcher, input) &&
+      conditionMatches(hook.condition, input),
+  )
 }
 
 export function matcherMatches(matcher: string, input: HookInput): boolean {
@@ -54,7 +79,11 @@ export function matcherMatches(matcher: string, input: HookInput): boolean {
   if (!text || text === '*') return true
   const target = matchTarget(input)
   if (!target) return false
-  if (text.includes('|')) return text.split('|').map((part) => part.trim()).some((part) => matcherMatches(part, input))
+  if (text.includes('|'))
+    return text
+      .split('|')
+      .map((part) => part.trim())
+      .some((part) => matcherMatches(part, input))
   const regex = parseRegexMatcher(text)
   if (regex) return regex.test(target)
   return text === target
@@ -98,15 +127,25 @@ export function compileHookPlan(
     return {
       snapshotRevision: snapshot.revision,
       items: [],
-      diagnostics: [{ code: 'invalid_event', path: 'hook_event_name', message: `Unsupported hook event: ${eventName}` }],
+      diagnostics: [
+        {
+          code: 'invalid_event',
+          path: 'hook_event_name',
+          message: `Unsupported hook event: ${eventName}`,
+        },
+      ],
     }
   }
   const typedEventName = eventName as HookEventName
   const spec = HOOK_EVENT_SPECS[typedEventName]
   const items: CompiledHookPlanItem[] = []
   for (const resolved of snapshot.groups) {
-    if (resolved.eventName !== typedEventName || !resolved.group.enabled) continue
-    const matcher = matcherResult(resolved.group.matcher, spec.matcherField ? String(input[spec.matcherField] ?? '') : '*')
+    if (resolved.eventName !== typedEventName || !resolved.group.enabled)
+      continue
+    const matcher = matcherResult(
+      resolved.group.matcher,
+      spec.matcherField ? String(input[spec.matcherField] ?? '') : '*',
+    )
     if (matcher.error) {
       diagnostics.push({
         code: 'invalid_matcher_regex',
@@ -155,39 +194,71 @@ function matchTarget(input: HookInput): string {
   return field ? String(input[field] ?? '') : '*'
 }
 
-function matcherResult(matcher: string, target: string): { matches: boolean; error: string | null } {
+function matcherResult(
+  matcher: string,
+  target: string,
+): { matches: boolean; error: string | null } {
   const text = matcher.trim()
   if (!text || text === '*') return { matches: true, error: null }
   if (text.startsWith('/')) {
     const lastSlash = text.lastIndexOf('/')
-    if (lastSlash <= 0) return { matches: false, error: `Invalid regex matcher: ${text}` }
+    if (lastSlash <= 0)
+      return { matches: false, error: `Invalid regex matcher: ${text}` }
     try {
-      return { matches: new RegExp(text.slice(1, lastSlash), text.slice(lastSlash + 1)).test(target), error: null }
+      return {
+        matches: new RegExp(
+          text.slice(1, lastSlash),
+          text.slice(lastSlash + 1),
+        ).test(target),
+        error: null,
+      }
     } catch (error) {
-      return { matches: false, error: error instanceof Error ? error.message : String(error) }
+      return {
+        matches: false,
+        error: error instanceof Error ? error.message : String(error),
+      }
     }
   }
   if (text.includes('|')) {
-    return { matches: text.split('|').map((part) => part.trim()).some((part) => part === target || part === '*'), error: null }
+    return {
+      matches: text
+        .split('|')
+        .map((part) => part.trim())
+        .some((part) => part === target || part === '*'),
+      error: null,
+    }
   }
   return { matches: text === target, error: null }
 }
 
-function conditionResult(condition: string, input: Record<string, unknown>): { matches: boolean; error: string | null } {
+function conditionResult(
+  condition: string,
+  input: Record<string, unknown>,
+): { matches: boolean; error: string | null } {
   const text = condition.trim()
   if (!text) return { matches: true, error: null }
   const tool = /^Tool\(([^)]+)\)$/.exec(text)
-  if (tool) return { matches: matchPattern(String(input.tool_name ?? ''), tool[1] ?? ''), error: null }
+  if (tool)
+    return {
+      matches: matchPattern(String(input.tool_name ?? ''), tool[1] ?? ''),
+      error: null,
+    }
   if (text.startsWith('path:')) {
     const path = pathFromRecord(input)
-    return { matches: path ? matchGlob(path, text.slice('path:'.length).trim()) : false, error: null }
+    return {
+      matches: path
+        ? matchGlob(path, text.slice('path:'.length).trim())
+        : false,
+      error: null,
+    }
   }
   return { matches: false, error: `Unsupported hook condition: ${text}` }
 }
 
 function pathFromRecord(input: Record<string, unknown>): string {
   const toolInput = input.tool_input
-  if (!toolInput || typeof toolInput !== 'object' || Array.isArray(toolInput)) return ''
+  if (!toolInput || typeof toolInput !== 'object' || Array.isArray(toolInput))
+    return ''
   const data = toolInput as Record<string, unknown>
   const value = data.path ?? data.file_path
   return typeof value === 'string' ? value : ''
@@ -212,7 +283,8 @@ function matchPattern(value: string, pattern: string): boolean {
 
 function pathFromInput(input: HookInput): string {
   const toolInput = input.tool_input
-  if (!toolInput || typeof toolInput !== 'object' || Array.isArray(toolInput)) return ''
+  if (!toolInput || typeof toolInput !== 'object' || Array.isArray(toolInput))
+    return ''
   const data = toolInput as Record<string, unknown>
   const value = data.path ?? data.file_path
   return typeof value === 'string' ? value : ''

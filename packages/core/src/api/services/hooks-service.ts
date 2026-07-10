@@ -42,7 +42,10 @@ export class CoreHooksService {
   async getConfig(_opts: Dict = {}): Promise<Dict> {
     const scope = this.scope()
     const snapshot = await this.service.snapshot(scope)
-    const global = await this.service.resolver.resolve({ projectRoot: null, sessionId: null })
+    const global = await this.service.resolver.resolve({
+      projectRoot: null,
+      sessionId: null,
+    })
     return configPayload(snapshot, global.config)
   }
 
@@ -50,7 +53,10 @@ export class CoreHooksService {
     this.deps.assertMutation?.('hooks', 'saveConfig')
     const envelope = isRecord(raw) && 'config' in raw ? raw : null
     const config = envelope?.config ?? raw
-    const expectedRevision = envelope && typeof envelope.revision === 'string' ? envelope.revision : null
+    const expectedRevision =
+      envelope && typeof envelope.revision === 'string'
+        ? envelope.revision
+        : null
     const scope = this.scope()
     const result = await this.service.saveGlobalConfig(config, {
       expectedRevision,
@@ -65,11 +71,17 @@ export class CoreHooksService {
     }
   }
 
-  async notifyConfigChange(source: string, candidate: unknown = source): Promise<void> {
+  async notifyConfigChange(
+    source: string,
+    candidate: unknown = source,
+  ): Promise<void> {
     await this.authorizeConfigChange(source, candidate)
   }
 
-  async authorizeConfigChange(source: string, candidate: unknown): Promise<Dict> {
+  async authorizeConfigChange(
+    source: string,
+    candidate: unknown,
+  ): Promise<Dict> {
     const scope = this.scope()
     const revision = stableRevision(candidate)
     const decision = await this.service.authorizeConfigChange({
@@ -85,22 +97,26 @@ export class CoreHooksService {
     return { revision, decision }
   }
 
-  async getAudit(opts: {
-    cursor?: string | number | null
-    limit?: number | string | null
-    eventName?: string | null
-    outcome?: string | null
-    sourceId?: string | null
-    runId?: string | null
-  } = {}): Promise<Dict> {
+  async getAudit(
+    opts: {
+      cursor?: string | number | null
+      limit?: number | string | null
+      eventName?: string | null
+      outcome?: string | null
+      sourceId?: string | null
+      runId?: string | null
+    } = {},
+  ): Promise<Dict> {
     const replay = await this.audit.replayRuns({ limit: 100_000 })
-    const filtered = replay.records.filter((record) => {
-      if (opts.eventName && record.eventName !== opts.eventName) return false
-      if (opts.outcome && record.outcome !== opts.outcome) return false
-      if (opts.sourceId && record.source.id !== opts.sourceId) return false
-      if (opts.runId && record.hookRunId !== opts.runId) return false
-      return true
-    }).reverse()
+    const filtered = replay.records
+      .filter((record) => {
+        if (opts.eventName && record.eventName !== opts.eventName) return false
+        if (opts.outcome && record.outcome !== opts.outcome) return false
+        if (opts.sourceId && record.source.id !== opts.sourceId) return false
+        if (opts.runId && record.hookRunId !== opts.runId) return false
+        return true
+      })
+      .reverse()
     const offset = normalizeCursor(opts.cursor)
     const limit = normalizeLimit(opts.limit, 100)
     const records = filtered.slice(offset, offset + limit)
@@ -118,12 +134,31 @@ export class CoreHooksService {
     const defaults = defaultHooksConfigV2()
     return {
       version: 2,
-      events: HOOK_EVENT_NAMES.map((eventName) => ({ eventName, ...HOOK_EVENT_SPECS[eventName] })),
+      events: HOOK_EVENT_NAMES.map((eventName) => ({
+        eventName,
+        ...HOOK_EVENT_SPECS[eventName],
+      })),
       handlers: {
-        command: { shell: ['none', 'bash', 'powershell'], async: true, defaults: { timeoutMs: defaults.policy.command.defaultTimeoutMs } },
-        http: { defaults: { timeoutMs: defaults.policy.http.defaultTimeoutMs }, requiresUrlAllowlist: true },
-        prompt: { modelRole: ['secondary', 'main'], defaults: { timeoutMs: defaults.policy.prompt.defaultTimeoutMs } },
-        agent: { modelRole: ['secondary', 'main'], defaults: { timeoutMs: defaults.policy.agent.defaultTimeoutMs, maxTurns: defaults.policy.agent.maxTurns } },
+        command: {
+          shell: ['none', 'bash', 'powershell'],
+          async: true,
+          defaults: { timeoutMs: defaults.policy.command.defaultTimeoutMs },
+        },
+        http: {
+          defaults: { timeoutMs: defaults.policy.http.defaultTimeoutMs },
+          requiresUrlAllowlist: true,
+        },
+        prompt: {
+          modelRole: ['secondary', 'main'],
+          defaults: { timeoutMs: defaults.policy.prompt.defaultTimeoutMs },
+        },
+        agent: {
+          modelRole: ['secondary', 'main'],
+          defaults: {
+            timeoutMs: defaults.policy.agent.defaultTimeoutMs,
+            maxTurns: defaults.policy.agent.maxTurns,
+          },
+        },
       },
       limits: defaults.policy,
     }
@@ -142,24 +177,38 @@ export class CoreHooksService {
   async setProjectTrust(input: Dict): Promise<Dict> {
     this.deps.assertMutation?.('hooks', 'setProjectTrust')
     const activeRoot = this.deps.activeProjectRoot?.() ?? null
-    const requestedRoot = String(input.projectRoot ?? input.project_root ?? '').trim()
-    if (!activeRoot || !requestedRoot) throw new Error('active project root is required')
-    const [activeCanonical, requestedCanonical] = await Promise.all([canonical(activeRoot), canonical(requestedRoot)])
-    if (activeCanonical !== requestedCanonical) throw new Error('project trust may only be changed for the active project')
-    const expectedDigest = String(input.expectedDigest ?? input.expected_digest ?? '')
+    const requestedRoot = String(
+      input.projectRoot ?? input.project_root ?? '',
+    ).trim()
+    if (!activeRoot || !requestedRoot)
+      throw new Error('active project root is required')
+    const [activeCanonical, requestedCanonical] = await Promise.all([
+      canonical(activeRoot),
+      canonical(requestedRoot),
+    ])
+    if (activeCanonical !== requestedCanonical)
+      throw new Error(
+        'project trust may only be changed for the active project',
+      )
+    const expectedDigest = String(
+      input.expectedDigest ?? input.expected_digest ?? '',
+    )
     if (!expectedDigest) throw new Error('expectedDigest is required')
-    return await this.service.resolver.trustStore.set({
+    return (await this.service.resolver.trustStore.set({
       projectRoot: requestedCanonical,
       expectedDigest,
       trusted: Boolean(input.trusted),
-    }) as unknown as Dict
+    })) as unknown as Dict
   }
 
   async testMatch(input: Dict): Promise<Dict> {
     const eventName = requiredEvent(input)
     const snapshot = await this.currentRevision(input.revision)
     const runOptions = this.runOptions(input)
-    const hookInput = buildHookInput(eventName, { ...runOptions, stateRoot: this.stateRoot })
+    const hookInput = buildHookInput(eventName, {
+      ...runOptions,
+      stateRoot: this.stateRoot,
+    })
     const plan = compileHookPlan(snapshot, hookInput)
     return {
       revision: snapshot.revision,
@@ -170,29 +219,45 @@ export class CoreHooksService {
   }
 
   async testRun(input: Dict): Promise<Dict> {
-    if (input.confirmExecution !== true && input.confirm_execution !== true) throw new Error('confirmExecution=true is required')
+    if (input.confirmExecution !== true && input.confirm_execution !== true)
+      throw new Error('confirmExecution=true is required')
     const eventName = requiredEvent(input)
     const snapshot = await this.currentRevision(input.revision)
     const groupId = String(input.groupId ?? input.group_id ?? '')
     const handlerId = String(input.handlerId ?? input.handler_id ?? '')
-    if (!groupId || !handlerId) throw new Error('groupId and handlerId are required')
+    if (!groupId || !handlerId)
+      throw new Error('groupId and handlerId are required')
     const runOptions = this.runOptions(input)
-    const hookInput = buildHookInput(eventName, { ...runOptions, stateRoot: this.stateRoot })
+    const hookInput = buildHookInput(eventName, {
+      ...runOptions,
+      stateRoot: this.stateRoot,
+    })
     const plan = compileHookPlan(snapshot, hookInput)
-    const selected = plan.items.find((item) => item.groupId === groupId && item.handlerId === handlerId)
-    if (!selected) throw new Error('selected hook handler does not match the event input')
-    if ((selected.source.kind === 'project' || selected.source.kind === 'project-local') && snapshot.projectTrust?.status !== 'trusted') {
+    const selected = plan.items.find(
+      (item) => item.groupId === groupId && item.handlerId === handlerId,
+    )
+    if (!selected)
+      throw new Error('selected hook handler does not match the event input')
+    if (
+      (selected.source.kind === 'project' ||
+        selected.source.kind === 'project-local') &&
+      snapshot.projectTrust?.status !== 'trusted'
+    ) {
       throw new Error('untrusted project hooks cannot be executed')
     }
     const selectedSnapshot: HookSnapshot = {
       ...snapshot,
-      groups: [{
-        eventName: selected.eventName,
-        source: selected.source,
-        group: { ...selected.group, handlers: [selected.handler] },
-      }],
+      groups: [
+        {
+          eventName: selected.eventName,
+          source: selected.source,
+          group: { ...selected.group, handlers: [selected.handler] },
+        },
+      ],
     }
-    return await this.service.run(eventName, runOptions, { snapshot: selectedSnapshot }) as unknown as Dict
+    return (await this.service.run(eventName, runOptions, {
+      snapshot: selectedSnapshot,
+    })) as unknown as Dict
   }
 
   async cancelRun(input: Dict): Promise<Dict> {
@@ -212,7 +277,10 @@ export class CoreHooksService {
     const snapshot = await this.service.snapshot(this.scope())
     const revision = String(expected ?? '')
     if (!revision) throw new Error('revision is required')
-    if (revision !== snapshot.revision) throw new Error(`stale hooks revision: expected ${revision}, current ${snapshot.revision}`)
+    if (revision !== snapshot.revision)
+      throw new Error(
+        `stale hooks revision: expected ${revision}, current ${snapshot.revision}`,
+      )
     return snapshot
   }
 
@@ -220,13 +288,26 @@ export class CoreHooksService {
     const raw = isRecord(input.input) ? input.input : input
     return {
       ...raw,
-      sessionId: String(raw.sessionId ?? raw.session_id ?? this.deps.activeSessionId?.() ?? ''),
-      cwd: String(raw.cwd ?? this.deps.activeWorkspaceRoot?.() ?? process.cwd()),
+      sessionId: String(
+        raw.sessionId ?? raw.session_id ?? this.deps.activeSessionId?.() ?? '',
+      ),
+      cwd: String(
+        raw.cwd ?? this.deps.activeWorkspaceRoot?.() ?? process.cwd(),
+      ),
       projectRoot: this.deps.activeProjectRoot?.() ?? null,
       stateRoot: this.stateRoot,
       source: typeof raw.source === 'string' ? raw.source : 'test',
-      toolName: typeof raw.toolName === 'string' ? raw.toolName : typeof raw.tool_name === 'string' ? raw.tool_name : null,
-      toolInput: isRecord(raw.toolInput) ? raw.toolInput : isRecord(raw.tool_input) ? raw.tool_input : null,
+      toolName:
+        typeof raw.toolName === 'string'
+          ? raw.toolName
+          : typeof raw.tool_name === 'string'
+            ? raw.tool_name
+            : null,
+      toolInput: isRecord(raw.toolInput)
+        ? raw.toolInput
+        : isRecord(raw.tool_input)
+          ? raw.tool_input
+          : null,
       prompt: typeof raw.prompt === 'string' ? raw.prompt : null,
     }
   }
@@ -252,19 +333,35 @@ function configPayload(snapshot: HookSnapshot, globalConfig: unknown): Dict {
 
 function hooksSummary(snapshot: HookSnapshot): Dict {
   const events = HOOK_EVENT_NAMES.map((eventName) => {
-    const groups = snapshot.groups.filter((group) => group.eventName === eventName)
-    return { eventName, groups: groups.length, count: groups.reduce((sum, group) => sum + group.group.handlers.length, 0) }
+    const groups = snapshot.groups.filter(
+      (group) => group.eventName === eventName,
+    )
+    return {
+      eventName,
+      groups: groups.length,
+      count: groups.reduce(
+        (sum, group) => sum + group.group.handlers.length,
+        0,
+      ),
+    }
   }).filter((event) => event.groups > 0)
-  return { total: events.reduce((sum, event) => sum + event.count, 0), groups: snapshot.groups.length, events }
+  return {
+    total: events.reduce((sum, event) => sum + event.count, 0),
+    groups: snapshot.groups.length,
+    events,
+  }
 }
 
 function requiredEvent(input: Dict): HookEventName {
   const eventName = String(input.eventName ?? input.event_name ?? '')
-  if (!isHookEventName(eventName)) throw new Error(`invalid hook event: ${eventName}`)
+  if (!isHookEventName(eventName))
+    throw new Error(`invalid hook event: ${eventName}`)
   return eventName
 }
 
-function planItemPayload(item: ReturnType<typeof compileHookPlan>['items'][number]): Dict {
+function planItemPayload(
+  item: ReturnType<typeof compileHookPlan>['items'][number],
+): Dict {
   return {
     index: item.index,
     eventName: item.eventName,
@@ -287,7 +384,11 @@ function normalizeCursor(value: unknown): number {
 }
 
 async function canonical(path: string): Promise<string> {
-  try { return await realpath(resolve(path)) } catch { return resolve(path) }
+  try {
+    return await realpath(resolve(path))
+  } catch {
+    return resolve(path)
+  }
 }
 
 function stableRevision(value: unknown): string {

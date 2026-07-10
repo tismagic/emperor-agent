@@ -36,16 +36,17 @@ Core philosophy: **The bar is "stunning," not "functional." Every pixel is inten
 
 Whether and how much to ask depends on how much information has been provided. **Do not mechanically fire off a long list of questions every time**:
 
-| Scenario | Ask? |
-|---|---|
-| "Make a deck" (no PRD, no audience) | ✅ Ask extensively: audience, duration, tone, variants |
-| "Use this PRD to make a 10-min deck for Eng All Hands" | ❌ Enough info — start building |
-| "Turn this screenshot into an interactive prototype" | ⚠️ Only ask if the intended interactions are unclear |
-| "Make 6 slides about the history of butter" | ✅ Too vague — at least ask about tone and audience |
-| "Design onboarding for my food-delivery app" | ✅ Ask heavily: users, flows, brand, variants |
-| "Recreate the composer UI from this codebase" | ❌ Read the code directly — no questions needed |
+| Scenario                                               | Ask?                                                   |
+| ------------------------------------------------------ | ------------------------------------------------------ |
+| "Make a deck" (no PRD, no audience)                    | ✅ Ask extensively: audience, duration, tone, variants |
+| "Use this PRD to make a 10-min deck for Eng All Hands" | ❌ Enough info — start building                        |
+| "Turn this screenshot into an interactive prototype"   | ⚠️ Only ask if the intended interactions are unclear   |
+| "Make 6 slides about the history of butter"            | ✅ Too vague — at least ask about tone and audience    |
+| "Design onboarding for my food-delivery app"           | ✅ Ask heavily: users, flows, brand, variants          |
+| "Recreate the composer UI from this codebase"          | ❌ Read the code directly — no questions needed        |
 
 Key areas to probe (pick as needed — no fixed count required):
+
 - **Product context**: What product? Target users? Existing design system / brand guidelines / codebase?
 - **Output type**: Web page / prototype / slide deck / animation / dashboard? Fidelity level?
 - **Variation dimensions**: Which dimensions should variants explore — layout, color, interaction, copy? How many?
@@ -82,6 +83,7 @@ Matching the existing visual vocabulary is the prerequisite for seamless integra
 
 ```markdown
 Design Decisions:
+
 - Color palette: [primary / secondary / neutral / accent]
 - Typography: [heading font / body font / code font]
 - Spacing system: [base unit and multiples]
@@ -117,16 +119,20 @@ Walk through the "Pre-delivery Checklist" item by item.
 ```html
 <!DOCTYPE html>
 <html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Descriptive Title</title>
-    <style>/* CSS */</style>
-</head>
-<body>
+    <style>
+      /* CSS */
+    </style>
+  </head>
+  <body>
     <!-- Content -->
-    <script>/* JS */</script>
-</body>
+    <script>
+      /* JS */
+    </script>
+  </body>
 </html>
 ```
 
@@ -135,15 +141,21 @@ Walk through the "Pre-delivery Checklist" item by item.
 When building React prototypes, use **pinned-version** CDN scripts (keeping `integrity` hashes is recommended; remove them if the CDN is restricted):
 
 ```html
-<script src="https://unpkg.com/react@18.3.1/umd/react.development.js"
-        integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L"
-        crossorigin="anonymous"></script>
-<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js"
-        integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm"
-        crossorigin="anonymous"></script>
-<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js"
-        integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y"
-        crossorigin="anonymous"></script>
+<script
+  src="https://unpkg.com/react@18.3.1/umd/react.development.js"
+  integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L"
+  crossorigin="anonymous"
+></script>
+<script
+  src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js"
+  integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm"
+  crossorigin="anonymous"
+></script>
+<script
+  src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js"
+  integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y"
+  crossorigin="anonymous"
+></script>
 ```
 
 #### Three Non-negotiable Hard Rules
@@ -160,10 +172,14 @@ Or use inline `style={{...}}` directly. **Never use `styles` as a variable name.
 **2. Separate `<script type="text/babel">` blocks do not share scope** — Each Babel script is compiled independently. To make components available across files, explicitly attach them to `window` at the end of the file:
 
 ```jsx
-function Terminal() { /* ... */ }
-function Line() { /* ... */ }
+function Terminal() {
+  /* ... */
+}
+function Line() {
+  /* ... */
+}
 
-Object.assign(window, { Terminal, Line });
+Object.assign(window, { Terminal, Line })
 ```
 
 **3. Do not use `scrollIntoView`** — In iframe-embedded preview environments, it disrupts outer-frame scrolling. For programmatic scrolling, use `element.scrollTop = ...` or `window.scrollTo({...})` instead.
@@ -245,12 +261,12 @@ CSS, HTML, JS, and SVG are far more capable than most people realize — **use t
 
 ### Appropriate Scale
 
-| Context | Minimum Size |
-|---|---|
+| Context                 | Minimum Size                 |
+| ----------------------- | ---------------------------- |
 | 1920×1080 presentations | Text ≥ 24px (ideally larger) |
-| Mobile mockups | Touch targets ≥ 44px |
-| Print documents | ≥ 12pt |
-| Web body text | Start at 16–18px |
+| Mobile mockups          | Touch targets ≥ 44px         |
+| Print documents         | ≥ 12pt                       |
+| Web body text           | Start at 16–18px             |
 
 ### Content Principles
 
@@ -302,6 +318,7 @@ Choose animation approach by complexity, from simplest to heaviest — don't rea
 > Avoid importing Framer Motion / GSAP / Lottie and other heavy libraries — they introduce bundle-size overhead, version-compatibility issues, and problems with React 18's inline Babel mode. Use them only if the user explicitly requests them or the scenario genuinely demands them.
 
 Additional requirements:
+
 - Provide play/pause button and progress bar (scrubber)
 - Define a unified easing-function library (reuse the same set of easings within a project) for consistent motion language
 - Don't add a "title screen" to video-type artifacts — go straight into the main content
@@ -333,6 +350,7 @@ Strategy: **Start the first few variants safely within the design system; then p
 Let users adjust design parameters in real time: theme color, font size, dark mode, spacing, component variants, content density, animation toggles, etc.
 
 Design guidelines:
+
 - A floating panel in the bottom-right corner (see the reference implementation)
 - Title consistently labeled **"Tweaks"**
 - **Completely hidden** when closed, ensuring the design looks final during presentations
@@ -349,11 +367,16 @@ Design guidelines:
 
 ```html
 <!-- Data Visualization: Charts -->
-<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>     <!-- Standard charts (line / bar / pie) -->
-<script src="https://d3js.org/d3.v7.min.js"></script>              <!-- Complex custom visualizations -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<!-- Standard charts (line / bar / pie) -->
+<script src="https://d3js.org/d3.v7.min.js"></script>
+<!-- Complex custom visualizations -->
 
 <!-- Google Fonts example (avoid Inter / Roboto / Arial / Fraunces / system-ui) -->
-<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link
+  href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap"
+  rel="stylesheet"
+/>
 ```
 
 ### Consider Only When User Explicitly Requests or for Quick Throwaway Prototypes

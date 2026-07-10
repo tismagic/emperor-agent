@@ -9,7 +9,10 @@ import * as path from 'node:path'
 // - paths with a file extension resolve to that file under rendererRoot.
 // - anything that escapes rendererRoot (directory traversal) falls back to
 //   index.html rather than leaking host files.
-export function resolveAssetPath(requestPath: string, rendererRoot: string): string {
+export function resolveAssetPath(
+  requestPath: string,
+  rendererRoot: string,
+): string {
   const indexHtml = path.join(rendererRoot, 'index.html')
 
   let rel: string
@@ -22,7 +25,9 @@ export function resolveAssetPath(requestPath: string, rendererRoot: string): str
   if (rel === '') return indexHtml
 
   const resolved = path.resolve(rendererRoot, rel)
-  const rootWithSep = rendererRoot.endsWith(path.sep) ? rendererRoot : rendererRoot + path.sep
+  const rootWithSep = rendererRoot.endsWith(path.sep)
+    ? rendererRoot
+    : rendererRoot + path.sep
   if (resolved !== rendererRoot && !resolved.startsWith(rootWithSep)) {
     return indexHtml
   }
@@ -39,7 +44,11 @@ export interface RawMediaRoots {
   legacyRuntimeRoot?: string | null
 }
 
-function findRawFile(dir: string, hash8: string, opts: { excludeTxt?: boolean } = {}): string | null {
+function findRawFile(
+  dir: string,
+  hash8: string,
+  opts: { excludeTxt?: boolean } = {},
+): string | null {
   let names: string[]
   try {
     names = fs.readdirSync(dir).sort()
@@ -61,7 +70,10 @@ function findRawFile(dir: string, hash8: string, opts: { excludeTxt?: boolean } 
   return null
 }
 
-export function resolveAttachmentRawPath(requestUrl: string, roots: RawMediaRoots): string | null {
+export function resolveAttachmentRawPath(
+  requestUrl: string,
+  roots: RawMediaRoots,
+): string | null {
   let url: URL
   try {
     url = new URL(requestUrl)
@@ -69,20 +81,38 @@ export function resolveAttachmentRawPath(requestUrl: string, roots: RawMediaRoot
     return null
   }
   if (url.protocol !== 'app:' || url.host !== 'attachments') return null
-  const parts = url.pathname.split('/').filter(Boolean).map((part) => {
-    try { return decodeURIComponent(part) } catch { return '' }
-  })
+  const parts = url.pathname
+    .split('/')
+    .filter(Boolean)
+    .map((part) => {
+      try {
+        return decodeURIComponent(part)
+      } catch {
+        return ''
+      }
+    })
   if (parts.length !== 2 || parts[1] !== 'raw') return null
   const match = /^att_(\d{4}-\d{2})_([0-9a-f]{8})$/.exec(parts[0] || '')
   if (!match) return null
   const [, month, hash8] = match
-  const found = findRawFile(path.join(roots.stateRoot, 'memory', 'attachments', month!), hash8!, { excludeTxt: true })
+  const found = findRawFile(
+    path.join(roots.stateRoot, 'memory', 'attachments', month!),
+    hash8!,
+    { excludeTxt: true },
+  )
   if (found) return found
   if (!roots.legacyRuntimeRoot) return null
-  return findRawFile(path.join(roots.legacyRuntimeRoot, 'memory', 'attachments', month!), hash8!, { excludeTxt: true })
+  return findRawFile(
+    path.join(roots.legacyRuntimeRoot, 'memory', 'attachments', month!),
+    hash8!,
+    { excludeTxt: true },
+  )
 }
 
-export function resolveMediaRawPath(requestUrl: string, roots: RawMediaRoots): string | null {
+export function resolveMediaRawPath(
+  requestUrl: string,
+  roots: RawMediaRoots,
+): string | null {
   let url: URL
   try {
     url = new URL(requestUrl)
@@ -90,15 +120,28 @@ export function resolveMediaRawPath(requestUrl: string, roots: RawMediaRoots): s
     return null
   }
   if (url.protocol !== 'app:' || url.host !== 'media') return null
-  const parts = url.pathname.split('/').filter(Boolean).map((part) => {
-    try { return decodeURIComponent(part) } catch { return '' }
-  })
+  const parts = url.pathname
+    .split('/')
+    .filter(Boolean)
+    .map((part) => {
+      try {
+        return decodeURIComponent(part)
+      } catch {
+        return ''
+      }
+    })
   if (parts.length !== 2 || parts[1] !== 'raw') return null
   const match = /^media_(\d{4}-\d{2})_([0-9a-f]{8})$/.exec(parts[0] || '')
   if (!match) return null
   const [, month, hash8] = match
-  const found = findRawFile(path.join(roots.stateRoot, 'memory', 'media', month!), hash8!)
+  const found = findRawFile(
+    path.join(roots.stateRoot, 'memory', 'media', month!),
+    hash8!,
+  )
   if (found) return found
   if (!roots.legacyRuntimeRoot) return null
-  return findRawFile(path.join(roots.legacyRuntimeRoot, 'memory', 'media', month!), hash8!)
+  return findRawFile(
+    path.join(roots.legacyRuntimeRoot, 'memory', 'media', month!),
+    hash8!,
+  )
 }

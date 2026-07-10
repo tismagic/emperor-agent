@@ -1,6 +1,9 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
-import { mcpServerCapability, toolCapability } from '../../capabilities/capabilityProjection'
+import {
+  mcpServerCapability,
+  toolCapability,
+} from '../../capabilities/capabilityProjection'
 import { useAppContext } from '../../composables/useAppContext'
 import { actionIcons } from '../../icons'
 import CapabilityCard from '../capabilities/CapabilityCard.vue'
@@ -9,10 +12,14 @@ const ctx = useAppContext()
 const draft = ref('')
 const parseError = ref('')
 
-watch(() => ctx.mcpContent.value, (content) => {
-  draft.value = content
-  parseError.value = ''
-}, { immediate: true })
+watch(
+  () => ctx.mcpContent.value,
+  (content) => {
+    draft.value = content
+    parseError.value = ''
+  },
+  { immediate: true },
+)
 
 onMounted(() => {
   if (!ctx.mcpContent.value) {
@@ -35,21 +42,28 @@ const serverCount = computed(() => {
 })
 
 const enabledCount = computed(() => {
-  const servers = parsed.value?.servers as Record<string, { enabled?: boolean }> | undefined
+  const servers = parsed.value?.servers as
+    Record<string, { enabled?: boolean }> | undefined
   if (!servers) return 0
   return Object.values(servers).filter((s) => s.enabled !== false).length
 })
 
-const mcpTools = computed(() => ctx.boot.value?.tools?.filter((t) => t.source === 'mcp') || [])
+const mcpTools = computed(
+  () => ctx.boot.value?.tools?.filter((t) => t.source === 'mcp') || [],
+)
 const serverItems = computed(() => {
   const servers = parsed.value?.servers as Record<string, unknown> | undefined
   if (!servers) return []
   return Object.entries(servers).map(([name, config]) => {
-    const toolCount = mcpTools.value.filter((tool) => tool.server === name).length
+    const toolCount = mcpTools.value.filter(
+      (tool) => tool.server === name,
+    ).length
     return mcpServerCapability(name, config as any, toolCount)
   })
 })
-const mcpToolItems = computed(() => mcpTools.value.map((tool) => toolCapability(tool)))
+const mcpToolItems = computed(() =>
+  mcpTools.value.map((tool) => toolCapability(tool)),
+)
 
 function validate() {
   parseError.value = ''
@@ -85,11 +99,17 @@ function formatJson() {
       <div class="filter-wrap">
         <span class="filter-badge">
           服务器 {{ serverCount }} 个 · 启用 {{ enabledCount }} 个
-          <template v-if="mcpTools.length"> · MCP 工具 {{ mcpTools.length }} 个</template>
+          <template v-if="mcpTools.length">
+            · MCP 工具 {{ mcpTools.length }} 个</template
+          >
         </span>
         <span v-if="parseError" class="badge red">{{ parseError }}</span>
       </div>
-      <button class="tool-button asset-button" title="刷新" @click="ctx.runSafely(() => ctx.loadMcpConfig())">
+      <button
+        class="tool-button asset-button"
+        title="刷新"
+        @click="ctx.runSafely(() => ctx.loadMcpConfig())"
+      >
         <component :is="actionIcons.refresh" class="action-icon" :size="16" />
         <span>刷新</span>
       </button>
@@ -132,9 +152,17 @@ function formatJson() {
       </summary>
       <section class="mcp-editor">
         <div class="editor-title">全局私有数据目录 / mcp_config.json</div>
-        <textarea v-model="draft" :class="{ 'has-error': parseError }" spellcheck="false" />
+        <textarea
+          v-model="draft"
+          :class="{ 'has-error': parseError }"
+          spellcheck="false"
+        />
         <div class="mcp-editor-actions">
-          <button class="tool-button asset-button" title="格式化" @click="formatJson">
+          <button
+            class="tool-button asset-button"
+            title="格式化"
+            @click="formatJson"
+          >
             <span>格式化</span>
           </button>
           <button class="tool-button asset-button primary-action" @click="save">

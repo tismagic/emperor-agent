@@ -15,24 +15,24 @@ This backlog converts the report into Emperor Agent feature slices. It is not a 
 
 ## Implemented By Current Plan
 
-| Report item | Status | Project receipt |
-|---|---|---|
-| P0-1 true cancellation for model/tools/shell | implemented | `EA-REL-001`: turn `AbortSignal`, cancellable `run_command`, active task abort path |
-| P0-2 dispatch cancellation must not be overwritten by completion | implemented | `EA-CAP-P0-001`: `DispatchSubagentTool` rechecks terminal task status before sidechain completion; covered by `packages/core/src/subagents/subagents.test.ts` |
-| P0-3 compaction failure must not poison completed reply | implemented | `EA-REL-002`: compactor errors become degraded runtime state; memory compaction keeps history on failure |
-| P0-4 dynamic context window | implemented | `EA-REL-002`: routed runners use `route.snapshot.contextWindowTokens`; context usage emits active max/threshold |
-| Runtime replay losing chat/tool structure | implemented/partial | `EA-RUNTIME-001/002`: session-scoped replay API, archive-aware replay, pure chat projection reducer |
-| Workspace/path confusion | implemented | `EA-ISO-*`, `EA-MEM-*`, `EA-PERM-001`: `.emperor` state root, project state store, workspace fence diagnostics |
-| Internal error on cancel/ask flow | implemented | `EA-RUNTIME-004`, `EA-REL-001`: cancellation and control interactions use domain errors/events |
-| Tool card render failure on unknown/error events | implemented | `EA-RUNTIME-003`: resilient tool card projection and unknown event degradation |
-| Compactor prompt should cap long user/assistant text | implemented | `EA-CAP-P1-013`: `messagesToText` caps text blocks before compaction prompt; covered by `packages/core/src/memory/compactor-token.test.ts` |
-| Provider retry and per-call fallback degradation | implemented | `EA-CAP-P1-001`: retryable provider errors get bounded retry; auth does not retry; configured fallback degrades only the current call |
-| Context overflow should recover once inside the turn | implemented | `EA-CAP-P1-005`: provider context overflow classifier, emergency context shrink retry, and `context_overflow` domain error |
-| Aggregate tool result budget | implemented | `EA-CAP-P1-011`: context pipeline replaces largest tool results when a batch exceeds the aggregate budget; `context_usage` reports replacement counts |
-| Shell risk parser | implemented | `EA-CAP-P1-006`: shell command tokenizer classifies command segments and keeps complex shell out of low-risk allowlist |
-| ACCEPT_EDITS permission mode | implemented | `EA-CAP-P1-007`: middle permission mode accepts ordinary file edits while shell/team/scheduler mutations still ask |
-| User configurable permission rules | implemented | `EA-CAP-P1-002`: `emperor.local.json` permission rules support deny/ask/allow matching with diagnostics and runtime injection |
-| Web search tool | implemented | `EA-CAP-P1-008`: provider-agnostic `web_search` tool returns structured untrusted results through an adapter, or a clear backend-missing error |
+| Report item                                                      | Status              | Project receipt                                                                                                                                               |
+| ---------------------------------------------------------------- | ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| P0-1 true cancellation for model/tools/shell                     | implemented         | `EA-REL-001`: turn `AbortSignal`, cancellable `run_command`, active task abort path                                                                           |
+| P0-2 dispatch cancellation must not be overwritten by completion | implemented         | `EA-CAP-P0-001`: `DispatchSubagentTool` rechecks terminal task status before sidechain completion; covered by `packages/core/src/subagents/subagents.test.ts` |
+| P0-3 compaction failure must not poison completed reply          | implemented         | `EA-REL-002`: compactor errors become degraded runtime state; memory compaction keeps history on failure                                                      |
+| P0-4 dynamic context window                                      | implemented         | `EA-REL-002`: routed runners use `route.snapshot.contextWindowTokens`; context usage emits active max/threshold                                               |
+| Runtime replay losing chat/tool structure                        | implemented/partial | `EA-RUNTIME-001/002`: session-scoped replay API, archive-aware replay, pure chat projection reducer                                                           |
+| Workspace/path confusion                                         | implemented         | `EA-ISO-*`, `EA-MEM-*`, `EA-PERM-001`: `.emperor` state root, project state store, workspace fence diagnostics                                                |
+| Internal error on cancel/ask flow                                | implemented         | `EA-RUNTIME-004`, `EA-REL-001`: cancellation and control interactions use domain errors/events                                                                |
+| Tool card render failure on unknown/error events                 | implemented         | `EA-RUNTIME-003`: resilient tool card projection and unknown event degradation                                                                                |
+| Compactor prompt should cap long user/assistant text             | implemented         | `EA-CAP-P1-013`: `messagesToText` caps text blocks before compaction prompt; covered by `packages/core/src/memory/compactor-token.test.ts`                    |
+| Provider retry and per-call fallback degradation                 | implemented         | `EA-CAP-P1-001`: retryable provider errors get bounded retry; auth does not retry; configured fallback degrades only the current call                         |
+| Context overflow should recover once inside the turn             | implemented         | `EA-CAP-P1-005`: provider context overflow classifier, emergency context shrink retry, and `context_overflow` domain error                                    |
+| Aggregate tool result budget                                     | implemented         | `EA-CAP-P1-011`: context pipeline replaces largest tool results when a batch exceeds the aggregate budget; `context_usage` reports replacement counts         |
+| Shell risk parser                                                | implemented         | `EA-CAP-P1-006`: shell command tokenizer classifies command segments and keeps complex shell out of low-risk allowlist                                        |
+| ACCEPT_EDITS permission mode                                     | implemented         | `EA-CAP-P1-007`: middle permission mode accepts ordinary file edits while shell/team/scheduler mutations still ask                                            |
+| User configurable permission rules                               | implemented         | `EA-CAP-P1-002`: `emperor.local.json` permission rules support deny/ask/allow matching with diagnostics and runtime injection                                 |
+| Web search tool                                                  | implemented         | `EA-CAP-P1-008`: provider-agnostic `web_search` tool returns structured untrusted results through an adapter, or a clear backend-missing error                |
 
 ## P1 Planned Feature Slices
 
@@ -347,36 +347,36 @@ Acceptance:
 
 ## P2 Deferred Or Lower-Priority Slices
 
-| Task | Source | Status | Defer reason |
-|---|---|---|---|
-| EA-CAP-P2-001 startup parallel prefetch | A-7 | deferred | Needs profiling; current startup bottleneck unknown |
-| EA-CAP-P2-002 user+project config layering | A-8 | deferred | Useful after permission/project policy config exists |
-| EA-CAP-P2-003 tool concurrency limit and sibling cancel | B-2.2 | planned after streaming/cancel | Needs `ToolExecutionEngine` queue semantics first |
-| EA-CAP-P2-004 PreToolUse/PostToolUse hooks | C protocol 1 | planned after permission rules | Hooks must not bypass deny policy |
-| EA-CAP-P2-005 tool progress protocol | C protocol 2 | planned after background shell | Needs common task/progress event path |
-| EA-CAP-P2-006 ToolSearch/delayed tool loading | C protocol 3 | deferred | Current built-in tool count is still small |
-| EA-CAP-P2-007 large result replacement unification | C protocol 4 | planned after aggregate budget | Reuse result store once budget policy is done |
-| EA-CAP-P2-008 OS sandbox for run_command | C permission 4 | deferred | Needs product decision per macOS/Linux support |
-| EA-CAP-P2-009 subagent timeout/targeted cancel | E gap 3 | planned after active subagent tasks | Depends on task/active registry integration |
-| EA-CAP-P2-010 sidechain intermediate transcript | E gap 6 | deferred | Useful, not blocking single-user workflow |
-| EA-CAP-P2-011 Plan attachment throttle | F gap 2 | deferred | Plan context size currently bounded; revisit with real traces |
-| EA-CAP-P2-012 verification risk fallback | F gap 4 | planned | Add after QA receipt cases identify misses |
-| EA-CAP-P2-013 todo dependency graph | F gap 5 | deferred | Current Plan model is single-active-step by design |
-| EA-CAP-P2-014 plan scratch path exception | F gap 6 | deferred | Structured `propose_plan` remains preferred |
-| EA-CAP-P2-015 runtime side-effect watcher hub | G-2.2 | deferred | Refactor only as side effects grow |
-| EA-CAP-P2-016 additional pure runtime reducers/selectors | G-2.3/2.4 | planned gradually | Continue when touching each event family |
-| EA-CAP-P2-017 IPC reconnect with seq catch-up | G-2.5 | deferred | Needed for multi-window/remote, not current desktop |
-| EA-CAP-P2-018 assertMutation docs | A-6 | planned doc-only | Clarify boundary between UI mutation guard and agent tool permission |
+| Task                                                     | Source         | Status                              | Defer reason                                                         |
+| -------------------------------------------------------- | -------------- | ----------------------------------- | -------------------------------------------------------------------- |
+| EA-CAP-P2-001 startup parallel prefetch                  | A-7            | deferred                            | Needs profiling; current startup bottleneck unknown                  |
+| EA-CAP-P2-002 user+project config layering               | A-8            | deferred                            | Useful after permission/project policy config exists                 |
+| EA-CAP-P2-003 tool concurrency limit and sibling cancel  | B-2.2          | planned after streaming/cancel      | Needs `ToolExecutionEngine` queue semantics first                    |
+| EA-CAP-P2-004 PreToolUse/PostToolUse hooks               | C protocol 1   | planned after permission rules      | Hooks must not bypass deny policy                                    |
+| EA-CAP-P2-005 tool progress protocol                     | C protocol 2   | planned after background shell      | Needs common task/progress event path                                |
+| EA-CAP-P2-006 ToolSearch/delayed tool loading            | C protocol 3   | deferred                            | Current built-in tool count is still small                           |
+| EA-CAP-P2-007 large result replacement unification       | C protocol 4   | planned after aggregate budget      | Reuse result store once budget policy is done                        |
+| EA-CAP-P2-008 OS sandbox for run_command                 | C permission 4 | deferred                            | Needs product decision per macOS/Linux support                       |
+| EA-CAP-P2-009 subagent timeout/targeted cancel           | E gap 3        | planned after active subagent tasks | Depends on task/active registry integration                          |
+| EA-CAP-P2-010 sidechain intermediate transcript          | E gap 6        | deferred                            | Useful, not blocking single-user workflow                            |
+| EA-CAP-P2-011 Plan attachment throttle                   | F gap 2        | deferred                            | Plan context size currently bounded; revisit with real traces        |
+| EA-CAP-P2-012 verification risk fallback                 | F gap 4        | planned                             | Add after QA receipt cases identify misses                           |
+| EA-CAP-P2-013 todo dependency graph                      | F gap 5        | deferred                            | Current Plan model is single-active-step by design                   |
+| EA-CAP-P2-014 plan scratch path exception                | F gap 6        | deferred                            | Structured `propose_plan` remains preferred                          |
+| EA-CAP-P2-015 runtime side-effect watcher hub            | G-2.2          | deferred                            | Refactor only as side effects grow                                   |
+| EA-CAP-P2-016 additional pure runtime reducers/selectors | G-2.3/2.4      | planned gradually                   | Continue when touching each event family                             |
+| EA-CAP-P2-017 IPC reconnect with seq catch-up            | G-2.5          | deferred                            | Needed for multi-window/remote, not current desktop                  |
+| EA-CAP-P2-018 assertMutation docs                        | A-6            | planned doc-only                    | Clarify boundary between UI mutation guard and agent tool permission |
 
 ## Not Applicable
 
-| Report area | Reason |
-|---|---|
-| Ink/React terminal rendering | Emperor Agent is Electron/Vue desktop software |
-| Anthropic beta/header protocol details | Emperor Agent is multi-provider |
-| GrowthBook flags, telemetry, enterprise MDM policy | Not part of local personal agent positioning |
-| Claude Code teammate/swarm internals | Internally gated and lower-quality fit than Emperor Team model |
-| Worktree/GitHub webhook/terminal panel tools | Coding CLI/enterprise workflows; revisit only if product scope changes |
+| Report area                                        | Reason                                                                 |
+| -------------------------------------------------- | ---------------------------------------------------------------------- |
+| Ink/React terminal rendering                       | Emperor Agent is Electron/Vue desktop software                         |
+| Anthropic beta/header protocol details             | Emperor Agent is multi-provider                                        |
+| GrowthBook flags, telemetry, enterprise MDM policy | Not part of local personal agent positioning                           |
+| Claude Code teammate/swarm internals               | Internally gated and lower-quality fit than Emperor Team model         |
+| Worktree/GitHub webhook/terminal panel tools       | Coding CLI/enterprise workflows; revisit only if product scope changes |
 
 ## Dependency Order
 

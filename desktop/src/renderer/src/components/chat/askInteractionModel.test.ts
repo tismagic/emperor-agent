@@ -42,9 +42,21 @@ function ask(extra: Partial<ControlInteraction> = {}): ControlInteraction {
 
 describe('ask interaction model', () => {
   it('selects only the waiting ask interaction as active', () => {
-    expect(activeAskInteraction({ mode: 'plan', pending: ask() })?.id).toBe('ask-1')
-    expect(activeAskInteraction({ mode: 'plan', pending: ask({ status: 'answered' }) })).toBeNull()
-    expect(activeAskInteraction({ mode: 'plan', pending: { ...ask(), kind: 'plan' } })).toBeNull()
+    expect(activeAskInteraction({ mode: 'plan', pending: ask() })?.id).toBe(
+      'ask-1',
+    )
+    expect(
+      activeAskInteraction({
+        mode: 'plan',
+        pending: ask({ status: 'answered' }),
+      }),
+    ).toBeNull()
+    expect(
+      activeAskInteraction({
+        mode: 'plan',
+        pending: { ...ask(), kind: 'plan' },
+      }),
+    ).toBeNull()
   })
 
   it('normalizes ask drafts into plain JSON answers for IPC', () => {
@@ -66,7 +78,9 @@ describe('ask interaction model', () => {
   it('reports per-question progression labels and validity', () => {
     expect(askQuestionCanContinue({ choice: '', freeform: '' })).toBe(false)
     expect(askQuestionCanContinue({ choice: '完整', freeform: '' })).toBe(true)
-    expect(askQuestionCanContinue({ choice: '', freeform: '按你建议来' })).toBe(true)
+    expect(askQuestionCanContinue({ choice: '', freeform: '按你建议来' })).toBe(
+      true,
+    )
     expect(askSubmitLabel(0, 2)).toBe('继续')
     expect(askSubmitLabel(1, 2)).toBe('提交')
   })
@@ -76,13 +90,17 @@ describe('ask interaction model', () => {
       title: '正在询问 2 个问题',
       tone: 'waiting',
     })
-    expect(askHistoryPresentation(ask({
-      status: 'answered',
-      answers: {
-        style: { choice: '完整', freeform: '' },
-        depth: { choice: '', freeform: '自己判断' },
-      },
-    }))).toMatchObject({
+    expect(
+      askHistoryPresentation(
+        ask({
+          status: 'answered',
+          answers: {
+            style: { choice: '完整', freeform: '' },
+            depth: { choice: '', freeform: '自己判断' },
+          },
+        }),
+      ),
+    ).toMatchObject({
       title: '已回答 2 个问题',
       tone: 'answered',
       answers: [

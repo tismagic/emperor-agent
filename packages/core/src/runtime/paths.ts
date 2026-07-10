@@ -34,17 +34,26 @@ export function defaultStateRoot(): string {
   return join(homedir(), '.emperor-agent')
 }
 
-function resolveStateRoot(opts: RuntimePathOptions): { stateRoot: string; source: StateRootSource } {
-  if (opts.stateRoot) return { stateRoot: resolve(opts.stateRoot), source: 'explicit' }
+function resolveStateRoot(opts: RuntimePathOptions): {
+  stateRoot: string
+  source: StateRootSource
+} {
+  if (opts.stateRoot)
+    return { stateRoot: resolve(opts.stateRoot), source: 'explicit' }
   const envDir = process.env.EMPEROR_CONFIG_DIR
   if (envDir) return { stateRoot: resolve(envDir), source: 'env' }
   return { stateRoot: resolve(defaultStateRoot()), source: 'default' }
 }
 
-export function resolveRuntimePaths(root: string, opts: RuntimePathOptions = {}): RuntimePaths {
+export function resolveRuntimePaths(
+  root: string,
+  opts: RuntimePathOptions = {},
+): RuntimePaths {
   const runtimeRoot = resolve(root)
   const { stateRoot, source: stateRootSource } = resolveStateRoot(opts)
-  const templatesDir = resolve(opts.templatesDir || join(runtimeRoot, 'templates'))
+  const templatesDir = resolve(
+    opts.templatesDir || join(runtimeRoot, 'templates'),
+  )
   return {
     runtimeRoot,
     stateRoot,

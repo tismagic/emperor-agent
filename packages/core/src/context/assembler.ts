@@ -1,5 +1,8 @@
 import type { ContextSection } from '../agent/context-builder'
-import type { PromptContextPlan, PromptContextPlanItem } from '../prompts/manifest'
+import type {
+  PromptContextPlan,
+  PromptContextPlanItem,
+} from '../prompts/manifest'
 
 export interface ContextAssemblyInput {
   sections: ContextSection[]
@@ -22,7 +25,9 @@ export interface ContextAssembly {
 
 export class ContextAssembler {
   assemble(input: ContextAssemblyInput): ContextAssembly {
-    const sectionsById = new Map(input.sections.map((section) => [sectionId(section.name), section]))
+    const sectionsById = new Map(
+      input.sections.map((section) => [sectionId(section.name), section]),
+    )
     const renderedSections: ContextSection[] = []
     const rendered: ContextAssemblyEntry[] = []
     const omitted: ContextAssemblyEntry[] = []
@@ -52,7 +57,14 @@ export class ContextAssembler {
         }
       }
       for (const item of input.contextPlan.omitted ?? []) {
-        if (!omitted.some((existing) => existing.kind === item.kind && existing.source === item.source && existing.reason === item.reason)) {
+        if (
+          !omitted.some(
+            (existing) =>
+              existing.kind === item.kind &&
+              existing.source === item.source &&
+              existing.reason === item.reason,
+          )
+        ) {
           omitted.push({
             id: `omitted:${item.kind}:${item.source}`,
             kind: item.kind,
@@ -75,13 +87,18 @@ export class ContextAssembler {
     }
 
     return {
-      prompt: renderedSections.map((section) => section.content).join('\n\n---\n\n'),
+      prompt: renderedSections
+        .map((section) => section.content)
+        .join('\n\n---\n\n'),
       rendered,
       omitted,
     }
   }
 
-  renderSystemPrompt(sections: ContextSection[], contextPlan?: PromptContextPlan | null): string {
+  renderSystemPrompt(
+    sections: ContextSection[],
+    contextPlan?: PromptContextPlan | null,
+  ): string {
     return this.assemble({ sections, contextPlan }).prompt
   }
 }
@@ -90,7 +107,10 @@ function sectionId(name: string): string {
   return `section:${name}`
 }
 
-function entryFor(item: PromptContextPlanItem, section: ContextSection | undefined): ContextAssemblyEntry {
+function entryFor(
+  item: PromptContextPlanItem,
+  section: ContextSection | undefined,
+): ContextAssemblyEntry {
   return {
     id: item.id,
     kind: item.kind,

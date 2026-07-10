@@ -43,7 +43,10 @@ const modelLabel = computed(
         :is="statusIcon"
         class="status-icon"
         :size="13"
-        :class="{ 'animate-spin': ctx.busy.value, error: ctx.status.value === 'error' }"
+        :class="{
+          'animate-spin': ctx.busy.value,
+          error: ctx.status.value === 'error',
+        }"
       />
     </div>
 
@@ -61,10 +64,23 @@ const modelLabel = computed(
     </nav>
 
     <div class="rail-footer">
-      <button class="rail-icon-button" :title="theme === 'dark' ? '切换浅色' : '切换深色'" @click="toggleTheme()">
-        <component :is="theme === 'dark' ? actionIcons.statusOnline : actionIcons.statusBusy" :size="16" />
+      <button
+        class="rail-icon-button"
+        :title="theme === 'dark' ? '切换浅色' : '切换深色'"
+        @click="toggleTheme()"
+      >
+        <component
+          :is="
+            theme === 'dark' ? actionIcons.statusOnline : actionIcons.statusBusy
+          "
+          :size="16"
+        />
       </button>
-      <button class="rail-icon-button" title="清空当前屏幕" @click="ctx.clearChat()">
+      <button
+        class="rail-icon-button"
+        title="清空当前屏幕"
+        @click="ctx.clearChat()"
+      >
         <component :is="actionIcons.clear" :size="16" />
       </button>
     </div>

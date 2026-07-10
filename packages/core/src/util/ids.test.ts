@@ -18,10 +18,18 @@ describe('ids/time', () => {
 
   it('validateName enforces non-empty, length and pattern', () => {
     const pattern = /^[a-z0-9_-]+$/
-    expect(validateName('worker-1', { pattern, maxLen: 32, label: 'name' })).toBe('worker-1')
-    expect(() => validateName('  ', { pattern, maxLen: 32, label: 'name' })).toThrow(ValidationError)
-    expect(() => validateName('bad name!', { pattern, maxLen: 32, label: 'name' })).toThrow(ValidationError)
-    expect(() => validateName('x'.repeat(33), { pattern, maxLen: 32, label: 'name' })).toThrow(ValidationError)
+    expect(
+      validateName('worker-1', { pattern, maxLen: 32, label: 'name' }),
+    ).toBe('worker-1')
+    expect(() =>
+      validateName('  ', { pattern, maxLen: 32, label: 'name' }),
+    ).toThrow(ValidationError)
+    expect(() =>
+      validateName('bad name!', { pattern, maxLen: 32, label: 'name' }),
+    ).toThrow(ValidationError)
+    expect(() =>
+      validateName('x'.repeat(33), { pattern, maxLen: 32, label: 'name' }),
+    ).toThrow(ValidationError)
   })
 
   it('time helpers return seconds vs millis', () => {

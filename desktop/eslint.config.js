@@ -5,7 +5,15 @@ import vueParser from 'vue-eslint-parser'
 import tseslint from 'typescript-eslint'
 
 export default tseslint.config(
-  { ignores: ['out/**', 'dist/**', 'build/**', 'test-results/**', 'screenshots/**'] },
+  {
+    ignores: [
+      'out/**',
+      'dist/**',
+      'build/**',
+      'test-results/**',
+      'screenshots/**',
+    ],
+  },
   js.configs.recommended,
   ...tseslint.configs.recommended,
   // essential 只包含"可能是 bug"的规则（重复 key、computed 副作用等），不含格式类规则——
@@ -38,7 +46,10 @@ export default tseslint.config(
   },
   {
     rules: {
-      '@typescript-eslint/no-unused-vars': ['warn', { argsIgnorePattern: '^_', varsIgnorePattern: '^_' }],
+      '@typescript-eslint/no-unused-vars': [
+        'warn',
+        { argsIgnorePattern: '^_', varsIgnorePattern: '^_' },
+      ],
       '@typescript-eslint/no-explicit-any': 'off',
       'vue/multi-word-component-names': 'off',
     },

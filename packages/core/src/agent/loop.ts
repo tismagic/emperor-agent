@@ -4,10 +4,20 @@
  * subagents、scheduler、Team、control 和 routed AgentRunner。
  */
 import { randomUUID } from 'node:crypto'
-import { existsSync, mkdirSync, readFileSync, readdirSync, statSync } from 'node:fs'
+import {
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  readdirSync,
+  statSync,
+} from 'node:fs'
 import { basename, join, resolve } from 'node:path'
 import { ContextBuilder, type SkillsLoaderLike } from './context-builder'
-import { AgentRunner, type AgentRunnerHookHost, type CompactorLike } from './runner'
+import {
+  AgentRunner,
+  type AgentRunnerHookHost,
+  type CompactorLike,
+} from './runner'
 import { buildRoutedRunner } from './runner-factory'
 import { dispatchControlHost, permissionOnlyControlHost } from './control-hosts'
 import { loadLocalConfig, type PromptProfile } from '../config/local-config'
@@ -15,31 +25,70 @@ import type { PermissionRuleInput } from '../permissions/rules'
 import { loadModelConfig } from '../config/model-config'
 import { ControlManager } from '../control/manager'
 import type { Interaction } from '../control/models'
-import { AskUserTool, ProposePlanTool, RequestPlanModeTool } from '../control/tools'
+import {
+  AskUserTool,
+  ProposePlanTool,
+  RequestPlanModeTool,
+} from '../control/tools'
 import { MCPClient } from '../mcp/client'
 import { MemoryStore } from '../memory/store'
 import { compactSession } from '../memory/compaction-service'
-import { CompactionCursorStore, CompactionLedger, latestAppliedCompactionRun } from '../memory/compaction-ledger'
+import {
+  CompactionCursorStore,
+  CompactionLedger,
+  latestAppliedCompactionRun,
+} from '../memory/compaction-ledger'
 import type { ActiveMemoryBinding } from '../memory/compaction-models'
 import { TokenTracker } from '../memory/token-tracker'
 import { todayUtc8 } from '../memory/time-utc8'
 import { type ModelRoute, ModelRouter } from '../model/router'
-import { assertModelAvailable, type ModelAvailability } from '../model/availability'
-import { HookService, type HookAggregateDecision, type HookEventName, type HookRuntimeRunOptions, type HookSnapshot } from '../hooks'
+import {
+  assertModelAvailable,
+  type ModelAvailability,
+} from '../model/availability'
+import {
+  HookService,
+  type HookAggregateDecision,
+  type HookEventName,
+  type HookRuntimeRunOptions,
+  type HookSnapshot,
+} from '../hooks'
 import { WorkspacePolicy } from '../permissions/workspace-policy'
 import { ProjectStore } from '../projects/store'
 import { ActiveTaskRegistry, TurnBusyError } from '../runtime/active'
-import { migrateLegacyStateRoot, type LegacyStateMigrationResult } from '../runtime/migrate-state-root'
-import { ensureRuntimeStateDirs, resolveRuntimePaths, type RuntimePaths } from '../runtime/paths'
+import {
+  migrateLegacyStateRoot,
+  type LegacyStateMigrationResult,
+} from '../runtime/migrate-state-root'
+import {
+  ensureRuntimeStateDirs,
+  resolveRuntimePaths,
+  type RuntimePaths,
+} from '../runtime/paths'
 import { RuntimeEventStore } from '../runtime/store'
-import { SchedulerJobExecutor, type SchedulerAgentTurnPayload } from '../scheduler/executor'
+import {
+  SchedulerJobExecutor,
+  type SchedulerAgentTurnPayload,
+} from '../scheduler/executor'
 import { SchedulerService } from '../scheduler/service'
 import { SchedulerStore } from '../scheduler/store'
 import { SchedulerTool } from '../scheduler/tool'
-import { ConversationStore, ProjectSessionMemoryStore, SessionMemoryStore } from '../sessions/conversation'
+import {
+  ConversationStore,
+  ProjectSessionMemoryStore,
+  SessionMemoryStore,
+} from '../sessions/conversation'
 import { migrateLegacyMainlineToDefaultSession } from '../sessions/migrate'
-import { claimProfileOnboardingTrigger, ensureUserProfileFile, onboardingTriggerContent } from '../sessions/onboarding'
-import { SessionStore, type SessionControlPending, type SessionEntry } from '../sessions/store'
+import {
+  claimProfileOnboardingTrigger,
+  ensureUserProfileFile,
+  onboardingTriggerContent,
+} from '../sessions/onboarding'
+import {
+  SessionStore,
+  type SessionControlPending,
+  type SessionEntry,
+} from '../sessions/store'
 import { buildDispatchRunnerFactory } from '../subagents/dispatch-runner'
 import { SubagentRegistry } from '../subagents/registry'
 import { TaskManager } from '../tasks/manager'
@@ -86,8 +135,16 @@ export interface TurnScope {
 }
 
 export interface LoopModelRouter {
-  route(useCase: string, agentType?: string | null, task?: string | null): ModelRoute
-  routeForRole?(useCase: string, role: 'main' | 'secondary', task?: string | null): ModelRoute
+  route(
+    useCase: string,
+    agentType?: string | null,
+    task?: string | null,
+  ): ModelRoute
+  routeForRole?(
+    useCase: string,
+    role: 'main' | 'secondary',
+    task?: string | null,
+  ): ModelRoute
   payload?(): Record<string, unknown>
   availability?: ModelAvailability
 }
@@ -172,9 +229,13 @@ export class AgentLoop {
   history: Msg[] = []
   private readonly ownsModelRouter: boolean
   private readonly modelOverride: string | null
-  private schedulerAgentTurnSubmitter: ((payload: SchedulerAgentTurnPayload) => Promise<string>) | null = null
+  private schedulerAgentTurnSubmitter:
+    ((payload: SchedulerAgentTurnPayload) => Promise<string>) | null = null
   private controlPendingSessionId: string | null = null
-  private readonly todosBySession = new Map<string, Array<Record<string, unknown>>>()
+  private readonly todosBySession = new Map<
+    string,
+    Array<Record<string, unknown>>
+  >()
   private readonly teamManagersByProject = new Map<string, TeamManager>()
   private readonly sessionStartHooksRun = new Set<string>()
 
@@ -184,7 +245,10 @@ export class AgentLoop {
     sharedMemory: MemoryStore,
     legacyStateMigration: LegacyStateMigrationResult,
   ) {
-    this.paths = resolveRuntimePaths(opts.root, { stateRoot: opts.stateRoot ?? null, templatesDir: opts.templatesDir ?? null })
+    this.paths = resolveRuntimePaths(opts.root, {
+      stateRoot: opts.stateRoot ?? null,
+      templatesDir: opts.templatesDir ?? null,
+    })
     this.legacyStateMigration = legacyStateMigration
     this.root = this.paths.runtimeRoot
     this.templatesDir = this.paths.templatesDir
@@ -200,39 +264,56 @@ export class AgentLoop {
     this.hookService = new HookService({
       stateRoot: this.paths.stateRoot,
       modelRouter: {
-        routeForRole: (useCase, role, task) => this.routeHookModel(useCase, role, task),
+        routeForRole: (useCase, role, task) =>
+          this.routeHookModel(useCase, role, task),
       },
       tokenTracker: this.tokenTracker,
     })
     this.taskManager = new TaskManager(this.paths.stateRoot, {
       hooks: {
         run: async (eventName, hookOpts) => {
-          const session = hookOpts.sessionId ? this.sessionStore.get(hookOpts.sessionId) : this.activeSession
+          const session = hookOpts.sessionId
+            ? this.sessionStore.get(hookOpts.sessionId)
+            : this.activeSession
           return await this.hookService.run(eventName, {
             sessionId: hookOpts.sessionId ?? session?.id ?? '',
             cwd: this.workspaceRootForSession(session),
-            projectRoot: session?.mode === 'build' ? session.project_path ?? null : null,
+            projectRoot:
+              session?.mode === 'build' ? (session.project_path ?? null) : null,
             taskKind: hookOpts.taskKind,
             task: hookOpts.task,
           })
         },
       },
     })
-    this.projectStore = new ProjectStore(this.paths.stateRoot, { versions: this.sharedMemory.versions })
-    this.controlManager = new ControlManager(this.paths.stateRoot, { permissionRules: opts.permissionRules ?? [] })
+    this.projectStore = new ProjectStore(this.paths.stateRoot, {
+      versions: this.sharedMemory.versions,
+    })
+    this.controlManager = new ControlManager(this.paths.stateRoot, {
+      permissionRules: opts.permissionRules ?? [],
+    })
     this.todoStore = new TodoStore()
     this.schedulerStore = new SchedulerStore(this.paths.stateRoot)
     this.schedulerService = new SchedulerService(this.schedulerStore, {
-      eventSink: async (event) => { await this.emit(event) },
+      eventSink: async (event) => {
+        await this.emit(event)
+      },
       targetSessionId: () => this.activeSessionId,
     })
     this.skillsLoader = new FileSkillsLoader(this.root, this.paths.stateRoot)
-    this.contextBuilder = new ContextBuilder(this.templatesDir, this.skillsLoader, {
-      memory: this.sharedMemory,
-      userFile: opts.userFile ?? this.sharedMemory.userFile,
-      promptProfile: opts.promptProfile ?? 'technical',
-    })
-    this.subagentRegistry = new SubagentRegistry(join(this.templatesDir, 'subagents'), this.skillsLoader)
+    this.contextBuilder = new ContextBuilder(
+      this.templatesDir,
+      this.skillsLoader,
+      {
+        memory: this.sharedMemory,
+        userFile: opts.userFile ?? this.sharedMemory.userFile,
+        promptProfile: opts.promptProfile ?? 'technical',
+      },
+    )
+    this.subagentRegistry = new SubagentRegistry(
+      join(this.templatesDir, 'subagents'),
+      this.skillsLoader,
+    )
     this.contextBuilder.setSubagentRegistry(this.subagentRegistry)
     this.teamManager = this.createTeamManager(null)
     this.mcpClient = new MCPClient(this.paths.stateRoot)
@@ -240,43 +321,64 @@ export class AgentLoop {
     this.controlManager.setTodoStore(this.todoStore)
     this.controlManager.setTaskManager(this.taskManager)
     this.controlManager.setPendingObserver({
-      setPending: (interaction) => this.setActiveSessionControlPending(interaction),
-      clearPending: (interaction) => this.clearSessionControlPending(interaction),
+      setPending: (interaction) =>
+        this.setActiveSessionControlPending(interaction),
+      clearPending: (interaction) =>
+        this.clearSessionControlPending(interaction),
     })
     this.registerBuiltinTools()
-    this.schedulerService.onJob = async (job) => this.schedulerExecutor().run(job)
+    this.schedulerService.onJob = async (job) =>
+      this.schedulerExecutor().run(job)
   }
 
   static async create(opts: AgentLoopCreateOptions): Promise<AgentLoop> {
-    const paths = resolveRuntimePaths(opts.root, { stateRoot: opts.stateRoot ?? null, templatesDir: opts.templatesDir ?? null })
+    const paths = resolveRuntimePaths(opts.root, {
+      stateRoot: opts.stateRoot ?? null,
+      templatesDir: opts.templatesDir ?? null,
+    })
     const root = paths.runtimeRoot
     mkdirSync(root, { recursive: true })
     ensureRuntimeStateDirs(paths)
     const legacyStateMigration = migrateLegacyStateRoot(paths)
     migrateLegacyMainlineToDefaultSession(paths.stateRoot)
-    const localConfig = await loadLocalConfig(paths.stateRoot, { preserveCorrupt: false })
+    const localConfig = await loadLocalConfig(paths.stateRoot, {
+      preserveCorrupt: false,
+    })
     const templatesDir = paths.templatesDir
     const userFile = ensureUserProfileFile(paths.stateRoot, templatesDir)
     const memoryTemplate = existingPath(join(templatesDir, 'init', 'MEMORY.md'))
-    const sharedMemory = new MemoryStore(paths.memoryRoot, userFile, { memoryTemplate })
+    const sharedMemory = new MemoryStore(paths.memoryRoot, userFile, {
+      memoryTemplate,
+    })
     // 首次运行档案访谈的门禁需要知道模型是否已配置；外部注入 modelRouter（常见于测试/嵌入场景）
     // 本身就是"已配置"的信号，此时不必读盘、也不改变原有的 loadModelConfig 调用时机。
     let modelRouter = opts.modelRouter ?? null
     let hasConfiguredModel = Boolean(modelRouter)
     if (!modelRouter) {
-      const modelConfig = await loadModelConfig(paths.stateRoot, { create: true })
+      const modelConfig = await loadModelConfig(paths.stateRoot, {
+        create: true,
+      })
       hasConfiguredModel = modelConfig.models.length > 0
-      modelRouter = new ModelRouter(paths.stateRoot, modelConfig, opts.modelOverride ?? null)
+      modelRouter = new ModelRouter(
+        paths.stateRoot,
+        modelConfig,
+        opts.modelOverride ?? null,
+      )
     }
-    const loop = new AgentLoop({
-      ...opts,
-      root,
-      stateRoot: paths.stateRoot,
-      templatesDir,
-      userFile,
-      promptProfile: opts.promptProfile ?? localConfig.prompt.profile,
-      permissionRules: localConfig.permissions.rules,
-    }, modelRouter, sharedMemory, legacyStateMigration)
+    const loop = new AgentLoop(
+      {
+        ...opts,
+        root,
+        stateRoot: paths.stateRoot,
+        templatesDir,
+        userFile,
+        promptProfile: opts.promptProfile ?? localConfig.prompt.profile,
+        permissionRules: localConfig.permissions.rules,
+      },
+      modelRouter,
+      sharedMemory,
+      legacyStateMigration,
+    )
     if (opts.initializeMcp !== false) {
       await loop.mcpClient.initialize()
       loop.mcpClient.registerTools(loop.registry)
@@ -285,7 +387,11 @@ export class AgentLoop {
     loop.activateSession(session.id)
     if (
       opts.enableFirstRunOnboarding &&
-      claimProfileOnboardingTrigger({ stateRoot: paths.stateRoot, templatesDir, hasConfiguredModel })
+      claimProfileOnboardingTrigger({
+        stateRoot: paths.stateRoot,
+        templatesDir,
+        hasConfiguredModel,
+      })
     ) {
       // 必须 await 而非 fire-and-forget：runUserTurn 靠 activeTasks 的 'turn' 单飞互斥防止
       // 并发回合互相践踏共享的 history/runner 状态；不 await 会让它与调用方紧接着发起的
@@ -309,21 +415,40 @@ export class AgentLoop {
     if (!session) throw new Error(`unknown session: ${sessionId}`)
     const previousSessionId = this.activeSessionId
     if (previousSessionId && previousSessionId !== session.id) {
-      this.todosBySession.set(previousSessionId, cloneTodoItems(this.todoStore.todos))
+      this.todosBySession.set(
+        previousSessionId,
+        cloneTodoItems(this.todoStore.todos),
+      )
     }
     this.activeSession = session
     this.activeSessionId = session.id
     if (previousSessionId !== session.id) {
-      this.todoStore.todos = cloneTodoItems(this.todosBySession.get(session.id) ?? [])
+      this.todoStore.todos = cloneTodoItems(
+        this.todosBySession.get(session.id) ?? [],
+      )
     }
-    this.conversationStore = new ConversationStore(this.sessionStore.sessionDir(session.id))
-    this.activeMemoryStore = this.memoryStoreForSession(session, this.conversationStore)
-    this.runtimeStore = new RuntimeEventStore(this.conversationStore.sessionDir, { sessionDirOverride: true })
-    this.history = this.conversationStore.readCheckpoint() ?? this.activeMemoryStore.loadUnarchivedHistory()
+    this.conversationStore = new ConversationStore(
+      this.sessionStore.sessionDir(session.id),
+    )
+    this.activeMemoryStore = this.memoryStoreForSession(
+      session,
+      this.conversationStore,
+    )
+    this.runtimeStore = new RuntimeEventStore(
+      this.conversationStore.sessionDir,
+      { sessionDirOverride: true },
+    )
+    this.history =
+      this.conversationStore.readCheckpoint() ??
+      this.activeMemoryStore.loadUnarchivedHistory()
     this.contextBuilder.setSessionScope(this.sessionScope(session))
-    this.controlManager.setRuntimeScope(this.controlRuntimeScopeForSession(session))
+    this.controlManager.setRuntimeScope(
+      this.controlRuntimeScopeForSession(session),
+    )
     this.skillsLoader.setProjectSkillsDir(
-      session.mode === 'build' && session.project_path ? join(resolve(session.project_path), '.emperor', 'skills') : null,
+      session.mode === 'build' && session.project_path
+        ? join(resolve(session.project_path), '.emperor', 'skills')
+        : null,
     )
     this.runner = this.buildMainRunner()
     return session
@@ -334,7 +459,9 @@ export class AgentLoop {
     const summary = pending ? this.sessionControlPending(pending) : null
     this.sessionStore.reconcileControlPending(summary, this.activeSessionId)
     if (summary) {
-      this.controlPendingSessionId = this.findControlPendingSessionId(summary.interaction_id)
+      this.controlPendingSessionId = this.findControlPendingSessionId(
+        summary.interaction_id,
+      )
     } else {
       this.controlPendingSessionId = null
     }
@@ -344,29 +471,41 @@ export class AgentLoop {
     return this.findControlPendingSessionId(interactionId)
   }
 
-  async runUserTurn(content: string, opts: RunUserTurnOptions = {}): Promise<string> {
-    if (opts.useActiveTask !== false && this.activeTasks.hasActiveKind('turn')) {
+  async runUserTurn(
+    content: string,
+    opts: RunUserTurnOptions = {},
+  ): Promise<string> {
+    if (
+      opts.useActiveTask !== false &&
+      this.activeTasks.hasActiveKind('turn')
+    ) {
       throw new TurnBusyError()
     }
     const targetSessionId = String(opts.sessionId ?? '').trim()
     const previousSessionId = this.activeSessionId
-    if (targetSessionId && this.activeSessionId !== targetSessionId) this.activateSession(targetSessionId)
+    if (targetSessionId && this.activeSessionId !== targetSessionId)
+      this.activateSession(targetSessionId)
     assertModelAvailable(this.modelRouter.availability)
     const turnId = opts.turnId || randomUUID().replace(/-/g, '').slice(0, 16)
     const taskId = opts.taskId || `turn:${turnId}`
     const abortController = new AbortController()
-    const awaitable = this.runUserTurnInner(content, turnId, opts, abortController.signal)
-      .finally(() => {
-        this.hookService.endTurn(turnId)
-        if (!opts.restoreActiveSessionAfterTurn) return
-        if (!previousSessionId || previousSessionId === this.activeSessionId) return
-        if (targetSessionId && this.activeSessionId !== targetSessionId) return
-        try {
-          this.activateSession(previousSessionId)
-        } catch {
-          // The previous session may have been deleted while a background turn was running.
-        }
-      })
+    const awaitable = this.runUserTurnInner(
+      content,
+      turnId,
+      opts,
+      abortController.signal,
+    ).finally(() => {
+      this.hookService.endTurn(turnId)
+      if (!opts.restoreActiveSessionAfterTurn) return
+      if (!previousSessionId || previousSessionId === this.activeSessionId)
+        return
+      if (targetSessionId && this.activeSessionId !== targetSessionId) return
+      try {
+        this.activateSession(previousSessionId)
+      } catch {
+        // The previous session may have been deleted while a background turn was running.
+      }
+    })
     if (opts.useActiveTask === false) return awaitable
     return this.activeTasks.run({
       taskId,
@@ -379,20 +518,29 @@ export class AgentLoop {
     })
   }
 
-  setSchedulerAgentTurnSubmitter(submitter: ((payload: SchedulerAgentTurnPayload) => Promise<string>) | null): void {
+  setSchedulerAgentTurnSubmitter(
+    submitter: ((payload: SchedulerAgentTurnPayload) => Promise<string>) | null,
+  ): void {
     this.schedulerAgentTurnSubmitter = submitter
   }
 
   async close(): Promise<void> {
     this.schedulerService.stop()
-    const session = this.activeSession ?? (this.activeSessionId ? this.sessionStore.get(this.activeSessionId) : null)
+    const session =
+      this.activeSession ??
+      (this.activeSessionId
+        ? this.sessionStore.get(this.activeSessionId)
+        : null)
     if (session) {
-      await this.hookService.run('SessionEnd', {
-        sessionId: session.id,
-        cwd: this.workspaceRootForSession(session),
-        projectRoot: session.mode === 'build' ? session.project_path ?? null : null,
-        reason: 'shutdown',
-      }).catch(() => {})
+      await this.hookService
+        .run('SessionEnd', {
+          sessionId: session.id,
+          cwd: this.workspaceRootForSession(session),
+          projectRoot:
+            session.mode === 'build' ? (session.project_path ?? null) : null,
+          reason: 'shutdown',
+        })
+        .catch(() => {})
     }
     await this.hookService.shutdown()
     await this.mcpClient.close()
@@ -401,26 +549,38 @@ export class AgentLoop {
   async endSession(sessionId: string, reason: string): Promise<void> {
     const session = this.sessionStore.get(sessionId)
     if (!session) return
-    await this.hookService.run('SessionEnd', {
-      sessionId,
-      cwd: this.workspaceRootForSession(session),
-      projectRoot: session.mode === 'build' ? session.project_path ?? null : null,
-      reason,
-    }).catch(() => {})
+    await this.hookService
+      .run('SessionEnd', {
+        sessionId,
+        cwd: this.workspaceRootForSession(session),
+        projectRoot:
+          session.mode === 'build' ? (session.project_path ?? null) : null,
+        reason,
+      })
+      .catch(() => {})
     this.sessionStartHooksRun.delete(sessionId)
     this.hookService.clearSession(sessionId)
   }
 
   refreshRuntimeContext(): void {
     if (!this.runner) return
-    if (this.activeSession) this.contextBuilder.setSessionScope(this.sessionScope(this.activeSession))
+    if (this.activeSession)
+      this.contextBuilder.setSessionScope(this.sessionScope(this.activeSession))
     const projection = this.contextBuilder.buildProjection()
     this.runner.systemPrompt = projection.prompt
     this.runner.promptSections = projection.sections
     this.runner.promptContextPlan = projection.contextPlan
-    this.runner.promptSnapshotDir = this.activeSessionId ? join(this.sessionStore.sessionDir(this.activeSessionId), 'prompt-snapshots') : null
+    this.runner.promptSnapshotDir = this.activeSessionId
+      ? join(
+          this.sessionStore.sessionDir(this.activeSessionId),
+          'prompt-snapshots',
+        )
+      : null
     this.runner.sessionId = this.activeSessionId
-    if (this.activeSession) this.controlManager.setRuntimeScope(this.controlRuntimeScopeForSession(this.activeSession))
+    if (this.activeSession)
+      this.controlManager.setRuntimeScope(
+        this.controlRuntimeScopeForSession(this.activeSession),
+      )
   }
 
   workspacePolicyDiagnostics(): Record<string, unknown> {
@@ -432,7 +592,11 @@ export class AgentLoop {
 
   async refreshModelConfig(): Promise<void> {
     if (!this.ownsModelRouter) return
-    this.modelRouter = new ModelRouter(this.paths.stateRoot, await loadModelConfig(this.paths.stateRoot, { create: true }), this.modelOverride)
+    this.modelRouter = new ModelRouter(
+      this.paths.stateRoot,
+      await loadModelConfig(this.paths.stateRoot, { create: true }),
+      this.modelOverride,
+    )
     if (this.activeSessionId) this.runner = this.buildMainRunner()
   }
 
@@ -447,30 +611,48 @@ export class AgentLoop {
     trigger: CompactionHookScope['trigger'],
     opts: { session?: SessionEntry | null; emit?: StreamEmitter | null } = {},
   ): Promise<CompactionHookScope> {
-    const session = opts.session ?? this.activeSession ?? (this.activeSessionId ? this.sessionStore.get(this.activeSessionId) : null)
-    if (!session) throw new Error('active session is required for compaction hooks')
+    const session =
+      opts.session ??
+      this.activeSession ??
+      (this.activeSessionId
+        ? this.sessionStore.get(this.activeSessionId)
+        : null)
+    if (!session)
+      throw new Error('active session is required for compaction hooks')
     const cwd = this.workspaceRootForSession(session)
-    const projectRoot = session.mode === 'build' ? session.project_path ?? null : null
-    const snapshot = this.hookService.activeSnapshot(session.id) ?? await this.hookService.snapshot({ sessionId: session.id, projectRoot })
-    const decision = await this.hookService.run('PreCompact', {
-      sessionId: session.id,
-      cwd,
-      projectRoot,
-      trigger,
-    }, {
-      snapshot,
-      emit: async (event) => { await this.emit(event, { emit: opts.emit ?? null }) },
-    })
+    const projectRoot =
+      session.mode === 'build' ? (session.project_path ?? null) : null
+    const snapshot =
+      this.hookService.activeSnapshot(session.id) ??
+      (await this.hookService.snapshot({ sessionId: session.id, projectRoot }))
+    const decision = await this.hookService.run(
+      'PreCompact',
+      {
+        sessionId: session.id,
+        cwd,
+        projectRoot,
+        trigger,
+      },
+      {
+        snapshot,
+        emit: async (event) => {
+          await this.emit(event, { emit: opts.emit ?? null })
+        },
+      },
+    )
     const denied = decision.decision === 'deny' || decision.decision === 'ask'
     const bypassed = trigger === 'emergency' && denied
     if (bypassed) {
-      await this.emit({
-        event: 'hook_emergency_compaction_bypass',
-        event_name: 'PreCompact',
-        decision: decision.decision,
-        reason: decision.reason,
-        snapshot_revision: snapshot.revision,
-      }, { emit: opts.emit ?? null })
+      await this.emit(
+        {
+          event: 'hook_emergency_compaction_bypass',
+          event_name: 'PreCompact',
+          decision: decision.decision,
+          reason: decision.reason,
+          snapshot_revision: snapshot.revision,
+        },
+        { emit: opts.emit ?? null },
+      )
     }
     return {
       trigger,
@@ -490,58 +672,101 @@ export class AgentLoop {
     result: Record<string, unknown>,
     opts: { emit?: StreamEmitter | null } = {},
   ): Promise<void> {
-    await this.hookService.run('PostCompact', {
-      sessionId: scope.sessionId,
-      cwd: scope.cwd,
-      projectRoot: scope.projectRoot,
-      trigger: scope.trigger,
-      result,
-    }, {
-      snapshot: scope.snapshot,
-      emit: async (event) => { await this.emit(event, { emit: opts.emit ?? null }) },
-    })
+    await this.hookService.run(
+      'PostCompact',
+      {
+        sessionId: scope.sessionId,
+        cwd: scope.cwd,
+        projectRoot: scope.projectRoot,
+        trigger: scope.trigger,
+        result,
+      },
+      {
+        snapshot: scope.snapshot,
+        emit: async (event) => {
+          await this.emit(event, { emit: opts.emit ?? null })
+        },
+      },
+    )
   }
 
-  private async runUserTurnInner(content: string, turnId: string, opts: RunUserTurnOptions, signal: AbortSignal | null): Promise<string> {
-    if (!this.activeSessionId) this.activateSession(this.ensureActiveSession().id)
-    const session = this.activeSession ?? this.sessionStore.get(this.activeSessionId!)
+  private async runUserTurnInner(
+    content: string,
+    turnId: string,
+    opts: RunUserTurnOptions,
+    signal: AbortSignal | null,
+  ): Promise<string> {
+    if (!this.activeSessionId)
+      this.activateSession(this.ensureActiveSession().id)
+    const session =
+      this.activeSession ?? this.sessionStore.get(this.activeSessionId!)
     const sessionId = session?.id ?? this.activeSessionId!
     const history = this.history
     const memoryStore = this.activeMemoryStore
     const runner = this.runner
     const runtimeStore = this.runtimeStore
-    if (!session || !runner || !runtimeStore) throw new Error('active session is not initialized')
-    this.controlManager.setRuntimeScope(this.controlRuntimeScopeForSession(session))
+    if (!session || !runner || !runtimeStore)
+      throw new Error('active session is not initialized')
+    this.controlManager.setRuntimeScope(
+      this.controlRuntimeScopeForSession(session),
+    )
     const scope = this.turnScope(session, turnId)
     await this.hookService.beginTurn({
       turnId,
       sessionId,
-      projectRoot: session.mode === 'build' ? session.project_path ?? null : null,
+      projectRoot:
+        session.mode === 'build' ? (session.project_path ?? null) : null,
     })
     if (!this.sessionStartHooksRun.has(sessionId)) {
       this.sessionStartHooksRun.add(sessionId)
-      const startDecision = await this.runLoopHook('SessionStart', {
+      const startDecision = await this.runLoopHook(
+        'SessionStart',
+        {
+          sessionId,
+          cwd: scope.workspaceRoot,
+          source: session.mode,
+        },
+        { turnId, emit: opts.emit ?? null, runtimeStore, scope },
+      )
+      this.appendLifecycleHookContext(
+        history,
+        memoryStore,
+        startDecision.additionalContext,
+        'SessionStart',
+        turnId,
+      )
+    }
+    const promptDecision = await this.runLoopHook(
+      'UserPromptSubmit',
+      {
         sessionId,
         cwd: scope.workspaceRoot,
-        source: session.mode,
-      }, { turnId, emit: opts.emit ?? null, runtimeStore, scope })
-      this.appendLifecycleHookContext(history, memoryStore, startDecision.additionalContext, 'SessionStart', turnId)
-    }
-    const promptDecision = await this.runLoopHook('UserPromptSubmit', {
-      sessionId,
-      cwd: scope.workspaceRoot,
-      source: opts.source ?? null,
-      prompt: content,
-    }, { turnId, emit: opts.emit ?? null, runtimeStore, scope })
-    if (promptDecision.decision === 'deny') throw new Error(`UserPromptSubmit hook denied prompt: ${promptDecision.reason}`)
-    const updatedPrompt = promptDecision.updatedInput && typeof promptDecision.updatedInput.content === 'string'
-      ? promptDecision.updatedInput.content
-      : content
-    this.appendLifecycleHookContext(history, memoryStore, promptDecision.additionalContext, 'UserPromptSubmit', turnId)
+        source: opts.source ?? null,
+        prompt: content,
+      },
+      { turnId, emit: opts.emit ?? null, runtimeStore, scope },
+    )
+    if (promptDecision.decision === 'deny')
+      throw new Error(
+        `UserPromptSubmit hook denied prompt: ${promptDecision.reason}`,
+      )
+    const updatedPrompt =
+      promptDecision.updatedInput &&
+      typeof promptDecision.updatedInput.content === 'string'
+        ? promptDecision.updatedInput.content
+        : content
+    this.appendLifecycleHookContext(
+      history,
+      memoryStore,
+      promptDecision.additionalContext,
+      'UserPromptSubmit',
+      turnId,
+    )
     const displayContent = opts.displayContent ?? content
     const userMessage: Msg = { role: 'user', content: updatedPrompt }
     if (turnId) userMessage.turn_id = turnId
-    if (displayContent !== updatedPrompt) userMessage.displayContent = displayContent
+    if (displayContent !== updatedPrompt)
+      userMessage.displayContent = displayContent
     history.push(userMessage)
     memoryStore.appendHistory('user', updatedPrompt, {
       extra: {
@@ -551,8 +776,15 @@ export class AgentLoop {
         ...(opts.source ? { source: opts.source } : {}),
       },
     })
-    this.sessionStore.touch(sessionId, displayContent, { incrementMessages: true })
-    await this.emit(this.turnScopeEvent(scope), { turnId, emit: opts.emit ?? null, runtimeStore, scope })
+    this.sessionStore.touch(sessionId, displayContent, {
+      incrementMessages: true,
+    })
+    await this.emit(this.turnScopeEvent(scope), {
+      turnId,
+      emit: opts.emit ?? null,
+      runtimeStore,
+      scope,
+    })
     await this.emit(
       runtimeEvents.userMessage({
         content: displayContent,
@@ -567,22 +799,38 @@ export class AgentLoop {
 
     let reply: string
     try {
-      reply = await runner.stepStream(history, async (event) => {
-        await this.emit(event, { turnId, emit: opts.emit ?? null, runtimeStore, scope })
-      }, { turnId, signal })
+      reply = await runner.stepStream(
+        history,
+        async (event) => {
+          await this.emit(event, {
+            turnId,
+            emit: opts.emit ?? null,
+            runtimeStore,
+            scope,
+          })
+        },
+        { turnId, signal },
+      )
     } catch (error) {
       if (!isBenignTurnInterruption(error)) {
-        await this.runLoopHook('StopFailure', {
-          sessionId,
-          cwd: scope.workspaceRoot,
-          errorKind: hookErrorKind(error),
-          error: error instanceof Error ? error.message : String(error),
-        }, { turnId, emit: opts.emit ?? null, runtimeStore, scope }).catch(() => {})
+        await this.runLoopHook(
+          'StopFailure',
+          {
+            sessionId,
+            cwd: scope.workspaceRoot,
+            errorKind: hookErrorKind(error),
+            error: error instanceof Error ? error.message : String(error),
+          },
+          { turnId, emit: opts.emit ?? null, runtimeStore, scope },
+        ).catch(() => {})
         const safe = safeRuntimeError(error)
-        await this.emit(runtimeEvents.error(safe.message, {
-          code: safe.code,
-          action: safe.action,
-        }), { turnId, emit: opts.emit ?? null, runtimeStore, scope })
+        await this.emit(
+          runtimeEvents.error(safe.message, {
+            code: safe.code,
+            action: safe.action,
+          }),
+          { turnId, emit: opts.emit ?? null, runtimeStore, scope },
+        )
       }
       throw error
     }
@@ -592,7 +840,11 @@ export class AgentLoop {
 
   private buildMainRunner(): AgentRunner {
     const route = this.modelRouter.route('main_agent')
-    const session = this.activeSession ?? (this.activeSessionId ? this.sessionStore.get(this.activeSessionId) : null)
+    const session =
+      this.activeSession ??
+      (this.activeSessionId
+        ? this.sessionStore.get(this.activeSessionId)
+        : null)
     if (session) this.contextBuilder.setSessionScope(this.sessionScope(session))
     const projection = this.contextBuilder.buildProjection()
     const memoryStore = this.activeMemoryStore
@@ -603,7 +855,9 @@ export class AgentLoop {
       tokenTracker: this.tokenTracker,
       usageType: 'main_agent',
       memoryStore,
-      compactor: session ? this.autoMemoryCompactor(session, memoryStore) : null,
+      compactor: session
+        ? this.autoMemoryCompactor(session, memoryStore)
+        : null,
       todoStore: this.todoStore,
       controlManager: this.controlManager,
       maxContext: route.snapshot.contextWindowTokens,
@@ -611,89 +865,140 @@ export class AgentLoop {
       workspaceRoot: this.workspaceRootForActiveSession(),
       promptSections: projection.sections,
       promptContextPlan: projection.contextPlan,
-      promptSnapshotDir: this.activeSessionId ? join(this.sessionStore.sessionDir(this.activeSessionId), 'prompt-snapshots') : null,
+      promptSnapshotDir: this.activeSessionId
+        ? join(
+            this.sessionStore.sessionDir(this.activeSessionId),
+            'prompt-snapshots',
+          )
+        : null,
       sessionId: this.activeSessionId,
       // Wave5 灰度开关：默认关闭，行为与批式逐字节一致
       streamingToolExecution: process.env.EMPEROR_STREAMING_TOOLS === '1',
-      hooks: session ? {
-        run: async (eventName, hookOpts, emit) => {
-          return this.hookService.run(eventName, {
-            ...hookOpts,
-            sessionId: hookOpts.sessionId || session.id,
-            cwd: hookOpts.cwd || this.workspaceRootForSession(session),
-            projectRoot: session.mode === 'build' ? session.project_path ?? null : null,
-            stateRoot: this.paths.stateRoot,
-          }, {
-            emit: emit ? async (event) => { await emit(event) } : null,
-          })
-        },
-        mayMatch: (eventName, hookOpts) => this.hookService.mayMatch(eventName, {
-          ...hookOpts,
-          sessionId: hookOpts.sessionId || session.id,
-          cwd: hookOpts.cwd || this.workspaceRootForSession(session),
-          projectRoot: session.mode === 'build' ? session.project_path ?? null : null,
-          stateRoot: this.paths.stateRoot,
-        }),
-      } : null,
+      hooks: session
+        ? {
+            run: async (eventName, hookOpts, emit) => {
+              return this.hookService.run(
+                eventName,
+                {
+                  ...hookOpts,
+                  sessionId: hookOpts.sessionId || session.id,
+                  cwd: hookOpts.cwd || this.workspaceRootForSession(session),
+                  projectRoot:
+                    session.mode === 'build'
+                      ? (session.project_path ?? null)
+                      : null,
+                  stateRoot: this.paths.stateRoot,
+                },
+                {
+                  emit: emit
+                    ? async (event) => {
+                        await emit(event)
+                      }
+                    : null,
+                },
+              )
+            },
+            mayMatch: (eventName, hookOpts) =>
+              this.hookService.mayMatch(eventName, {
+                ...hookOpts,
+                sessionId: hookOpts.sessionId || session.id,
+                cwd: hookOpts.cwd || this.workspaceRootForSession(session),
+                projectRoot:
+                  session.mode === 'build'
+                    ? (session.project_path ?? null)
+                    : null,
+                stateRoot: this.paths.stateRoot,
+              }),
+          }
+        : null,
     })
   }
 
-  private autoMemoryCompactor(session: SessionEntry, memoryStore: SessionMemoryStore): CompactorLike {
+  private autoMemoryCompactor(
+    session: SessionEntry,
+    memoryStore: SessionMemoryStore,
+  ): CompactorLike {
     return {
       compactAfterTurn: async ({ currentTokens, maxContext }) => {
         const route = this.modelRouter.route('memory_compaction')
         const snapshot = route.snapshot
         const mode = session.mode === 'build' ? 'build' : 'chat'
-        const projectId = mode === 'build' ? String(session.project_id || '') : null
+        const projectId =
+          mode === 'build' ? String(session.project_id || '') : null
         const hookScope = await this.beginCompactionHooks('auto', { session })
         if (!hookScope.allowed) {
-          return { status: 'skipped', message: `Compaction deferred by hook: ${hookScope.reason}`, count: 0 }
+          return {
+            status: 'skipped',
+            message: `Compaction deferred by hook: ${hookScope.reason}`,
+            count: 0,
+          }
         }
         let result: Awaited<ReturnType<typeof compactSession>>
         try {
           result = await compactSession({
-          sessionId: session.id,
-          mode,
-          projectId,
-          historyFile: memoryStore.historyFile,
-          trigger: { kind: 'token_threshold', currentTokens: Number(currentTokens) || 0, maxContext: Number(maxContext) || 0 },
-          memory: {
-            root: this.paths.stateRoot,
-            memoryDir: this.sharedMemory.memoryDir,
-            userFile: this.sharedMemory.userFile,
-            versions: this.sharedMemory.versions,
-            readUser: () => this.sharedMemory.readUser(),
-            readGlobalMemory: () => this.sharedMemory.readMemory(),
-            readEpisode: () => this.sharedMemory.readTodayEpisode(),
-            readProjectMemory: (id: string) => this.projectStore.readManagedMemory(id),
-          },
-          model: {
-            provider: snapshot.provider,
-            model: snapshot.model,
-            providerName: snapshot.providerName,
-            modelRole: snapshot.modelRole,
-            maxTokens: snapshot.generation.maxTokens,
-            temperature: snapshot.generation.temperature,
-            reasoningEffort: snapshot.generation.reasoningEffort,
-            routeReason: snapshot.routeReason,
-          },
-          tokenTracker: this.tokenTracker,
-          instructions: hookScope.instructions,
+            sessionId: session.id,
+            mode,
+            projectId,
+            historyFile: memoryStore.historyFile,
+            trigger: {
+              kind: 'token_threshold',
+              currentTokens: Number(currentTokens) || 0,
+              maxContext: Number(maxContext) || 0,
+            },
+            memory: {
+              root: this.paths.stateRoot,
+              memoryDir: this.sharedMemory.memoryDir,
+              userFile: this.sharedMemory.userFile,
+              versions: this.sharedMemory.versions,
+              readUser: () => this.sharedMemory.readUser(),
+              readGlobalMemory: () => this.sharedMemory.readMemory(),
+              readEpisode: () => this.sharedMemory.readTodayEpisode(),
+              readProjectMemory: (id: string) =>
+                this.projectStore.readManagedMemory(id),
+            },
+            model: {
+              provider: snapshot.provider,
+              model: snapshot.model,
+              providerName: snapshot.providerName,
+              modelRole: snapshot.modelRole,
+              maxTokens: snapshot.generation.maxTokens,
+              temperature: snapshot.generation.temperature,
+              reasoningEffort: snapshot.generation.reasoningEffort,
+              routeReason: snapshot.routeReason,
+            },
+            tokenTracker: this.tokenTracker,
+            instructions: hookScope.instructions,
           })
         } catch (error) {
-          await this.finishCompactionHooks(hookScope, { status: 'failed', error: error instanceof Error ? error.message : String(error) })
+          await this.finishCompactionHooks(hookScope, {
+            status: 'failed',
+            error: error instanceof Error ? error.message : String(error),
+          })
           throw error
         }
         if (result.status === 'compacted' && result.compaction) {
           const cursorStore = new CompactionCursorStore(this.paths.stateRoot)
-          const retainedHistory = activeSessionHistoryAfterSeq(memoryStore, result.compaction.range.toSeq)
-          memoryStore.appendCompactMarker(retainedHistory, cursorStore.archiveGate(session.id))
+          const retainedHistory = activeSessionHistoryAfterSeq(
+            memoryStore,
+            result.compaction.range.toSeq,
+          )
+          memoryStore.appendCompactMarker(
+            retainedHistory,
+            cursorStore.archiveGate(session.id),
+          )
           result.compaction.cursor = cursorStore.readOrInit(session.id)
           this.refreshRuntimeContext()
-          await this.finishCompactionHooks(hookScope, { status: result.status, compaction: result.compaction })
+          await this.finishCompactionHooks(hookScope, {
+            status: result.status,
+            compaction: result.compaction,
+          })
           return { ...result, retainedHistory }
         }
-        await this.finishCompactionHooks(hookScope, { status: result.status, message: result.message, error: result.error ?? null })
+        await this.finishCompactionHooks(hookScope, {
+          status: result.status,
+          message: result.message,
+          error: result.error ?? null,
+        })
         return result
       },
     }
@@ -716,35 +1021,46 @@ export class AgentLoop {
     this.registry.register(new UpdateTodos(this.todoStore))
     this.registry.register(new SaveUserProfileTool(this.sharedMemory))
     const controlHost = dispatchControlHost(this.controlManager)
-    this.registry.register(new DispatchSubagentTool({
-      parentRegistry: this.registry,
-      subagentRegistry: this.subagentRegistry,
-      runnerFactory: buildDispatchRunnerFactory({
-        modelRouter: this.modelRouter,
-        tokenTracker: this.tokenTracker,
-        memoryStore: null,
-        compactor: null,
-        todoStore: null,
-        controlManager: permissionOnlyControlHost(this.controlManager),
-        hooks: (args) => args.agentId ? this.scopedAgentRunnerHooks(args.agentId, 'SubagentStop') : null,
-      }),
-      taskManager: this.taskManager,
-      controlManager: controlHost,
-      hooks: {
-        begin: async ({ agentId, agentType, sessionId, cwd }) => {
-          const session = this.sessionStore.get(sessionId) ?? this.activeSession
-          await this.hookService.beginAgentScope({
-            agentId,
-            agentType,
-            sessionId: sessionId || session?.id || '',
-            cwd,
-            projectRoot: session?.mode === 'build' ? session.project_path ?? null : null,
-          })
-          return await this.hookService.runAgent('SubagentStart', agentId, {})
+    this.registry.register(
+      new DispatchSubagentTool({
+        parentRegistry: this.registry,
+        subagentRegistry: this.subagentRegistry,
+        runnerFactory: buildDispatchRunnerFactory({
+          modelRouter: this.modelRouter,
+          tokenTracker: this.tokenTracker,
+          memoryStore: null,
+          compactor: null,
+          todoStore: null,
+          controlManager: permissionOnlyControlHost(this.controlManager),
+          hooks: (args) =>
+            args.agentId
+              ? this.scopedAgentRunnerHooks(args.agentId, 'SubagentStop')
+              : null,
+        }),
+        taskManager: this.taskManager,
+        controlManager: controlHost,
+        hooks: {
+          begin: async ({ agentId, agentType, sessionId, cwd }) => {
+            const session =
+              this.sessionStore.get(sessionId) ?? this.activeSession
+            await this.hookService.beginAgentScope({
+              agentId,
+              agentType,
+              sessionId: sessionId || session?.id || '',
+              cwd,
+              projectRoot:
+                session?.mode === 'build'
+                  ? (session.project_path ?? null)
+                  : null,
+            })
+            return await this.hookService.runAgent('SubagentStart', agentId, {})
+          },
+          end: (agentId) => {
+            this.hookService.endAgentScope(agentId)
+          },
         },
-        end: (agentId) => { this.hookService.endAgentScope(agentId) },
-      },
-    }))
+      }),
+    )
     const activeTeamManager = () => this.teamManagerForActiveSession()
     this.registry.register(new TeamSpawnTool(activeTeamManager))
     this.registry.register(new TeamListTool(activeTeamManager))
@@ -755,10 +1071,17 @@ export class AgentLoop {
   }
 
   teamManagerForActiveSession(): TeamManager | null {
-    return this.teamManagerForSession(this.activeSession ?? (this.activeSessionId ? this.sessionStore.get(this.activeSessionId) : null))
+    return this.teamManagerForSession(
+      this.activeSession ??
+        (this.activeSessionId
+          ? this.sessionStore.get(this.activeSessionId)
+          : null),
+    )
   }
 
-  teamManagerForSession(session: SessionEntry | null | undefined): TeamManager | null {
+  teamManagerForSession(
+    session: SessionEntry | null | undefined,
+  ): TeamManager | null {
     if (session?.mode !== 'build' || !session.project_id) return null
     return this.teamManagerForProject(session.project_id)
   }
@@ -776,7 +1099,9 @@ export class AgentLoop {
   }
 
   private ensureActiveSession(): SessionEntry {
-    const current = this.activeSessionId ? this.sessionStore.get(this.activeSessionId) : null
+    const current = this.activeSessionId
+      ? this.sessionStore.get(this.activeSessionId)
+      : null
     if (current) return current
     const existing = this.sessionStore.list({ includeArchived: false })[0]
     return existing ?? this.sessionStore.create('Default')
@@ -792,20 +1117,29 @@ export class AgentLoop {
   }
 
   private clearSessionControlPending(interaction: Interaction): void {
-    const sessionId = this.controlPendingSessionId || this.findControlPendingSessionId(interaction.id)
+    const sessionId =
+      this.controlPendingSessionId ||
+      this.findControlPendingSessionId(interaction.id)
     if (!sessionId) return
     this.sessionStore.clearControlPending(sessionId)
-    if (this.controlPendingSessionId === sessionId) this.controlPendingSessionId = null
+    if (this.controlPendingSessionId === sessionId)
+      this.controlPendingSessionId = null
   }
 
   private findControlPendingSessionId(interactionId: string): string | null {
-    return this.sessionStore
-      .list({ includeArchived: true })
-      .find((session) => session.control_pending?.interaction_id === interactionId)
-      ?.id ?? null
+    return (
+      this.sessionStore
+        .list({ includeArchived: true })
+        .find(
+          (session) =>
+            session.control_pending?.interaction_id === interactionId,
+        )?.id ?? null
+    )
   }
 
-  private sessionControlPending(interaction: Interaction): SessionControlPending | null {
+  private sessionControlPending(
+    interaction: Interaction,
+  ): SessionControlPending | null {
     if (interaction.status !== 'waiting') return null
     if (interaction.kind === 'ask') {
       return {
@@ -828,9 +1162,17 @@ export class AgentLoop {
     return null
   }
 
-  private memoryStoreForSession(session: SessionEntry, conversation: ConversationStore): SessionMemoryStore {
+  private memoryStoreForSession(
+    session: SessionEntry,
+    conversation: ConversationStore,
+  ): SessionMemoryStore {
     if (session.mode === 'build' && session.project_id) {
-      return new ProjectSessionMemoryStore(this.sharedMemory, conversation, this.projectStore, session.project_id)
+      return new ProjectSessionMemoryStore(
+        this.sharedMemory,
+        conversation,
+        this.projectStore,
+        session.project_id,
+      )
     }
     return new SessionMemoryStore(this.sharedMemory, conversation)
   }
@@ -842,13 +1184,20 @@ export class AgentLoop {
     projectAgentsSource?: string
     projectPath?: string
     projectIndexSummary?: string
-    compactionOmittedRanges?: Array<{ fromSeq: number; toSeq: number; compactionId?: string | null; targetScopes?: string[] }>
+    compactionOmittedRanges?: Array<{
+      fromSeq: number
+      toSeq: number
+      compactionId?: string | null
+      targetScopes?: string[]
+    }>
   } {
     if (session.mode !== 'build') {
       return {
         mode: 'chat',
         projectIndexSummary: this.projectStore.summaryForChat(),
-        compactionOmittedRanges: this.compactionOmittedRangesForSession(session.id),
+        compactionOmittedRanges: this.compactionOmittedRangesForSession(
+          session.id,
+        ),
       }
     }
     const projectId = session.project_id ?? ''
@@ -860,39 +1209,66 @@ export class AgentLoop {
       projectAgents: projectId ? this.projectStore.readAgents(projectId) : '',
       projectAgentsSource: project?.agents_path ?? '',
       projectIndexSummary: this.projectStore.summaryForChat(),
-      compactionOmittedRanges: this.compactionOmittedRangesForSession(session.id),
+      compactionOmittedRanges: this.compactionOmittedRangesForSession(
+        session.id,
+      ),
     }
   }
 
-  private compactionOmittedRangesForSession(sessionId: string): Array<{ fromSeq: number; toSeq: number; compactionId?: string | null; targetScopes?: string[] }> {
-    const cursor = new CompactionCursorStore(this.paths.stateRoot).readOrInit(sessionId)
+  private compactionOmittedRangesForSession(sessionId: string): Array<{
+    fromSeq: number
+    toSeq: number
+    compactionId?: string | null
+    targetScopes?: string[]
+  }> {
+    const cursor = new CompactionCursorStore(this.paths.stateRoot).readOrInit(
+      sessionId,
+    )
     if (cursor.compactedUntilSeq <= 0) return []
     const ledger = new CompactionLedger(this.paths.stateRoot)
-    const latest = latestAppliedCompactionRun(ledger.readIndex(), sessionId, cursor.lastCompactionId ?? null, cursor.compactedUntilSeq)
-    const range = latest?.range && Number(latest.range.toSeq) > 0
-      ? {
-        fromSeq: Math.max(1, Math.trunc(Number(latest.range.fromSeq) || 1)),
-        toSeq: Math.trunc(Number(latest.range.toSeq) || cursor.compactedUntilSeq),
-      }
-      : { fromSeq: 1, toSeq: cursor.compactedUntilSeq }
+    const latest = latestAppliedCompactionRun(
+      ledger.readIndex(),
+      sessionId,
+      cursor.lastCompactionId ?? null,
+      cursor.compactedUntilSeq,
+    )
+    const range =
+      latest?.range && Number(latest.range.toSeq) > 0
+        ? {
+            fromSeq: Math.max(1, Math.trunc(Number(latest.range.fromSeq) || 1)),
+            toSeq: Math.trunc(
+              Number(latest.range.toSeq) || cursor.compactedUntilSeq,
+            ),
+          }
+        : { fromSeq: 1, toSeq: cursor.compactedUntilSeq }
     const targetScopes = Array.isArray(latest?.output?.targetVersions)
       ? latest.output.targetVersions
-        .map((item) => scopeLabel((item as { scope?: unknown }).scope))
-        .filter((scope): scope is string => Boolean(scope))
+          .map((item) => scopeLabel((item as { scope?: unknown }).scope))
+          .filter((scope): scope is string => Boolean(scope))
       : []
-    return [{
-      ...range,
-      compactionId: latest?.compactionId ?? null,
-      targetScopes,
-    }]
+    return [
+      {
+        ...range,
+        compactionId: latest?.compactionId ?? null,
+        targetScopes,
+      },
+    ]
   }
 
   private workspaceRootForActiveSession(): string {
-    const session = this.activeSession ?? (this.activeSessionId ? this.sessionStore.get(this.activeSessionId) : null)
+    const session =
+      this.activeSession ??
+      (this.activeSessionId
+        ? this.sessionStore.get(this.activeSessionId)
+        : null)
     return this.workspaceRootForSession(session)
   }
 
-  private routeHookModel(useCase: string, role: 'main' | 'secondary', task?: string | null): ModelRoute {
+  private routeHookModel(
+    useCase: string,
+    role: 'main' | 'secondary',
+    task?: string | null,
+  ): ModelRoute {
     if (typeof this.modelRouter.routeForRole === 'function') {
       return this.modelRouter.routeForRole(useCase, role, task)
     }
@@ -924,8 +1300,11 @@ export class AgentLoop {
     })
   }
 
-  private workspaceRootForSession(session: SessionEntry | null | undefined): string {
-    if (session?.mode === 'build' && session.project_path) return resolve(session.project_path)
+  private workspaceRootForSession(
+    session: SessionEntry | null | undefined,
+  ): string {
+    if (session?.mode === 'build' && session.project_path)
+      return resolve(session.project_path)
     return this.root
   }
 
@@ -935,7 +1314,11 @@ export class AgentLoop {
     return path ? resolve(path) : this.root
   }
 
-  private controlRuntimeScopeForSession(session: SessionEntry): { sessionId: string; projectId: string | null; workspaceRoot: string } {
+  private controlRuntimeScopeForSession(session: SessionEntry): {
+    sessionId: string
+    projectId: string | null
+    workspaceRoot: string
+  } {
     return {
       sessionId: session.id,
       projectId: session.project_id ?? null,
@@ -954,7 +1337,9 @@ export class AgentLoop {
       workspaceRoot: this.workspaceRootForSession(session),
       stateRoot: this.paths.stateRoot,
       sessionRoot: this.sessionStore.sessionDir(session.id),
-      projectStateRoot: projectId ? join(this.paths.projectsRoot, projectId) : null,
+      projectStateRoot: projectId
+        ? join(this.paths.projectsRoot, projectId)
+        : null,
     }
   }
 
@@ -976,31 +1361,58 @@ export class AgentLoop {
   private async runLoopHook(
     eventName: HookEventName,
     opts: HookRuntimeRunOptions,
-    ctx: { turnId?: string | null; emit?: StreamEmitter | null; runtimeStore?: RuntimeEventStore | null; scope?: TurnScope | null },
+    ctx: {
+      turnId?: string | null
+      emit?: StreamEmitter | null
+      runtimeStore?: RuntimeEventStore | null
+      scope?: TurnScope | null
+    },
   ): Promise<HookAggregateDecision> {
-    const session = this.activeSession ?? (this.activeSessionId ? this.sessionStore.get(this.activeSessionId) : null)
-    return this.hookService.run(eventName, {
-      ...opts,
-      sessionId: opts.sessionId || session?.id || '',
-      cwd: opts.cwd || this.workspaceRootForSession(session),
-      projectRoot: session?.mode === 'build' ? session.project_path ?? null : null,
-      stateRoot: this.paths.stateRoot,
-      ...(ctx.turnId ? { turnId: ctx.turnId } : {}),
-    }, {
-      emit: async (event) => { await this.emit(event, ctx) },
-    })
+    const session =
+      this.activeSession ??
+      (this.activeSessionId
+        ? this.sessionStore.get(this.activeSessionId)
+        : null)
+    return this.hookService.run(
+      eventName,
+      {
+        ...opts,
+        sessionId: opts.sessionId || session?.id || '',
+        cwd: opts.cwd || this.workspaceRootForSession(session),
+        projectRoot:
+          session?.mode === 'build' ? (session.project_path ?? null) : null,
+        stateRoot: this.paths.stateRoot,
+        ...(ctx.turnId ? { turnId: ctx.turnId } : {}),
+      },
+      {
+        emit: async (event) => {
+          await this.emit(event, ctx)
+        },
+      },
+    )
   }
 
-  private async runBackgroundHook(eventName: HookEventName, opts: HookRuntimeRunOptions): Promise<HookAggregateDecision> {
-    return this.hookService.run(eventName, {
-      ...opts,
-      stateRoot: this.paths.stateRoot,
-    }, {
-      emit: async (event) => { await this.emit(event) },
-    })
+  private async runBackgroundHook(
+    eventName: HookEventName,
+    opts: HookRuntimeRunOptions,
+  ): Promise<HookAggregateDecision> {
+    return this.hookService.run(
+      eventName,
+      {
+        ...opts,
+        stateRoot: this.paths.stateRoot,
+      },
+      {
+        emit: async (event) => {
+          await this.emit(event)
+        },
+      },
+    )
   }
 
-  private activeMemoryBindingForSession(session: SessionEntry): ActiveMemoryBinding {
+  private activeMemoryBindingForSession(
+    session: SessionEntry,
+  ): ActiveMemoryBinding {
     const projectId = String(session.project_id ?? '').trim()
     const date = todayUtc8()
     return {
@@ -1010,19 +1422,22 @@ export class AgentLoop {
         writable: true,
         path: this.sharedMemory.userFile,
       },
-      longTerm: session.mode === 'build'
-        ? {
-          scope: { kind: 'project', projectId: projectId || '(unknown)' },
-          readable: Boolean(projectId),
-          writable: Boolean(projectId),
-          path: projectId ? join(this.paths.projectsRoot, projectId, 'AGENTS.local.md') : null,
-        }
-        : {
-          scope: { kind: 'global' },
-          readable: true,
-          writable: true,
-          path: this.sharedMemory.memoryFile,
-        },
+      longTerm:
+        session.mode === 'build'
+          ? {
+              scope: { kind: 'project', projectId: projectId || '(unknown)' },
+              readable: Boolean(projectId),
+              writable: Boolean(projectId),
+              path: projectId
+                ? join(this.paths.projectsRoot, projectId, 'AGENTS.local.md')
+                : null,
+            }
+          : {
+              scope: { kind: 'global' },
+              readable: true,
+              writable: true,
+              path: this.sharedMemory.memoryFile,
+            },
       episode: {
         scope: { kind: 'episode', date },
         readable: false,
@@ -1037,9 +1452,11 @@ export class AgentLoop {
       activeTasks: this.activeTasks,
       taskManager: this.taskManager,
       controlPending: () => Boolean(this.controlManager.payload().pending),
-      teamManagerForProject: (projectId) => this.teamManagerForProject(projectId),
+      teamManagerForProject: (projectId) =>
+        this.teamManagerForProject(projectId),
       submitAgentTurn: async (payload: SchedulerAgentTurnPayload) => {
-        if (this.schedulerAgentTurnSubmitter) return this.schedulerAgentTurnSubmitter(payload)
+        if (this.schedulerAgentTurnSubmitter)
+          return this.schedulerAgentTurnSubmitter(payload)
         return this.runUserTurn(payload.content, {
           turnId: payload.clientMessageId,
           displayContent: payload.displayContent,
@@ -1057,15 +1474,21 @@ export class AgentLoop {
 
   private createTeamManager(projectId: string | null): TeamManager {
     const cleanProjectId = String(projectId || '').trim() || null
-    const projectStateRoot = cleanProjectId ? join(this.paths.projectsRoot, cleanProjectId) : this.paths.stateRoot
-    const teamDir = cleanProjectId ? join(projectStateRoot, 'team') : this.paths.teamRoot
+    const projectStateRoot = cleanProjectId
+      ? join(this.paths.projectsRoot, cleanProjectId)
+      : this.paths.stateRoot
+    const teamDir = cleanProjectId
+      ? join(projectStateRoot, 'team')
+      : this.paths.teamRoot
     return new TeamManager({
       root: projectStateRoot,
       teamDir,
       projectId: cleanProjectId,
       parentRegistry: this.registry,
       subagentRegistry: this.teamSubagentRegistry(),
-      eventSink: async (event) => { await this.emit(event) },
+      eventSink: async (event) => {
+        await this.emit(event)
+      },
       hooks: {
         begin: async ({ agentId, agentType }) => {
           const session = this.activeSession
@@ -1073,15 +1496,24 @@ export class AgentLoop {
             agentId,
             agentType,
             sessionId: session?.id ?? '',
-            cwd: cleanProjectId ? this.workspaceRootForProject(cleanProjectId) : this.workspaceRootForActiveSession(),
-            projectRoot: session?.mode === 'build' ? session.project_path ?? null : null,
+            cwd: cleanProjectId
+              ? this.workspaceRootForProject(cleanProjectId)
+              : this.workspaceRootForActiveSession(),
+            projectRoot:
+              session?.mode === 'build' ? (session.project_path ?? null) : null,
           })
           return await this.hookService.runAgent('SubagentStart', agentId, {})
         },
-        end: (agentId) => { this.hookService.endAgentScope(agentId) },
+        end: (agentId) => {
+          this.hookService.endAgentScope(agentId)
+        },
       },
       runnerFactory: ({ member, spec, subRegistry, agentId }) => {
-        const route = this.modelRouter.route('team', member.agent_type, spec.name ?? '')
+        const route = this.modelRouter.route(
+          'team',
+          member.agent_type,
+          spec.name ?? '',
+        )
         const runner = buildRoutedRunner({
           route,
           registry: subRegistry,
@@ -1094,9 +1526,15 @@ export class AgentLoop {
           controlManager: permissionOnlyControlHost(this.controlManager),
           maxContext: route.snapshot.contextWindowTokens,
           maxTurns: 12,
-          workspaceRoot: cleanProjectId ? this.workspaceRootForProject(cleanProjectId) : this.workspaceRootForActiveSession(),
+          workspaceRoot: cleanProjectId
+            ? this.workspaceRootForProject(cleanProjectId)
+            : this.workspaceRootForActiveSession(),
           sessionId: this.activeSessionId,
-          hooks: this.scopedAgentRunnerHooks(agentId, 'TeammateIdle', member.name),
+          hooks: this.scopedAgentRunnerHooks(
+            agentId,
+            'TeammateIdle',
+            member.name,
+          ),
         })
         return {
           step: (history) => runner.stepAsync(history),
@@ -1107,7 +1545,9 @@ export class AgentLoop {
   }
 
   private teamPrompt(spec: { systemPrompt?: string }): string {
-    return String(spec.systemPrompt || '你是 Agent Team 队友。请处理收到的任务并简洁回禀。')
+    return String(
+      spec.systemPrompt || '你是 Agent Team 队友。请处理收到的任务并简洁回禀。',
+    )
   }
 
   private scopedAgentRunnerHooks(
@@ -1118,16 +1558,25 @@ export class AgentLoop {
     return {
       run: async (eventName, opts, emit) => {
         const mapped = eventName === 'Stop' ? stopEvent : eventName
-        return await this.hookService.runAgent(mapped, agentId, {
-          ...opts,
-          ...(mapped === 'TeammateIdle' ? { teammateName: teammateName ?? '' } : {}),
-        }, { emit: emit ?? null })
+        return await this.hookService.runAgent(
+          mapped,
+          agentId,
+          {
+            ...opts,
+            ...(mapped === 'TeammateIdle'
+              ? { teammateName: teammateName ?? '' }
+              : {}),
+          },
+          { emit: emit ?? null },
+        )
       },
       mayMatch: (eventName, opts) => {
         const mapped = eventName === 'Stop' ? stopEvent : eventName
         return this.hookService.mayMatchAgent(mapped, agentId, {
           ...opts,
-          ...(mapped === 'TeammateIdle' ? { teammateName: teammateName ?? '' } : {}),
+          ...(mapped === 'TeammateIdle'
+            ? { teammateName: teammateName ?? '' }
+            : {}),
         })
       },
     }
@@ -1137,34 +1586,51 @@ export class AgentLoop {
     return {
       get: (name: string) => this.subagentRegistry.get(name),
       resolveName: (name: string) => this.subagentRegistry.resolveName(name),
-      names: (includeAliases?: boolean) => this.subagentRegistry.names({ includeAliases }),
+      names: (includeAliases?: boolean) =>
+        this.subagentRegistry.names({ includeAliases }),
     }
   }
 
-
-
   private async emit(
     event: Record<string, unknown>,
-    opts: { turnId?: string | null; emit?: StreamEmitter | null; runtimeStore?: RuntimeEventStore | null; scope?: TurnScope | null } = {},
+    opts: {
+      turnId?: string | null
+      emit?: StreamEmitter | null
+      runtimeStore?: RuntimeEventStore | null
+      scope?: TurnScope | null
+    } = {},
   ): Promise<void> {
     const scoped = opts.scope ? withTurnScope(event, opts.scope) : event
     const store = opts.runtimeStore ?? this.runtimeStoreForEvent(scoped)
-    const payload = store ? store.append(scoped, { turnId: opts.turnId ?? null }) : scoped
+    const payload = store
+      ? store.append(scoped, { turnId: opts.turnId ?? null })
+      : scoped
     const sink = opts.emit ?? this.eventSink
     if (sink) await sink(payload)
   }
 
-  private runtimeStoreForEvent(event: Record<string, unknown>): RuntimeEventStore | null {
+  private runtimeStoreForEvent(
+    event: Record<string, unknown>,
+  ): RuntimeEventStore | null {
     const ownerSessionId = eventOwnerSessionId(event)
-    if (ownerSessionId && ownerSessionId !== this.activeSessionId && this.sessionStore.get(ownerSessionId)) {
-      return new RuntimeEventStore(this.sessionStore.sessionDir(ownerSessionId), { sessionDirOverride: true })
+    if (
+      ownerSessionId &&
+      ownerSessionId !== this.activeSessionId &&
+      this.sessionStore.get(ownerSessionId)
+    ) {
+      return new RuntimeEventStore(
+        this.sessionStore.sessionDir(ownerSessionId),
+        { sessionDirOverride: true },
+      )
     }
     return this.runtimeStore
   }
-
 }
 
-function withTurnScope(event: Record<string, unknown>, scope: TurnScope): Record<string, unknown> {
+function withTurnScope(
+  event: Record<string, unknown>,
+  scope: TurnScope,
+): Record<string, unknown> {
   return {
     ...event,
     session_id: event.session_id ?? scope.sessionId,
@@ -1182,7 +1648,11 @@ function eventOwnerSessionId(event: Record<string, unknown>): string {
   if (direct) return direct
   const owner = event.owner
   if (owner && typeof owner === 'object' && !Array.isArray(owner)) {
-    return String((owner as Record<string, unknown>).session_id ?? (owner as Record<string, unknown>).sessionId ?? '').trim()
+    return String(
+      (owner as Record<string, unknown>).session_id ??
+        (owner as Record<string, unknown>).sessionId ??
+        '',
+    ).trim()
   }
   return ''
 }
@@ -1213,7 +1683,10 @@ class FileSkillsLoader implements SkillsLoaderLike, ToolSkillsLoader {
   }
 
   loadSkillsForContext(names: string[]): string {
-    return names.map((name) => this.getContent(name)).filter((item): item is string => Boolean(item)).join('\n\n---\n\n')
+    return names
+      .map((name) => this.getContent(name))
+      .filter((item): item is string => Boolean(item))
+      .join('\n\n---\n\n')
   }
 
   buildSkillsSummary(): string {
@@ -1221,11 +1694,17 @@ class FileSkillsLoader implements SkillsLoaderLike, ToolSkillsLoader {
   }
 
   summary(): string {
-    return this.skillNames().map((name) => {
-      const content = this.getContent(name) ?? ''
-      const first = content.split('\n').map((line) => line.trim()).find((line) => line && !line.startsWith('#')) ?? ''
-      return `- ${name}: ${first.slice(0, 180)}`
-    }).join('\n')
+    return this.skillNames()
+      .map((name) => {
+        const content = this.getContent(name) ?? ''
+        const first =
+          content
+            .split('\n')
+            .map((line) => line.trim())
+            .find((line) => line && !line.startsWith('#')) ?? ''
+        return `- ${name}: ${first.slice(0, 180)}`
+      })
+      .join('\n')
   }
 
   getContent(name: string): string | null {
@@ -1236,14 +1715,17 @@ class FileSkillsLoader implements SkillsLoaderLike, ToolSkillsLoader {
         join(dir, safe, 'SKILL.md'),
         join(dir, `${safe}.md`),
       ]) {
-        if (existsSync(path) && statSync(path).isFile()) return readFileSync(path, 'utf8')
+        if (existsSync(path) && statSync(path).isFile())
+          return readFileSync(path, 'utf8')
       }
     }
     return null
   }
 
   private dirsInPrecedenceOrder(): string[] {
-    return [this.projectDir, this.userDir, this.builtinDir].filter((dir): dir is string => Boolean(dir))
+    return [this.projectDir, this.userDir, this.builtinDir].filter(
+      (dir): dir is string => Boolean(dir),
+    )
   }
 
   private skillNames(): string[] {
@@ -1253,8 +1735,10 @@ class FileSkillsLoader implements SkillsLoaderLike, ToolSkillsLoader {
       for (const item of readdirSync(dir)) {
         if (item.startsWith('.')) continue
         const path = join(dir, item)
-        if (statSync(path).isDirectory() && existsSync(join(path, 'SKILL.md'))) names.add(item)
-        else if (statSync(path).isFile() && item.endsWith('.md')) names.add(basename(item, '.md'))
+        if (statSync(path).isDirectory() && existsSync(join(path, 'SKILL.md')))
+          names.add(item)
+        else if (statSync(path).isFile() && item.endsWith('.md'))
+          names.add(basename(item, '.md'))
       }
     }
     return [...names].sort()
@@ -1266,8 +1750,15 @@ function existingPath(path: string): string | null {
 }
 
 function isBenignTurnInterruption(error: unknown): boolean {
-  const name = error && typeof error === 'object' && 'name' in error ? String((error as { name?: unknown }).name || '') : ''
-  return name === 'TurnPaused' || name === 'CancelledTaskError' || name === 'TurnBusyError'
+  const name =
+    error && typeof error === 'object' && 'name' in error
+      ? String((error as { name?: unknown }).name || '')
+      : ''
+  return (
+    name === 'TurnPaused' ||
+    name === 'CancelledTaskError' ||
+    name === 'TurnBusyError'
+  )
 }
 
 function hookErrorKind(error: unknown): string {
@@ -1275,26 +1766,36 @@ function hookErrorKind(error: unknown): string {
   return 'unknown_error'
 }
 
-function safeRuntimeError(error: unknown): { code: string; message: string; action?: string } {
+function safeRuntimeError(error: unknown): {
+  code: string
+  message: string
+  action?: string
+} {
   const safe = safeErrorFromToSafe(error)
   if (safe) return safe
   return { code: 'internal_error', message: '发生内部错误，请查看日志。' }
 }
 
-function safeErrorFromToSafe(error: unknown): { code: string; message: string; action?: string } | null {
+function safeErrorFromToSafe(
+  error: unknown,
+): { code: string; message: string; action?: string } | null {
   if (!error || typeof error !== 'object') return null
   const toSafe = (error as { toSafe?: unknown }).toSafe
   if (typeof toSafe !== 'function') return null
   const payload = toSafe.call(error)
-  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) return null
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload))
+    return null
   const record = payload as Record<string, unknown>
   const code = typeof record.code === 'string' && record.code ? record.code : ''
-  const message = typeof record.message === 'string' && record.message ? record.message : ''
+  const message =
+    typeof record.message === 'string' && record.message ? record.message : ''
   if (!code || !message) return null
   return {
     code,
     message,
-    ...(typeof record.action === 'string' && record.action ? { action: record.action } : {}),
+    ...(typeof record.action === 'string' && record.action
+      ? { action: record.action }
+      : {}),
   }
 }
 
@@ -1303,21 +1804,30 @@ function scopeLabel(scope: unknown): string | null {
   const record = scope as Record<string, unknown>
   const kind = String(record.kind || '')
   if (!kind) return null
-  if (kind === 'project' && record.projectId) return `project:${String(record.projectId)}`
+  if (kind === 'project' && record.projectId)
+    return `project:${String(record.projectId)}`
   if (kind === 'episode' && record.date) return `episode:${String(record.date)}`
   return kind
 }
 
-function cloneTodoItems(todos: Array<Record<string, unknown>>): Array<Record<string, unknown>> {
+function cloneTodoItems(
+  todos: Array<Record<string, unknown>>,
+): Array<Record<string, unknown>> {
   return todos.map((todo) => ({ ...todo }))
 }
 
-function activeSessionHistoryAfterSeq(store: SessionMemoryStore, seq: number): Msg[] {
+function activeSessionHistoryAfterSeq(
+  store: SessionMemoryStore,
+  seq: number,
+): Msg[] {
   const cutoff = Math.trunc(Number(seq) || 0)
   const activeRows = store.conversation.historyLog.loadActiveRows()
   const hiddenTurns = new Set<string>()
   for (const row of activeRows) {
-    if (typeof row.turn_id === 'string' && (row.hidden === true || row.schedulerHidden === true)) {
+    if (
+      typeof row.turn_id === 'string' &&
+      (row.hidden === true || row.schedulerHidden === true)
+    ) {
       hiddenTurns.add(row.turn_id)
     }
   }
@@ -1328,10 +1838,12 @@ function activeSessionHistoryAfterSeq(store: SessionMemoryStore, seq: number): M
     if (row.type === 'model_call' || row.type === 'compact_event') continue
     if (hiddenTurns.has(String(row.turn_id ?? ''))) continue
     const item: Msg = { role: row.role, content: row.content }
-    if (Number.isFinite(Number(row.seq)) && Number(row.seq) > 0) item.seq = Math.trunc(Number(row.seq))
+    if (Number.isFinite(Number(row.seq)) && Number(row.seq) > 0)
+      item.seq = Math.trunc(Number(row.seq))
     if (typeof row.turn_id === 'string') item.turn_id = row.turn_id
     if (Array.isArray(row.attachments)) item.attachments = row.attachments
-    if (typeof row.displayContent === 'string') item.displayContent = row.displayContent
+    if (typeof row.displayContent === 'string')
+      item.displayContent = row.displayContent
     out.push(item)
   }
   return out

@@ -3,7 +3,8 @@ import { buildModelSetupDialogContent } from './modelSetupDialogModel'
 
 describe('model setup dialog content', () => {
   it('presents unavailable model setup as an onboarding modal instead of an error prompt', () => {
-    const content = buildModelSetupDialogContent('还没有可用模型，请先配置模型。')
+    const content =
+      buildModelSetupDialogContent('还没有可用模型，请先配置模型。')
 
     expect(content.brandAlt).toBe('emperoragent')
     expect(content.title).toBe('把任务交给本地 Agent。')

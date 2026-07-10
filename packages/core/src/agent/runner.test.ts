@@ -12,7 +12,13 @@ import { tmpdir } from 'node:os'
 import { AgentRunner, type MemoryStoreLike } from './runner'
 import { ContextPipeline } from '../context/pipeline'
 import { TurnPhase, TurnState } from './turn-state'
-import { LLMProvider, type ChatArgs, type ChatStreamArgs, type LLMResponse, type ToolCallRequest } from '../providers/base'
+import {
+  LLMProvider,
+  type ChatArgs,
+  type ChatStreamArgs,
+  type LLMResponse,
+  type ToolCallRequest,
+} from '../providers/base'
 import { Tool } from '../tools/base'
 import { okResult, type ToolResult } from '../tools/base'
 import { toolParamsSchema, S } from '../tools/schema'
@@ -24,7 +30,9 @@ import { MemoryStore } from '../memory/store'
 
 type Msg = Record<string, unknown>
 
-function makeResponse(p: Partial<LLMResponse> & { content: string | null }): LLMResponse {
+function makeResponse(
+  p: Partial<LLMResponse> & { content: string | null },
+): LLMResponse {
   return {
     content: p.content,
     toolCalls: p.toolCalls ?? [],
@@ -35,22 +43,37 @@ function makeResponse(p: Partial<LLMResponse> & { content: string | null }): LLM
   }
 }
 
-function toolCall(id: string, name: string, args: Record<string, unknown>): ToolCallRequest {
+function toolCall(
+  id: string,
+  name: string,
+  args: Record<string, unknown>,
+): ToolCallRequest {
   return { id, name, arguments: args }
 }
 
-function memoryDouble(): MemoryStoreLike & { cleared: boolean; appended: Array<{ role: string; content: string }> } {
+function memoryDouble(): MemoryStoreLike & {
+  cleared: boolean
+  appended: Array<{ role: string; content: string }>
+} {
   return {
     cleared: false,
     appended: [],
     writeCheckpoint: () => undefined,
-    clearCheckpoint() { this.cleared = true },
+    clearCheckpoint() {
+      this.cleared = true
+    },
     readCheckpoint: () => null,
-    appendHistory(role: string, content: string) { this.appended.push({ role, content }) },
+    appendHistory(role: string, content: string) {
+      this.appended.push({ role, content })
+    },
   }
 }
 
-async function withEnv(name: string, value: string | undefined, fn: () => Promise<void>): Promise<void> {
+async function withEnv(
+  name: string,
+  value: string | undefined,
+  fn: () => Promise<void>,
+): Promise<void> {
   const previous = process.env[name]
   if (value === undefined) delete process.env[name]
   else process.env[name] = value
@@ -72,8 +95,14 @@ class FakeProvider extends LLMProvider {
   }
   async chat(args: ChatArgs): Promise<LLMResponse> {
     this.seenMessages.push(args.messages)
-    this.seenTools.push(((args.tools as Array<Record<string, unknown>>) ?? []).map((t) => String(t.name)))
-    return this.responses.length ? this.responses.shift()! : makeResponse({ content: 'done' })
+    this.seenTools.push(
+      ((args.tools as Array<Record<string, unknown>>) ?? []).map((t) =>
+        String(t.name),
+      ),
+    )
+    return this.responses.length
+      ? this.responses.shift()!
+      : makeResponse({ content: 'done' })
   }
 }
 
@@ -88,7 +117,9 @@ class ContextOverflowOnceProvider extends LLMProvider {
     this.calls++
     this.seenMessages.push(args.messages)
     if (this.mode === 'always' || this.calls === 1) {
-      throw Object.assign(new Error('maximum context length exceeded'), { code: 'context_length_exceeded' })
+      throw Object.assign(new Error('maximum context length exceeded'), {
+        code: 'context_length_exceeded',
+      })
     }
     return makeResponse({ content: 'done', usage: { input: 80, output: 4 } })
   }
@@ -97,7 +128,10 @@ class ContextOverflowOnceProvider extends LLMProvider {
 class FlakyProvider extends LLMProvider {
   seenMessages: ChatArgs['messages'][] = []
   calls = 0
-  constructor(private readonly failuresBeforeSuccess: number, private readonly errorFactory: () => Error) {
+  constructor(
+    private readonly failuresBeforeSuccess: number,
+    private readonly errorFactory: () => Error,
+  ) {
     super({ defaultModel: 'fake' })
   }
 
@@ -121,8 +155,18 @@ class StreamingToolDeltaProvider extends LLMProvider {
   override async chatStream(args: ChatStreamArgs): Promise<LLMResponse> {
     const partial = '{"title":"迁移计划","summary":"迁移 TS"}'
     const full = JSON.stringify(streamingPlanArgs())
-    await args.onToolCallDelta?.({ index: 0, id: 'call_plan', name: 'propose_plan', argumentsText: partial })
-    await args.onToolCallDelta?.({ index: 0, id: 'call_plan', name: 'propose_plan', argumentsText: full })
+    await args.onToolCallDelta?.({
+      index: 0,
+      id: 'call_plan',
+      name: 'propose_plan',
+      argumentsText: partial,
+    })
+    await args.onToolCallDelta?.({
+      index: 0,
+      id: 'call_plan',
+      name: 'propose_plan',
+      argumentsText: full,
+    })
     return makeResponse({
       content: '',
       toolCalls: [toolCall('call_plan', 'propose_plan', streamingPlanArgs())],
@@ -142,7 +186,8 @@ function streamingPlanArgs(): Record<string, unknown> {
       {
         id: 'step_1',
         title: '更新 Ask Plan UI',
-        description: '调整 renderer 时间线与底部控制面板，保持 plan 卡片单一来源。',
+        description:
+          '调整 renderer 时间线与底部控制面板，保持 plan 卡片单一来源。',
         files: ['desktop/src/renderer/src/views/ChatView.vue'],
         commands: ['npm --prefix desktop run test'],
         acceptance: ['底部只显示决策面板，时间线保留单张计划卡'],
@@ -156,7 +201,9 @@ class EchoTool extends Tool {
   override name = 'echo'
   override description = 'Echo a value.'
   override parameters = toolParamsSchema({ value: S('value') }, ['value'])
-  execute(args: Record<string, unknown>): string { return String(args.value) }
+  execute(args: Record<string, unknown>): string {
+    return String(args.value)
+  }
 }
 
 class SafeEchoTool extends Tool {
@@ -165,7 +212,9 @@ class SafeEchoTool extends Tool {
   override parameters = toolParamsSchema({ value: S('value') }, ['value'])
   override readOnly = true
   override concurrencySafe = true
-  execute(args: Record<string, unknown>): string { return String(args.value) }
+  execute(args: Record<string, unknown>): string {
+    return String(args.value)
+  }
 }
 
 class LatchEchoTool extends Tool {
@@ -174,22 +223,36 @@ class LatchEchoTool extends Tool {
   override parameters = toolParamsSchema({ value: S('value') }, ['value'])
   override readOnly = true
   override concurrencySafe = true
-  constructor(private readonly onStart: () => void) { super() }
-  execute(args: Record<string, unknown>): string { this.onStart(); return String(args.value) }
+  constructor(private readonly onStart: () => void) {
+    super()
+  }
+  execute(args: Record<string, unknown>): string {
+    this.onStart()
+    return String(args.value)
+  }
 }
 
 class EarlyToolProvider extends LLMProvider {
   private streamCalls = 0
-  constructor(private readonly toolCalls: ToolCallRequest[], private readonly gate: Promise<void>) {
+  constructor(
+    private readonly toolCalls: ToolCallRequest[],
+    private readonly gate: Promise<void>,
+  ) {
     super({ defaultModel: 'fake' })
   }
-  async chat(): Promise<LLMResponse> { return makeResponse({ content: 'done' }) }
+  async chat(): Promise<LLMResponse> {
+    return makeResponse({ content: 'done' })
+  }
   override async chatStream(args: ChatStreamArgs): Promise<LLMResponse> {
     this.streamCalls += 1
     if (this.streamCalls > 1) return makeResponse({ content: 'done' })
     for (const call of this.toolCalls) await args.onToolCallComplete?.(call)
     await this.gate
-    return makeResponse({ content: '', toolCalls: this.toolCalls, finishReason: 'tool_calls' })
+    return makeResponse({
+      content: '',
+      toolCalls: this.toolCalls,
+      finishReason: 'tool_calls',
+    })
   }
 }
 
@@ -198,7 +261,9 @@ class BudgetedEchoTool extends Tool {
   override description = 'Echo with a small context budget.'
   override parameters = toolParamsSchema({}, [])
   override maxResultChars = 2000
-  execute(): string { return '' }
+  execute(): string {
+    return ''
+  }
 }
 
 class StructuredEchoTool extends Tool {
@@ -206,14 +271,26 @@ class StructuredEchoTool extends Tool {
   override description = 'Structured echo.'
   override parameters = toolParamsSchema({ value: S('value') }, ['value'])
   override readOnly = true
-  execute(): string { return '' }
-  override mapResult(_raw: string, ctx: { arguments: Record<string, unknown> }): ToolResult {
+  execute(): string {
+    return ''
+  }
+  override mapResult(
+    _raw: string,
+    ctx: { arguments: Record<string, unknown> },
+  ): ToolResult {
     const value = String(ctx.arguments.value)
     return {
       modelContent: `model:${value}`,
       displaySummary: `summary:${value}`,
       rawContent: `model:${value}`,
-      artifacts: [{ path: `memory/tool-results/${value}.txt`, kind: 'text', bytes: 9, metadata: {} }],
+      artifacts: [
+        {
+          path: `memory/tool-results/${value}.txt`,
+          kind: 'text',
+          bytes: 9,
+          metadata: {},
+        },
+      ],
       metadata: { source: 'runner-test' },
       isError: false,
     }
@@ -225,26 +302,30 @@ class MediaArtifactTool extends Tool {
   override description = 'Return an image artifact.'
   override parameters = toolParamsSchema({}, [])
   override readOnly = true
-  execute(): string { return '' }
+  execute(): string {
+    return ''
+  }
   override mapResult(): ToolResult {
     return {
       modelContent: 'image imported',
       displaySummary: 'image imported',
       rawContent: 'image imported',
-      artifacts: [{
-        path: '/Users/me/Desktop/screen.png',
-        kind: 'media',
-        bytes: 512,
-        media: {
-          id: 'media_2026-06_abcdef12',
-          kind: 'image',
-          mime: 'image/png',
-          name: 'screen.png',
-          relPath: 'memory/media/2026-06/abcdef12-screen.png',
-          originalPath: '/Users/me/Desktop/screen.png',
+      artifacts: [
+        {
+          path: '/Users/me/Desktop/screen.png',
+          kind: 'media',
+          bytes: 512,
+          media: {
+            id: 'media_2026-06_abcdef12',
+            kind: 'image',
+            mime: 'image/png',
+            name: 'screen.png',
+            relPath: 'memory/media/2026-06/abcdef12-screen.png',
+            originalPath: '/Users/me/Desktop/screen.png',
+          },
+          metadata: {},
         },
-        metadata: {},
-      }],
+      ],
       metadata: {},
       isError: false,
     }
@@ -256,7 +337,9 @@ class ErrorResultTool extends Tool {
   override description = 'Return a structured tool error.'
   override parameters = toolParamsSchema({}, [])
   override readOnly = true
-  execute(): string { return 'Error: blocked by policy' }
+  execute(): string {
+    return 'Error: blocked by policy'
+  }
   override mapResult(raw: string): ToolResult {
     return { ...okResult(raw), isError: true }
   }
@@ -268,7 +351,9 @@ describe('TurnState (test_runner_state.py)', () => {
   it('transitions to runtime events', () => {
     const state = new TurnState({ turnId: 'turn_1' })
     state.startIteration()
-    const event = state.transition(TurnPhase.MODEL_REQUEST, { detail: { history_length: 2 } })
+    const event = state.transition(TurnPhase.MODEL_REQUEST, {
+      detail: { history_length: 2 },
+    })
     expect(event.toRuntimeEvent()).toEqual({
       event: 'turn_phase',
       phase: 'model_request',
@@ -284,12 +369,28 @@ describe('TurnState (test_runner_state.py)', () => {
 
 describe('AgentRunner turn phases (test_runner_state.py)', () => {
   it('emits turn_phase sequence for final reply', async () => {
-    const runner = new AgentRunner({ provider: new FakeProvider([makeResponse({ content: 'done' })]), model: 'fake', registry: new ToolRegistry(), systemPrompt: 'system' })
+    const runner = new AgentRunner({
+      provider: new FakeProvider([makeResponse({ content: 'done' })]),
+      model: 'fake',
+      registry: new ToolRegistry(),
+      systemPrompt: 'system',
+    })
     const emitted: Msg[] = []
-    const reply = await runner.stepAsync([{ role: 'user', content: 'hi' }], { emit: (e) => { emitted.push(e) }, turnId: 'turn_1' })
+    const reply = await runner.stepAsync([{ role: 'user', content: 'hi' }], {
+      emit: (e) => {
+        emitted.push(e)
+      },
+      turnId: 'turn_1',
+    })
     expect(reply).toBe('done')
     const phases = emitted.filter((e) => e.event === 'turn_phase')
-    expect(phases.map((e) => e.phase)).toEqual(['started', 'model_request', 'model_response', 'compact_check', 'completed'])
+    expect(phases.map((e) => e.phase)).toEqual([
+      'started',
+      'model_request',
+      'model_response',
+      'compact_check',
+      'completed',
+    ])
     expect(phases.map((e) => e.sequence)).toEqual([1, 2, 3, 4, 5])
     expect(phases.every((e) => e.turn_id === 'turn_1')).toBe(true)
   })
@@ -342,15 +443,27 @@ describe('AgentRunner turn phases (test_runner_state.py)', () => {
         },
         compactor: {
           compactAfterTurn: async ({ history: projectedHistory }) => {
-            sawCommittedAssistant = memory.cleared && memory.appended.some((item) => item.role === 'assistant' && item.content === 'done')
-            projectedHistory.splice(0, projectedHistory.length, { role: 'system', content: 'mutated copy only' })
+            sawCommittedAssistant =
+              memory.cleared &&
+              memory.appended.some(
+                (item) => item.role === 'assistant' && item.content === 'done',
+              )
+            projectedHistory.splice(0, projectedHistory.length, {
+              role: 'system',
+              content: 'mutated copy only',
+            })
             return { status: 'compacted', message: 'ok' }
           },
         },
         maxContext: 100,
       })
 
-      const reply = await runner.stepAsync(history, { emit: (event) => { emitted.push(event) }, turnId: 'turn_compact_success' })
+      const reply = await runner.stepAsync(history, {
+        emit: (event) => {
+          emitted.push(event)
+        },
+        turnId: 'turn_compact_success',
+      })
       expect(reply).toBe('done')
     })
 
@@ -359,10 +472,15 @@ describe('AgentRunner turn phases (test_runner_state.py)', () => {
       { role: 'user', content: 'hi' },
       { role: 'assistant', content: 'done', turn_id: 'turn_compact_success' },
     ])
-    expect(emitted).toEqual(expect.arrayContaining([
-      expect.objectContaining({ event: 'turn_phase', phase: 'compact_check' }),
-      expect.objectContaining({ event: 'turn_phase', phase: 'completed' }),
-    ]))
+    expect(emitted).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          event: 'turn_phase',
+          phase: 'compact_check',
+        }),
+        expect.objectContaining({ event: 'turn_phase', phase: 'completed' }),
+      ]),
+    )
   })
 
   it('records compaction failure as degraded runtime state without failing a completed reply', async () => {
@@ -388,19 +506,26 @@ describe('AgentRunner turn phases (test_runner_state.py)', () => {
         maxContext: 100,
       })
 
-      const reply = await runner.stepAsync([{ role: 'user', content: 'hi' }], { emit: (event) => { emitted.push(event) }, turnId: 'turn_compact_fail' })
+      const reply = await runner.stepAsync([{ role: 'user', content: 'hi' }], {
+        emit: (event) => {
+          emitted.push(event)
+        },
+        turnId: 'turn_compact_fail',
+      })
       expect(reply).toBe('done')
     })
 
     expect(memory.cleared).toBe(true)
-    expect(emitted).toEqual(expect.arrayContaining([
-      expect.objectContaining({
-        event: 'record_degraded',
-        kind: 'memory_compaction',
-        taskId: 'turn_compact_fail',
-      }),
-      expect.objectContaining({ event: 'turn_phase', phase: 'completed' }),
-    ]))
+    expect(emitted).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          event: 'record_degraded',
+          kind: 'memory_compaction',
+          taskId: 'turn_compact_fail',
+        }),
+        expect.objectContaining({ event: 'turn_phase', phase: 'completed' }),
+      ]),
+    )
   })
 
   it('stops retrying automatic compaction after repeated failures', async () => {
@@ -432,21 +557,44 @@ describe('AgentRunner turn phases (test_runner_state.py)', () => {
         maxContext: 100,
       })
 
-      await runner.stepAsync([{ role: 'user', content: '1' }], { emit: (event) => { emitted.push(event) }, turnId: 'turn_1' })
-      await runner.stepAsync([{ role: 'user', content: '2' }], { emit: (event) => { emitted.push(event) }, turnId: 'turn_2' })
-      await runner.stepAsync([{ role: 'user', content: '3' }], { emit: (event) => { emitted.push(event) }, turnId: 'turn_3' })
-      await runner.stepAsync([{ role: 'user', content: '4' }], { emit: (event) => { emitted.push(event) }, turnId: 'turn_4' })
+      await runner.stepAsync([{ role: 'user', content: '1' }], {
+        emit: (event) => {
+          emitted.push(event)
+        },
+        turnId: 'turn_1',
+      })
+      await runner.stepAsync([{ role: 'user', content: '2' }], {
+        emit: (event) => {
+          emitted.push(event)
+        },
+        turnId: 'turn_2',
+      })
+      await runner.stepAsync([{ role: 'user', content: '3' }], {
+        emit: (event) => {
+          emitted.push(event)
+        },
+        turnId: 'turn_3',
+      })
+      await runner.stepAsync([{ role: 'user', content: '4' }], {
+        emit: (event) => {
+          emitted.push(event)
+        },
+        turnId: 'turn_4',
+      })
     })
 
     expect(attempts).toBe(3)
-    expect(emitted).toEqual(expect.arrayContaining([
-      expect.objectContaining({
-        event: 'record_degraded',
-        kind: 'memory_compaction',
-        reason: 'automatic memory compaction disabled after consecutive failures',
-        taskId: 'turn_4',
-      }),
-    ]))
+    expect(emitted).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          event: 'record_degraded',
+          kind: 'memory_compaction',
+          reason:
+            'automatic memory compaction disabled after consecutive failures',
+          taskId: 'turn_4',
+        }),
+      ]),
+    )
   })
 
   it('reserves output headroom when checking compaction threshold', async () => {
@@ -504,7 +652,9 @@ describe('AgentRunner turn phases (test_runner_state.py)', () => {
 
   it('emits context usage with the active route context window', async () => {
     const runner = new AgentRunner({
-      provider: new FakeProvider([makeResponse({ content: 'done', usage: { input: 120, output: 3 } })]),
+      provider: new FakeProvider([
+        makeResponse({ content: 'done', usage: { input: 120, output: 3 } }),
+      ]),
       model: 'fake',
       registry: new ToolRegistry(),
       systemPrompt: 'system',
@@ -512,9 +662,15 @@ describe('AgentRunner turn phases (test_runner_state.py)', () => {
     })
     const emitted: Msg[] = []
 
-    await runner.stepAsync([{ role: 'user', content: 'hi' }], { emit: (event) => { emitted.push(event) } })
+    await runner.stepAsync([{ role: 'user', content: 'hi' }], {
+      emit: (event) => {
+        emitted.push(event)
+      },
+    })
 
-    expect(emitted.find((event) => event.event === 'context_usage')).toMatchObject({
+    expect(
+      emitted.find((event) => event.event === 'context_usage'),
+    ).toMatchObject({
       used: 120,
       max: 1_000,
       threshold: 700,
@@ -523,31 +679,63 @@ describe('AgentRunner turn phases (test_runner_state.py)', () => {
 
   it('recovers once from provider context overflow with emergency projection shrink', async () => {
     const provider = new ContextOverflowOnceProvider('once')
-    const runner = new AgentRunner({ provider, model: 'fake', registry: new ToolRegistry(), systemPrompt: 'system' })
+    const runner = new AgentRunner({
+      provider,
+      model: 'fake',
+      registry: new ToolRegistry(),
+      systemPrompt: 'system',
+    })
     const emitted: Msg[] = []
     const history: Msg[] = [{ role: 'user', content: 'overflow '.repeat(3000) }]
 
-    const reply = await runner.stepAsync(history, { emit: (event) => { emitted.push(event) } })
+    const reply = await runner.stepAsync(history, {
+      emit: (event) => {
+        emitted.push(event)
+      },
+    })
 
-    const firstUser = provider.seenMessages[0]!.find((message) => message.role === 'user')!
-    const secondUser = provider.seenMessages[1]!.find((message) => message.role === 'user')!
-    const projectionReports = emitted.filter((event) => event.event === 'context_projection').map((event) => event.report as Record<string, unknown>)
+    const firstUser = provider.seenMessages[0]!.find(
+      (message) => message.role === 'user',
+    )!
+    const secondUser = provider.seenMessages[1]!.find(
+      (message) => message.role === 'user',
+    )!
+    const projectionReports = emitted
+      .filter((event) => event.event === 'context_projection')
+      .map((event) => event.report as Record<string, unknown>)
 
     expect(reply).toBe('done')
     expect(provider.calls).toBe(2)
     expect(String(firstUser.content).length).toBeGreaterThan(20_000)
     expect(String(secondUser.content)).toContain('[local_microcompact]')
-    expect(String(secondUser.content).length).toBeLessThan(String(firstUser.content).length)
-    expect(projectionReports[1]).toMatchObject({ context_overflow_retry: 1, emergency_context_shrink: 1 })
-    expect(emitted).toEqual(expect.arrayContaining([
-      expect.objectContaining({ event: 'record_degraded', kind: 'context_overflow' }),
-    ]))
-    expect(history.filter((message) => message.role === 'assistant')).toHaveLength(1)
+    expect(String(secondUser.content).length).toBeLessThan(
+      String(firstUser.content).length,
+    )
+    expect(projectionReports[1]).toMatchObject({
+      context_overflow_retry: 1,
+      emergency_context_shrink: 1,
+    })
+    expect(emitted).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          event: 'record_degraded',
+          kind: 'context_overflow',
+        }),
+      ]),
+    )
+    expect(
+      history.filter((message) => message.role === 'assistant'),
+    ).toHaveLength(1)
   })
 
   it('returns a domain context_overflow error after the emergency retry also overflows', async () => {
     const provider = new ContextOverflowOnceProvider('always')
-    const runner = new AgentRunner({ provider, model: 'fake', registry: new ToolRegistry(), systemPrompt: 'system' })
+    const runner = new AgentRunner({
+      provider,
+      model: 'fake',
+      registry: new ToolRegistry(),
+      systemPrompt: 'system',
+    })
     const history: Msg[] = [{ role: 'user', content: 'overflow '.repeat(3000) }]
 
     await expect(runner.stepAsync(history)).rejects.toMatchObject({
@@ -555,27 +743,56 @@ describe('AgentRunner turn phases (test_runner_state.py)', () => {
     })
 
     expect(provider.calls).toBe(2)
-    expect(history.filter((message) => message.role === 'assistant')).toHaveLength(0)
+    expect(
+      history.filter((message) => message.role === 'assistant'),
+    ).toHaveLength(0)
   })
 
   it('retries retryable provider errors before succeeding', async () => {
-    const provider = new FlakyProvider(2, () => Object.assign(new Error('temporarily unavailable'), { status: 503 }))
-    const runner = new AgentRunner({ provider, model: 'fake', registry: new ToolRegistry(), systemPrompt: 'system' })
+    const provider = new FlakyProvider(2, () =>
+      Object.assign(new Error('temporarily unavailable'), { status: 503 }),
+    )
+    const runner = new AgentRunner({
+      provider,
+      model: 'fake',
+      registry: new ToolRegistry(),
+      systemPrompt: 'system',
+    })
     const emitted: Msg[] = []
 
-    const reply = await runner.stepAsync([{ role: 'user', content: 'hi' }], { emit: (event) => { emitted.push(event) } })
+    const reply = await runner.stepAsync([{ role: 'user', content: 'hi' }], {
+      emit: (event) => {
+        emitted.push(event)
+      },
+    })
 
     expect(reply).toBe('done')
     expect(provider.calls).toBe(3)
-    expect(emitted.filter((event) => event.event === 'model_provider_retry')).toHaveLength(2)
-    expect(emitted.find((event) => event.event === 'context_usage')).toMatchObject({ provider_retry_count: 2 })
+    expect(
+      emitted.filter((event) => event.event === 'model_provider_retry'),
+    ).toHaveLength(2)
+    expect(
+      emitted.find((event) => event.event === 'context_usage'),
+    ).toMatchObject({ provider_retry_count: 2 })
   })
 
   it('does not retry non-retryable auth provider errors', async () => {
-    const provider = new FlakyProvider(1, () => Object.assign(new Error('invalid api key'), { status: 401, code: 'invalid_api_key' }))
-    const runner = new AgentRunner({ provider, model: 'fake', registry: new ToolRegistry(), systemPrompt: 'system' })
+    const provider = new FlakyProvider(1, () =>
+      Object.assign(new Error('invalid api key'), {
+        status: 401,
+        code: 'invalid_api_key',
+      }),
+    )
+    const runner = new AgentRunner({
+      provider,
+      model: 'fake',
+      registry: new ToolRegistry(),
+      systemPrompt: 'system',
+    })
 
-    await expect(runner.stepAsync([{ role: 'user', content: 'hi' }])).rejects.toMatchObject({
+    await expect(
+      runner.stepAsync([{ role: 'user', content: 'hi' }]),
+    ).rejects.toMatchObject({
       code: 'model_provider_auth',
       action: 'open_model_settings',
     })
@@ -584,22 +801,44 @@ describe('AgentRunner turn phases (test_runner_state.py)', () => {
   })
 
   it('returns a safe retry-later provider error after retryable failures are exhausted', async () => {
-    const provider = new FlakyProvider(3, () => Object.assign(new Error('temporarily unavailable'), { status: 503 }))
-    const runner = new AgentRunner({ provider, model: 'fake', registry: new ToolRegistry(), systemPrompt: 'system' })
+    const provider = new FlakyProvider(3, () =>
+      Object.assign(new Error('temporarily unavailable'), { status: 503 }),
+    )
+    const runner = new AgentRunner({
+      provider,
+      model: 'fake',
+      registry: new ToolRegistry(),
+      systemPrompt: 'system',
+    })
     const emitted: Msg[] = []
 
-    await expect(runner.stepAsync([{ role: 'user', content: 'hi' }], { emit: (event) => { emitted.push(event) } })).rejects.toMatchObject({
+    await expect(
+      runner.stepAsync([{ role: 'user', content: 'hi' }], {
+        emit: (event) => {
+          emitted.push(event)
+        },
+      }),
+    ).rejects.toMatchObject({
       code: 'model_provider_transient',
       action: 'retry_later',
     })
 
     expect(provider.calls).toBe(3)
-    expect(emitted.filter((event) => event.event === 'model_provider_retry')).toHaveLength(2)
+    expect(
+      emitted.filter((event) => event.event === 'model_provider_retry'),
+    ).toHaveLength(2)
   })
 
   it('degrades to a configured fallback provider without mutating the main route', async () => {
-    const primary = new FlakyProvider(3, () => Object.assign(new Error('temporarily unavailable'), { status: 503 }))
-    const fallback = new FakeProvider([makeResponse({ content: 'fallback done', usage: { input: 70, output: 5 } })])
+    const primary = new FlakyProvider(3, () =>
+      Object.assign(new Error('temporarily unavailable'), { status: 503 }),
+    )
+    const fallback = new FakeProvider([
+      makeResponse({
+        content: 'fallback done',
+        usage: { input: 70, output: 5 },
+      }),
+    ])
     const runner = new AgentRunner({
       provider: primary,
       model: 'main-model',
@@ -612,19 +851,27 @@ describe('AgentRunner turn phases (test_runner_state.py)', () => {
     })
     const emitted: Msg[] = []
 
-    const reply = await runner.stepAsync([{ role: 'user', content: 'hi' }], { emit: (event) => { emitted.push(event) } })
+    const reply = await runner.stepAsync([{ role: 'user', content: 'hi' }], {
+      emit: (event) => {
+        emitted.push(event)
+      },
+    })
 
     expect(reply).toBe('fallback done')
     expect(primary.calls).toBe(3)
     expect(fallback.seenMessages).toHaveLength(1)
     expect(runner.model).toBe('main-model')
     expect(runner.provider).toBe(primary)
-    expect(emitted.find((event) => event.event === 'model_route_fallback')).toMatchObject({
+    expect(
+      emitted.find((event) => event.event === 'model_route_fallback'),
+    ).toMatchObject({
       from_model: 'main-model',
       to_model: 'fallback-model',
       usage_type: 'scheduler',
     })
-    expect(emitted.find((event) => event.event === 'context_usage')).toMatchObject({
+    expect(
+      emitted.find((event) => event.event === 'context_usage'),
+    ).toMatchObject({
       model: 'fallback-model',
       provider_retry_count: 2,
       used_fallback: true,
@@ -645,33 +892,71 @@ describe('AgentRunner turn phases (test_runner_state.py)', () => {
       systemPrompt: 'secret bootstrap',
       memoryStore: memory,
       promptSections: [
-        { name: 'bootstrap', content: 'secret bootstrap', source: 'templates/SOUL.md', priority: 100, budgetChars: null, version: 'test' },
+        {
+          name: 'bootstrap',
+          content: 'secret bootstrap',
+          source: 'templates/SOUL.md',
+          priority: 100,
+          budgetChars: null,
+          version: 'test',
+        },
       ],
       promptContextPlan: {
         version: 1,
         mode: 'build',
         activeMemoryBinding: {
-          profile: { scope: { kind: 'user_profile' }, readable: true, writable: true, path: 'memory/profile/USER.local.md' },
-          longTerm: { scope: { kind: 'project', projectId: 'project_1' }, readable: true, writable: true, path: 'projects/project_1/AGENTS.local.md' },
-          episode: { scope: { kind: 'episode', date: '2026-07-06' }, readable: false, writable: true, path: 'memory/2026-07-06.md' },
+          profile: {
+            scope: { kind: 'user_profile' },
+            readable: true,
+            writable: true,
+            path: 'memory/profile/USER.local.md',
+          },
+          longTerm: {
+            scope: { kind: 'project', projectId: 'project_1' },
+            readable: true,
+            writable: true,
+            path: 'projects/project_1/AGENTS.local.md',
+          },
+          episode: {
+            scope: { kind: 'episode', date: '2026-07-06' },
+            readable: false,
+            writable: true,
+            path: 'memory/2026-07-06.md',
+          },
         },
         items: [],
-        omitted: [{
-          kind: 'global_memory',
-          source: 'memory/MEMORY.local.md',
-          reason: 'build mode intentionally does not inject global MEMORY',
-        }],
+        omitted: [
+          {
+            kind: 'global_memory',
+            source: 'memory/MEMORY.local.md',
+            reason: 'build mode intentionally does not inject global MEMORY',
+          },
+        ],
       },
       promptSnapshotDir: snapshotDir,
       sessionId: 'session_1',
     })
 
-    await runner.stepAsync([{ role: 'user', content: 'private user message body', seq: 7, turn_id: 'turn_prompt' }], { turnId: 'turn_prompt' })
+    await runner.stepAsync(
+      [
+        {
+          role: 'user',
+          content: 'private user message body',
+          seq: 7,
+          turn_id: 'turn_prompt',
+        },
+      ],
+      { turnId: 'turn_prompt' },
+    )
 
     const snapshotPath = join(snapshotDir, 'turn_prompt.json')
     expect(existsSync(snapshotPath)).toBe(true)
     const snapshot = JSON.parse(readFileSync(snapshotPath, 'utf8'))
-    expect(snapshot).toMatchObject({ sessionId: 'session_1', turnId: 'turn_prompt', model: 'fake' })
+    expect(snapshot).toMatchObject({
+      sessionId: 'session_1',
+      turnId: 'turn_prompt',
+      model: 'fake',
+    })
     expect(snapshot.sections[0]).toMatchObject({
       name: 'bootstrap',
       source: 'templates/SOUL.md',
@@ -682,17 +967,21 @@ describe('AgentRunner turn phases (test_runner_state.py)', () => {
     expect(snapshot.contextPlan).toMatchObject({
       version: 1,
       mode: 'build',
-      items: [{
-        id: 'section:bootstrap',
-        kind: 'bootstrap',
-        source: 'templates/SOUL.md',
-        action: 'include',
-      }],
-      omitted: [{
-        kind: 'global_memory',
-        source: 'memory/MEMORY.local.md',
-        reason: 'build mode intentionally does not inject global MEMORY',
-      }],
+      items: [
+        {
+          id: 'section:bootstrap',
+          kind: 'bootstrap',
+          source: 'templates/SOUL.md',
+          action: 'include',
+        },
+      ],
+      omitted: [
+        {
+          kind: 'global_memory',
+          source: 'memory/MEMORY.local.md',
+          reason: 'build mode intentionally does not inject global MEMORY',
+        },
+      ],
     })
     expect(snapshot.contextPlan.items[0].hash).toBe(snapshot.sections[0].hash)
     expect(snapshot.finalMessagesHash).toMatch(/^[a-f0-9]{64}$/)
@@ -723,7 +1012,9 @@ describe('AgentRunner turn phases (test_runner_state.py)', () => {
   })
 
   it('records local microcompact records in the prompt context plan', async () => {
-    const snapshotDir = mkdtempSync(join(tmpdir(), 'emperor-prompt-snapshot-microcompact-'))
+    const snapshotDir = mkdtempSync(
+      join(tmpdir(), 'emperor-prompt-snapshot-microcompact-'),
+    )
     const runner = new AgentRunner({
       provider: new FakeProvider([makeResponse({ content: 'done' })]),
       model: 'fake',
@@ -736,13 +1027,25 @@ describe('AgentRunner turn phases (test_runner_state.py)', () => {
         microcompactTailChars: 8,
       }),
       promptSections: [
-        { name: 'bootstrap', content: 'system', source: 'templates/SOUL.md', priority: 100, budgetChars: null, version: 'test' },
+        {
+          name: 'bootstrap',
+          content: 'system',
+          source: 'templates/SOUL.md',
+          priority: 100,
+          budgetChars: null,
+          version: 'test',
+        },
       ],
       promptContextPlan: {
         version: 1,
         mode: 'chat',
         activeMemoryBinding: {
-          longTerm: { scope: { kind: 'global' }, readable: true, writable: true, path: 'memory/MEMORY.local.md' },
+          longTerm: {
+            scope: { kind: 'global' },
+            readable: true,
+            writable: true,
+            path: 'memory/MEMORY.local.md',
+          },
         },
         items: [],
         omitted: [],
@@ -751,9 +1054,13 @@ describe('AgentRunner turn phases (test_runner_state.py)', () => {
       sessionId: 'session_1',
     })
 
-    await runner.stepAsync([{ role: 'user', content: 'x'.repeat(120) }], { turnId: 'turn_microcompact' })
+    await runner.stepAsync([{ role: 'user', content: 'x'.repeat(120) }], {
+      turnId: 'turn_microcompact',
+    })
 
-    const snapshot = JSON.parse(readFileSync(join(snapshotDir, 'turn_microcompact.json'), 'utf8'))
+    const snapshot = JSON.parse(
+      readFileSync(join(snapshotDir, 'turn_microcompact.json'), 'utf8'),
+    )
     expect(snapshot.contextPlan.microcompact).toEqual([
       expect.objectContaining({
         index: 0,
@@ -769,12 +1076,21 @@ describe('AgentRunner turn phases (test_runner_state.py)', () => {
   })
 
   it('streaming tool execution produces the same final reply and tool messages as batch (Wave5 golden)', async () => {
-    async function runTurn(streaming: boolean): Promise<{ reply: string; toolContents: string[] }> {
+    async function runTurn(
+      streaming: boolean,
+    ): Promise<{ reply: string; toolContents: string[] }> {
       const registry = new ToolRegistry()
       registry.register(new SafeEchoTool())
       const runner = new AgentRunner({
         provider: new FakeProvider([
-          makeResponse({ content: '', toolCalls: [toolCall('call_1', 'safe_echo', { value: 'a' }), toolCall('call_2', 'safe_echo', { value: 'b' })], finishReason: 'tool_calls' }),
+          makeResponse({
+            content: '',
+            toolCalls: [
+              toolCall('call_1', 'safe_echo', { value: 'a' }),
+              toolCall('call_2', 'safe_echo', { value: 'b' }),
+            ],
+            finishReason: 'tool_calls',
+          }),
           makeResponse({ content: 'done' }),
         ]),
         model: 'fake',
@@ -784,7 +1100,9 @@ describe('AgentRunner turn phases (test_runner_state.py)', () => {
       })
       const history: Msg[] = [{ role: 'user', content: 'hi' }]
       const reply = await runner.stepAsync(history)
-      const toolContents = history.filter((m) => m.role === 'tool').map((m) => String(m.content))
+      const toolContents = history
+        .filter((m) => m.role === 'tool')
+        .map((m) => String(m.content))
       return { reply, toolContents }
     }
     const batch = await runTurn(false)
@@ -797,11 +1115,17 @@ describe('AgentRunner turn phases (test_runner_state.py)', () => {
   it('streaming tool execution starts a read-only tool before the model call resolves (Wave5)', async () => {
     const registry = new ToolRegistry()
     let started = false
-    registry.register(new LatchEchoTool(() => { started = true }))
+    registry.register(
+      new LatchEchoTool(() => {
+        started = true
+      }),
+    )
     let resolveModel: (() => void) | null = null
     const provider = new EarlyToolProvider(
       [toolCall('call_1', 'latch_echo', { value: 'x' })],
-      new Promise<void>((resolve) => { resolveModel = resolve }),
+      new Promise<void>((resolve) => {
+        resolveModel = resolve
+      }),
     )
     const runner = new AgentRunner({
       provider,
@@ -823,7 +1147,11 @@ describe('AgentRunner turn phases (test_runner_state.py)', () => {
     registry.register(new EchoTool())
     const runner = new AgentRunner({
       provider: new FakeProvider([
-        makeResponse({ content: '', toolCalls: [toolCall('call_1', 'echo', { value: 'ok' })], finishReason: 'tool_calls' }),
+        makeResponse({
+          content: '',
+          toolCalls: [toolCall('call_1', 'echo', { value: 'ok' })],
+          finishReason: 'tool_calls',
+        }),
         makeResponse({ content: 'done' }),
       ]),
       model: 'fake',
@@ -831,12 +1159,18 @@ describe('AgentRunner turn phases (test_runner_state.py)', () => {
       systemPrompt: 'system',
     })
     const emitted: Msg[] = []
-    const reply = await runner.stepAsync([{ role: 'user', content: 'hi' }], { emit: (e) => { emitted.push(e) } })
+    const reply = await runner.stepAsync([{ role: 'user', content: 'hi' }], {
+      emit: (e) => {
+        emitted.push(e)
+      },
+    })
     expect(reply).toBe('done')
     const phases = emitted.filter((e) => e.event === 'turn_phase')
     expect(phases.map((e) => e.phase)).toContain('tool_batch_start')
     expect(phases.map((e) => e.phase)).toContain('tool_batch_done')
-    expect(phases.filter((e) => e.phase === 'model_request').map((e) => e.iteration)).toEqual([1, 2])
+    expect(
+      phases.filter((e) => e.phase === 'model_request').map((e) => e.iteration),
+    ).toEqual([1, 2])
   })
 
   it('applies PreToolUse deny before executing the tool', async () => {
@@ -844,13 +1178,20 @@ describe('AgentRunner turn phases (test_runner_state.py)', () => {
       override name = 'counting_echo'
       override description = 'Counts executions.'
       override parameters = toolParamsSchema({}, [])
-      execute(): string { executed += 1; return 'executed' }
+      execute(): string {
+        executed += 1
+        return 'executed'
+      }
     }
     let executed = 0
     const registry = new ToolRegistry()
     registry.register(new CountingTool())
     const provider = new FakeProvider([
-      makeResponse({ content: '', toolCalls: [toolCall('call_1', 'counting_echo', {})], finishReason: 'tool_calls' }),
+      makeResponse({
+        content: '',
+        toolCalls: [toolCall('call_1', 'counting_echo', {})],
+        finishReason: 'tool_calls',
+      }),
       makeResponse({ content: 'done' }),
     ])
     const runner = new AgentRunner({
@@ -859,9 +1200,20 @@ describe('AgentRunner turn phases (test_runner_state.py)', () => {
       registry,
       systemPrompt: 'system',
       hooks: {
-        run: async (eventName) => eventName === 'PreToolUse'
-          ? { decision: 'deny', reason: 'blocked by hook', results: [], additionalContext: '' }
-          : { decision: 'passthrough', reason: '', results: [], additionalContext: '' },
+        run: async (eventName) =>
+          eventName === 'PreToolUse'
+            ? {
+                decision: 'deny',
+                reason: 'blocked by hook',
+                results: [],
+                additionalContext: '',
+              }
+            : {
+                decision: 'passthrough',
+                reason: '',
+                results: [],
+                additionalContext: '',
+              },
       },
     })
 
@@ -869,7 +1221,9 @@ describe('AgentRunner turn phases (test_runner_state.py)', () => {
 
     expect(executed).toBe(0)
     const secondCallMessages = provider.seenMessages[1] ?? []
-    const toolMessage = secondCallMessages.find((message) => message.role === 'tool')
+    const toolMessage = secondCallMessages.find(
+      (message) => message.role === 'tool',
+    )
     expect(String(toolMessage?.content ?? '')).toContain('blocked by hook')
   })
 
@@ -877,7 +1231,11 @@ describe('AgentRunner turn phases (test_runner_state.py)', () => {
     const registry = new ToolRegistry()
     registry.register(new EchoTool())
     const provider = new FakeProvider([
-      makeResponse({ content: '', toolCalls: [toolCall('call_1', 'echo', { value: 'ok' })], finishReason: 'tool_calls' }),
+      makeResponse({
+        content: '',
+        toolCalls: [toolCall('call_1', 'echo', { value: 'ok' })],
+        finishReason: 'tool_calls',
+      }),
       makeResponse({ content: 'done' }),
     ])
     const runner = new AgentRunner({
@@ -886,17 +1244,32 @@ describe('AgentRunner turn phases (test_runner_state.py)', () => {
       registry,
       systemPrompt: 'system',
       hooks: {
-        run: async (eventName) => eventName === 'PostToolUse'
-          ? { decision: 'passthrough', reason: '', results: [], additionalContext: '[policy] remember this' }
-          : { decision: 'passthrough', reason: '', results: [], additionalContext: '' },
+        run: async (eventName) =>
+          eventName === 'PostToolUse'
+            ? {
+                decision: 'passthrough',
+                reason: '',
+                results: [],
+                additionalContext: '[policy] remember this',
+              }
+            : {
+                decision: 'passthrough',
+                reason: '',
+                results: [],
+                additionalContext: '',
+              },
       },
     })
 
     await runner.stepAsync([{ role: 'user', content: 'hi' }])
 
     const secondCallMessages = provider.seenMessages[1] ?? []
-    const toolMessage = secondCallMessages.find((message) => message.role === 'tool')
-    expect(String(toolMessage?.content ?? '')).toContain('[policy] remember this')
+    const toolMessage = secondCallMessages.find(
+      (message) => message.role === 'tool',
+    )
+    expect(String(toolMessage?.content ?? '')).toContain(
+      '[policy] remember this',
+    )
   })
 
   it('emits audit thoughts before and after tool batches', async () => {
@@ -923,12 +1296,24 @@ describe('AgentRunner turn phases (test_runner_state.py)', () => {
     })
     const emitted: Msg[] = []
 
-    await runner.stepAsync([{ role: 'user', content: 'hi' }], { emit: (e) => { emitted.push(e) }, turnId: 'turn_audit' })
+    await runner.stepAsync([{ role: 'user', content: 'hi' }], {
+      emit: (e) => {
+        emitted.push(e)
+      },
+      turnId: 'turn_audit',
+    })
 
-    const intentIndex = emitted.findIndex((e) => e.event === 'agent_thought' && e.stage === 'tool_intent')
+    const intentIndex = emitted.findIndex(
+      (e) => e.event === 'agent_thought' && e.stage === 'tool_intent',
+    )
     const firstToolIndex = emitted.findIndex((e) => e.event === 'tool_call')
-    const resultSummaryIndex = emitted.findIndex((e) => e.event === 'agent_thought' && e.stage === 'tool_result_summary')
-    const lastToolResultIndex = emitted.reduce((last, event, index) => event.event === 'tool_result' ? index : last, -1)
+    const resultSummaryIndex = emitted.findIndex(
+      (e) => e.event === 'agent_thought' && e.stage === 'tool_result_summary',
+    )
+    const lastToolResultIndex = emitted.reduce(
+      (last, event, index) => (event.event === 'tool_result' ? index : last),
+      -1,
+    )
 
     expect(intentIndex).toBeGreaterThanOrEqual(0)
     expect(intentIndex).toBeLessThan(firstToolIndex)
@@ -943,9 +1328,15 @@ describe('AgentRunner turn phases (test_runner_state.py)', () => {
     })
     expect(String(emitted[intentIndex]!.summary)).toContain('准备调用')
     expect(String(emitted[intentIndex]!.summary)).toContain('echo')
-    expect(String(emitted[resultSummaryIndex]!.summary)).not.toContain('echo 成功')
-    expect(String(emitted[resultSummaryIndex]!.summary)).toContain('error_result 失败')
-    expect(String(emitted[resultSummaryIndex]!.summary)).toContain('media_result 成功，识别到 1 个图片 artifact')
+    expect(String(emitted[resultSummaryIndex]!.summary)).not.toContain(
+      'echo 成功',
+    )
+    expect(String(emitted[resultSummaryIndex]!.summary)).toContain(
+      'error_result 失败',
+    )
+    expect(String(emitted[resultSummaryIndex]!.summary)).toContain(
+      'media_result 成功，识别到 1 个图片 artifact',
+    )
     expect(emitted[resultSummaryIndex]).toMatchObject({
       source: 'audit',
       status: 'done',
@@ -961,9 +1352,7 @@ describe('AgentRunner turn phases (test_runner_state.py)', () => {
       provider: new FakeProvider([
         makeResponse({
           content: '',
-          toolCalls: [
-            toolCall('call_1', 'echo', { value: 'ok' }),
-          ],
+          toolCalls: [toolCall('call_1', 'echo', { value: 'ok' })],
           finishReason: 'tool_calls',
         }),
         makeResponse({ content: 'handled' }),
@@ -974,9 +1363,18 @@ describe('AgentRunner turn phases (test_runner_state.py)', () => {
     })
     const emitted: Msg[] = []
 
-    await runner.stepAsync([{ role: 'user', content: 'hi' }], { emit: (e) => { emitted.push(e) }, turnId: 'turn_success_audit' })
+    await runner.stepAsync([{ role: 'user', content: 'hi' }], {
+      emit: (e) => {
+        emitted.push(e)
+      },
+      turnId: 'turn_success_audit',
+    })
 
-    expect(emitted.some((e) => e.event === 'agent_thought' && e.stage === 'tool_result_summary')).toBe(false)
+    expect(
+      emitted.some(
+        (e) => e.event === 'agent_thought' && e.stage === 'tool_result_summary',
+      ),
+    ).toBe(false)
   })
 
   it('does not emit audit thoughts for plain replies without tools', async () => {
@@ -988,7 +1386,12 @@ describe('AgentRunner turn phases (test_runner_state.py)', () => {
     })
     const emitted: Msg[] = []
 
-    await runner.stepAsync([{ role: 'user', content: 'hi' }], { emit: (e) => { emitted.push(e) }, turnId: 'turn_plain' })
+    await runner.stepAsync([{ role: 'user', content: 'hi' }], {
+      emit: (e) => {
+        emitted.push(e)
+      },
+      turnId: 'turn_plain',
+    })
 
     expect(emitted.some((e) => e.event === 'agent_thought')).toBe(false)
   })
@@ -998,7 +1401,13 @@ describe('AgentRunner turn phases (test_runner_state.py)', () => {
     registry.register(new StructuredEchoTool())
     const runner = new AgentRunner({
       provider: new FakeProvider([
-        makeResponse({ content: '', toolCalls: [toolCall('call_1', 'structured_echo', { value: 'large' })], finishReason: 'tool_calls' }),
+        makeResponse({
+          content: '',
+          toolCalls: [
+            toolCall('call_1', 'structured_echo', { value: 'large' }),
+          ],
+          finishReason: 'tool_calls',
+        }),
         makeResponse({ content: 'done' }),
       ]),
       model: 'fake',
@@ -1007,14 +1416,27 @@ describe('AgentRunner turn phases (test_runner_state.py)', () => {
     })
     const history: Msg[] = [{ role: 'user', content: 'hi' }]
     const emitted: Msg[] = []
-    await runner.stepAsync(history, { emit: (e) => { emitted.push(e) } })
+    await runner.stepAsync(history, {
+      emit: (e) => {
+        emitted.push(e)
+      },
+    })
     const toolMessage = history.find((m) => m.role === 'tool')!
     const toolResultEvent = emitted.find((e) => e.event === 'tool_result')!
-    const completedEvent = emitted.find((e) => e.event === 'tool_run_completed')!
+    const completedEvent = emitted.find(
+      (e) => e.event === 'tool_run_completed',
+    )!
     expect(toolMessage.content).toBe('model:large')
     expect(toolResultEvent.summary).toBe('summary:large')
     expect(toolResultEvent.output).toBe('model:large')
-    expect(toolResultEvent.artifacts).toEqual([{ path: 'memory/tool-results/large.txt', kind: 'text', bytes: 9, metadata: {} }])
+    expect(toolResultEvent.artifacts).toEqual([
+      {
+        path: 'memory/tool-results/large.txt',
+        kind: 'text',
+        bytes: 9,
+        metadata: {},
+      },
+    ])
     expect(completedEvent.summary).toBe('summary:large')
     expect(completedEvent.output).toBe('model:large')
     expect(completedEvent.metadata).toEqual({ source: 'runner-test' })
@@ -1025,7 +1447,11 @@ describe('AgentRunner turn phases (test_runner_state.py)', () => {
     registry.register(new ErrorResultTool())
     const runner = new AgentRunner({
       provider: new FakeProvider([
-        makeResponse({ content: '', toolCalls: [toolCall('call_1', 'error_result', {})], finishReason: 'tool_calls' }),
+        makeResponse({
+          content: '',
+          toolCalls: [toolCall('call_1', 'error_result', {})],
+          finishReason: 'tool_calls',
+        }),
         makeResponse({ content: 'handled' }),
       ]),
       model: 'fake',
@@ -1033,7 +1459,11 @@ describe('AgentRunner turn phases (test_runner_state.py)', () => {
       systemPrompt: 'system',
     })
     const emitted: Msg[] = []
-    await runner.stepAsync([{ role: 'user', content: 'hi' }], { emit: (e) => { emitted.push(e) } })
+    await runner.stepAsync([{ role: 'user', content: 'hi' }], {
+      emit: (e) => {
+        emitted.push(e)
+      },
+    })
     const toolResultEvent = emitted.find((e) => e.event === 'tool_result')!
     const failedEvent = emitted.find((e) => e.event === 'tool_run_failed')!
     expect(toolResultEvent.id).toBe('call_1')
@@ -1046,20 +1476,46 @@ describe('AgentRunner turn phases (test_runner_state.py)', () => {
 
   it('emits context projection (paired missing tool result)', async () => {
     const provider = new FakeProvider([makeResponse({ content: 'done' })])
-    const runner = new AgentRunner({ provider, model: 'fake', registry: new ToolRegistry(), systemPrompt: 'system' })
+    const runner = new AgentRunner({
+      provider,
+      model: 'fake',
+      registry: new ToolRegistry(),
+      systemPrompt: 'system',
+    })
     const emitted: Msg[] = []
     await runner.stepAsync(
       [
         { role: 'user', content: 'inspect' },
-        { role: 'assistant', content: '', tool_calls: [{ id: 'call_1', type: 'function', function: { name: 'read_file', arguments: '{}' } }] },
+        {
+          role: 'assistant',
+          content: '',
+          tool_calls: [
+            {
+              id: 'call_1',
+              type: 'function',
+              function: { name: 'read_file', arguments: '{}' },
+            },
+          ],
+        },
       ],
-      { emit: (e) => { emitted.push(e) } },
+      {
+        emit: (e) => {
+          emitted.push(e)
+        },
+      },
     )
-    const contextEvents = emitted.filter((e) => e.event === 'context_projection')
-    expect((contextEvents[0]!.report as Record<string, unknown>).paired_missing_tool_results).toBe(1)
+    const contextEvents = emitted.filter(
+      (e) => e.event === 'context_projection',
+    )
+    expect(
+      (contextEvents[0]!.report as Record<string, unknown>)
+        .paired_missing_tool_results,
+    ).toBe(1)
     expect(contextEvents[0]!.message_count).toBe(3)
     const lastSeen = provider.seenMessages[0]!
-    expect((lastSeen[lastSeen.length - 1] as Record<string, unknown>).tool_call_id).toBe('call_1')
+    expect(
+      (lastSeen[lastSeen.length - 1] as Record<string, unknown>).tool_call_id,
+    ).toBe('call_1')
   })
 
   it('default context pipeline replaces large tool results using registered tool budgets', async () => {
@@ -1070,34 +1526,75 @@ describe('AgentRunner turn phases (test_runner_state.py)', () => {
     const provider = new FakeProvider([makeResponse({ content: 'done' })])
     const registry = new ToolRegistry()
     registry.register(new BudgetedEchoTool())
-    const runner = new AgentRunner({ provider, model: 'fake', registry, systemPrompt: 'system', memoryStore: memory })
+    const runner = new AgentRunner({
+      provider,
+      model: 'fake',
+      registry,
+      systemPrompt: 'system',
+      memoryStore: memory,
+    })
     const emitted: Msg[] = []
 
     await runner.stepAsync(
       [
         { role: 'user', content: 'inspect' },
-        { role: 'assistant', content: '', tool_calls: [{ id: 'call_1', type: 'function', function: { name: 'budgeted_echo', arguments: '{}' } }] },
-        { role: 'tool', turn_id: 'turn_1', tool_call_id: 'call_1', name: 'budgeted_echo', content },
+        {
+          role: 'assistant',
+          content: '',
+          tool_calls: [
+            {
+              id: 'call_1',
+              type: 'function',
+              function: { name: 'budgeted_echo', arguments: '{}' },
+            },
+          ],
+        },
+        {
+          role: 'tool',
+          turn_id: 'turn_1',
+          tool_call_id: 'call_1',
+          name: 'budgeted_echo',
+          content,
+        },
       ],
-      { emit: (e) => { emitted.push(e) } },
+      {
+        emit: (e) => {
+          emitted.push(e)
+        },
+      },
     )
 
     const contextEvent = emitted.find((e) => e.event === 'context_projection')!
     const report = contextEvent.report as Record<string, unknown>
-    const replacement = (report.tool_result_replacements as Array<Record<string, unknown>>)[0]!
-    const projectedTool = provider.seenMessages[0]!.at(-1) as Record<string, unknown>
+    const replacement = (
+      report.tool_result_replacements as Array<Record<string, unknown>>
+    )[0]!
+    const projectedTool = provider.seenMessages[0]!.at(-1) as Record<
+      string,
+      unknown
+    >
 
     expect(replacement.tool_name).toBe('budgeted_echo')
     expect(String(projectedTool.content)).toContain('original_chars: 3000')
-    expect(readFileSync(join(root, String(replacement.artifact_path)), 'utf8')).toBe(content)
+    expect(
+      readFileSync(join(root, String(replacement.artifact_path)), 'utf8'),
+    ).toBe(content)
   })
 
   it('default context pipeline reports aggregate tool result replacements', async () => {
     const root = tmp('emperor-runner-aggregate-tool-result-')
     const memory = new MemoryFake() as MemoryFake & { memoryDir: string }
     memory.memoryDir = join(root, 'memory')
-    const provider = new FakeProvider([makeResponse({ content: 'done', usage: { input: 100, output: 4 } })])
-    const runner = new AgentRunner({ provider, model: 'fake', registry: new ToolRegistry(), systemPrompt: 'system', memoryStore: memory })
+    const provider = new FakeProvider([
+      makeResponse({ content: 'done', usage: { input: 100, output: 4 } }),
+    ])
+    const runner = new AgentRunner({
+      provider,
+      model: 'fake',
+      registry: new ToolRegistry(),
+      systemPrompt: 'system',
+      memoryStore: memory,
+    })
     const emitted: Msg[] = []
     const toolCalls = Array.from({ length: 10 }, (_, index) => ({
       id: `call_${index + 1}`,
@@ -1118,14 +1615,24 @@ describe('AgentRunner turn phases (test_runner_state.py)', () => {
         { role: 'assistant', content: '', tool_calls: toolCalls },
         ...toolMessages,
       ],
-      { emit: (event) => { emitted.push(event) } },
+      {
+        emit: (event) => {
+          emitted.push(event)
+        },
+      },
     )
 
-    const contextEvent = emitted.find((event) => event.event === 'context_projection')!
+    const contextEvent = emitted.find(
+      (event) => event.event === 'context_projection',
+    )!
     const usageEvent = emitted.find((event) => event.event === 'context_usage')!
     const report = contextEvent.report as Record<string, unknown>
-    const aggregateRecords = report.aggregate_tool_result_replacements as Array<Record<string, unknown>>
-    const projectedTools = provider.seenMessages[0]!.filter((message) => message.role === 'tool')
+    const aggregateRecords = report.aggregate_tool_result_replacements as Array<
+      Record<string, unknown>
+    >
+    const projectedTools = provider.seenMessages[0]!.filter(
+      (message) => message.role === 'tool',
+    )
 
     expect(report.aggregate_replaced_tool_results).toBeGreaterThan(0)
     expect(report.replaced_tool_results).toBe(aggregateRecords.length)
@@ -1134,36 +1641,66 @@ describe('AgentRunner turn phases (test_runner_state.py)', () => {
       aggregate_replaced_tool_results: aggregateRecords.length,
       aggregate_tool_result_budget: 24_000,
     })
-    expect(String(projectedTools[0]!.content)).toContain('Tool result stored outside the model context')
-    expect(String(projectedTools.at(-1)!.content)).toBe(String(toolMessages.at(-1)!.content))
-    expect(readFileSync(join(root, String(aggregateRecords[0]!.artifact_path)), 'utf8')).toBe(toolMessages[0]!.content)
+    expect(String(projectedTools[0]!.content)).toContain(
+      'Tool result stored outside the model context',
+    )
+    expect(String(projectedTools.at(-1)!.content)).toBe(
+      String(toolMessages.at(-1)!.content),
+    )
+    expect(
+      readFileSync(
+        join(root, String(aggregateRecords[0]!.artifact_path)),
+        'utf8',
+      ),
+    ).toBe(toolMessages[0]!.content)
   })
 
   it('default context pipeline supplies approved plan runtime context', async () => {
     const manager = new ControlManager(tmp('emperor-runner-plan-context-'))
-    manager.setRuntimeScope({ sessionId: 'session_plan', projectId: 'project_plan', workspaceRoot: '/tmp/plan-project' })
+    manager.setRuntimeScope({
+      sessionId: 'session_plan',
+      projectId: 'project_plan',
+      workspaceRoot: '/tmp/plan-project',
+    })
     const interaction = manager.createPlan({
       title: 'Continue approved plan',
       summary: 'Keep executing the active step.',
       planMarkdown: '# Plan\n\n- Continue approved plan',
       assumptions: [],
       riskLevel: 'low',
-      steps: [{
-        id: 'step_1',
-        title: 'Continue approved plan',
-        description: 'Run the next implementation step.',
-        acceptance: ['model receives plan runtime context'],
-        verification: [{ id: 'manual_context', kind: 'manual', required: false }],
-      }],
+      steps: [
+        {
+          id: 'step_1',
+          title: 'Continue approved plan',
+          description: 'Run the next implementation step.',
+          acceptance: ['model receives plan runtime context'],
+          verification: [
+            { id: 'manual_context', kind: 'manual', required: false },
+          ],
+        },
+      ],
     })
     manager.approve(interaction.id)
     const provider = new FakeProvider([makeResponse({ content: 'done' })])
-    const runner = new AgentRunner({ provider, model: 'fake', registry: new ToolRegistry(), systemPrompt: 'system', controlManager: manager, maxTurns: 1 })
+    const runner = new AgentRunner({
+      provider,
+      model: 'fake',
+      registry: new ToolRegistry(),
+      systemPrompt: 'system',
+      controlManager: manager,
+      maxTurns: 1,
+    })
 
-    await runner.stepAsync([{ role: 'user', content: 'continue approved plan' }])
+    await runner.stepAsync([
+      { role: 'user', content: 'continue approved plan' },
+    ])
 
-    const contents = provider.seenMessages[0]!.map((message) => String(message.content ?? ''))
-    const planContext = contents.find((content) => content.includes('[PLAN_RUNTIME_CONTEXT]')) ?? ''
+    const contents = provider.seenMessages[0]!.map((message) =>
+      String(message.content ?? ''),
+    )
+    const planContext =
+      contents.find((content) => content.includes('[PLAN_RUNTIME_CONTEXT]')) ??
+      ''
     expect(planContext).toContain('plan_id:')
     expect(planContext).toContain('status: approved')
   })
@@ -1178,12 +1715,14 @@ describe('AgentRunner turn phases (test_runner_state.py)', () => {
       planMarkdown: '# Plan\n\n- Run matrix',
       assumptions: [],
       riskLevel: 'low',
-      steps: [{
-        id: 'step_1',
-        title: 'Run matrix',
-        description: 'Execute the task.',
-        acceptance: ['todo update succeeds without plan evidence'],
-      }],
+      steps: [
+        {
+          id: 'step_1',
+          title: 'Run matrix',
+          description: 'Execute the task.',
+          acceptance: ['todo update succeeds without plan evidence'],
+        },
+      ],
     })
     manager.approve(interaction.id)
     const planId = String(interaction.meta.plan_id)
@@ -1194,24 +1733,57 @@ describe('AgentRunner turn phases (test_runner_state.py)', () => {
     const provider = new FakeProvider([
       makeResponse({
         content: '',
-        toolCalls: [toolCall('todo_1', 'update_todos', {
-          todos: [{ id: 1, plan_step_id: 'step_1', content: 'Run matrix', status: 'completed' }],
-        })],
+        toolCalls: [
+          toolCall('todo_1', 'update_todos', {
+            todos: [
+              {
+                id: 1,
+                plan_step_id: 'step_1',
+                content: 'Run matrix',
+                status: 'completed',
+              },
+            ],
+          }),
+        ],
         finishReason: 'tool_calls',
       }),
       makeResponse({ content: 'done' }),
     ])
-    const runner = new AgentRunner({ provider, model: 'fake', registry, systemPrompt: 'system', controlManager: manager, todoStore, maxTurns: 4 })
+    const runner = new AgentRunner({
+      provider,
+      model: 'fake',
+      registry,
+      systemPrompt: 'system',
+      controlManager: manager,
+      todoStore,
+      maxTurns: 4,
+    })
     const emitted: Msg[] = []
 
-    const reply = await runner.stepAsync([{ role: 'user', content: 'continue' }], { emit: (event) => { emitted.push(event) } })
+    const reply = await runner.stepAsync(
+      [{ role: 'user', content: 'continue' }],
+      {
+        emit: (event) => {
+          emitted.push(event)
+        },
+      },
+    )
 
     expect(reply).toBe('done')
-    const todoResult = emitted.find((event) => event.event === 'tool_result' && event.name === 'update_todos')
+    const todoResult = emitted.find(
+      (event) => event.event === 'tool_result' && event.name === 'update_todos',
+    )
     expect(todoResult).toMatchObject({
       event: 'tool_result',
       name: 'update_todos',
-      todos: [{ id: 1, plan_step_id: 'step_1', content: 'Run matrix', status: 'completed' }],
+      todos: [
+        {
+          id: 1,
+          plan_step_id: 'step_1',
+          content: 'Run matrix',
+          status: 'completed',
+        },
+      ],
     })
     expect(JSON.stringify(todoResult)).not.toContain('PLAN_EVIDENCE_REQUIRED')
     // Claude Code TodoWrite semantics: todo completion is not a PlanStep state transition.
@@ -1219,7 +1791,9 @@ describe('AgentRunner turn phases (test_runner_state.py)', () => {
     expect(finished.steps[0]!.status).toBe('active')
     expect(finished.status).toBe('executing')
     expect(finished.completedAt).toBeNull()
-    expect(JSON.stringify(finished.steps[0]!.evidence)).not.toContain('update_todos')
+    expect(JSON.stringify(finished.steps[0]!.evidence)).not.toContain(
+      'update_todos',
+    )
   })
 
   it('escalates a strategy nudge when the same safety refusal repeats within a turn', async () => {
@@ -1234,11 +1808,24 @@ describe('AgentRunner turn phases (test_runner_state.py)', () => {
     const registry = new ToolRegistry()
     registry.register(new DeniedTool())
     const provider = new FakeProvider([
-      makeResponse({ content: '', toolCalls: [toolCall('deny_1', 'deny_echo', {})], finishReason: 'tool_calls' }),
-      makeResponse({ content: '', toolCalls: [toolCall('deny_2', 'deny_echo', {})], finishReason: 'tool_calls' }),
+      makeResponse({
+        content: '',
+        toolCalls: [toolCall('deny_1', 'deny_echo', {})],
+        finishReason: 'tool_calls',
+      }),
+      makeResponse({
+        content: '',
+        toolCalls: [toolCall('deny_2', 'deny_echo', {})],
+        finishReason: 'tool_calls',
+      }),
       makeResponse({ content: 'done' }),
     ])
-    const runner = new AgentRunner({ provider, model: 'fake', registry, systemPrompt: 'system' })
+    const runner = new AgentRunner({
+      provider,
+      model: 'fake',
+      registry,
+      systemPrompt: 'system',
+    })
     const history: Msg[] = [{ role: 'user', content: 'run it' }]
 
     await runner.stepAsync(history)
@@ -1271,11 +1858,24 @@ describe('AgentRunner turn phases (test_runner_state.py)', () => {
     registry.register(new NodeDeniedTool())
     registry.register(new PythonDeniedTool())
     const provider = new FakeProvider([
-      makeResponse({ content: '', toolCalls: [toolCall('deny_1', 'deny_node', {})], finishReason: 'tool_calls' }),
-      makeResponse({ content: '', toolCalls: [toolCall('deny_2', 'deny_python', {})], finishReason: 'tool_calls' }),
+      makeResponse({
+        content: '',
+        toolCalls: [toolCall('deny_1', 'deny_node', {})],
+        finishReason: 'tool_calls',
+      }),
+      makeResponse({
+        content: '',
+        toolCalls: [toolCall('deny_2', 'deny_python', {})],
+        finishReason: 'tool_calls',
+      }),
       makeResponse({ content: 'done' }),
     ])
-    const runner = new AgentRunner({ provider, model: 'fake', registry, systemPrompt: 'system' })
+    const runner = new AgentRunner({
+      provider,
+      model: 'fake',
+      registry,
+      systemPrompt: 'system',
+    })
     const history: Msg[] = [{ role: 'user', content: 'run it' }]
 
     await runner.stepAsync(history)
@@ -1301,23 +1901,42 @@ describe('AgentRunner turn phases (test_runner_state.py)', () => {
       override name = 'boom'
       override description = 'plain failure'
       override parameters = toolParamsSchema({}, [])
-      async execute(): Promise<string> { return 'Error: boom' }
+      async execute(): Promise<string> {
+        return 'Error: boom'
+      }
     }
     const registry = new ToolRegistry()
     registry.register(new DeniedTool2())
     registry.register(new BoomTool())
     const provider = new FakeProvider([
-      makeResponse({ content: '', toolCalls: [toolCall('c1', 'deny_cmd', {}), toolCall('c2', 'boom', {})], finishReason: 'tool_calls' }),
+      makeResponse({
+        content: '',
+        toolCalls: [toolCall('c1', 'deny_cmd', {}), toolCall('c2', 'boom', {})],
+        finishReason: 'tool_calls',
+      }),
       makeResponse({ content: 'done' }),
     ])
-    const runner = new AgentRunner({ provider, model: 'fake', registry, systemPrompt: 'system' })
+    const runner = new AgentRunner({
+      provider,
+      model: 'fake',
+      registry,
+      systemPrompt: 'system',
+    })
     const emitted: Msg[] = []
 
-    await runner.stepAsync([{ role: 'user', content: 'go' }], { emit: (event) => { emitted.push(event) } })
+    await runner.stepAsync([{ role: 'user', content: 'go' }], {
+      emit: (event) => {
+        emitted.push(event)
+      },
+    })
 
-    const failures = emitted.filter((event) => event.event === 'tool_run_failed')
+    const failures = emitted.filter(
+      (event) => event.event === 'tool_run_failed',
+    )
     expect(failures).toHaveLength(2)
-    const byName = Object.fromEntries(failures.map((event) => [event.name, event]))
+    const byName = Object.fromEntries(
+      failures.map((event) => [event.name, event]),
+    )
     expect(byName.deny_cmd).toMatchObject({ reason_kind: 'safety_refusal' })
     expect(byName.boom).toMatchObject({ reason_kind: 'error' })
   })
@@ -1333,44 +1952,77 @@ describe('AgentRunner turn phases (test_runner_state.py)', () => {
       plan_markdown: '# Plan\n\n- Ship it',
       assumptions: [],
       risk_level: 'low',
-      steps: [{
-        id: 'step_1',
-        title: 'Ship it',
-        description: 'do the work',
-        files: ['a.html'],
-        commands: ['npm test'],
-        acceptance: ['tests pass'],
-      }],
+      steps: [
+        {
+          id: 'step_1',
+          title: 'Ship it',
+          description: 'do the work',
+          files: ['a.html'],
+          commands: ['npm test'],
+          acceptance: ['tests pass'],
+        },
+      ],
     })
     const pendingHonesty = manager.payload().pending as Record<string, unknown>
     manager.approve(String(pendingHonesty.id))
     // 实景（2026-07-05 会话）：todos 全部完成但验证要求从未执行；F1 的投影使计划进入「宣称完工」
-    todoStore.update([{ id: 1, content: 'Ship it', status: 'completed', planStepId: 'step_1' }])
-    manager.syncPlanFromTodos(todoStore.todos, { evidence: { source: 'update_todos' } })
+    todoStore.update([
+      { id: 1, content: 'Ship it', status: 'completed', planStepId: 'step_1' },
+    ])
+    manager.syncPlanFromTodos(todoStore.todos, {
+      evidence: { source: 'update_todos' },
+    })
     const provider = new FakeProvider([
       makeResponse({ content: '全部完成，交付。' }),
-      makeResponse({ content: '最终答复：step_1 的验证（npm test）未执行，声明为未验证。' }),
+      makeResponse({
+        content: '最终答复：step_1 的验证（npm test）未执行，声明为未验证。',
+      }),
       makeResponse({ content: '不应该到第三轮' }),
     ])
-    const runner = new AgentRunner({ provider, model: 'fake', registry: new ToolRegistry(), systemPrompt: 'system', controlManager: manager, todoStore, maxTurns: 6 })
+    const runner = new AgentRunner({
+      provider,
+      model: 'fake',
+      registry: new ToolRegistry(),
+      systemPrompt: 'system',
+      controlManager: manager,
+      todoStore,
+      maxTurns: 6,
+    })
     const history: Msg[] = [{ role: 'user', content: '继续执行' }]
 
     const reply = await runner.stepAsync(history)
 
     // 第一次 stop 被诚实性 followup 拦截，第二次 stop 正常完成
     expect(reply).toContain('未验证')
-    const followups = history.filter((message) => message.role === 'user' && String(message.content).includes('未记录任何执行证据'))
+    const followups = history.filter(
+      (message) =>
+        message.role === 'user' &&
+        String(message.content).includes('未记录任何执行证据'),
+    )
     expect(followups).toHaveLength(1)
     expect(String(followups[0]!.content)).toContain('step_1')
     expect(provider.responses).toHaveLength(1) // 第三个响应没被消费
 
     // 跨 turn 不重复：同一计划已提醒过，下一轮 stop 直接完成
-    const provider2 = new FakeProvider([makeResponse({ content: '下一轮直接完成' })])
-    const runner2 = new AgentRunner({ provider: provider2, model: 'fake', registry: new ToolRegistry(), systemPrompt: 'system', controlManager: manager, todoStore })
+    const provider2 = new FakeProvider([
+      makeResponse({ content: '下一轮直接完成' }),
+    ])
+    const runner2 = new AgentRunner({
+      provider: provider2,
+      model: 'fake',
+      registry: new ToolRegistry(),
+      systemPrompt: 'system',
+      controlManager: manager,
+      todoStore,
+    })
     const history2: Msg[] = [{ role: 'user', content: '再来一轮' }]
     const reply2 = await runner2.stepAsync(history2)
     expect(reply2).toBe('下一轮直接完成')
-    expect(history2.filter((message) => String(message.content ?? '').includes('未记录任何执行证据'))).toHaveLength(0)
+    expect(
+      history2.filter((message) =>
+        String(message.content ?? '').includes('未记录任何执行证据'),
+      ),
+    ).toHaveLength(0)
   })
 
   it('skips the honesty followup when verification evidence exists (B4.2)', async () => {
@@ -1384,35 +2036,75 @@ describe('AgentRunner turn phases (test_runner_state.py)', () => {
       plan_markdown: '# Plan\n\n- Ship it',
       assumptions: [],
       risk_level: 'low',
-      steps: [{ id: 'step_1', title: 'Ship it', description: 'work', files: ['a.html'], commands: ['npm test'], acceptance: ['ok'] }],
+      steps: [
+        {
+          id: 'step_1',
+          title: 'Ship it',
+          description: 'work',
+          files: ['a.html'],
+          commands: ['npm test'],
+          acceptance: ['ok'],
+        },
+      ],
     })
     const pendingVerified = manager.payload().pending as Record<string, unknown>
-    const planId = String((pendingVerified.meta as Record<string, unknown>).plan_id)
+    const planId = String(
+      (pendingVerified.meta as Record<string, unknown>).plan_id,
+    )
     manager.approve(String(pendingVerified.id))
-    manager.recordPlanVerificationResult({ planId, stepId: 'step_1', result: { command: 'npm test', passed: true, summary: 'pass' } })
-    todoStore.update([{ id: 1, content: 'Ship it', status: 'completed', planStepId: 'step_1' }])
-    manager.syncPlanFromTodos(todoStore.todos, { evidence: { source: 'update_todos' } })
+    manager.recordPlanVerificationResult({
+      planId,
+      stepId: 'step_1',
+      result: { command: 'npm test', passed: true, summary: 'pass' },
+    })
+    todoStore.update([
+      { id: 1, content: 'Ship it', status: 'completed', planStepId: 'step_1' },
+    ])
+    manager.syncPlanFromTodos(todoStore.todos, {
+      evidence: { source: 'update_todos' },
+    })
     const provider = new FakeProvider([makeResponse({ content: '完成' })])
-    const runner = new AgentRunner({ provider, model: 'fake', registry: new ToolRegistry(), systemPrompt: 'system', controlManager: manager, todoStore })
+    const runner = new AgentRunner({
+      provider,
+      model: 'fake',
+      registry: new ToolRegistry(),
+      systemPrompt: 'system',
+      controlManager: manager,
+      todoStore,
+    })
 
     const reply = await runner.stepAsync([{ role: 'user', content: '继续' }])
 
     expect(reply).toBe('完成')
   })
 
-  it('freezes the shrink boundary end-to-end so the prefix stays byte-stable across a turn\'s model calls (2026-07-05 B3)', async () => {
+  it("freezes the shrink boundary end-to-end so the prefix stays byte-stable across a turn's model calls (2026-07-05 B3)", async () => {
     class BigEchoTool extends Tool {
       override name = 'big_echo'
       override description = 'returns a long fixed result'
       override parameters = toolParamsSchema({}, [])
-      execute(): string { return 'x'.repeat(2000) }
+      execute(): string {
+        return 'x'.repeat(2000)
+      }
     }
     const registry = new ToolRegistry()
     registry.register(new BigEchoTool())
     const provider = new FakeProvider([
-      makeResponse({ content: '', toolCalls: [toolCall('c1', 'big_echo', {})], finishReason: 'tool_calls' }),
-      makeResponse({ content: '', toolCalls: [toolCall('c2', 'big_echo', {})], finishReason: 'tool_calls' }),
-      makeResponse({ content: '', toolCalls: [toolCall('c3', 'big_echo', {})], finishReason: 'tool_calls' }),
+      makeResponse({
+        content: '',
+        toolCalls: [toolCall('c1', 'big_echo', {})],
+        finishReason: 'tool_calls',
+      }),
+      makeResponse({
+        content: '',
+        toolCalls: [toolCall('c2', 'big_echo', {})],
+        finishReason: 'tool_calls',
+      }),
+      makeResponse({
+        content: '',
+        toolCalls: [toolCall('c3', 'big_echo', {})],
+        finishReason: 'tool_calls',
+      }),
       makeResponse({ content: 'done' }),
     ])
     // keepRecent 很小，逼迫 shrink 的 cutoff 在几次迭代内就会追上第一条大结果——
@@ -1444,11 +2136,24 @@ describe('AgentRunner turn phases (test_runner_state.py)', () => {
     const registry = new ToolRegistry()
     registry.register(new EchoTool())
     const provider = new FakeProvider([
-      makeResponse({ content: '先建任务清单，从 Step 1 起步。', toolCalls: [toolCall('c1', 'echo', { value: 'one' })], finishReason: 'tool_calls' }),
-      makeResponse({ content: 'Step 1 完成。进入 Step 2。', toolCalls: [toolCall('c2', 'echo', { value: 'two' })], finishReason: 'tool_calls' }),
+      makeResponse({
+        content: '先建任务清单，从 Step 1 起步。',
+        toolCalls: [toolCall('c1', 'echo', { value: 'one' })],
+        finishReason: 'tool_calls',
+      }),
+      makeResponse({
+        content: 'Step 1 完成。进入 Step 2。',
+        toolCalls: [toolCall('c2', 'echo', { value: 'two' })],
+        finishReason: 'tool_calls',
+      }),
       makeResponse({ content: '## 交付报告\n\n全部完成。' }),
     ])
-    const runner = new AgentRunner({ provider, model: 'fake', registry, systemPrompt: 'system' })
+    const runner = new AgentRunner({
+      provider,
+      model: 'fake',
+      registry,
+      systemPrompt: 'system',
+    })
     const history: Msg[] = [{ role: 'user', content: '干活' }]
 
     const reply = await runner.stepAsync(history)
@@ -1456,7 +2161,11 @@ describe('AgentRunner turn phases (test_runner_state.py)', () => {
     // 过场白不进最终回复（仍留在 history 与流式展示）
     expect(reply).toBe('## 交付报告\n\n全部完成。')
     expect(reply).not.toContain('先建任务清单')
-    const interim = history.find((message) => message.role === 'assistant' && String(message.content).includes('先建任务清单'))
+    const interim = history.find(
+      (message) =>
+        message.role === 'assistant' &&
+        String(message.content).includes('先建任务清单'),
+    )
     expect(interim).toBeTruthy()
   })
 
@@ -1466,10 +2175,21 @@ describe('AgentRunner turn phases (test_runner_state.py)', () => {
       { id: 1, content: '实现功能', status: 'completed' },
       { id: 2, content: '补文档', status: 'pending' },
     ]
-    const provider = new FakeProvider([makeResponse({ content: '第一轮进展：功能已实现。' })])
-    const runner = new AgentRunner({ provider, model: 'fake', registry: new ToolRegistry(), systemPrompt: 'system', todoStore, maxTurns: 1 })
+    const provider = new FakeProvider([
+      makeResponse({ content: '第一轮进展：功能已实现。' }),
+    ])
+    const runner = new AgentRunner({
+      provider,
+      model: 'fake',
+      registry: new ToolRegistry(),
+      systemPrompt: 'system',
+      todoStore,
+      maxTurns: 1,
+    })
 
-    const reply = await runner.stepAsync([{ role: 'user', content: '把事情办完' }])
+    const reply = await runner.stepAsync([
+      { role: 'user', content: '把事情办完' },
+    ])
 
     expect(reply).toContain('max_turns=1')
     expect(reply).toContain('已完成 1/2')
@@ -1488,37 +2208,66 @@ describe('AgentRunner turn phases (test_runner_state.py)', () => {
       makeResponse({ content: '继续 4' }),
       makeResponse({ content: '继续 5' }),
     ])
-    const runner = new AgentRunner({ provider, model: 'fake', registry: new ToolRegistry(), systemPrompt: 'system', todoStore, maxTurns: 5 })
+    const runner = new AgentRunner({
+      provider,
+      model: 'fake',
+      registry: new ToolRegistry(),
+      systemPrompt: 'system',
+      todoStore,
+      maxTurns: 5,
+    })
     const history: Msg[] = [{ role: 'user', content: '一直干' }]
 
     await runner.stepAsync(history)
 
-    const reminders = history.filter((message) => message.role === 'user' && String(message.content ?? '').includes('回合上限'))
+    const reminders = history.filter(
+      (message) =>
+        message.role === 'user' &&
+        String(message.content ?? '').includes('回合上限'),
+    )
     expect(reminders).toHaveLength(1)
     const lastCall = provider.seenMessages[provider.seenMessages.length - 1]!
-    expect(lastCall.some((message) => String(message.content ?? '').includes('回合上限'))).toBe(true)
+    expect(
+      lastCall.some((message) =>
+        String(message.content ?? '').includes('回合上限'),
+      ),
+    ).toBe(true)
   })
 
   it('does not project runtime plan context from another project scope', async () => {
-    const manager = new ControlManager(tmp('emperor-runner-cross-project-plan-context-'))
-    manager.setRuntimeScope({ sessionId: 'session_old', projectId: 'project_old', workspaceRoot: '/tmp/old-project' })
+    const manager = new ControlManager(
+      tmp('emperor-runner-cross-project-plan-context-'),
+    )
+    manager.setRuntimeScope({
+      sessionId: 'session_old',
+      projectId: 'project_old',
+      workspaceRoot: '/tmp/old-project',
+    })
     const interaction = manager.createPlan({
       title: 'Old project plan',
       summary: 'This plan belongs to another project.',
       planMarkdown: '# Plan\n\n- Continue old project',
       assumptions: [],
       riskLevel: 'low',
-      steps: [{
-        id: 'step_1',
-        title: 'Continue old project',
-        description: 'Should not appear in the new project context.',
-        commands: ['echo old'],
-        acceptance: ['old only'],
-      }],
+      steps: [
+        {
+          id: 'step_1',
+          title: 'Continue old project',
+          description: 'Should not appear in the new project context.',
+          commands: ['echo old'],
+          acceptance: ['old only'],
+        },
+      ],
     })
     manager.approve(interaction.id)
-    manager.setRuntimeScope({ sessionId: 'session_new', projectId: 'project_new', workspaceRoot: '/tmp/new-project' })
-    const provider = new FakeProvider([makeResponse({ content: 'new project only' })])
+    manager.setRuntimeScope({
+      sessionId: 'session_new',
+      projectId: 'project_new',
+      workspaceRoot: '/tmp/new-project',
+    })
+    const provider = new FakeProvider([
+      makeResponse({ content: 'new project only' }),
+    ])
     const runner = new AgentRunner({
       provider,
       model: 'fake',
@@ -1529,12 +2278,24 @@ describe('AgentRunner turn phases (test_runner_state.py)', () => {
     })
     const emitted: Msg[] = []
 
-    await runner.stepAsync([{ role: 'user', content: 'report files' }], { emit: (event) => { emitted.push(event) } })
+    await runner.stepAsync([{ role: 'user', content: 'report files' }], {
+      emit: (event) => {
+        emitted.push(event)
+      },
+    })
 
-    const contextEvent = emitted.find((event) => event.event === 'context_projection')!
-    expect((contextEvent.report as Record<string, unknown>).plan_context_attached).toBe(0)
-    const contents = provider.seenMessages[0]!.map((message) => String(message.content ?? ''))
-    expect(contents.some((content) => content.includes('[PLAN_RUNTIME_CONTEXT]'))).toBe(false)
+    const contextEvent = emitted.find(
+      (event) => event.event === 'context_projection',
+    )!
+    expect(
+      (contextEvent.report as Record<string, unknown>).plan_context_attached,
+    ).toBe(0)
+    const contents = provider.seenMessages[0]!.map((message) =>
+      String(message.content ?? ''),
+    )
+    expect(
+      contents.some((content) => content.includes('[PLAN_RUNTIME_CONTEXT]')),
+    ).toBe(false)
   })
 
   it('does not inject plan incomplete followups for active approved plan steps', async () => {
@@ -1545,13 +2306,16 @@ describe('AgentRunner turn phases (test_runner_state.py)', () => {
       planMarkdown: '# Plan\n\n- Finish step',
       assumptions: [],
       riskLevel: 'low',
-      steps: [{
-        id: 'step_1',
-        title: 'Finish step',
-        description: 'This step remains active to exercise followup loop protection.',
-        commands: ['echo verify'],
-        acceptance: ['runner does not loop forever'],
-      }],
+      steps: [
+        {
+          id: 'step_1',
+          title: 'Finish step',
+          description:
+            'This step remains active to exercise followup loop protection.',
+          commands: ['echo verify'],
+          acceptance: ['runner does not loop forever'],
+        },
+      ],
     })
     manager.approve(interaction.id)
     const provider = new FakeProvider([
@@ -1571,17 +2335,40 @@ describe('AgentRunner turn phases (test_runner_state.py)', () => {
     })
     const emitted: Msg[] = []
 
-    const reply = await runner.stepAsync([{ role: 'user', content: 'continue' }], { emit: (event) => { emitted.push(event) }, turnId: 'turn_plan_loop' })
+    const reply = await runner.stepAsync(
+      [{ role: 'user', content: 'continue' }],
+      {
+        emit: (event) => {
+          emitted.push(event)
+        },
+        turnId: 'turn_plan_loop',
+      },
+    )
 
     expect(reply).toBe('step already done')
     expect(provider.seenMessages.length).toBe(1)
-    expect(emitted).toEqual(expect.arrayContaining([
-      expect.objectContaining({ event: 'turn_phase', phase: 'completed' }),
-    ]))
-    expect(emitted.some((event) => event.event === 'turn_phase' && event.phase === 'plan_followup')).toBe(false)
-    expect(emitted.some((event) => event.event === 'turn_phase' && event.phase === 'max_turns')).toBe(false)
-    expect(memory.history.filter((item) => item.role === 'assistant')).toHaveLength(1)
-    expect(memory.history.find((item) => item.role === 'assistant')!.content).toBe(reply)
+    expect(emitted).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ event: 'turn_phase', phase: 'completed' }),
+      ]),
+    )
+    expect(
+      emitted.some(
+        (event) =>
+          event.event === 'turn_phase' && event.phase === 'plan_followup',
+      ),
+    ).toBe(false)
+    expect(
+      emitted.some(
+        (event) => event.event === 'turn_phase' && event.phase === 'max_turns',
+      ),
+    ).toBe(false)
+    expect(
+      memory.history.filter((item) => item.role === 'assistant'),
+    ).toHaveLength(1)
+    expect(
+      memory.history.find((item) => item.role === 'assistant')!.content,
+    ).toBe(reply)
   })
 })
 
@@ -1590,13 +2377,23 @@ describe('AgentRunner turn phases (test_runner_state.py)', () => {
 class MemoryFake implements MemoryStoreLike {
   checkpoint: Msg[] | null = null
   history: Array<{ role: string; content: string }> = []
-  writeCheckpoint(history: Msg[]): void { this.checkpoint = [...history] }
-  clearCheckpoint(): void { this.checkpoint = null }
-  readCheckpoint(): Msg[] | null { return this.checkpoint }
-  appendHistory(role: string, content: string): void { this.history.push({ role, content }) }
+  writeCheckpoint(history: Msg[]): void {
+    this.checkpoint = [...history]
+  }
+  clearCheckpoint(): void {
+    this.checkpoint = null
+  }
+  readCheckpoint(): Msg[] | null {
+    return this.checkpoint
+  }
+  appendHistory(role: string, content: string): void {
+    this.history.push({ role, content })
+  }
 }
 
-function tmp(prefix: string): string { return mkdtempSync(join(tmpdir(), prefix)) }
+function tmp(prefix: string): string {
+  return mkdtempSync(join(tmpdir(), prefix))
+}
 
 function makeQuestion(): Record<string, unknown> {
   return {
@@ -1623,29 +2420,68 @@ describe('AgentRunner control integration (test_control.py::test_runner_*)', () 
     const registry = controlRegistry(manager)
     const memory = new MemoryFake()
     const provider = new FakeProvider([
-      makeResponse({ content: '', toolCalls: [toolCall('call_ask', 'ask_user', { questions: [makeQuestion()] })], finishReason: 'tool_calls' }),
+      makeResponse({
+        content: '',
+        toolCalls: [
+          toolCall('call_ask', 'ask_user', { questions: [makeQuestion()] }),
+        ],
+        finishReason: 'tool_calls',
+      }),
     ])
-    const runner = new AgentRunner({ provider, model: 'fake', registry, systemPrompt: 'system', memoryStore: memory, controlManager: manager })
+    const runner = new AgentRunner({
+      provider,
+      model: 'fake',
+      registry,
+      systemPrompt: 'system',
+      memoryStore: memory,
+      controlManager: manager,
+    })
     const history: Msg[] = [{ role: 'user', content: 'do work' }]
     const emitted: Msg[] = []
-    await expect(runner.stepAsync(history, { emit: (e) => { emitted.push(e) } })).rejects.toThrow()
-    expect((manager.payload().pending as Record<string, unknown>).kind).toBe('ask')
+    await expect(
+      runner.stepAsync(history, {
+        emit: (e) => {
+          emitted.push(e)
+        },
+      }),
+    ).rejects.toThrow()
+    expect((manager.payload().pending as Record<string, unknown>).kind).toBe(
+      'ask',
+    )
     expect(memory.readCheckpoint()).not.toBeNull()
     expect(emitted.some((e) => e.event === 'ask_request')).toBe(true)
     expect(emitted.some((e) => e.event === 'turn_paused')).toBe(true)
     expect(history[history.length - 1]!.role).toBe('tool')
-    expect(String(history[history.length - 1]!.content)).toContain('waiting for user')
+    expect(String(history[history.length - 1]!.content)).toContain(
+      'waiting for user',
+    )
   })
 
   it('plan mode wraps plain final as plan', async () => {
     const manager = new ControlManager(tmp('emperor-runner-plan-'))
     manager.setMode('plan')
     const registry = controlRegistry(manager)
-    const provider = new FakeProvider([makeResponse({ content: '我会先读代码，然后实现并测试。' })])
-    const runner = new AgentRunner({ provider, model: 'fake', registry, systemPrompt: 'system', controlManager: manager })
+    const provider = new FakeProvider([
+      makeResponse({ content: '我会先读代码，然后实现并测试。' }),
+    ])
+    const runner = new AgentRunner({
+      provider,
+      model: 'fake',
+      registry,
+      systemPrompt: 'system',
+      controlManager: manager,
+    })
     const emitted: Msg[] = []
-    await expect(runner.stepAsync([{ role: 'user', content: '做一个计划' }], { emit: (e) => { emitted.push(e) } })).rejects.toThrow()
-    expect((manager.payload().pending as Record<string, unknown>).kind).toBe('plan')
+    await expect(
+      runner.stepAsync([{ role: 'user', content: '做一个计划' }], {
+        emit: (e) => {
+          emitted.push(e)
+        },
+      }),
+    ).rejects.toThrow()
+    expect((manager.payload().pending as Record<string, unknown>).kind).toBe(
+      'plan',
+    )
     expect(emitted.some((e) => e.event === 'plan_draft')).toBe(true)
     expect(emitted.some((e) => e.event === 'assistant_done')).toBe(false)
   })
@@ -1655,11 +2491,22 @@ describe('AgentRunner control integration (test_control.py::test_runner_*)', () 
     manager.setMode('plan')
     const registry = controlRegistry(manager)
     const provider = new StreamingToolDeltaProvider()
-    const runner = new AgentRunner({ provider, model: 'fake', registry, systemPrompt: 'system', controlManager: manager })
+    const runner = new AgentRunner({
+      provider,
+      model: 'fake',
+      registry,
+      systemPrompt: 'system',
+      controlManager: manager,
+    })
     const emitted: Msg[] = []
 
     await expect(
-      runner.stepAsync([{ role: 'user', content: '做一个计划' }], { emit: (e) => { emitted.push(e) }, turnId: 'turn-plan-stream' }),
+      runner.stepAsync([{ role: 'user', content: '做一个计划' }], {
+        emit: (e) => {
+          emitted.push(e)
+        },
+        turnId: 'turn-plan-stream',
+      }),
     ).rejects.toThrow()
 
     const deltas = emitted.filter((event) => event.event === 'plan_draft_delta')
@@ -1682,13 +2529,35 @@ describe('AgentRunner control integration (test_control.py::test_runner_*)', () 
   it('ask guard pauses plain final for ambiguous task', async () => {
     const manager = new ControlManager(tmp('emperor-runner-askguard-'))
     const registry = controlRegistry(manager)
-    const provider = new FakeProvider([makeResponse({ content: '我直接开始改。' })])
-    const runner = new AgentRunner({ provider, model: 'fake', registry, systemPrompt: 'system', controlManager: manager })
+    const provider = new FakeProvider([
+      makeResponse({ content: '我直接开始改。' }),
+    ])
+    const runner = new AgentRunner({
+      provider,
+      model: 'fake',
+      registry,
+      systemPrompt: 'system',
+      controlManager: manager,
+    })
     const emitted: Msg[] = []
     await expect(
-      runner.stepAsync([{ role: 'user', content: '阅读项目找到问题作出修改，不要打补丁，要工程化实现' }], { emit: (e) => { emitted.push(e) } }),
+      runner.stepAsync(
+        [
+          {
+            role: 'user',
+            content: '阅读项目找到问题作出修改，不要打补丁，要工程化实现',
+          },
+        ],
+        {
+          emit: (e) => {
+            emitted.push(e)
+          },
+        },
+      ),
     ).rejects.toThrow()
-    expect((manager.payload().pending as Record<string, unknown>).kind).toBe('ask')
+    expect((manager.payload().pending as Record<string, unknown>).kind).toBe(
+      'ask',
+    )
     expect(emitted.some((e) => e.event === 'ask_request')).toBe(true)
   })
 
@@ -1696,55 +2565,125 @@ describe('AgentRunner control integration (test_control.py::test_runner_*)', () 
     const root = tmp('emperor-runner-planguard-')
     const manager = new ControlManager(root)
     const registry = new ToolRegistry()
-    registry.register(new (class extends Tool {
-      override name = 'write_file'
-      override description = 'write'
-      override parameters = toolParamsSchema({ path: S('p'), content: S('c') }, ['path', 'content'])
-      override getPath(args: Record<string, unknown>): string { return String(args.path ?? '') }
-      execute(): string { return 'wrote' }
-    })())
+    registry.register(
+      new (class extends Tool {
+        override name = 'write_file'
+        override description = 'write'
+        override parameters = toolParamsSchema(
+          { path: S('p'), content: S('c') },
+          ['path', 'content'],
+        )
+        override getPath(args: Record<string, unknown>): string {
+          return String(args.path ?? '')
+        }
+        execute(): string {
+          return 'wrote'
+        }
+      })(),
+    )
     registry.register(new AskUserTool(manager))
     registry.register(new ProposePlanTool(manager))
     const provider = new FakeProvider([
-      makeResponse({ content: '', toolCalls: [toolCall('call_write', 'write_file', { path: 'auth.py', content: 'new auth' })], finishReason: 'tool_calls' }),
+      makeResponse({
+        content: '',
+        toolCalls: [
+          toolCall('call_write', 'write_file', {
+            path: 'auth.py',
+            content: 'new auth',
+          }),
+        ],
+        finishReason: 'tool_calls',
+      }),
       makeResponse({ content: '我需要先进入计划模式。' }),
     ])
-    const runner = new AgentRunner({ provider, model: 'fake', registry, systemPrompt: 'system', controlManager: manager })
-    const history: Msg[] = [{ role: 'user', content: 'Redesign authentication architecture across modules' }]
+    const runner = new AgentRunner({
+      provider,
+      model: 'fake',
+      registry,
+      systemPrompt: 'system',
+      controlManager: manager,
+    })
+    const history: Msg[] = [
+      {
+        role: 'user',
+        content: 'Redesign authentication architecture across modules',
+      },
+    ]
     await runner.stepAsync(history)
     const toolMessage = history.find((m) => m.role === 'tool')!
     expect(String(toolMessage.content)).toContain('PLAN_GUARD_REQUIRED')
     expect(String(toolMessage.content)).toContain('request_plan_mode')
     expect(String(toolMessage.content)).toContain('readonly_scopes:')
-    expect(String(toolMessage.content).toLowerCase()).toMatch(/auth|authentication/)
+    expect(String(toolMessage.content).toLowerCase()).toMatch(
+      /auth|authentication/,
+    )
   })
 
   it('emits plan entry decision contract', async () => {
     const manager = new ControlManager(tmp('emperor-runner-decision-'))
     const registry = controlRegistry(manager)
-    const provider = new FakeProvider([makeResponse({ content: '我会先说明需要计划。' })])
-    const runner = new AgentRunner({ provider, model: 'fake', registry, systemPrompt: 'system', controlManager: manager })
+    const provider = new FakeProvider([
+      makeResponse({ content: '我会先说明需要计划。' }),
+    ])
+    const runner = new AgentRunner({
+      provider,
+      model: 'fake',
+      registry,
+      systemPrompt: 'system',
+      controlManager: manager,
+    })
     const emitted: Msg[] = []
     await expect(
-      runner.stepAsync([{ role: 'user', content: 'Add a dashboard feature with UI state management and tests' }], { emit: (e) => { emitted.push(e) } }),
+      runner.stepAsync(
+        [
+          {
+            role: 'user',
+            content:
+              'Add a dashboard feature with UI state management and tests',
+          },
+        ],
+        {
+          emit: (e) => {
+            emitted.push(e)
+          },
+        },
+      ),
     ).rejects.toThrow()
-    const decisionEvent = emitted.find((e) => e.event === 'plan_entry_decision')!
+    const decisionEvent = emitted.find(
+      (e) => e.event === 'plan_entry_decision',
+    )!
     expect(decisionEvent.decision).toBe('recommended')
     expect(decisionEvent.triggers).toEqual(['feature', 'multi_step'])
-    expect((decisionEvent.recommended_readonly_scopes as unknown[]).length).toBeGreaterThan(0)
-    expect((decisionEvent.suggested_questions as unknown[]).length).toBeGreaterThan(0)
+    expect(
+      (decisionEvent.recommended_readonly_scopes as unknown[]).length,
+    ).toBeGreaterThan(0)
+    expect(
+      (decisionEvent.suggested_questions as unknown[]).length,
+    ).toBeGreaterThan(0)
   })
 
   it('answer resume injects user message', async () => {
     const manager = new ControlManager(tmp('emperor-runner-resume-'))
     const interaction = manager.createAsk({ questions: [makeQuestion()] })
-    const resume = manager.answer(interaction.id, { scope: { choice: '最小', freeform: '' } })
+    const resume = manager.answer(interaction.id, {
+      scope: { choice: '最小', freeform: '' },
+    })
     const provider = new FakeProvider([makeResponse({ content: 'resumed' })])
     const registry = controlRegistry(manager)
     const history: Msg[] = [{ role: 'user', content: resume.message }]
-    const runner = new AgentRunner({ provider, model: 'fake', registry, systemPrompt: 'system', controlManager: manager })
+    const runner = new AgentRunner({
+      provider,
+      model: 'fake',
+      registry,
+      systemPrompt: 'system',
+      controlManager: manager,
+    })
     expect(await runner.stepAsync(history)).toBe('resumed')
     const lastSeen = provider.seenMessages[provider.seenMessages.length - 1]!
-    expect(lastSeen.some((m) => String((m as Record<string, unknown>).content).includes('ASK_ANSWERED'))).toBe(true)
+    expect(
+      lastSeen.some((m) =>
+        String((m as Record<string, unknown>).content).includes('ASK_ANSWERED'),
+      ),
+    ).toBe(true)
   })
 })

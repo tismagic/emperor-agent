@@ -1,5 +1,8 @@
 <script setup lang="ts">
-import type { CapabilityPickerGroup, CapabilityPickerItem } from '../../capabilities/capabilityPicker'
+import type {
+  CapabilityPickerGroup,
+  CapabilityPickerItem,
+} from '../../capabilities/capabilityPicker'
 
 const props = defineProps<{
   groups: CapabilityPickerGroup[]
@@ -20,7 +23,11 @@ const emit = defineEmits<{
       <em>{{ props.hint }}</em>
     </div>
 
-    <section v-for="group in props.groups" :key="group.label" class="composer-palette-group">
+    <section
+      v-for="group in props.groups"
+      :key="group.label"
+      class="composer-palette-group"
+    >
       <div class="composer-palette-label">{{ group.label }}</div>
       <button
         v-for="item in group.items"

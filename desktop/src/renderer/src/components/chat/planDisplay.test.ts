@@ -7,7 +7,9 @@ import {
   planStatusPresentation,
 } from './planDisplay'
 
-function interaction(extra: Partial<ControlInteraction> = {}): ControlInteraction {
+function interaction(
+  extra: Partial<ControlInteraction> = {},
+): ControlInteraction {
   return {
     id: 'plan-1',
     kind: 'plan',
@@ -38,7 +40,9 @@ function plan(extra: Partial<RuntimePlanRecord> = {}): RuntimePlanRecord {
 
 describe('plan display helpers', () => {
   it('uses runtime plan markdown before stale interaction markdown', () => {
-    expect(planDisplayMarkdown(interaction(), plan())).toContain('# Runtime Plan')
+    expect(planDisplayMarkdown(interaction(), plan())).toContain(
+      '# Runtime Plan',
+    )
   })
 
   it('keeps waiting plan decisions visible only while interaction is waiting', () => {

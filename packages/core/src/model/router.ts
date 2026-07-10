@@ -5,7 +5,13 @@
  * TS 侧一样由 ModelRouter 封装：加载 config → 找 spec → resolve credentials → create_provider。
  */
 import { resolve } from 'node:path'
-import { activeEntry, findEntry, type ModelConfig, type ModelEntry, resolveProviderName } from '../config/model-config'
+import {
+  activeEntry,
+  findEntry,
+  type ModelConfig,
+  type ModelEntry,
+  resolveProviderName,
+} from '../config/model-config'
 import { createProvider } from '../providers/factory'
 import { findByName, type ProviderSpec } from '../providers/registry'
 import { type GenerationSettings, type LLMProvider } from '../providers/base'
@@ -40,7 +46,12 @@ export interface ModelRoute {
 const MAIN: ModelRole = 'main'
 const SECONDARY: ModelRole = 'secondary'
 
-const LIGHTWEIGHT_AGENT_TYPES = new Set(['xiaohuangmen', 'sili_suitang', 'dongchang_tanshi', 'shangbao_dianbu'])
+const LIGHTWEIGHT_AGENT_TYPES = new Set([
+  'xiaohuangmen',
+  'sili_suitang',
+  'dongchang_tanshi',
+  'shangbao_dianbu',
+])
 const WRITING_AGENT_TYPES = new Set(['neiguan_yingzao'])
 
 export class ModelRouter {
@@ -50,38 +61,74 @@ export class ModelRouter {
   readonly main: ProviderSnapshot
   readonly secondary: ProviderSnapshot
 
-  constructor(root: string, config: ModelConfig, modelOverride?: string | null) {
+  constructor(
+    root: string,
+    config: ModelConfig,
+    modelOverride?: string | null,
+  ) {
     this.root = resolve(root)
     this.modelOverride = modelOverride ?? null
     this.availability = modelAvailability(config)
-    this.main = buildProviderSnapshot(config, { modelOverride: this.modelOverride, role: MAIN })
-    this.secondary = buildProviderSnapshot(config, { modelOverride: this.modelOverride, role: SECONDARY })
+    this.main = buildProviderSnapshot(config, {
+      modelOverride: this.modelOverride,
+      role: MAIN,
+    })
+    this.secondary = buildProviderSnapshot(config, {
+      modelOverride: this.modelOverride,
+      role: SECONDARY,
+    })
   }
 
-  route(useCase: string, agentType?: string | null, task?: string | null): ModelRoute {
+  route(
+    useCase: string,
+    agentType?: string | null,
+    task?: string | null,
+  ): ModelRoute {
     const key = String(useCase || 'main_agent')
     if (key === 'main_agent') return this.mainRoute('main_agent')
-    if (['memory_compaction', 'watchlist_check', 'session_title', 'hook_prompt', 'hook_agent'].includes(key)) {
+    if (
+      [
+        'memory_compaction',
+        'watchlist_check',
+        'session_title',
+        'hook_prompt',
+        'hook_agent',
+      ].includes(key)
+    ) {
       return this.secondaryRoute(key, task)
     }
     if (['subagent', 'team'].includes(key)) {
       const normalizedAgent = String(agentType ?? '').trim()
       const estimated = task ? roughTokenEstimate(task) : null
       if (WRITING_AGENT_TYPES.has(normalizedAgent)) {
-        return this.mainRoute(`${key}:${normalizedAgent}:write_capable`, estimated ?? undefined)
+        return this.mainRoute(
+          `${key}:${normalizedAgent}:write_capable`,
+          estimated ?? undefined,
+        )
       }
       if (LIGHTWEIGHT_AGENT_TYPES.has(normalizedAgent)) {
-        return this.secondaryRoute(`${key}:${normalizedAgent}:lightweight`, task)
+        return this.secondaryRoute(
+          `${key}:${normalizedAgent}:lightweight`,
+          task,
+        )
       }
-      return this.mainRoute(`${key}:${normalizedAgent || 'unknown'}:default_main`, estimated ?? undefined)
+      return this.mainRoute(
+        `${key}:${normalizedAgent || 'unknown'}:default_main`,
+        estimated ?? undefined,
+      )
     }
     return this.mainRoute(`${key}:default_main`)
   }
 
-  routeForRole(useCase: string, role: ModelRole, task?: string | null): ModelRoute {
+  routeForRole(
+    useCase: string,
+    role: ModelRole,
+    task?: string | null,
+  ): ModelRoute {
     const key = String(useCase || 'main_agent')
     const estimated = task ? roughTokenEstimate(task) : null
-    if (role === MAIN) return this.mainRoute(`${key}:explicit_main`, estimated ?? undefined)
+    if (role === MAIN)
+      return this.mainRoute(`${key}:explicit_main`, estimated ?? undefined)
     return this.secondaryRoute(key, task)
   }
 
@@ -98,14 +145,29 @@ export class ModelRouter {
   private secondaryRoute(reason: string, task?: string | null): ModelRoute {
     const estimated = task ? roughTokenEstimate(task) : null
     if (this.secondary.modelRole !== SECONDARY) {
-      return this.mainRoute(`${reason}:secondary_missing`, estimated ?? undefined)
+      return this.mainRoute(
+        `${reason}:secondary_missing`,
+        estimated ?? undefined,
+      )
     }
-    if (estimated !== null && estimated > this.secondary.contextWindowTokens * 0.65) {
-      return this.mainRoute(`${reason}:secondary_context_too_small`, estimated ?? undefined)
+    if (
+      estimated !== null &&
+      estimated > this.secondary.contextWindowTokens * 0.65
+    ) {
+      return this.mainRoute(
+        `${reason}:secondary_context_too_small`,
+        estimated ?? undefined,
+      )
     }
     const snapshot = { ...this.secondary, routeReason: reason }
     const fallback = { ...this.main, routeReason: `${reason}:fallback_main` }
-    return { snapshot, fallback, useCase: reason.split(':', 1)[0]!, reason, estimatedTokens: estimated }
+    return {
+      snapshot,
+      fallback,
+      useCase: reason.split(':', 1)[0]!,
+      reason,
+      estimatedTokens: estimated,
+    }
   }
 
   payload(): Record<string, unknown> {
@@ -114,7 +176,8 @@ export class ModelRouter {
       fallbackToMain: true,
       mainEntry: this.main.entryName,
       mainModel: this.main.model,
-      secondaryModel: this.secondary.model === this.main.model ? null : this.secondary.model,
+      secondaryModel:
+        this.secondary.model === this.main.model ? null : this.secondary.model,
     }
   }
 }
@@ -130,13 +193,20 @@ export interface SnapshotArgs {
   role?: ModelRole
 }
 
-export function buildProviderSnapshot(config: ModelConfig, args: SnapshotArgs = {}): ProviderSnapshot {
+export function buildProviderSnapshot(
+  config: ModelConfig,
+  args: SnapshotArgs = {},
+): ProviderSnapshot {
   const modelOverride = args.modelOverride ?? null
   const role: ModelRole = args.role ?? MAIN
   const entry = resolveActiveEntry(config, modelOverride)
   const spec = findByName(entry.provider) ?? fallbackSpec(entry.provider)
   const [modelId, selectedRole, routeReason] = entryModelForRole(entry, role)
-  const [apiKey, apiBase, extraHeaders, extraBody] = resolveCredentials(entry, config.providers, spec)
+  const [apiKey, apiBase, extraHeaders, extraBody] = resolveCredentials(
+    entry,
+    config.providers,
+    spec,
+  )
 
   const defaults = config.defaults
   const generation: GenerationSettings = {
@@ -155,7 +225,8 @@ export function buildProviderSnapshot(config: ModelConfig, args: SnapshotArgs = 
   })
   provider.generation = generation
 
-  const contextWindowTokens = entry.contextWindowTokens ?? defaults.contextWindowTokens
+  const contextWindowTokens =
+    entry.contextWindowTokens ?? defaults.contextWindowTokens
 
   return {
     provider,
@@ -174,7 +245,10 @@ export function buildProviderSnapshot(config: ModelConfig, args: SnapshotArgs = 
   }
 }
 
-function resolveActiveEntry(config: ModelConfig, modelOverride: string | null): ModelEntry {
+function resolveActiveEntry(
+  config: ModelConfig,
+  modelOverride: string | null,
+): ModelEntry {
   if (modelOverride) {
     const match = findEntry?.(config, modelOverride) ?? activeEntry(config)
     return match || synthEntryFromLegacy(config, modelOverride)
@@ -186,24 +260,51 @@ function resolveActiveEntry(config: ModelConfig, modelOverride: string | null): 
   return synthEntryFromLegacy(config, config.defaults.model ?? '')
 }
 
-function synthEntryFromLegacy(config: ModelConfig, modelId: string): ModelEntry {
+function synthEntryFromLegacy(
+  config: ModelConfig,
+  modelId: string,
+): ModelEntry {
   if (!modelId) {
     return {
-      name: 'default', id: 'deepseek-chat', mainModelId: 'deepseek-chat', provider: 'deepseek',
-      secondaryModelId: '', apiKey: null, apiBase: null, extraHeaders: null, extraBody: null,
-      maxTokens: null, temperature: null, contextWindowTokens: null, reasoningEffort: null,
-      label: '', supportsVision: false,
+      name: 'default',
+      id: 'deepseek-chat',
+      mainModelId: 'deepseek-chat',
+      provider: 'deepseek',
+      secondaryModelId: '',
+      apiKey: null,
+      apiBase: null,
+      extraHeaders: null,
+      extraBody: null,
+      maxTokens: null,
+      temperature: null,
+      contextWindowTokens: null,
+      reasoningEffort: null,
+      label: '',
+      supportsVision: false,
     }
   }
-  const providerName = resolveProviderName(config.defaults.provider, modelId, config.providers)
+  const providerName = resolveProviderName(
+    config.defaults.provider,
+    modelId,
+    config.providers,
+  )
   const p = config.providers[providerName] ?? null
   return {
-    name: modelId, id: modelId, mainModelId: modelId, provider: providerName,
+    name: modelId,
+    id: modelId,
+    mainModelId: modelId,
+    provider: providerName,
     secondaryModelId: '',
-    apiKey: p?.apiKey ?? null, apiBase: p?.apiBase ?? null,
-    extraHeaders: p?.extraHeaders ?? null, extraBody: p?.extraBody ?? null,
-    maxTokens: null, temperature: null, contextWindowTokens: null, reasoningEffort: null,
-    label: '', supportsVision: false,
+    apiKey: p?.apiKey ?? null,
+    apiBase: p?.apiBase ?? null,
+    extraHeaders: p?.extraHeaders ?? null,
+    extraBody: p?.extraBody ?? null,
+    maxTokens: null,
+    temperature: null,
+    contextWindowTokens: null,
+    reasoningEffort: null,
+    label: '',
+    supportsVision: false,
   }
 }
 
@@ -217,7 +318,12 @@ function resolveCredentials(
   entry: ModelEntry,
   providers: Record<string, any>,
   spec: ProviderSpec,
-): [string | null, string | null, Record<string, string> | null, Record<string, unknown> | null] {
+): [
+  string | null,
+  string | null,
+  Record<string, string> | null,
+  Record<string, unknown> | null,
+] {
   const p = providers[spec.name] ?? null
   return [
     entry.apiKey || (p?.apiKey ?? null),
@@ -227,9 +333,13 @@ function resolveCredentials(
   ]
 }
 
-function entryModelForRole(entry: ModelEntry, role: ModelRole): [string, ModelRole, string] {
+function entryModelForRole(
+  entry: ModelEntry,
+  role: ModelRole,
+): [string, ModelRole, string] {
   if (role === 'secondary') {
-    if (entry.secondaryModelId) return [entry.secondaryModelId, 'secondary', 'secondary_model']
+    if (entry.secondaryModelId)
+      return [entry.secondaryModelId, 'secondary', 'secondary_model']
     return [entry.mainModelId, 'main', 'secondary_missing_fallback_main']
   }
   return [entry.mainModelId, 'main', 'main_model']

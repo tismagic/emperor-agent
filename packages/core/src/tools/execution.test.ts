@@ -9,7 +9,9 @@ class SafeTool extends Tool {
   override description = 'concurrency-safe fake'
   override parameters = toolParamsSchema({}, [])
   override concurrencySafe = true
-  execute(): string { return 'ok' }
+  execute(): string {
+    return 'ok'
+  }
 }
 
 describe('ToolExecutionEngine concurrency cap (Wave3.3)', () => {
@@ -26,14 +28,20 @@ describe('ToolExecutionEngine concurrency cap (Wave3.3)', () => {
       inflight -= 1
       return ToolResultObj.fromText(`result:${call.id}`)
     }
-    const calls = Array.from({ length: 12 }, (_, i) => ({ id: `c${i}`, name: 'safe_tool', arguments: {} }))
+    const calls = Array.from({ length: 12 }, (_, i) => ({
+      id: `c${i}`,
+      name: 'safe_tool',
+      arguments: {},
+    }))
 
     const results = await engine.runBatch(calls, { runOne })
 
     expect(maxInflight).toBeLessThanOrEqual(6)
     expect(maxInflight).toBeGreaterThan(1)
     expect(results.map((r) => r.tool_call_id)).toEqual(calls.map((c) => c.id))
-    expect(results.map((r) => r.content)).toEqual(calls.map((c) => `result:${c.id}`))
+    expect(results.map((r) => r.content)).toEqual(
+      calls.map((c) => `result:${c.id}`),
+    )
   })
 
   it('createStreamingRun starts eager-eligible tools before finish and defers the rest', async () => {
@@ -71,7 +79,10 @@ describe('ToolExecutionEngine concurrency cap (Wave3.3)', () => {
     const engine = new ToolExecutionEngine(registry)
     const ran: string[] = []
     const run = engine.createStreamingRun({
-      runOne: async (call) => { ran.push(call.id); return ToolResultObj.fromText(call.id) },
+      runOne: async (call) => {
+        ran.push(call.id)
+        return ToolResultObj.fromText(call.id)
+      },
       canStartEarly: () => true,
     })
     run.enqueue({ id: 'a', name: 'safe_tool', arguments: {} })
@@ -99,7 +110,11 @@ describe('ToolExecutionEngine concurrency cap (Wave3.3)', () => {
       inflight -= 1
       return ToolResultObj.fromText('ok')
     }
-    const calls = Array.from({ length: 6 }, (_, i) => ({ id: `c${i}`, name: 'safe_tool', arguments: {} }))
+    const calls = Array.from({ length: 6 }, (_, i) => ({
+      id: `c${i}`,
+      name: 'safe_tool',
+      arguments: {},
+    }))
 
     await engine.runBatch(calls, { runOne, maxConcurrency: 2 })
 

@@ -1,4 +1,8 @@
-import { CORE_API_ROUTE_OPERATIONS, CoreApi, type CoreApiCreateOptions } from '@emperor/core'
+import {
+  CORE_API_ROUTE_OPERATIONS,
+  CoreApi,
+  type CoreApiCreateOptions,
+} from '@emperor/core'
 import { CoreEventBridge } from './event-bridge'
 import { registerCoreIpc, type CoreApiLike, type IpcMainLike } from './ipc'
 
@@ -6,7 +10,10 @@ export function coreOperationKeys(): string[] {
   return CORE_API_ROUTE_OPERATIONS.map((op) => op.key)
 }
 
-export function registerCoreHostIpc(ipcMain: IpcMainLike, coreApi: CoreApiLike): void {
+export function registerCoreHostIpc(
+  ipcMain: IpcMainLike,
+  coreApi: CoreApiLike,
+): void {
   registerCoreIpc(ipcMain, coreApi, coreOperationKeys())
 }
 

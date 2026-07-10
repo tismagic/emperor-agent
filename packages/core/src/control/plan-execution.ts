@@ -28,19 +28,28 @@ const TASK_STATUS_FAILED = 'failed'
 
 export class PlanExecutionManager {
   private readonly cm: ControlManagerHost
-  constructor(cm: ControlManagerHost) { this.cm = cm }
+  constructor(cm: ControlManagerHost) {
+    this.cm = cm
+  }
 
   /**
    * Legacy todo→plan step 投影。Claude Code-style `update_todos` 主链路不调用这里；
    * 保留是为了旧历史、旧测试和显式兼容 API 能读取/投影旧计划状态。
    */
-  syncPlanFromTodos(todos: Array<Record<string, unknown>>, opts?: { evidence?: Record<string, unknown> | null }): PlanRecord | null {
+  syncPlanFromTodos(
+    todos: Array<Record<string, unknown>>,
+    opts?: { evidence?: Record<string, unknown> | null },
+  ): PlanRecord | null {
     const record = this.cm.latestExecutablePlan()
     if (record === null || !record.steps.length) return null
     const evidence = opts?.evidence ?? null
     const todoByStepId = new Map<string, Record<string, unknown>>()
     for (const item of todos) {
-      if (item && typeof item === 'object' && String(item.plan_step_id ?? '').trim()) {
+      if (
+        item &&
+        typeof item === 'object' &&
+        String(item.plan_step_id ?? '').trim()
+      ) {
         todoByStepId.set(String(item.plan_step_id), item)
       }
     }
@@ -61,7 +70,10 @@ export class PlanExecutionManager {
       const todoStatus = String(todo.status ?? 'pending')
       const nextStatus = planStatusFromTodo(todoStatus)
       const stepEvidence = [...step.evidence]
-      if (nextStatus === PlanStepStatus.DONE && step.status !== PlanStepStatus.DONE) {
+      if (
+        nextStatus === PlanStepStatus.DONE &&
+        step.status !== PlanStepStatus.DONE
+      ) {
         stepEvidence.push({
           ...(evidence ?? {}),
           todo_id: todo.id,
@@ -70,7 +82,10 @@ export class PlanExecutionManager {
           synced_at: now,
         })
       }
-      if (nextStatus === PlanStepStatus.BLOCKED && step.status !== PlanStepStatus.BLOCKED) {
+      if (
+        nextStatus === PlanStepStatus.BLOCKED &&
+        step.status !== PlanStepStatus.BLOCKED
+      ) {
         stepEvidence.push({
           ...(evidence ?? {}),
           todo_id: todo.id,
@@ -83,12 +98,19 @@ export class PlanExecutionManager {
       steps.push({ ...step, status: nextStatus, evidence: stepEvidence })
     })
 
-    const allDone = steps.length > 0 && steps.every((s) => s.status === PlanStepStatus.DONE || s.status === PlanStepStatus.SKIPPED)
+    const allDone =
+      steps.length > 0 &&
+      steps.every(
+        (s) =>
+          s.status === PlanStepStatus.DONE ||
+          s.status === PlanStepStatus.SKIPPED,
+      )
     const planStatus = allDone ? PlanStatus.COMPLETED : PlanStatus.EXECUTING
     let updated: PlanRecord = {
       ...record,
       status: planStatus,
-      completedAt: planStatus === PlanStatus.COMPLETED ? now : record.completedAt,
+      completedAt:
+        planStatus === PlanStatus.COMPLETED ? now : record.completedAt,
       updatedAt: now,
       steps,
     }
@@ -102,12 +124,20 @@ export class PlanExecutionManager {
     const now = nowTs()
     for (const record of this.cm.planStore.list()) {
       if (record.id === newPlanId) continue
-      if (record.status !== PlanStatus.APPROVED && record.status !== PlanStatus.EXECUTING) continue
+      if (
+        record.status !== PlanStatus.APPROVED &&
+        record.status !== PlanStatus.EXECUTING
+      )
+        continue
       // 不碰 updatedAt：取代是记账而非活动，latest() 必须继续指向新计划
       this.cm.planStore.save({
         ...record,
         status: PlanStatus.CANCELLED,
-        metadata: { ...record.metadata, superseded_by: newPlanId, superseded_at: now },
+        metadata: {
+          ...record.metadata,
+          superseded_by: newPlanId,
+          superseded_at: now,
+        },
       })
     }
   }
@@ -121,7 +151,13 @@ export class PlanExecutionManager {
     isError?: boolean
   }): unknown {
     const [record, step, taskId] = this.activePlanStepTask()
-    if (record === null || step === null || taskId === null || this.cm.taskManager === null) return null
+    if (
+      record === null ||
+      step === null ||
+      taskId === null ||
+      this.cm.taskManager === null
+    )
+      return null
     const message = {
       kind: 'tool_output',
       role: 'tool',
@@ -145,7 +181,9 @@ export class PlanExecutionManager {
 
   private syncPlanStepTasks(record: PlanRecord): PlanRecord {
     if (this.cm.taskManager === null || !record.steps.length) return record
-    const mapping = { ...((record.metadata.plan_step_tasks as Record<string, string>) ?? {}) }
+    const mapping = {
+      ...((record.metadata.plan_step_tasks as Record<string, string>) ?? {}),
+    }
     const scope = planStepTaskScope(record, this.cm.planScopeMetadata())
     record.steps.forEach((step, idx) => {
       const index = idx + 1
@@ -162,7 +200,12 @@ export class PlanExecutionManager {
         const task = this.cm.taskManager!.store.get(taskId)
         const progress = task !== null ? { ...task.progress } : {}
         progress.verification_status = metadata.verification_status
-        this.cm.taskManager!.updateTask(taskId, { status, title: step.title, metadata, progress })
+        this.cm.taskManager!.updateTask(taskId, {
+          status,
+          title: step.title,
+          metadata,
+          progress,
+        })
         return
       }
       const task = this.cm.taskManager!.startTask({
@@ -170,7 +213,10 @@ export class PlanExecutionManager {
         title: step.title,
         source: 'plan_step',
         status,
-        sessionId: record.sessionId ?? ((this.cm.planScopeMetadata()?.session_id as string | undefined) ?? null),
+        sessionId:
+          record.sessionId ??
+          (this.cm.planScopeMetadata()?.session_id as string | undefined) ??
+          null,
         metadata,
       })
       mapping[step.id] = task.id
@@ -180,7 +226,11 @@ export class PlanExecutionManager {
     return { ...record, metadata }
   }
 
-  private activePlanStepTask(): [PlanRecord | null, PlanStep | null, string | null] {
+  private activePlanStepTask(): [
+    PlanRecord | null,
+    PlanStep | null,
+    string | null,
+  ] {
     const record = this.cm.latestExecutablePlan()
     if (record === null) return [null, null, null]
     const mapping = record.metadata.plan_step_tasks
@@ -193,14 +243,20 @@ export class PlanExecutionManager {
     return [record, null, null]
   }
 
-  appendPlanStepVerification(record: PlanRecord, opts: { stepId: string; result: Record<string, unknown> }): void {
+  appendPlanStepVerification(
+    record: PlanRecord,
+    opts: { stepId: string; result: Record<string, unknown> },
+  ): void {
     if (this.cm.taskManager === null) return
     const mapping = record.metadata.plan_step_tasks
     if (!mapping || typeof mapping !== 'object') return
-    const taskId = String((mapping as Record<string, string>)[opts.stepId] ?? '')
+    const taskId = String(
+      (mapping as Record<string, string>)[opts.stepId] ?? '',
+    )
     if (!taskId) return
     const passed = opts.result.passed
-    const verificationStatus = passed === true ? 'passed' : passed === false ? 'failed' : 'unknown'
+    const verificationStatus =
+      passed === true ? 'passed' : passed === false ? 'failed' : 'unknown'
     this.cm.taskManager.appendSidechain(taskId, {
       kind: 'verification',
       role: 'tool',
@@ -208,7 +264,10 @@ export class PlanExecutionManager {
       plan_step_id: opts.stepId,
       tool_name: String(opts.result.source ?? 'run_command'),
       command: String(opts.result.command ?? ''),
-      content: String(opts.result.summary ?? opts.result.error ?? '').slice(0, 2000),
+      content: String(opts.result.summary ?? opts.result.error ?? '').slice(
+        0,
+        2000,
+      ),
       passed,
       result: { ...opts.result },
     })
@@ -221,7 +280,11 @@ export class PlanExecutionManager {
     this.cm.taskManager.updateTask(taskId, fields)
   }
 
-  updatePlanStatus(interaction: Interaction, status: string, opts?: { approved?: boolean }): void {
+  updatePlanStatus(
+    interaction: Interaction,
+    status: string,
+    opts?: { approved?: boolean },
+  ): void {
     const planId = String(interaction.meta.plan_id ?? '')
     if (!planId) return
     const record = this.cm.planStore.get(planId)
@@ -230,12 +293,17 @@ export class PlanExecutionManager {
     let draft = record.draft
     if (opts?.approved) draft = { ...draft, phase: PlanDraftPhase.APPROVED }
     const scope = this.cm.planScopeMetadata()
-    const metadata = { ...record.metadata, ...(scope && !record.metadata.scope ? { scope } : {}) }
+    const metadata = {
+      ...record.metadata,
+      ...(scope && !record.metadata.scope ? { scope } : {}),
+    }
     const payload: Record<string, unknown> = {
       ...planToDict(record),
       status,
       updated_at: now,
-      draft: { ...planToDict({ ...record, draft }).draft as Record<string, unknown> },
+      draft: {
+        ...(planToDict({ ...record, draft }).draft as Record<string, unknown>),
+      },
       metadata,
     }
     if (opts?.approved) payload.approved_at = now
@@ -249,7 +317,10 @@ export class PlanExecutionManager {
     if (record === null) return null
     if (this.cm.todoStore === null || !record.steps.length) return record
     let activated = new PlanExecutionState(record).startNextStep()
-    activated = { ...activated, draft: { ...activated.draft, phase: PlanDraftPhase.EXECUTING } }
+    activated = {
+      ...activated,
+      draft: { ...activated.draft, phase: PlanDraftPhase.EXECUTING },
+    }
     activated = this.cm.permissionTokens.issue(activated)
     activated = this.syncPlanStepTasks(activated)
     this.cm.planStore.save(activated)
@@ -257,8 +328,12 @@ export class PlanExecutionManager {
   }
 }
 
-function planStepTaskScope(record: PlanRecord, current: Record<string, unknown> | null): Record<string, unknown> | null {
+function planStepTaskScope(
+  record: PlanRecord,
+  current: Record<string, unknown> | null,
+): Record<string, unknown> | null {
   const saved = record.metadata.scope
-  if (saved && typeof saved === 'object' && !Array.isArray(saved)) return { ...(saved as Record<string, unknown>) }
+  if (saved && typeof saved === 'object' && !Array.isArray(saved))
+    return { ...(saved as Record<string, unknown>) }
   return current ? { ...current } : null
 }

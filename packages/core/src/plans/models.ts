@@ -41,7 +41,11 @@ const PLAN_STATUSES = new Set<string>(Object.values(PlanStatus))
 const PLAN_STEP_STATUSES = new Set<string>(Object.values(PlanStepStatus))
 const PLAN_DRAFT_PHASES = new Set<string>(Object.values(PlanDraftPhase))
 
-function validValue(value: unknown, allowed: Set<string>, fallback: string): string {
+function validValue(
+  value: unknown,
+  allowed: Set<string>,
+  fallback: string,
+): string {
   const text = String(value ?? '').trim()
   return allowed.has(text) ? text : fallback
 }
@@ -58,7 +62,10 @@ function stringList(value: unknown, limit = 120): string[] {
 
 function dictList(value: unknown, limit = 120): Array<Record<string, unknown>> {
   if (!Array.isArray(value)) return []
-  return value.slice(0, limit).filter((item) => item && typeof item === 'object' && !Array.isArray(item)).map((item) => ({ ...(item as Record<string, unknown>) }))
+  return value
+    .slice(0, limit)
+    .filter((item) => item && typeof item === 'object' && !Array.isArray(item))
+    .map((item) => ({ ...(item as Record<string, unknown>) }))
 }
 
 function optionalFloat(value: unknown): number | null {
@@ -103,8 +110,12 @@ function legacyDiscoveryFiles(raw: Record<string, unknown>): string[] {
 export function discoveryFromDict(raw: Record<string, unknown>): PlanDiscovery {
   return {
     id: String(raw.id ?? ''),
-    source: String(raw.source ?? '').trim().slice(0, 80),
-    summary: String(raw.summary ?? '').trim().slice(0, 1200),
+    source: String(raw.source ?? '')
+      .trim()
+      .slice(0, 80),
+    summary: String(raw.summary ?? '')
+      .trim()
+      .slice(0, 1200),
     files: stringList(raw.files ?? legacyDiscoveryFiles(raw)),
     symbols: stringList(raw.symbols),
     evidenceRefs: stringList(raw.evidence_refs ?? raw.evidenceRefs),
@@ -154,7 +165,9 @@ export function draftToDict(d: PlanDraftState): Record<string, unknown> {
   }
 }
 
-export function draftFromDict(raw: Record<string, unknown> | null | undefined): PlanDraftState {
+export function draftFromDict(
+  raw: Record<string, unknown> | null | undefined,
+): PlanDraftState {
   if (!raw || typeof raw !== 'object') return emptyDraft()
   return {
     phase: validValue(raw.phase, PLAN_DRAFT_PHASES, PlanDraftPhase.EXPLORING),
@@ -163,7 +176,9 @@ export function draftFromDict(raw: Record<string, unknown> | null | undefined): 
     openQuestions: dictList(raw.open_questions),
     resolvedQuestions: dictList(raw.resolved_questions),
     alternativesConsidered: stringList(raw.alternatives_considered),
-    recommendedApproach: String(raw.recommended_approach ?? '').trim().slice(0, 1200),
+    recommendedApproach: String(raw.recommended_approach ?? '')
+      .trim()
+      .slice(0, 1200),
     verificationStrategy: stringList(raw.verification_strategy),
     lastContextRefreshAt: optionalFloat(raw.last_context_refresh_at),
   }
@@ -187,7 +202,9 @@ export interface PlanStep {
   rollback: string
 }
 
-export function makeStep(p: Partial<PlanStep> & { id: string; title: string }): PlanStep {
+export function makeStep(
+  p: Partial<PlanStep> & { id: string; title: string },
+): PlanStep {
   return {
     id: p.id,
     title: p.title,
@@ -224,7 +241,9 @@ export function stepToDict(s: PlanStep): Record<string, unknown> {
 }
 
 export function stepFromDict(raw: Record<string, unknown>): PlanStep {
-  const verificationRaw = (raw.verification ?? raw.verification_requirements ?? []) as unknown[]
+  const verificationRaw = (raw.verification ??
+    raw.verification_requirements ??
+    []) as unknown[]
   return {
     id: String(raw.id),
     title: String(raw.title),
@@ -233,16 +252,22 @@ export function stepFromDict(raw: Record<string, unknown>): PlanStep {
     files: ((raw.files ?? []) as unknown[]).map((v) => String(v)),
     commands: ((raw.commands ?? []) as unknown[]).map((v) => String(v)),
     acceptance: ((raw.acceptance ?? []) as unknown[]).map((v) => String(v)),
-    discoveryRefs: ((raw.discovery_refs ?? raw.discoveryRefs ?? []) as unknown[])
+    discoveryRefs: (
+      (raw.discovery_refs ?? raw.discoveryRefs ?? []) as unknown[]
+    )
       .map((v) => String(v))
       .filter((v) => v.trim()),
     verification: verificationRaw
       .filter((item) => item && typeof item === 'object')
       .map((item) => requirementFromDict(item as Record<string, unknown>)),
-    evidence: ((raw.evidence ?? []) as unknown[]).filter((item) => item && typeof item === 'object') as Array<Record<string, unknown>>,
+    evidence: ((raw.evidence ?? []) as unknown[]).filter(
+      (item) => item && typeof item === 'object',
+    ) as Array<Record<string, unknown>>,
     risk: String(raw.risk ?? 'medium'),
     riskNote: String(raw.risk_note ?? raw.riskNote ?? ''),
-    rollback: String(raw.rollback ?? raw.rollback_path ?? raw.rollbackPath ?? ''),
+    rollback: String(
+      raw.rollback ?? raw.rollback_path ?? raw.rollbackPath ?? '',
+    ),
   }
 }
 
@@ -267,7 +292,16 @@ export interface PlanRecord {
   metadata: Record<string, unknown>
 }
 
-export function makePlanRecord(p: Partial<PlanRecord> & { id: string; title: string; summary: string; status: string; createdAt: number; updatedAt: number }): PlanRecord {
+export function makePlanRecord(
+  p: Partial<PlanRecord> & {
+    id: string
+    title: string
+    summary: string
+    status: string
+    createdAt: number
+    updatedAt: number
+  },
+): PlanRecord {
   return {
     id: p.id,
     title: p.title,
@@ -327,8 +361,13 @@ export function planFromDict(raw: Record<string, unknown>): PlanRecord {
     steps: ((raw.steps ?? []) as unknown[])
       .filter((item) => item && typeof item === 'object')
       .map((item) => stepFromDict(item as Record<string, unknown>)),
-    verification: ((raw.verification ?? []) as unknown[]).filter((item) => item && typeof item === 'object') as Array<Record<string, unknown>>,
-    draft: draftFromDict((raw.draft as Record<string, unknown>) ?? (metadata.draft as Record<string, unknown>)),
+    verification: ((raw.verification ?? []) as unknown[]).filter(
+      (item) => item && typeof item === 'object',
+    ) as Array<Record<string, unknown>>,
+    draft: draftFromDict(
+      (raw.draft as Record<string, unknown>) ??
+        (metadata.draft as Record<string, unknown>),
+    ),
     metadata,
   }
 }

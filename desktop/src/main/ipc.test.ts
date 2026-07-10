@@ -5,8 +5,12 @@ import { registerCoreIpc } from './ipc'
 describe('core IPC bridge (MIG-IPC-002)', () => {
   it('derives stable namespaced channels from CoreApi operation keys', () => {
     expect(channelForCoreOperation('bootstrap')).toBe('emperor:core:bootstrap')
-    expect(channelForCoreOperation('sessions.create')).toBe('emperor:core:sessions:create')
-    expect(channelForCoreOperation('chat.submit')).toBe('emperor:core:chat:submit')
+    expect(channelForCoreOperation('sessions.create')).toBe(
+      'emperor:core:sessions:create',
+    )
+    expect(channelForCoreOperation('chat.submit')).toBe(
+      'emperor:core:chat:submit',
+    )
   })
 
   it('registers handlers that invoke the matching CoreApi method', async () => {
@@ -20,9 +24,16 @@ describe('core IPC bridge (MIG-IPC-002)', () => {
 
     registerCoreIpc(ipc, api, ['sessions.create', 'bootstrap'])
 
-    expect(ipc.channels()).toEqual(['emperor:core:bootstrap', 'emperor:core:sessions:create'])
-    await expect(ipc.invoke('emperor:core:sessions:create', { title: '新会话' })).resolves.toEqual({ id: 's1', title: '新会话' })
-    await expect(ipc.invoke('emperor:core:bootstrap')).resolves.toEqual({ app: 'Emperor Agent' })
+    expect(ipc.channels()).toEqual([
+      'emperor:core:bootstrap',
+      'emperor:core:sessions:create',
+    ])
+    await expect(
+      ipc.invoke('emperor:core:sessions:create', { title: '新会话' }),
+    ).resolves.toEqual({ id: 's1', title: '新会话' })
+    await expect(ipc.invoke('emperor:core:bootstrap')).resolves.toEqual({
+      app: 'Emperor Agent',
+    })
   })
 
   it('invokes prototype operations with their owning receiver', async () => {
@@ -34,23 +45,44 @@ describe('core IPC bridge (MIG-IPC-002)', () => {
         return { app: this.app }
       }
     }
-    registerCoreIpc(ipc, new Api() as unknown as Record<string, unknown>, ['bootstrap'])
+    registerCoreIpc(ipc, new Api() as unknown as Record<string, unknown>, [
+      'bootstrap',
+    ])
 
-    await expect(ipc.invoke('emperor:core:bootstrap')).resolves.toEqual({ app: 'Emperor Agent' })
+    await expect(ipc.invoke('emperor:core:bootstrap')).resolves.toEqual({
+      app: 'Emperor Agent',
+    })
   })
 
   it('maps thrown implementation errors to safe renderer payloads', async () => {
     const ipc = new FakeIpcMain()
-    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined)
-    registerCoreIpc(ipc, { model: { test: () => { throw new Error('secret stack details') } } }, ['model.test'])
+    const errorSpy = vi
+      .spyOn(console, 'error')
+      .mockImplementation(() => undefined)
+    registerCoreIpc(
+      ipc,
+      {
+        model: {
+          test: () => {
+            throw new Error('secret stack details')
+          },
+        },
+      },
+      ['model.test'],
+    )
 
     const payload = await ipc.invoke('emperor:core:model:test', {})
 
-    expect(payload).toMatchObject({ ok: false, error: { message: 'Internal error' } })
+    expect(payload).toMatchObject({
+      ok: false,
+      error: { message: 'Internal error' },
+    })
     expect(String(payload.error.errorId)).toMatch(/^ipc_/)
     expect(JSON.stringify(payload)).not.toContain('secret stack details')
     expect(errorSpy).toHaveBeenCalledWith(
-      expect.stringMatching(/^\[core-ipc\] model\.test failed \(ipc_[a-z0-9]+\)$/),
+      expect.stringMatching(
+        /^\[core-ipc\] model\.test failed \(ipc_[a-z0-9]+\)$/,
+      ),
       expect.any(Error),
     )
     errorSpy.mockRestore()
@@ -67,9 +99,21 @@ describe('core IPC bridge (MIG-IPC-002)', () => {
         action: 'open_model_settings',
       }),
     })
-    registerCoreIpc(ipc, { chat: { submit: () => { throw error } } }, ['chat.submit'])
+    registerCoreIpc(
+      ipc,
+      {
+        chat: {
+          submit: () => {
+            throw error
+          },
+        },
+      },
+      ['chat.submit'],
+    )
 
-    await expect(ipc.invoke('emperor:core:chat:submit', {})).resolves.toMatchObject({
+    await expect(
+      ipc.invoke('emperor:core:chat:submit', {}),
+    ).resolves.toMatchObject({
       ok: false,
       error: {
         code: 'model_configuration_required',
@@ -87,25 +131,44 @@ describe('core IPC bridge (MIG-IPC-002)', () => {
     cancelled.name = 'CancelledTaskError'
     const busy = new Error('Another agent turn is already running')
     busy.name = 'TurnBusyError'
-    registerCoreIpc(ipc, {
-      chat: {
-        submit: () => { throw turnPaused },
-        stopRuntime: () => { throw cancelled },
-        busy: () => { throw busy },
+    registerCoreIpc(
+      ipc,
+      {
+        chat: {
+          submit: () => {
+            throw turnPaused
+          },
+          stopRuntime: () => {
+            throw cancelled
+          },
+          busy: () => {
+            throw busy
+          },
+        },
       },
-    }, ['chat.submit', 'chat.stopRuntime', 'chat.busy'])
+      ['chat.submit', 'chat.stopRuntime', 'chat.busy'],
+    )
 
-    await expect(ipc.invoke('emperor:core:chat:submit', {})).resolves.toMatchObject({
+    await expect(
+      ipc.invoke('emperor:core:chat:submit', {}),
+    ).resolves.toMatchObject({
       ok: false,
       error: { code: 'turn_paused', message: 'Turn paused' },
     })
-    await expect(ipc.invoke('emperor:core:chat:stopRuntime', {})).resolves.toMatchObject({
+    await expect(
+      ipc.invoke('emperor:core:chat:stopRuntime', {}),
+    ).resolves.toMatchObject({
       ok: false,
       error: { code: 'cancelled', message: 'Task cancelled' },
     })
-    await expect(ipc.invoke('emperor:core:chat:busy', {})).resolves.toMatchObject({
+    await expect(
+      ipc.invoke('emperor:core:chat:busy', {}),
+    ).resolves.toMatchObject({
       ok: false,
-      error: { code: 'turn_busy', message: 'Another agent turn is already running' },
+      error: {
+        code: 'turn_busy',
+        message: 'Another agent turn is already running',
+      },
     })
   })
 })

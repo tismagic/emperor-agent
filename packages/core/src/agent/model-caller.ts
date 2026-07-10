@@ -2,12 +2,28 @@
  * ModelCaller (MIG-CORE-001)。对齐 Python `agent/runner_model.py`。
  * 统一模型调用 + 次模型失败一次性升主；记 _lastModelCall（route_reason/估算输入/fallback）。
  */
-import { parseJsonArgs, type ChatArgs, type ChatStreamArgs, type GenerationSettings, type LLMProvider, type LLMResponse, type ToolCallDelta, type ToolCallRequest } from '../providers/base'
-import { classifyProviderError, isContextOverflowProviderError, isRetryableProviderErrorKind, type ProviderErrorKind } from '../providers/errors'
+import {
+  parseJsonArgs,
+  type ChatArgs,
+  type ChatStreamArgs,
+  type GenerationSettings,
+  type LLMProvider,
+  type LLMResponse,
+  type ToolCallDelta,
+  type ToolCallRequest,
+} from '../providers/base'
+import {
+  classifyProviderError,
+  isContextOverflowProviderError,
+  isRetryableProviderErrorKind,
+  type ProviderErrorKind,
+} from '../providers/errors'
 import { ModelProviderError, type ModelProviderErrorKind } from '../errors'
 import * as runtimeEvents from './runtime-events'
 
-export type StreamEmitter = (event: Record<string, unknown>) => void | Promise<void>
+export type StreamEmitter = (
+  event: Record<string, unknown>,
+) => void | Promise<void>
 
 export interface ModelCallMeta {
   model: string
@@ -45,21 +61,27 @@ export interface RunnerModelHost {
 
 export class ModelCaller {
   private readonly runner: RunnerModelHost
-  constructor(runner: RunnerModelHost) { this.runner = runner }
+  constructor(runner: RunnerModelHost) {
+    this.runner = runner
+  }
 
   async ask(opts: {
     messages: ChatArgs['messages']
     tools: Array<Record<string, unknown>> | null
     emit: StreamEmitter | null
     signal?: AbortSignal | null
-    onToolCallComplete?: ((call: ToolCallRequest) => void | Promise<void>) | null
+    onToolCallComplete?:
+      ((call: ToolCallRequest) => void | Promise<void>) | null
   }): Promise<LLMResponse> {
     const runner = this.runner
     const onDelta = async (delta: string): Promise<void> => {
       if (opts.emit) await opts.emit({ event: 'message_delta', delta })
     }
     // B6：plan 起草 delta 是全量快照，按时间窗合并落盘（实测 27 秒 1421 条 → 约每 100ms 一条）
-    const planDeltaThrottle = createPlanDeltaThrottle(opts.emit, PLAN_DELTA_INTERVAL_MS)
+    const planDeltaThrottle = createPlanDeltaThrottle(
+      opts.emit,
+      PLAN_DELTA_INTERVAL_MS,
+    )
     const onToolCallDelta = planDeltaThrottle.onDelta
     const onToolCallComplete = opts.onToolCallComplete ?? null
     let primaryRetryCount = 0
@@ -138,7 +160,10 @@ export class ModelCaller {
         model: runner.fallbackModel,
         providerName: runner.fallbackProviderName,
         usageType: runner.usageType,
-        maxTokens: Math.min(runner.maxTokens, Number(generation?.maxTokens ?? runner.maxTokens) || runner.maxTokens),
+        maxTokens: Math.min(
+          runner.maxTokens,
+          Number(generation?.maxTokens ?? runner.maxTokens) || runner.maxTokens,
+        ),
         temperature: generation?.temperature ?? runner.temperature,
         reasoningEffort: generation?.reasoningEffort ?? runner.reasoningEffort,
         messages: opts.messages,
@@ -172,10 +197,15 @@ export class ModelCaller {
     emit: StreamEmitter | null
     onDelta: (delta: string) => Promise<void>
     onToolCallDelta: (delta: ToolCallDelta) => Promise<void>
-    onToolCallComplete?: ((call: ToolCallRequest) => void | Promise<void>) | null
+    onToolCallComplete?:
+      ((call: ToolCallRequest) => void | Promise<void>) | null
     signal: AbortSignal | null
     onRetry?: (retryCount: number, errorKind: ProviderErrorKind) => void
-  }): Promise<{ response: LLMResponse; retryCount: number; errorKind: ProviderErrorKind | '' }> {
+  }): Promise<{
+    response: LLMResponse
+    retryCount: number
+    errorKind: ProviderErrorKind | ''
+  }> {
     let retryCount = 0
     let lastKind: ProviderErrorKind | '' = ''
     while (true) {
@@ -186,8 +216,13 @@ export class ModelCaller {
         const kind = classifyProviderError(exc)
         lastKind = kind
         if (isContextOverflowProviderError(exc)) throw exc
-        if (!isRetryableProviderErrorKind(kind) || retryCount >= MODEL_CALL_MAX_RETRIES) {
-          throw new ModelProviderError(modelProviderErrorKind(kind), { cause: exc })
+        if (
+          !isRetryableProviderErrorKind(kind) ||
+          retryCount >= MODEL_CALL_MAX_RETRIES
+        ) {
+          throw new ModelProviderError(modelProviderErrorKind(kind), {
+            cause: exc,
+          })
         }
         retryCount += 1
         if (opts.emit) {
@@ -199,7 +234,10 @@ export class ModelCaller {
             attempt: retryCount,
             max_retries: MODEL_CALL_MAX_RETRIES,
             error_kind: kind,
-            reason: String(exc instanceof Error ? exc.message : exc).slice(0, 500),
+            reason: String(exc instanceof Error ? exc.message : exc).slice(
+              0,
+              500,
+            ),
           })
         }
         opts.onRetry?.(retryCount, kind)
@@ -219,7 +257,8 @@ export class ModelCaller {
     emit: StreamEmitter | null
     onDelta: (delta: string) => Promise<void>
     onToolCallDelta: (delta: ToolCallDelta) => Promise<void>
-    onToolCallComplete?: ((call: ToolCallRequest) => void | Promise<void>) | null
+    onToolCallComplete?:
+      ((call: ToolCallRequest) => void | Promise<void>) | null
     signal: AbortSignal | null
   }): Promise<LLMResponse> {
     if (opts.emit || opts.onToolCallComplete) {
@@ -250,15 +289,25 @@ export class ModelCaller {
   }
 }
 
-function modelProviderErrorKind(kind: ProviderErrorKind): ModelProviderErrorKind {
-  if (kind === 'rate_limit' || kind === 'auth' || kind === 'transient' || kind === 'permanent') return kind
+function modelProviderErrorKind(
+  kind: ProviderErrorKind,
+): ModelProviderErrorKind {
+  if (
+    kind === 'rate_limit' ||
+    kind === 'auth' ||
+    kind === 'transient' ||
+    kind === 'permanent'
+  )
+    return kind
   return 'unknown'
 }
 
 const MODEL_CALL_MAX_RETRIES = 2
 
 async function boundedRetryBackoff(retryCount: number): Promise<void> {
-  await new Promise((resolve) => setTimeout(resolve, Math.min(20 * retryCount, 100)))
+  await new Promise((resolve) =>
+    setTimeout(resolve, Math.min(20 * retryCount, 100)),
+  )
 }
 
 const PLAN_DELTA_INTERVAL_MS = 100
@@ -270,7 +319,10 @@ const PLAN_DELTA_INTERVAL_MS = 100
 export function createPlanDeltaThrottle(
   emit: StreamEmitter | null,
   intervalMs = PLAN_DELTA_INTERVAL_MS,
-): { onDelta: (delta: ToolCallDelta) => Promise<void>; flush: () => Promise<void> } {
+): {
+  onDelta: (delta: ToolCallDelta) => Promise<void>
+  flush: () => Promise<void>
+} {
   let lastEmitMs = 0
   let pending: Record<string, unknown> | null = null
   return {
@@ -296,12 +348,15 @@ export function createPlanDeltaThrottle(
   }
 }
 
-function planDraftDeltaFromToolDelta(delta: ToolCallDelta): Record<string, unknown> | null {
+function planDraftDeltaFromToolDelta(
+  delta: ToolCallDelta,
+): Record<string, unknown> | null {
   if (delta.name !== 'propose_plan') return null
   const args = parseJsonArgs(delta.argumentsText)
   const title = textField(args, 'title')
   const summary = textField(args, 'summary')
-  const planMarkdown = textField(args, 'plan_markdown') || textField(args, 'planMarkdown')
+  const planMarkdown =
+    textField(args, 'plan_markdown') || textField(args, 'planMarkdown')
   if (!title && !summary && !planMarkdown) return null
   const streamId = delta.id || `call_${delta.index}`
   const interaction: Record<string, unknown> = {
@@ -313,7 +368,8 @@ function planDraftDeltaFromToolDelta(delta: ToolCallDelta): Record<string, unkno
     summary,
     plan_markdown: planMarkdown,
     assumptions: stringArrayField(args, 'assumptions'),
-    risk_level: textField(args, 'risk_level') || textField(args, 'riskLevel') || 'medium',
+    risk_level:
+      textField(args, 'risk_level') || textField(args, 'riskLevel') || 'medium',
     meta: { plan_stream_id: streamId, provisional: true },
   }
   return runtimeEvents.planDraftDelta({ toolCallId: streamId, interaction })
@@ -324,7 +380,10 @@ function textField(value: Record<string, unknown>, key: string): string {
   return typeof raw === 'string' ? raw.trim() : ''
 }
 
-function stringArrayField(value: Record<string, unknown>, key: string): string[] {
+function stringArrayField(
+  value: Record<string, unknown>,
+  key: string,
+): string[] {
   const raw = value[key]
   if (!Array.isArray(raw)) return []
   return raw.map((item) => String(item || '').trim()).filter(Boolean)

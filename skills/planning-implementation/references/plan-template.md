@@ -36,6 +36,7 @@ This template defines the complete plan document structure produced by the `plan
 ```
 
 **Requirements**:
+
 - Plan ID uses format `PLAN-<AREA>-NNN` or project naming convention
 - Status follows lifecycle: draft → review → approved → implementing → done
 - Upstream/downstream plans ensure traceable topological order
@@ -66,6 +67,7 @@ Specific, verifiable outcomes. Each goal should answer "did we achieve this?"
 ```
 
 **Examples**:
+
 - Migrate Agent core execution logic from Python to TypeScript, behavior identical word-for-word ✅/❌
 - All 487 existing Python tests have passing vitest equivalents ✅/❌
 
@@ -81,6 +83,7 @@ Explicitly excluded. Equally important for preventing scope creep.
 ```
 
 **Examples**:
+
 - Do not improve existing algorithms (language migration only)
 - Do not modify disk storage format
 - Do not refactor frontend UI
@@ -92,12 +95,12 @@ Tech stack limits, compatibility requirements, performance targets, deadlines.
 ```markdown
 ## Constraints
 
-| Type | Constraint | Reason |
-|------|------------|--------|
-| Tech stack | TypeScript strict / vitest | Project standard |
-| Compatibility | Disk JSON schema unchanged | Zero migration cost |
-| Performance | 0 compile errors, 100% test pass | Quality gate |
-| Timeline | Complete by YYYY-MM-DD | Milestone |
+| Type          | Constraint                       | Reason              |
+| ------------- | -------------------------------- | ------------------- |
+| Tech stack    | TypeScript strict / vitest       | Project standard    |
+| Compatibility | Disk JSON schema unchanged       | Zero migration cost |
+| Performance   | 0 compile errors, 100% test pass | Quality gate        |
+| Timeline      | Complete by YYYY-MM-DD           | Milestone           |
 ```
 
 ---
@@ -112,10 +115,12 @@ Which modules are in scope, which require external integration.
 ## System Boundaries
 
 **In scope**:
+
 - `packages/core/src/xxx/` — [description]
 - `packages/core/src/yyy/` — [description]
 
 **Out of scope (integration needed)**:
+
 - `desktop/src/` — Frontend render layer, IPC bridge
 - Python `agent/` — Reference source, do not modify
 ```
@@ -127,10 +132,10 @@ List of files to modify (one file per row + brief description).
 ```markdown
 ## Affected Modules
 
-| File | Action | Description |
-|------|--------|-------------|
-| `packages/core/src/xxx.ts` | Modify | Add Y interface |
-| `packages/core/src/yyy.ts` | Create | Z feature module |
+| File                       | Action | Description              |
+| -------------------------- | ------ | ------------------------ |
+| `packages/core/src/xxx.ts` | Modify | Add Y interface          |
+| `packages/core/src/yyy.ts` | Create | Z feature module         |
 | `desktop/src/renderer/...` | Modify | Adapt to new IPC channel |
 ```
 
@@ -159,10 +164,10 @@ What completed or in-progress work this plan depends on.
 ```markdown
 ## Upstream Dependencies
 
-| Plan/System | Status | Depends On |
-|-------------|--------|------------|
-| [Upstream plan ID] | done | [specific dependency] |
-| [External service] | available | [API version/config] |
+| Plan/System        | Status    | Depends On            |
+| ------------------ | --------- | --------------------- |
+| [Upstream plan ID] | done      | [specific dependency] |
+| [External service] | available | [API version/config]  |
 ```
 
 ### 4.2 Downstream Impact
@@ -172,8 +177,8 @@ Which subsequent plans depend on this plan's output.
 ```markdown
 ## Downstream Impact
 
-| Plan/System | Impact | Blocked On |
-|-------------|--------|------------|
+| Plan/System          | Impact            | Blocked On         |
+| -------------------- | ----------------- | ------------------ |
 | [Downstream plan ID] | [describe impact] | [specific blocker] |
 ```
 
@@ -198,12 +203,12 @@ Tasks ordered by execution sequence, marking phases and parallelism.
 ```markdown
 ## Topological Sort
 
-| Phase | Tasks | Depends On | Parallel |
-|-------|-------|------------|----------|
-| W01 | T001, T002 | — | T001 ‖ T002 |
-| W02 | T003, T004 | T001 | T003 ‖ T004 |
-| W03 | T005 | T002, T004 | — |
-| W04 | T006 | T005 | — |
+| Phase | Tasks      | Depends On | Parallel    |
+| ----- | ---------- | ---------- | ----------- |
+| W01   | T001, T002 | —          | T001 ‖ T002 |
+| W02   | T003, T004 | T001       | T003 ‖ T004 |
+| W03   | T005       | T002, T004 | —           |
+| W04   | T006       | T005       | —           |
 ```
 
 ---
@@ -229,11 +234,11 @@ Cross-task systemic risks. Each risk includes: severity, description, affected t
 ```markdown
 ## Risk Register
 
-| ID | Severity | Description | Affected Tasks | Probability | Mitigation |
-|----|----------|-------------|----------------|-------------|------------|
-| R1 | H | [High risk description] | T003, T005 | Medium | [Specific mitigation] |
-| R2 | M | [Medium risk description] | T002 | Low | [Specific mitigation] |
-| R3 | L | [Low risk description] | T006 | High | [Specific mitigation] |
+| ID  | Severity | Description               | Affected Tasks | Probability | Mitigation            |
+| --- | -------- | ------------------------- | -------------- | ----------- | --------------------- |
+| R1  | H        | [High risk description]   | T003, T005     | Medium      | [Specific mitigation] |
+| R2  | M        | [Medium risk description] | T002           | Low         | [Specific mitigation] |
+| R3  | L        | [Low risk description]    | T006           | High        | [Specific mitigation] |
 
 **Severity**: H = Blocking (may cause >3 days rework) / M = Significant (1-3 days rework) / L = Acceptable (<1 day rework)
 **Probability**: High (>50%) / Medium (10-50%) / Low (<10%)
@@ -300,10 +305,10 @@ Cross-task integration verification independent of per-task tests.
 ```markdown
 ## End-to-End Test Plan
 
-| Scenario | Steps | Expected Result | Tasks Covered |
-|----------|-------|-----------------|---------------|
-| [Scenario 1] | 1. ... 2. ... 3. ... | [Expected] | T001-T005 |
-| [Scenario 2] | 1. ... 2. ... | [Expected] | T003-T006 |
+| Scenario     | Steps                | Expected Result | Tasks Covered |
+| ------------ | -------------------- | --------------- | ------------- |
+| [Scenario 1] | 1. ... 2. ... 3. ... | [Expected]      | T001-T005     |
+| [Scenario 2] | 1. ... 2. ...        | [Expected]      | T003-T006     |
 ```
 
 ### 8.2 Quality Gates
@@ -313,11 +318,11 @@ Checks that must pass at key milestones.
 ```markdown
 ## Quality Gates
 
-| Gate | Trigger | Pass Criteria | Blocks |
-|------|---------|---------------|--------|
-| G1 | All tasks done | `tsc --noEmit` 0 errors | Cannot merge |
-| G2 | All tasks done | `vitest run` all pass | Cannot merge |
-| G3 | Integration phase | All E2E scenarios pass | Cannot release |
+| Gate | Trigger           | Pass Criteria           | Blocks         |
+| ---- | ----------------- | ----------------------- | -------------- |
+| G1   | All tasks done    | `tsc --noEmit` 0 errors | Cannot merge   |
+| G2   | All tasks done    | `vitest run` all pass   | Cannot merge   |
+| G3   | Integration phase | All E2E scenarios pass  | Cannot release |
 ```
 
 ### 8.3 Regression Risk Areas
@@ -344,11 +349,11 @@ Format aligned with project STATUS.md.
 
 > **N** tasks total / **M** phases. Status: ☐ todo · ◐ wip · ☑ done · ⛔ blocked
 
-| ID | Title | Status | PR | Notes |
-|----|-------|--------|-----|-------|
-| <TASK-001> | Task title | ☐ | — | |
-| <TASK-002> | Task title | ◐ | #123 | Blocked on X |
-| <TASK-003> | Task title | ☑ | #124 | |
+| ID         | Title      | Status | PR   | Notes        |
+| ---------- | ---------- | ------ | ---- | ------------ |
+| <TASK-001> | Task title | ☐      | —    |              |
+| <TASK-002> | Task title | ◐      | #123 | Blocked on X |
+| <TASK-003> | Task title | ☑      | #124 |              |
 ```
 
 ### 9.2 progress.json

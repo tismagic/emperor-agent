@@ -1,5 +1,11 @@
 import { createHash } from 'node:crypto'
-import { mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
+import {
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  statSync,
+  writeFileSync,
+} from 'node:fs'
 import { basename, join, relative, resolve, sep } from 'node:path'
 import { safeName } from '../attachments/store'
 
@@ -44,7 +50,10 @@ export class MediaStore {
     mkdirSync(this.base, { recursive: true })
   }
 
-  importImagePath(sourcePath: string, _metadata: MediaImportMetadata = {}): MediaRef {
+  importImagePath(
+    sourcePath: string,
+    _metadata: MediaImportMetadata = {},
+  ): MediaRef {
     const originalPath = resolve(sourcePath)
     let stat
     try {
@@ -52,7 +61,8 @@ export class MediaStore {
     } catch {
       throw new Error(`media source not found: ${sourcePath}`)
     }
-    if (!stat.isFile()) throw new Error(`media source is not a file: ${sourcePath}`)
+    if (!stat.isFile())
+      throw new Error(`media source is not a file: ${sourcePath}`)
     if (stat.size > MAX_MEDIA_IMAGE_BYTES) {
       throw new Error(`media file too large: ${stat.size} bytes`)
     }
@@ -68,7 +78,8 @@ export class MediaStore {
     mkdirSync(monthDir, { recursive: true })
 
     const existing = firstFileWithHash(monthDir, hash8)
-    const fileName = existing ?? mediaFileName(hash8, basename(originalPath), mime)
+    const fileName =
+      existing ?? mediaFileName(hash8, basename(originalPath), mime)
     const absPath = join(monthDir, fileName)
     if (!existing) writeFileSync(absPath, raw)
 
@@ -132,25 +143,45 @@ export class MediaStore {
 }
 
 export function detectImageMime(raw: Buffer): string | null {
-  if (raw.length >= 8 && raw.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))) {
+  if (
+    raw.length >= 8 &&
+    raw
+      .subarray(0, 8)
+      .equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))
+  ) {
     return 'image/png'
   }
-  if (raw.length >= 3 && raw[0] === 0xff && raw[1] === 0xd8 && raw[2] === 0xff) {
+  if (
+    raw.length >= 3 &&
+    raw[0] === 0xff &&
+    raw[1] === 0xd8 &&
+    raw[2] === 0xff
+  ) {
     return 'image/jpeg'
   }
   if (raw.length >= 6 && raw.subarray(0, 3).toString('ascii') === 'GIF') {
     return 'image/gif'
   }
-  if (raw.length >= 12 && raw.subarray(0, 4).toString('ascii') === 'RIFF' && raw.subarray(8, 12).toString('ascii') === 'WEBP') {
+  if (
+    raw.length >= 12 &&
+    raw.subarray(0, 4).toString('ascii') === 'RIFF' &&
+    raw.subarray(8, 12).toString('ascii') === 'WEBP'
+  ) {
     return 'image/webp'
   }
   return null
 }
 
-function mediaFileName(hash8: string, sourceName: string, mime: string): string {
+function mediaFileName(
+  hash8: string,
+  sourceName: string,
+  mime: string,
+): string {
   const ext = EXT_BY_MIME[mime] ?? 'bin'
   const safe = safeName(sourceName)
-  const finalName = safe.toLowerCase().endsWith(`.${ext}`) ? safe : `${safe}.${ext}`
+  const finalName = safe.toLowerCase().endsWith(`.${ext}`)
+    ? safe
+    : `${safe}.${ext}`
   return `${hash8}-${finalName}`
 }
 

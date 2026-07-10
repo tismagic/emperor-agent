@@ -25,7 +25,8 @@ const TONE_BY_TAG: Record<string, string> = {
 }
 
 export function decorativeTagsForSkill(skill: SkillInfo, limit = 4): string[] {
-  const haystack = `${skill.name} ${skill.description || ''} ${skill.tags || ''} ${skill.path || ''}`.toLowerCase()
+  const haystack =
+    `${skill.name} ${skill.description || ''} ${skill.tags || ''} ${skill.path || ''}`.toLowerCase()
   const tags: string[] = []
   for (const [tag, needles] of TAG_RULES) {
     if (needles.some((needle) => haystack.includes(needle))) {
@@ -48,7 +49,10 @@ export function tagTone(tag: string): string {
   return 'green'
 }
 
-export function mergedSkillTags(skill: SkillInfo, limit = 5): { visible: string[]; hidden: number } {
+export function mergedSkillTags(
+  skill: SkillInfo,
+  limit = 5,
+): { visible: string[]; hidden: number } {
   const realTags = parseSkillTags(skill.tags || '')
   const decorative = decorativeTagsForSkill(skill, limit)
   const merged = [...new Set([...realTags, ...decorative])]

@@ -55,7 +55,9 @@ export function buildRoutedRunner(opts: {
     modelRole: snapshot.modelRole,
     routeReason: opts.route.reason,
     routeEstimatedTokens: opts.route.estimatedTokens,
-    fallbackProvider: fallback ? (fallback.provider as unknown as LLMProvider) : null,
+    fallbackProvider: fallback
+      ? (fallback.provider as unknown as LLMProvider)
+      : null,
     fallbackModel: fallback ? fallback.model : null,
     fallbackProviderName: fallback ? fallback.providerName : null,
     fallbackGeneration: fallback ? fallback.generation : null,
@@ -66,7 +68,9 @@ export function buildRoutedRunner(opts: {
     compactor: opts.compactor ?? null,
     todoStore: opts.todoStore ?? null,
     controlManager: opts.controlManager ?? null,
-    ...(opts.maxContext !== null && opts.maxContext !== undefined ? { maxContext: opts.maxContext } : {}),
+    ...(opts.maxContext !== null && opts.maxContext !== undefined
+      ? { maxContext: opts.maxContext }
+      : {}),
     maxTurns: opts.maxTurns ?? 12,
     workspaceRoot: opts.workspaceRoot ?? null,
     promptSections: opts.promptSections ?? null,

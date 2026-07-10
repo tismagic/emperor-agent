@@ -33,8 +33,20 @@ export interface DiagnosticGroup {
 export function diagnosticStatusTone(status: unknown): DiagnosticTone {
   const normalized = String(status || 'unknown').toLowerCase()
   if (['ok', 'ready', 'running', 'healthy'].includes(normalized)) return 'ok'
-  if (['corrupt', 'invalid', 'error', 'failed', 'failure'].includes(normalized)) return 'error'
-  if (['missing', 'disabled', 'stopped', 'not_installed', 'not-installed', 'warning', 'warn'].includes(normalized)) return 'warn'
+  if (['corrupt', 'invalid', 'error', 'failed', 'failure'].includes(normalized))
+    return 'error'
+  if (
+    [
+      'missing',
+      'disabled',
+      'stopped',
+      'not_installed',
+      'not-installed',
+      'warning',
+      'warn',
+    ].includes(normalized)
+  )
+    return 'warn'
   return 'muted'
 }
 
@@ -62,14 +74,23 @@ export function diagnosticStatusText(status: unknown): string {
   return labels[normalized] || String(status || '未知')
 }
 
-export function diagnosticRows(payload: DiagnosticsPayload | null | undefined): DiagnosticGroup[] {
+export function diagnosticRows(
+  payload: DiagnosticsPayload | null | undefined,
+): DiagnosticGroup[] {
   const diagnostics = payload || {}
-  const legacyRows = legacyDataRows(diagnostics.legacyStateMigration, diagnostics.projectLegacyPrivateData)
+  const legacyRows = legacyDataRows(
+    diagnostics.legacyStateMigration,
+    diagnostics.projectLegacyPrivateData,
+  )
   return [
     {
       id: 'storage',
       title: '存储路径',
-      rows: storagePathRows(diagnostics.paths, diagnostics.workspacePolicy, diagnostics.modelConfig),
+      rows: storagePathRows(
+        diagnostics.paths,
+        diagnostics.workspacePolicy,
+        diagnostics.modelConfig,
+      ),
     },
     {
       id: 'config',
@@ -80,7 +101,9 @@ export function diagnosticRows(payload: DiagnosticsPayload | null | undefined): 
       ],
     },
     ...contextExplanationGroup(diagnostics.contextExplanation),
-    ...(legacyRows.length ? [{ id: 'legacy-data', title: '旧数据', rows: legacyRows }] : []),
+    ...(legacyRows.length
+      ? [{ id: 'legacy-data', title: '旧数据', rows: legacyRows }]
+      : []),
     {
       id: 'runtime',
       title: '运行时',
@@ -107,7 +130,9 @@ export function diagnosticRows(payload: DiagnosticsPayload | null | undefined): 
   ]
 }
 
-function contextExplanationGroup(explanation: MemoryContextExplanationPayload | undefined): DiagnosticGroup[] {
+function contextExplanationGroup(
+  explanation: MemoryContextExplanationPayload | undefined,
+): DiagnosticGroup[] {
   if (!explanation) return []
   const status = String(explanation.status || 'unknown')
   const injected = arrayOfRecords(explanation.injected)
@@ -116,68 +141,93 @@ function contextExplanationGroup(explanation: MemoryContextExplanationPayload | 
   const microcompact = recordValue(explanation.microcompact)
   const compaction = recordValue(explanation.compaction)
   const cursor = recordValue(compaction.cursor)
-  return [{
-    id: 'context-explanation',
-    title: '上下文解释',
-    rows: [
-      {
-        id: 'context-mode',
-        label: 'Context Plan',
-        value: String(explanation.mode || status),
-        detail: contextModeDetail(explanation),
-        tone: status === 'ok' ? 'ok' : diagnosticStatusTone(status),
-      },
-      {
-        id: 'context-injected',
-        label: '已注入模型上下文',
-        value: `${injected.length} 项注入`,
-        detail: joinParts([
-          injected.map((item) => String(item.kind || item.id || '')).filter(Boolean).join(', '),
-          injectedTokenEstimate(injected) ? `${injectedTokenEstimate(injected)} tokens` : '',
-        ]),
-        tone: injected.length ? 'ok' : 'muted',
-      },
-      {
-        id: 'context-omitted',
-        label: '未注入项',
-        value: omitted.length ? `${omitted.length} 项未注入` : '无',
-        detail: omitted.length
-          ? omitted.map((item) => `${String(item.kind || 'unknown')}: ${String(item.reason || '')}`.trim()).join(' · ')
-          : '当前 ContextPlan 没有记录被策略排除的上下文',
-        tone: omitted.length ? 'warn' : 'ok',
-      },
-      {
-        id: 'context-microcompact',
-        label: '局部 microcompact',
-        value: `${arrayOfRecords(microcompact.records).length} 条裁剪`,
-        detail: Number(microcompact.omittedChars || 0)
-          ? `本次请求局部裁剪 ${Number(microcompact.omittedChars)} chars，不写回 history`
-          : '本次请求没有局部裁剪记录',
-        tone: arrayOfRecords(microcompact.records).length ? 'warn' : 'ok',
-      },
-      {
-        id: 'context-compaction-cursor',
-        label: '语义压缩游标',
-        value: Number(cursor.compactedUntilSeq || 0) ? `seq ${Number(cursor.compactedUntilSeq)}` : '未压缩',
-        detail: String(cursor.status || 'unknown'),
-        tone: Number(cursor.compactedUntilSeq || 0) ? 'ok' : 'muted',
-      },
-      {
-        id: 'context-artifacts',
-        label: '记忆 Artifact 边界',
-        value: artifacts.length ? `${artifacts.length} 个 artifact` : '未返回',
-        detail: artifacts.length ? artifactBoundaryDetail(artifacts) : 'memory.explainContext 未返回 artifact taxonomy',
-        tone: artifacts.length ? 'ok' : 'muted',
-      },
-      {
-        id: 'context-checkpoint',
-        label: 'Turn Checkpoint',
-        value: diagnosticStatusText(recordValue(explanation.checkpoint).status),
-        detail: String(recordValue(explanation.checkpoint).reason || recordValue(explanation.checkpoint).phase || ''),
-        tone: diagnosticStatusTone(recordValue(explanation.checkpoint).status),
-      },
-    ],
-  }]
+  return [
+    {
+      id: 'context-explanation',
+      title: '上下文解释',
+      rows: [
+        {
+          id: 'context-mode',
+          label: 'Context Plan',
+          value: String(explanation.mode || status),
+          detail: contextModeDetail(explanation),
+          tone: status === 'ok' ? 'ok' : diagnosticStatusTone(status),
+        },
+        {
+          id: 'context-injected',
+          label: '已注入模型上下文',
+          value: `${injected.length} 项注入`,
+          detail: joinParts([
+            injected
+              .map((item) => String(item.kind || item.id || ''))
+              .filter(Boolean)
+              .join(', '),
+            injectedTokenEstimate(injected)
+              ? `${injectedTokenEstimate(injected)} tokens`
+              : '',
+          ]),
+          tone: injected.length ? 'ok' : 'muted',
+        },
+        {
+          id: 'context-omitted',
+          label: '未注入项',
+          value: omitted.length ? `${omitted.length} 项未注入` : '无',
+          detail: omitted.length
+            ? omitted
+                .map((item) =>
+                  `${String(item.kind || 'unknown')}: ${String(item.reason || '')}`.trim(),
+                )
+                .join(' · ')
+            : '当前 ContextPlan 没有记录被策略排除的上下文',
+          tone: omitted.length ? 'warn' : 'ok',
+        },
+        {
+          id: 'context-microcompact',
+          label: '局部 microcompact',
+          value: `${arrayOfRecords(microcompact.records).length} 条裁剪`,
+          detail: Number(microcompact.omittedChars || 0)
+            ? `本次请求局部裁剪 ${Number(microcompact.omittedChars)} chars，不写回 history`
+            : '本次请求没有局部裁剪记录',
+          tone: arrayOfRecords(microcompact.records).length ? 'warn' : 'ok',
+        },
+        {
+          id: 'context-compaction-cursor',
+          label: '语义压缩游标',
+          value: Number(cursor.compactedUntilSeq || 0)
+            ? `seq ${Number(cursor.compactedUntilSeq)}`
+            : '未压缩',
+          detail: String(cursor.status || 'unknown'),
+          tone: Number(cursor.compactedUntilSeq || 0) ? 'ok' : 'muted',
+        },
+        {
+          id: 'context-artifacts',
+          label: '记忆 Artifact 边界',
+          value: artifacts.length
+            ? `${artifacts.length} 个 artifact`
+            : '未返回',
+          detail: artifacts.length
+            ? artifactBoundaryDetail(artifacts)
+            : 'memory.explainContext 未返回 artifact taxonomy',
+          tone: artifacts.length ? 'ok' : 'muted',
+        },
+        {
+          id: 'context-checkpoint',
+          label: 'Turn Checkpoint',
+          value: diagnosticStatusText(
+            recordValue(explanation.checkpoint).status,
+          ),
+          detail: String(
+            recordValue(explanation.checkpoint).reason ||
+              recordValue(explanation.checkpoint).phase ||
+              '',
+          ),
+          tone: diagnosticStatusTone(
+            recordValue(explanation.checkpoint).status,
+          ),
+        },
+      ],
+    },
+  ]
 }
 
 function storagePathRows(
@@ -186,9 +236,15 @@ function storagePathRows(
   modelConfig: DiagnosticsConfigSummary | undefined,
 ): DiagnosticRow[] {
   const activeProjectPath = workspacePolicy?.workspaceRoot || ''
-  const hasBoundProject = Boolean(activeProjectPath) && activeProjectPath !== paths?.runtimeRoot
+  const hasBoundProject =
+    Boolean(activeProjectPath) && activeProjectPath !== paths?.runtimeRoot
   return [
-    pathRow('runtime-resources-root', 'Runtime 资源根', paths?.runtimeRoot, '内置技能/模板等只读资源所在目录'),
+    pathRow(
+      'runtime-resources-root',
+      'Runtime 资源根',
+      paths?.runtimeRoot,
+      '内置技能/模板等只读资源所在目录',
+    ),
     {
       id: 'global-state-root',
       label: '全局私有数据根',
@@ -198,22 +254,36 @@ function storagePathRows(
       path: paths?.stateRoot,
     },
     hasBoundProject
-      ? pathRow('active-project-path', '当前项目路径', activeProjectPath, '项目已绑定；私有会话仍保存到全局 Emperor store，不写入项目源码目录')
+      ? pathRow(
+          'active-project-path',
+          '当前项目路径',
+          activeProjectPath,
+          '项目已绑定；私有会话仍保存到全局 Emperor store，不写入项目源码目录',
+        )
       : {
-        id: 'active-project-path',
-        label: '当前项目路径',
-        value: '未绑定',
-        detail: '当前是 chat 会话，没有绑定项目目录',
-        tone: 'muted',
-      },
+          id: 'active-project-path',
+          label: '当前项目路径',
+          value: '未绑定',
+          detail: '当前是 chat 会话，没有绑定项目目录',
+          tone: 'muted',
+        },
     pathRow('sessions-path', 'Sessions 路径', paths?.sessionsRoot),
     pathRow('attachments-path', '附件路径', paths?.attachmentsRoot),
-    pathRow('model-config-path', '模型配置路径', modelConfig?.path || paths?.stateRoot),
+    pathRow(
+      'model-config-path',
+      '模型配置路径',
+      modelConfig?.path || paths?.stateRoot,
+    ),
     pathRow('mcp-config-path', 'MCP 配置路径', paths?.mcpConfigPath),
   ]
 }
 
-function pathRow(id: string, label: string, path: string | undefined, detail?: string): DiagnosticRow {
+function pathRow(
+  id: string,
+  label: string,
+  path: string | undefined,
+  detail?: string,
+): DiagnosticRow {
   return {
     id,
     label,
@@ -236,7 +306,9 @@ function legacyDataRows(
   projectLegacy: ProjectLegacyPrivateDataPayload | null | undefined,
 ): DiagnosticRow[] {
   const rows: DiagnosticRow[] = []
-  const detectedLegacyRoots = (migration?.legacyStateRoots ?? []).filter((entry) => entry.existed)
+  const detectedLegacyRoots = (migration?.legacyStateRoots ?? []).filter(
+    (entry) => entry.existed,
+  )
   if (detectedLegacyRoots.length) {
     rows.push({
       id: 'legacy-state-migration',
@@ -244,7 +316,9 @@ function legacyDataRows(
       value: `${numberOrZero(migration?.copied)} 个文件已迁移`,
       detail: joinParts([
         `检测到 ${detectedLegacyRoots.length} 处旧存储位置`,
-        numberOrZero(migration?.skipped) ? `${migration?.skipped} 个跳过（已存在或损坏）` : '',
+        numberOrZero(migration?.skipped)
+          ? `${migration?.skipped} 个跳过（已存在或损坏）`
+          : '',
         '旧数据未删除',
       ]),
       tone: 'warn',
@@ -268,7 +342,11 @@ function legacyDataRows(
   return rows
 }
 
-function configRow(id: string, label: string, summary: DiagnosticsConfigSummary | undefined): DiagnosticRow {
+function configRow(
+  id: string,
+  label: string,
+  summary: DiagnosticsConfigSummary | undefined,
+): DiagnosticRow {
   const status = summary?.status || 'unknown'
   const backupCount = count(summary?.corruptBackups)
   return {
@@ -285,7 +363,9 @@ function configRow(id: string, label: string, summary: DiagnosticsConfigSummary 
   }
 }
 
-function schedulerRow(summary: SchedulerDiagnosticsPayload | undefined): DiagnosticRow {
+function schedulerRow(
+  summary: SchedulerDiagnosticsPayload | undefined,
+): DiagnosticRow {
   const errorCount = count(summary?.lastActionErrors)
   const corruptCount = count(summary?.corruptActionFiles)
   const hasError = errorCount > 0 || corruptCount > 0
@@ -310,10 +390,10 @@ function runtimeRow(runtime: RuntimeStats | undefined): DiagnosticRow {
     value: runtime ? `${numberOrZero(runtime.events)} 条事件` : '未返回',
     detail: runtime
       ? joinParts([
-        `${numberOrZero(runtime.archiveFiles)} 个归档`,
-        runtime.needsRotation ? '需要轮转' : '无需轮转',
-        runtime.path,
-      ])
+          `${numberOrZero(runtime.archiveFiles)} 个归档`,
+          runtime.needsRotation ? '需要轮转' : '无需轮转',
+          runtime.path,
+        ])
       : '未返回详细信息',
     tone: runtime?.needsRotation ? 'warn' : runtime ? 'ok' : 'muted',
     path: runtime?.path,
@@ -331,7 +411,9 @@ function activeTasksRow(activeTasks: unknown[] | undefined): DiagnosticRow {
   }
 }
 
-function workspacePolicyRow(policy: WorkspacePolicyDiagnosticsPayload | undefined): DiagnosticRow {
+function workspacePolicyRow(
+  policy: WorkspacePolicyDiagnosticsPayload | undefined,
+): DiagnosticRow {
   const allowRoots = policy?.allowRoots ?? []
   const denyRoots = policy?.denyRoots ?? []
   const workspaceRoot = policy?.workspaceRoot || ''
@@ -339,13 +421,15 @@ function workspacePolicyRow(policy: WorkspacePolicyDiagnosticsPayload | undefine
   return {
     id: 'workspace-policy',
     label: 'Workspace Fence',
-    value: policy ? `${allowRoots.length} 个允许根 / ${denyRoots.length} 个禁止根` : '未返回',
+    value: policy
+      ? `${allowRoots.length} 个允许根 / ${denyRoots.length} 个禁止根`
+      : '未返回',
     detail: policy
       ? joinParts([
-        workspaceRoot ? `workspace ${workspaceRoot}` : '',
-        stateRoot ? `state ${stateRoot}` : '',
-        policy.outsideWorkspace ? `outside ${policy.outsideWorkspace}` : '',
-      ])
+          workspaceRoot ? `workspace ${workspaceRoot}` : '',
+          stateRoot ? `state ${stateRoot}` : '',
+          policy.outsideWorkspace ? `outside ${policy.outsideWorkspace}` : '',
+        ])
       : '未返回详细信息',
     tone: !policy ? 'muted' : allowRoots.length ? 'ok' : 'warn',
     path: workspaceRoot || stateRoot || undefined,
@@ -354,12 +438,16 @@ function workspacePolicyRow(policy: WorkspacePolicyDiagnosticsPayload | undefine
 
 function arrayOfRecords(value: unknown): Array<Record<string, unknown>> {
   return Array.isArray(value)
-    ? value.filter((item): item is Record<string, unknown> => Boolean(item && typeof item === 'object' && !Array.isArray(item)))
+    ? value.filter((item): item is Record<string, unknown> =>
+        Boolean(item && typeof item === 'object' && !Array.isArray(item)),
+      )
     : []
 }
 
 function recordValue(value: unknown): Record<string, unknown> {
-  return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {}
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : {}
 }
 
 function injectedTokenEstimate(items: Array<Record<string, unknown>>): number {
@@ -367,28 +455,44 @@ function injectedTokenEstimate(items: Array<Record<string, unknown>>): number {
 }
 
 function artifactBoundaryDetail(items: Array<Record<string, unknown>>): string {
-  return items.map((item) => {
-    const kind = String(item.kind || 'unknown')
-    const visibility = String(item.visibility || 'unknown')
-    const injectedIn = Array.isArray(item.injectedIn)
-      ? item.injectedIn.map((entry) => String(entry)).filter(Boolean)
-      : []
-    return `${kind}: ${visibility} -> ${injectedIn.length ? injectedIn.join('/') : '不注入'}`
-  }).join(' · ')
+  return items
+    .map((item) => {
+      const kind = String(item.kind || 'unknown')
+      const visibility = String(item.visibility || 'unknown')
+      const injectedIn = Array.isArray(item.injectedIn)
+        ? item.injectedIn.map((entry) => String(entry)).filter(Boolean)
+        : []
+      return `${kind}: ${visibility} -> ${injectedIn.length ? injectedIn.join('/') : '不注入'}`
+    })
+    .join(' · ')
 }
 
-function contextModeDetail(explanation: MemoryContextExplanationPayload): string {
+function contextModeDetail(
+  explanation: MemoryContextExplanationPayload,
+): string {
   const sessionId = String(explanation.sessionId || '')
   const turnId = String(explanation.turnId || '')
-  const pair = sessionId && turnId ? `${sessionId} / ${turnId}` : joinParts([sessionId, turnId])
+  const pair =
+    sessionId && turnId
+      ? `${sessionId} / ${turnId}`
+      : joinParts([sessionId, turnId])
   return joinParts([pair, String(explanation.reason || '')])
 }
 
-function externalRow(external: ExternalDiagnosticsPayload | undefined): DiagnosticRow {
+function externalRow(
+  external: ExternalDiagnosticsPayload | undefined,
+): DiagnosticRow {
   const pending = numberOrZero(external?.inbox?.pending)
   const errors = count(external?.recentErrors)
   const backups = count(external?.store?.corruptBackups)
-  const tone: DiagnosticTone = errors || backups ? 'error' : external?.running ? 'ok' : external ? 'warn' : 'muted'
+  const tone: DiagnosticTone =
+    errors || backups
+      ? 'error'
+      : external?.running
+        ? 'ok'
+        : external
+          ? 'warn'
+          : 'muted'
   return {
     id: 'external-bridge',
     label: 'External Bridge',
@@ -404,7 +508,9 @@ function externalRow(external: ExternalDiagnosticsPayload | undefined): Diagnost
   }
 }
 
-function desktopPetRow(pet: (DesktopPetPayload & Record<string, unknown>) | undefined): DiagnosticRow {
+function desktopPetRow(
+  pet: (DesktopPetPayload & Record<string, unknown>) | undefined,
+): DiagnosticRow {
   const enabled = Boolean(pet?.enabled)
   const running = Boolean(pet?.running)
   const lastError = typeof pet?.lastError === 'string' ? pet.lastError : ''
@@ -421,15 +527,41 @@ function desktopPetRow(pet: (DesktopPetPayload & Record<string, unknown>) | unde
   }
 }
 
-function dependencyRows(dependencies: DiagnosticsDependencyPayload | undefined): DiagnosticRow[] {
+function dependencyRows(
+  dependencies: DiagnosticsDependencyPayload | undefined,
+): DiagnosticRow[] {
   return [
-    dependencyRow('node-runtime', 'Node.js Runtime', dependencies?.nodeRuntime, '可用', '不可用'),
-    dependencyRow('desktop-renderer', '桌面 Renderer', dependencies?.desktopRenderer, '已构建', '缺少构建产物'),
-    dependencyRow('desktop-pet-modules', '桌宠模块', dependencies?.desktopPetModules, '已安装', '缺少模块'),
+    dependencyRow(
+      'node-runtime',
+      'Node.js Runtime',
+      dependencies?.nodeRuntime,
+      '可用',
+      '不可用',
+    ),
+    dependencyRow(
+      'desktop-renderer',
+      '桌面 Renderer',
+      dependencies?.desktopRenderer,
+      '已构建',
+      '缺少构建产物',
+    ),
+    dependencyRow(
+      'desktop-pet-modules',
+      '桌宠模块',
+      dependencies?.desktopPetModules,
+      '已安装',
+      '缺少模块',
+    ),
   ]
 }
 
-function dependencyRow(id: string, label: string, present: unknown, okValue: string, missingValue: string): DiagnosticRow {
+function dependencyRow(
+  id: string,
+  label: string,
+  present: unknown,
+  okValue: string,
+  missingValue: string,
+): DiagnosticRow {
   if (typeof present !== 'boolean') {
     return {
       id,
@@ -457,5 +589,10 @@ function numberOrZero(value: unknown): number {
 }
 
 function joinParts(parts: Array<string | null | undefined>): string {
-  return parts.map((part) => String(part || '').trim()).filter(Boolean).join(' · ') || '未返回详细信息'
+  return (
+    parts
+      .map((part) => String(part || '').trim())
+      .filter(Boolean)
+      .join(' · ') || '未返回详细信息'
+  )
 }

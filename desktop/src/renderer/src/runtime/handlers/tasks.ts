@@ -4,13 +4,27 @@ export interface TaskProjection {
   tasks: RuntimeTaskRecord[]
 }
 
-type TaskEvent = Extract<WsEvent, {
-  event: 'task_started' | 'task_progress' | 'task_output' | 'task_done' | 'task_error' | 'task_cancelled'
-}>
+type TaskEvent = Extract<
+  WsEvent,
+  {
+    event:
+      | 'task_started'
+      | 'task_progress'
+      | 'task_output'
+      | 'task_done'
+      | 'task_error'
+      | 'task_cancelled'
+  }
+>
 
-export function applyTaskEvent(projection: TaskProjection, event: TaskEvent): TaskProjection {
+export function applyTaskEvent(
+  projection: TaskProjection,
+  event: TaskEvent,
+): TaskProjection {
   if (!event.task?.id) return projection
-  const existing = projection.tasks.findIndex((task) => task.id === event.task?.id)
+  const existing = projection.tasks.findIndex(
+    (task) => task.id === event.task?.id,
+  )
   const nextTask: RuntimeTaskRecord = {
     ...(existing >= 0 ? projection.tasks[existing] : {}),
     ...event.task,
@@ -36,9 +50,12 @@ export function taskForPlanStep(
   planId: string,
   stepId: string,
 ): RuntimeTaskRecord | null {
-  return tasks.find((task) =>
-    task.kind === 'plan_step' &&
-    task.metadata?.plan_id === planId &&
-    task.metadata?.plan_step_id === stepId
-  ) || null
+  return (
+    tasks.find(
+      (task) =>
+        task.kind === 'plan_step' &&
+        task.metadata?.plan_id === planId &&
+        task.metadata?.plan_step_id === stepId,
+    ) || null
+  )
 }

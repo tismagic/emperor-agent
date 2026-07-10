@@ -41,19 +41,28 @@ const sections = [
   { key: 'hooks', label: 'Hooks', group: '编码', icon: Bot },
   { key: 'diagnostics', label: '诊断', group: '编码', icon: Activity },
   { key: 'appearance', label: '外观', group: '编码', icon: Palette },
-  { key: 'archived', label: '已归档对话', group: '已归档', icon: ArchiveRestore },
+  {
+    key: 'archived',
+    label: '已归档对话',
+    group: '已归档',
+    icon: ArchiveRestore,
+  },
 ] as const
 
 type SettingsSection = (typeof sections)[number]['key']
 
 const sectionKeys = new Set<string>(sections.map((item) => item.key))
 const currentSection = computed<SettingsSection>(() => {
-  const raw = Array.isArray(route.params.section) ? route.params.section[0] : route.params.section
-  return sectionKeys.has(String(raw)) ? String(raw) as SettingsSection : 'general'
+  const raw = Array.isArray(route.params.section)
+    ? route.params.section[0]
+    : route.params.section
+  return sectionKeys.has(String(raw))
+    ? (String(raw) as SettingsSection)
+    : 'general'
 })
 
 const groupedSections = computed(() => {
-  const groups = new Map<string, typeof sections[number][]>()
+  const groups = new Map<string, (typeof sections)[number][]>()
   for (const section of sections) {
     groups.set(section.group, [...(groups.get(section.group) || []), section])
   }
@@ -71,9 +80,13 @@ const sectionViews: Partial<Record<SettingsSection, Component>> = {
 
 const activeView = computed(() => sectionViews[currentSection.value])
 
-watch(currentSection, (section) => {
-  if (section === 'archived') void loadArchived()
-}, { immediate: true })
+watch(
+  currentSection,
+  (section) => {
+    if (section === 'archived') void loadArchived()
+  },
+  { immediate: true },
+)
 
 onMounted(() => {
   if (!sectionKeys.has(String(route.params.section || 'general'))) {
@@ -88,7 +101,9 @@ function go(section: SettingsSection) {
 async function loadArchived() {
   archivedLoading.value = true
   try {
-    archivedSessions.value = (await sessions.loadArchived()).filter((session) => session.archived_at)
+    archivedSessions.value = (await sessions.loadArchived()).filter(
+      (session) => session.archived_at,
+    )
   } finally {
     archivedLoading.value = false
   }
@@ -97,21 +112,28 @@ async function loadArchived() {
 async function restoreArchived(id: string) {
   const ok = await sessions.archive(id, false)
   if (ok) {
-    archivedSessions.value = archivedSessions.value.filter((session) => session.id !== id)
+    archivedSessions.value = archivedSessions.value.filter(
+      (session) => session.id !== id,
+    )
     ctx.showToast('已恢复会话')
   }
 }
 
 async function deleteArchived(id: string) {
   const ok = await sessions.remove(id)
-  if (ok) archivedSessions.value = archivedSessions.value.filter((session) => session.id !== id)
+  if (ok)
+    archivedSessions.value = archivedSessions.value.filter(
+      (session) => session.id !== id,
+    )
 }
 </script>
 
 <template>
   <section class="settings-shell">
     <aside class="settings-sidebar">
-      <button class="settings-back" @click="router.push('/chat')">← 返回应用</button>
+      <button class="settings-back" @click="router.push('/chat')">
+        ← 返回应用
+      </button>
       <div class="settings-search">搜索设置...</div>
       <template v-for="group in groupedSections" :key="group.group">
         <div class="settings-group-label">{{ group.group }}</div>
@@ -131,7 +153,10 @@ async function deleteArchived(id: string) {
     <main class="settings-content">
       <component v-if="activeView" :is="activeView" />
 
-      <section v-else-if="currentSection === 'general'" class="main-view view-readable settings-simple-view">
+      <section
+        v-else-if="currentSection === 'general'"
+        class="main-view view-readable settings-simple-view"
+      >
         <header class="view-head">
           <div>
             <h1>常规</h1>
@@ -154,7 +179,11 @@ async function deleteArchived(id: string) {
                 <strong>主模型</strong>
                 <span>对话与构建任务的默认模型</span>
               </div>
-              <code>{{ ctx.boot.value?.modelConfig?.current?.mainModelId || ctx.boot.value?.model || '未配置' }}</code>
+              <code>{{
+                ctx.boot.value?.modelConfig?.current?.mainModelId ||
+                ctx.boot.value?.model ||
+                '未配置'
+              }}</code>
             </div>
             <div class="settings-row">
               <Database :size="18" />
@@ -168,7 +197,10 @@ async function deleteArchived(id: string) {
         </div>
       </section>
 
-      <section v-else-if="currentSection === 'appearance'" class="main-view view-readable settings-simple-view">
+      <section
+        v-else-if="currentSection === 'appearance'"
+        class="main-view view-readable settings-simple-view"
+      >
         <header class="view-head">
           <div>
             <h1>外观</h1>
@@ -177,7 +209,11 @@ async function deleteArchived(id: string) {
         </header>
         <div class="view-body">
           <div class="settings-list">
-            <button class="settings-row selectable" :class="{ active: theme.theme.value === 'dark' }" @click="theme.set('dark')">
+            <button
+              class="settings-row selectable"
+              :class="{ active: theme.theme.value === 'dark' }"
+              @click="theme.set('dark')"
+            >
               <Palette :size="18" />
               <div>
                 <strong>深色</strong>
@@ -185,7 +221,11 @@ async function deleteArchived(id: string) {
               </div>
               <code>{{ theme.theme.value === 'dark' ? '当前' : '切换' }}</code>
             </button>
-            <button class="settings-row selectable" :class="{ active: theme.theme.value === 'light' }" @click="theme.set('light')">
+            <button
+              class="settings-row selectable"
+              :class="{ active: theme.theme.value === 'light' }"
+              @click="theme.set('light')"
+            >
               <Palette :size="18" />
               <div>
                 <strong>浅色</strong>
@@ -206,16 +246,34 @@ async function deleteArchived(id: string) {
         </header>
         <div class="view-body">
           <div v-if="archivedLoading" class="empty-note">加载归档对话中...</div>
-          <div v-else-if="!archivedSessions.length" class="empty-note">暂无归档对话。</div>
+          <div v-else-if="!archivedSessions.length" class="empty-note">
+            暂无归档对话。
+          </div>
           <div v-else class="archived-session-list">
-            <div v-for="session in archivedSessions" :key="session.id" class="archived-session-row">
+            <div
+              v-for="session in archivedSessions"
+              :key="session.id"
+              class="archived-session-row"
+            >
               <div>
                 <strong>{{ session.title }}</strong>
-                <span>{{ session.project_name || session.updated_at?.slice(0, 10) }}</span>
+                <span>{{
+                  session.project_name || session.updated_at?.slice(0, 10)
+                }}</span>
               </div>
               <div class="archived-session-actions">
-                <button class="tool-button" @click="restoreArchived(session.id)">恢复</button>
-                <button class="tool-button danger" @click="deleteArchived(session.id)">删除</button>
+                <button
+                  class="tool-button"
+                  @click="restoreArchived(session.id)"
+                >
+                  恢复
+                </button>
+                <button
+                  class="tool-button danger"
+                  @click="deleteArchived(session.id)"
+                >
+                  删除
+                </button>
               </div>
             </div>
           </div>

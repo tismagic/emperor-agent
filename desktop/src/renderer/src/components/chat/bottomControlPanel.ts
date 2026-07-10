@@ -1,4 +1,8 @@
-import type { ControlInteraction, ControlPayload, SessionInfo } from '../../types'
+import type {
+  ControlInteraction,
+  ControlPayload,
+  SessionInfo,
+} from '../../types'
 
 export type BottomControlKind = 'ask' | 'plan'
 
@@ -7,7 +11,10 @@ export interface BottomControlPanel {
   interaction: ControlInteraction
 }
 
-export function activeBottomControlPanel(control?: ControlPayload | null, activeSession?: SessionInfo | null): BottomControlPanel | null {
+export function activeBottomControlPanel(
+  control?: ControlPayload | null,
+  activeSession?: SessionInfo | null,
+): BottomControlPanel | null {
   const pending = control?.pending
   if (!pending || pending.status !== 'waiting') return null
   if (!activeSession?.control_pending) return null
@@ -18,6 +25,9 @@ export function activeBottomControlPanel(control?: ControlPayload | null, active
   return null
 }
 
-export function composerBlockedByControl(control?: ControlPayload | null, activeSession?: SessionInfo | null): boolean {
+export function composerBlockedByControl(
+  control?: ControlPayload | null,
+  activeSession?: SessionInfo | null,
+): boolean {
   return Boolean(activeBottomControlPanel(control, activeSession))
 }

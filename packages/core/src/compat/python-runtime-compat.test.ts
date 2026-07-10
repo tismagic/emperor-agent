@@ -36,24 +36,55 @@ describe('Python runtime data compatibility (MIG-REL-003)', () => {
       args: ['-m', 'legacy_reader'],
     })
 
-    const memory = new MemoryStore(join(root, 'memory'), join(root, 'templates', 'USER.local.md'))
+    const memory = new MemoryStore(
+      join(root, 'memory'),
+      join(root, 'templates', 'USER.local.md'),
+    )
     expect(memory.readMemory()).toContain('Python 版长期记忆')
-    expect(readFileSync(join(root, 'memory', '2026-06-25.md'), 'utf8')).toContain('Python 版情景记忆')
-    expect(memory.loadUnarchivedHistory().map((row) => row.content)).toEqual(['旧会话用户消息', '旧会话助手消息'])
+    expect(
+      readFileSync(join(root, 'memory', '2026-06-25.md'), 'utf8'),
+    ).toContain('Python 版情景记忆')
+    expect(memory.loadUnarchivedHistory().map((row) => row.content)).toEqual([
+      '旧会话用户消息',
+      '旧会话助手消息',
+    ])
     expect(existsSync(join(root, 'memory', 'history_index.json'))).toBe(true)
-    expect(existsSync(join(root, 'memory', 'history.legacy-backup.jsonl'))).toBe(true)
+    expect(
+      existsSync(join(root, 'memory', 'history.legacy-backup.jsonl')),
+    ).toBe(true)
 
     const sessions = new SessionStore(root).list()
     expect(sessions).toHaveLength(1)
-    expect(sessions[0]).toMatchObject({ id: 'default', title: 'Python 默认会话', message_count: 2 })
-    const conversation = new ConversationStore(join(root, 'sessions', 'default'))
-    expect(conversation.loadUnarchivedHistory().map((row) => row.content)).toEqual(['session user', 'session assistant'])
-    expect(JSON.parse(readFileSync(join(root, 'sessions', 'default', '_checkpoint.json'), 'utf8')).history[0].content).toBe('checkpoint user')
+    expect(sessions[0]).toMatchObject({
+      id: 'default',
+      title: 'Python 默认会话',
+      message_count: 2,
+    })
+    const conversation = new ConversationStore(
+      join(root, 'sessions', 'default'),
+    )
+    expect(
+      conversation.loadUnarchivedHistory().map((row) => row.content),
+    ).toEqual(['session user', 'session assistant'])
+    expect(
+      JSON.parse(
+        readFileSync(
+          join(root, 'sessions', 'default', '_checkpoint.json'),
+          'utf8',
+        ),
+      ).history[0].content,
+    ).toBe('checkpoint user')
 
     const teamStore = new TeamStore(root)
     expect(teamStore.listMembers()).toHaveLength(1)
     expect(teamStore.getMember('reviewer')?.status).toBe('offline')
-    expect(teamStore.readThread('reviewer').map((row) => row.content)).toContain('thread context')
-    expect(new MessageBus(teamStore).recent('lead').map((message) => message.content)).toContain('ready for review')
+    expect(
+      teamStore.readThread('reviewer').map((row) => row.content),
+    ).toContain('thread context')
+    expect(
+      new MessageBus(teamStore)
+        .recent('lead')
+        .map((message) => message.content),
+    ).toContain('ready for review')
   })
 })

@@ -1,24 +1,33 @@
 <script setup lang="ts">
-import { hasComposerCapabilityTokens, renderComposerInlineTokens } from '../../capabilities/composerCapabilityTokens'
+import {
+  hasComposerCapabilityTokens,
+  renderComposerInlineTokens,
+} from '../../capabilities/composerCapabilityTokens'
 import { isPathLikeSlashToken, slashCommands } from '../../commands'
 import type { ChatMessage, RuntimePlanRecord, UserMessage } from '../../types'
 import { avatarIcons } from '../../icons'
 import AssistantFlow from './AssistantFlow.vue'
 import AttachmentChip from './AttachmentChip.vue'
 
-const props = defineProps<{ message: ChatMessage; plans: RuntimePlanRecord[] }>()
+const props = defineProps<{
+  message: ChatMessage
+  plans: RuntimePlanRecord[]
+}>()
 const schedulerClientIdPrefix = 'scheduler:'
 const schedulerTriggerPrefixes = ['定时任务触发 ·', '司时台触发 ·']
 
-function skillSlashParts(message: UserMessage): { token: string; rest: string } | null {
+function skillSlashParts(
+  message: UserMessage,
+): { token: string; rest: string } | null {
   const text = message.content.trim()
   if (!text.startsWith('/')) return null
   const [token] = text.split(/\s+/, 1)
   if (!token || token === '/') return null
   if (isPathLikeSlashToken(token)) return null
   const normalized = token.toLowerCase()
-  const isSystemCommand = slashCommands.some((command) =>
-    command.name === normalized || command.aliases?.includes(normalized),
+  const isSystemCommand = slashCommands.some(
+    (command) =>
+      command.name === normalized || command.aliases?.includes(normalized),
   )
   if (isSystemCommand) return null
   return { token, rest: text.slice(token.length).trimStart() }
@@ -35,12 +44,17 @@ function inlineTokenParts(message: UserMessage) {
 function isSchedulerMessage(message: ChatMessage): boolean {
   if (message.role !== 'user') return false
   const displayPrefix = schedulerTriggerPrefix(message.content)
-  return message.source === 'scheduler' ||
+  return (
+    message.source === 'scheduler' ||
     message.id.startsWith(schedulerClientIdPrefix) ||
     Boolean(displayPrefix)
+  )
 }
 
-function schedulerDisplayParts(message: ChatMessage): { jobName: string; body: string } {
+function schedulerDisplayParts(message: ChatMessage): {
+  jobName: string
+  body: string
+} {
   if (message.role !== 'user') return { jobName: '定时任务', body: '' }
   const text = message.content.trimStart()
   const displayPrefix = schedulerTriggerPrefix(text)
@@ -52,30 +66,41 @@ function schedulerDisplayParts(message: ChatMessage): { jobName: string; body: s
     const parsedName = header.slice(displayPrefix.length).trim()
     if (!jobName && parsedName) jobName = parsedName
     const separator = text.match(/\r?\n\r?\n/)
-    body = separator?.index !== undefined
-      ? text.slice(separator.index + separator[0].length).trim()
-      : text.slice(header.length).trim()
+    body =
+      separator?.index !== undefined
+        ? text.slice(separator.index + separator[0].length).trim()
+        : text.slice(header.length).trim()
   }
   return { jobName: jobName || '定时任务', body }
 }
 
 function schedulerTriggerPrefix(content: string) {
   const text = content.trimStart()
-  return schedulerTriggerPrefixes.find((prefix) => text.startsWith(prefix)) || ''
+  return (
+    schedulerTriggerPrefixes.find((prefix) => text.startsWith(prefix)) || ''
+  )
 }
 </script>
 
 <template>
-  <article v-if="isSchedulerMessage(props.message)" class="message-row scheduler-trigger">
+  <article
+    v-if="isSchedulerMessage(props.message)"
+    class="message-row scheduler-trigger"
+  >
     <div class="scheduler-trigger-card">
       <div class="scheduler-trigger-head">
         <span class="scheduler-trigger-icon" aria-hidden="true">定</span>
         <div class="min-w-0">
           <div class="scheduler-trigger-title">定时任务触发</div>
-          <div class="scheduler-trigger-name">{{ schedulerDisplayParts(props.message).jobName }}</div>
+          <div class="scheduler-trigger-name">
+            {{ schedulerDisplayParts(props.message).jobName }}
+          </div>
         </div>
       </div>
-      <div v-if="schedulerDisplayParts(props.message).body" class="scheduler-trigger-body whitespace-pre-wrap">
+      <div
+        v-if="schedulerDisplayParts(props.message).body"
+        class="scheduler-trigger-body whitespace-pre-wrap"
+      >
         {{ schedulerDisplayParts(props.message).body }}
       </div>
     </div>
@@ -95,20 +120,28 @@ function schedulerTriggerPrefix(content: string) {
       </div>
       <div v-if="props.message.content" class="bubble user whitespace-pre-wrap">
         <template v-if="hasInlineTokens(props.message)">
-          <template v-for="(segment, index) in inlineTokenParts(props.message)" :key="index">
+          <template
+            v-for="(segment, index) in inlineTokenParts(props.message)"
+            :key="index"
+          >
             <span
               v-if="segment.kind === 'token'"
               class="user-inline-token"
               :data-kind="segment.tokenKind"
             >
-              {{ segment.tokenKind === 'skill' ? 'Skill' : 'MCP' }} · {{ segment.name }}
+              {{ segment.tokenKind === 'skill' ? 'Skill' : 'MCP' }} ·
+              {{ segment.name }}
             </span>
             <span v-else>{{ segment.text }}</span>
           </template>
         </template>
         <template v-else-if="skillSlashParts(props.message)">
-          <span class="user-skill-slash">{{ skillSlashParts(props.message)?.token }}</span>
-          <span v-if="skillSlashParts(props.message)?.rest"> {{ skillSlashParts(props.message)?.rest }}</span>
+          <span class="user-skill-slash">{{
+            skillSlashParts(props.message)?.token
+          }}</span>
+          <span v-if="skillSlashParts(props.message)?.rest">
+            {{ skillSlashParts(props.message)?.rest }}</span
+          >
         </template>
         <template v-else>{{ props.message.content }}</template>
       </div>

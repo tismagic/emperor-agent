@@ -9,6 +9,7 @@
 ### A1. RCE：`subprocess.run(..., shell=True)` 无 timeout / 无 cwd 限制
 
 **识别**：
+
 ```bash
 grep -rnE 'subprocess\.(run|call|Popen).*shell=True' --include='*.py' .
 ```
@@ -16,6 +17,7 @@ grep -rnE 'subprocess\.(run|call|Popen).*shell=True' --include='*.py' .
 **为什么严重**：在 agent 项目里，模型输出能直接经此函数触发任意系统命令；prompt-injection 即整机沦陷。即使非 agent 项目，把用户输入拼到 shell 字符串也是教科书级 RCE。
 
 **修复 sketch**：
+
 ```python
 result = subprocess.run(
     command, shell=True, capture_output=True, text=True,
@@ -29,14 +31,17 @@ result = subprocess.run(
 ### A2. 路径穿越：`Path(user_input).resolve()` 无 `relative_to(workspace)`
 
 **识别**：
+
 ```bash
 grep -rnE 'Path\([^)]+\)\.resolve\(\)' --include='*.py' . | grep -v test
 ```
+
 然后看每个 hit 后续是否调用 `relative_to` 或字符串前缀比对。
 
 **为什么严重**：`/etc/passwd`、`~/.ssh/id_rsa` 是绝对路径，`Path(p).expanduser().resolve()` 直接命中真实文件。`..` 也能逃出 workspace。
 
 **修复 sketch**：
+
 ```python
 p = Path(user_path).expanduser()
 if not p.is_absolute(): p = workspace / p
@@ -51,6 +56,7 @@ if not (p == ws or str(p).startswith(str(ws) + os.sep)):
 ### A3. 密钥回传前端：`/api/config` 等返回 `config.raw` 含 apiKey
 
 **识别**：
+
 ```bash
 grep -rnE '"config":\s*config\.raw|json\.dumps\(config|return config' \
   --include='*.py' .
@@ -66,6 +72,7 @@ grep -rnE '"config":\s*config\.raw|json\.dumps\(config|return config' \
 ### A4. 密钥进入 git 历史
 
 **识别**：
+
 ```bash
 git log --all -p | grep -E '^\+.*(sk-[a-zA-Z0-9]{20,}|AIza[0-9A-Za-z_-]{30,}|gh[ps]_[A-Za-z0-9]{30,}|AKIA[0-9A-Z]{16})'
 ```
@@ -79,6 +86,7 @@ git log --all -p | grep -E '^\+.*(sk-[a-zA-Z0-9]{20,}|AIza[0-9A-Za-z_-]{30,}|gh[
 ### A5. 反序列化 / 模板注入：`pickle.loads(data)` / `yaml.load(stream)` / `eval(input)`
 
 **识别**：
+
 ```bash
 grep -rnE 'pickle\.loads|yaml\.load[^_]|\beval\(|\bexec\(' --include='*.py' .
 ```
@@ -90,6 +98,7 @@ grep -rnE 'pickle\.loads|yaml\.load[^_]|\beval\(|\bexec\(' --include='*.py' .
 ### A6. SQL 字符串拼接
 
 **识别**：
+
 ```bash
 grep -rnE '\.execute\([^,)]*%|f"\s*SELECT.*\{|"\s*\+\s*request\.' \
   --include='*.py' --include='*.ts' .
@@ -104,6 +113,7 @@ grep -rnE '\.execute\([^,)]*%|f"\s*SELECT.*\{|"\s*\+\s*request\.' \
 ### B1. 异常吞噬：`except Exception` 仅 `print(exc)` / `pass`
 
 **识别**：
+
 ```bash
 grep -rnB0 -A2 'except Exception' --include='*.py' . | grep -E 'print\(|pass|return ""'
 ```
@@ -133,9 +143,11 @@ grep -rnB0 -A2 'except Exception' --include='*.py' . | grep -E 'print\(|pass|ret
 ### B4. 循环依赖 / import 黑魔法
 
 **识别**：
+
 ```bash
 python -c "import importlib, pkgutil; [importlib.import_module(m.name) for m in pkgutil.walk_packages(['<pkg>'])]"
 ```
+
 看是否报 ImportError；或 `pydeps <pkg>` 出图找环。
 
 **修复**：把共享类型抽到独立 `types.py`；延迟 import 是 hack 不是解。
@@ -197,9 +209,11 @@ agent 主 loop 直接调任意 `Tool.execute`，如果工具集合包含 `run_co
 ### C7. 上帝类 / 上帝构造函数（吃 10+ 参数）
 
 **识别**：
+
 ```bash
 grep -nE 'def __init__\(' --include='*.py' -A 20 . | grep -c '^\s\+self\.'
 ```
+
 或人工看 `AgentLoop.__init__` 之类。
 
 **修复**：拆 facade，引入 DI 容器或 dataclass config。
@@ -209,22 +223,27 @@ grep -nE 'def __init__\(' --include='*.py' -A 20 . | grep -c '^\s\+self\.'
 ## D · 风格 / 可读性（不直接影响评级，但累积扣分）
 
 ### D1. 中英文混用 docstring 但函数名英文 — 可接受
+
 ### D2. 命名冲突（包名与脚本名同名 `agent.py` vs `agent/`） — 改名脚本
+
 ### D3. 魔法数字 / 重复字符串 — 抽常量
+
 ### D4. 不必要的 `from typing import Optional`（>= 3.10 用 `X | None`）
+
 ### D5. `# type: ignore` / `eslint-disable-next-line` 散落 — 收敛到一处或修根因
+
 ### D6. 未使用 import / 未使用变量 — ruff `--select F401,F841` 全自动
 
 ---
 
 ## 风险加权（部署上下文 → 等级浮动）
 
-| 缺陷 | 个人 CLI | 内网工具 | 对外 SaaS |
-|---|---|---|---|
-| RCE 工具无围栏 | 中 | 高 | 致命 |
-| API key 回传前端 | 中 | 高 | 致命 |
-| 0 测试 | 中 | 高 | 致命 |
-| print 无 logger | 低 | 中 | 高 |
-| 单文件 500+ LoC | 低 | 中 | 中 |
+| 缺陷             | 个人 CLI | 内网工具 | 对外 SaaS |
+| ---------------- | -------- | -------- | --------- |
+| RCE 工具无围栏   | 中       | 高       | 致命      |
+| API key 回传前端 | 中       | 高       | 致命      |
+| 0 测试           | 中       | 高       | 致命      |
+| print 无 logger  | 低       | 中       | 高        |
+| 单文件 500+ LoC  | 低       | 中       | 中        |
 
 **判断口径**：先问用户"这个项目部署形态"，再按列查，再写"风险等级"列。

@@ -2,7 +2,11 @@ import { readFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { loadMcpConfig, saveMcpConfig, type MCPConfig } from '../../mcp/config'
 import { ensureUserProfileFile } from '../../sessions/onboarding'
-import { applyMemoryPatchToFile, memoryContentHash, type MemoryPatchOperation } from '../../memory/patch'
+import {
+  applyMemoryPatchToFile,
+  memoryContentHash,
+  type MemoryPatchOperation,
+} from '../../memory/patch'
 import { MemoryVersionStore } from '../../memory/versions'
 
 export interface UserConfigPayload {
@@ -20,15 +24,24 @@ export class CoreConfigService {
   readonly templatesDir: string
   private readonly hooks: CoreConfigServiceHooks
 
-  constructor(root: string, hooks: CoreConfigServiceHooks = {}, opts: { templatesDir?: string } = {}) {
+  constructor(
+    root: string,
+    hooks: CoreConfigServiceHooks = {},
+    opts: { templatesDir?: string } = {},
+  ) {
     this.root = resolve(root)
-    this.templatesDir = resolve(opts.templatesDir ?? join(this.root, 'templates'))
+    this.templatesDir = resolve(
+      opts.templatesDir ?? join(this.root, 'templates'),
+    )
     this.hooks = hooks
   }
 
   getUserConfig(): UserConfigPayload {
     const path = this.userConfigPath()
-    return { path: 'memory/profile/USER.local.md', content: readFileSync(path, 'utf8') }
+    return {
+      path: 'memory/profile/USER.local.md',
+      content: readFileSync(path, 'utf8'),
+    }
   }
 
   saveUserConfig(content: string): UserConfigPayload {
@@ -36,23 +49,28 @@ export class CoreConfigService {
     const normalized = `${String(content || '').trimEnd()}\n`
     const current = readFileSync(path, 'utf8')
     const operations = userProfileSectionReplacementOps(normalized)
-    if (!operations.length) throw new Error('save_user_config requires at least one ## section')
+    if (!operations.length)
+      throw new Error('save_user_config requires at least one ## section')
     const memoryDir = join(this.root, 'memory')
     const versions = new MemoryVersionStore(this.root, memoryDir, path)
-    const result = applyMemoryPatchToFile({
-      target: { kind: 'user_profile' },
-      baseVersion: versions.nextVersionForPath(path, { target: 'user' }),
-      baseHash: memoryContentHash(current),
-      operations,
-      rationale: 'save_user_config',
-    }, {
-      targetPath: path,
-      versions,
-      versionTarget: 'user',
-      ledgerPath: join(memoryDir, 'patch-ledger.jsonl'),
-      explicitReplace: true,
-    })
-    if (!result.ok) throw new Error(`save_user_config rejected: ${result.errors.join(', ')}`)
+    const result = applyMemoryPatchToFile(
+      {
+        target: { kind: 'user_profile' },
+        baseVersion: versions.nextVersionForPath(path, { target: 'user' }),
+        baseHash: memoryContentHash(current),
+        operations,
+        rationale: 'save_user_config',
+      },
+      {
+        targetPath: path,
+        versions,
+        versionTarget: 'user',
+        ledgerPath: join(memoryDir, 'patch-ledger.jsonl'),
+        explicitReplace: true,
+      },
+    )
+    if (!result.ok)
+      throw new Error(`save_user_config rejected: ${result.errors.join(', ')}`)
     this.hooks.refreshRuntimeContext?.()
     return this.getUserConfig()
   }
@@ -72,8 +90,12 @@ export class CoreConfigService {
   }
 }
 
-function userProfileSectionReplacementOps(markdown: string): MemoryPatchOperation[] {
-  const lines = String(markdown ?? '').replace(/\r\n/g, '\n').split('\n')
+function userProfileSectionReplacementOps(
+  markdown: string,
+): MemoryPatchOperation[] {
+  const lines = String(markdown ?? '')
+    .replace(/\r\n/g, '\n')
+    .split('\n')
   const ops: MemoryPatchOperation[] = []
   for (let index = 0; index < lines.length; index += 1) {
     const match = /^##\s+(.+?)\s*$/.exec(lines[index] ?? '')
@@ -86,7 +108,14 @@ function userProfileSectionReplacementOps(markdown: string): MemoryPatchOperatio
         break
       }
     }
-    ops.push({ op: 'replace_section', section, content: lines.slice(index + 1, end).join('\n').trimEnd() })
+    ops.push({
+      op: 'replace_section',
+      section,
+      content: lines
+        .slice(index + 1, end)
+        .join('\n')
+        .trimEnd(),
+    })
   }
   return ops
 }

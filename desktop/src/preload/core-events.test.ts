@@ -8,7 +8,9 @@ describe('preload core event bridge (MIG-IPC-003)', () => {
     const bridge = createCoreEventBridge(ipc)
     const seen: unknown[] = []
 
-    const unsubscribe = bridge.onCoreEvent((event) => { seen.push(event) })
+    const unsubscribe = bridge.onCoreEvent((event) => {
+      seen.push(event)
+    })
     ipc.emit(CORE_EVENT_CHANNEL, { event: 'ready' })
     unsubscribe()
     ipc.emit(CORE_EVENT_CHANNEL, { event: 'message_delta' })
@@ -34,7 +36,8 @@ class FakeIpcRenderer {
   }
 
   emit(channel: string, payload: unknown): void {
-    for (const listener of this.listeners.get(channel) ?? []) listener({}, payload)
+    for (const listener of this.listeners.get(channel) ?? [])
+      listener({}, payload)
   }
 
   listenerCount(channel: string): number {

@@ -10,9 +10,15 @@ function marker(status: string) {
   return '□'
 }
 
-const completedCount = computed(() => props.todos.filter((todo) => todo.status === 'completed').length)
-const activeCount = computed(() => props.todos.filter((todo) => todo.status === 'in_progress').length)
-const pendingCount = computed(() => props.todos.length - completedCount.value - activeCount.value)
+const completedCount = computed(
+  () => props.todos.filter((todo) => todo.status === 'completed').length,
+)
+const activeCount = computed(
+  () => props.todos.filter((todo) => todo.status === 'in_progress').length,
+)
+const pendingCount = computed(
+  () => props.todos.length - completedCount.value - activeCount.value,
+)
 
 const summary = computed(() => {
   const parts = [`${completedCount.value} 完成`]
@@ -29,7 +35,12 @@ const summary = computed(() => {
       <span>{{ summary }}</span>
     </div>
     <div class="todo-items">
-      <div v-for="todo in props.todos" :key="todo.id" class="todo-item" :class="todo.status">
+      <div
+        v-for="todo in props.todos"
+        :key="todo.id"
+        class="todo-item"
+        :class="todo.status"
+      >
         <span class="todo-mark">{{ marker(todo.status) }}</span>
         <em>{{ todo.id }}</em>
         <p>{{ todo.content }}</p>

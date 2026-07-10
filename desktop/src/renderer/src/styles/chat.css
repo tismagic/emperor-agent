@@ -1,350 +1,353 @@
-  .chat-body {
-    @apply relative flex min-h-0 flex-1 flex-col overflow-x-hidden;
-  }
-
-  .messages-pane {
-    @apply min-h-0 flex-1 overflow-x-hidden overflow-y-auto py-6;
-    padding-inline: clamp(1rem, 4vw, 4rem);
-  }
-
-  .message-stack {
-    @apply mx-auto flex w-full max-w-[860px] min-w-0 flex-col gap-5 pb-6;
-  }
-
-  /* 虚拟滚动（Wave6）：DynamicScroller 行间距——flex gap 对绝对定位的虚拟行不生效 */
-  .message-stack-virtual-row {
-    padding-bottom: 1.25rem;
-  }
-
-  /* 滚动锁定（Wave4.1）：解锁跟随时的回底浮钮 */
-  .scroll-to-bottom-btn {
-    @apply sticky bottom-4 z-10 mx-auto block rounded-full border border-black/10 bg-white/90 px-4 py-1.5 text-xs shadow-md backdrop-blur transition hover:bg-white dark:border-white/10 dark:bg-neutral-800/90 dark:hover:bg-neutral-800;
-  }
-
-  /* ── Welcome / empty ─────────────────────────────────────────────────────── */
-  .welcome-card {
-    @apply mx-auto mt-[10vh] max-w-3xl px-2;
-  }
-
-  .welcome-layout {
-    @apply flex flex-col gap-4;
-  }
-
-  .welcome-brand-lockup {
-    @apply mb-6 flex min-w-0 items-center;
-  }
-
-  .welcome-wordmark {
-    @apply block h-auto min-w-0 max-w-full object-contain;
-    width: min(420px, calc(100vw - 9rem));
-  }
-
-  .welcome-card h1 {
-    @apply text-2xl font-semibold tracking-tight;
-    color: rgb(var(--fg));
-  }
-
-  .welcome-card p {
-    @apply mt-3 text-sm leading-6;
-    color: rgb(var(--fg-muted));
-  }
-
-  .brand-seal-sm {
-    color: rgb(var(--accent));
-  }
-
-  /* ── Message rows ────────────────────────────────────────────────────────── */
-  .message-row {
-    @apply relative flex w-full min-w-0 items-start gap-3;
-    container-type: inline-size;
-  }
-
-  .message-row.assistant {
-    @apply justify-start;
-  }
-
-  .message-row.user {
-    @apply justify-end;
-  }
-
-  .message-row.scheduler-trigger {
-    @apply justify-center;
-  }
-
-  .message-row.user .avatar {
-    @apply order-2;
-  }
-
-  .message-cluster {
-    @apply flex min-w-0 flex-col gap-1.5;
-    max-width: min(720px, calc(100% - 3rem));
-  }
-
-  .message-cluster.user {
-    @apply items-end;
-    max-width: min(560px, calc(100% - 3rem));
-  }
-
-  .avatar {
-    @apply mt-0.5 grid size-7 shrink-0 place-items-center rounded-full border;
-    border-color: rgb(var(--border));
-    color: rgb(var(--fg-muted));
-    background: rgb(var(--bg-elevated));
-  }
-
-  .avatar.user {
-    color: rgb(var(--accent));
-  }
-
-  .avatar.assistant {
-    color: rgb(var(--fg));
-  }
-
-  .assistant-mini-avatar {
-    color: rgb(var(--fg-muted));
-  }
-
-  .message-meta {
-    @apply inline-flex items-center gap-1.5 text-[11px] font-medium;
-    color: rgb(var(--fg-subtle));
-  }
-
-  .message-meta small {
-    @apply font-normal;
-  }
-
-  .message-meta.user {
-    color: rgb(var(--fg-subtle));
-  }
-
-  .message-meta.assistant {
-    color: rgb(var(--fg-subtle));
-  }
-
-  /* ── Scheduler trigger card ──────────────────────────────────────────────── */
-  .scheduler-trigger-card {
-    @apply w-full max-w-[640px] rounded-md border px-4 py-3;
-    border-color: rgb(var(--border));
-    background: rgb(var(--bg-elevated));
-  }
-
-  .scheduler-trigger-head {
-    @apply flex min-w-0 items-center gap-2.5;
-  }
-
-  .scheduler-trigger-icon {
-    @apply grid size-6 shrink-0 place-items-center rounded text-[11px] font-semibold;
-    color: rgb(var(--ok));
-    background: rgb(var(--ok) / 0.12);
-  }
-
-  .scheduler-trigger-title {
-    @apply truncate text-xs font-semibold;
-    color: rgb(var(--fg));
-  }
-
-  .scheduler-trigger-name {
-    @apply truncate font-mono text-[11px];
-    color: rgb(var(--fg-muted));
-  }
-
-  .scheduler-trigger-body {
-    @apply mt-2.5 border-t pt-2.5 text-[13px] leading-6;
-    border-color: rgb(var(--border));
-    color: rgb(var(--fg));
-    overflow-wrap: anywhere;
-    text-wrap: pretty;
-  }
-
-  /* ── Bubbles ─────────────────────────────────────────────────────────────── */
-  .bubble {
-    @apply relative min-w-0 max-w-full px-3.5 py-2.5 text-[14px] leading-6;
-    overflow-wrap: anywhere;
-    text-wrap: pretty;
-  }
-
-  .bubble.user {
-    @apply rounded-lg;
-    border: 1px solid rgb(var(--border) / 0.55);
-    background: transparent;
-    color: rgb(var(--fg));
-  }
-
-  .user-skill-slash {
-    @apply font-mono font-semibold;
-    color: rgb(var(--accent));
-  }
-
-  .user-inline-token {
-    display: inline-flex;
-    align-items: center;
-    min-height: 1.5em;
-    margin: 0 2px;
-    border: 1px solid rgb(var(--border-strong));
-    border-radius: 999px;
-    padding: 0 7px;
-    font-size: 12px;
-    font-weight: 650;
-    line-height: 1.45;
-    vertical-align: baseline;
-    white-space: nowrap;
-  }
-
-  .user-inline-token[data-kind='skill'] {
-    border-color: rgb(101 210 255 / 0.38);
-    background: rgb(101 210 255 / 0.1);
-    color: rgb(101 210 255);
-  }
-
-  .user-inline-token[data-kind='mcp'] {
-    border-color: rgb(var(--border-strong));
-    background: rgb(var(--bg-inset));
-    color: rgb(var(--fg));
-  }
-
-  .bubble.assistant {
-    @apply rounded-lg border;
-    border-color: rgb(var(--border));
-    background: rgb(var(--bg-elevated));
-    color: rgb(var(--fg));
-  }
-
-  .bubble.streaming::after {
-    content: '';
-    @apply absolute bottom-2.5 right-3 size-1.5 rounded-full bg-amber animate-pulse-seal;
-  }
-
-  /* ── Assistant flow / timeline ───────────────────────────────────────────── */
-  .flow-body {
-    @apply flex min-w-0 flex-col items-start gap-2;
-    max-width: min(860px, 100%);
-  }
-
-  .timeline-flow {
-    @apply w-full;
-  }
-
-  .assistant-toolbar {
-    @apply flex w-full items-center justify-between gap-2 px-1;
-  }
-
-  .assistant-toolbar.ghost {
-    @apply justify-start;
-  }
-
-  .copy-message-button {
-    @apply inline-flex min-h-7 items-center gap-1.5 rounded-md border px-2 py-0.5 text-[11px] font-medium transition;
-    border-color: rgb(var(--border));
-    color: rgb(var(--fg-subtle));
-    background: transparent;
-  }
-
-  .copy-message-button:hover {
-    background: rgb(var(--bg-inset));
-    color: rgb(var(--fg));
-  }
-
-  .copy-message-button .action-icon {
-    @apply size-3.5;
-  }
-
-  .message-row.assistant:hover .copy-message-button,
-  .copy-message-button:focus-visible {
-    @apply opacity-100;
-  }
-
-  .assistant-timeline-shell {
-    --timeline-axis-x: 0.35rem;
-    --timeline-content-inset: 1.25rem;
-    --timeline-dot-size: 0.5rem;
-    --timeline-dot-radius: 0.25rem;
-    @apply relative flex w-full min-w-0 flex-col gap-2;
-    padding-left: var(--timeline-content-inset);
-  }
-
-  .assistant-timeline-shell::before {
-    content: '';
-    @apply absolute bottom-2 top-1 w-px;
-    left: var(--timeline-axis-x);
-    background: rgb(var(--border));
-  }
-
-  .timeline-node {
-    @apply relative min-w-0 max-w-full;
-  }
-
-  .timeline-node::before {
-    content: '';
-    @apply absolute top-3 rounded-full;
-    left: calc(var(--timeline-axis-x) - var(--timeline-content-inset) - var(--timeline-dot-radius));
-    width: var(--timeline-dot-size);
-    height: var(--timeline-dot-size);
-    background: rgb(var(--fg-subtle));
-    box-sizing: border-box;
-  }
-
-  .timeline-node.text-node {
-    @apply rounded-md border px-3.5 py-2.5 text-[14px] leading-6;
-    border-color: transparent;
-    background: transparent;
-    color: rgb(var(--fg));
-  }
-
-  .timeline-node.text-node::before {
-    background: rgb(var(--fg-muted));
-  }
-
-  .timeline-node.text-node.streaming {
-    border-color: transparent;
-  }
-
-  .timeline-node.text-node.streaming::after {
-    content: '';
-    @apply absolute bottom-2.5 right-3 size-1.5 rounded-full bg-amber animate-pulse-seal;
-  }
-
-  .thought-node {
-    @apply flex w-fit max-w-full items-center gap-1.5 rounded-full border px-2 py-0.5 font-mono text-[11px];
-    border-color: rgb(var(--border));
-    color: rgb(var(--fg-subtle));
-  }
-
-  .thought-node::before {
-    @apply top-2;
-  }
-
-  .thought-node.running::before {
-    @apply bg-amber animate-pulse-seal;
-  }
-
-  .thought-node.done::before {
-    background: rgb(var(--ok));
-  }
-
-  .thought-node.error::before,
-  .thought-node.error_aborted::before {
-    background: rgb(var(--danger));
-  }
-
-  .thought-label {
-    color: rgb(var(--fg-subtle));
-  }
-
-  .thought-summary-node {
-    @apply w-full max-w-[780px] rounded-md px-3.5 py-2.5 text-[14px] leading-6;
-    color: rgb(var(--fg));
-  }
-
-  .thought-summary {
-    @apply m-0 whitespace-pre-wrap break-words;
-    color: rgb(var(--fg));
-  }
-
-  .thought-chevron {
-    color: rgb(var(--fg-subtle));
-  }
-
-  .control-node > .control-card,
-  .todo-fallback-node > .todo-panel {
-    @apply w-full max-w-none;
-  }
+.chat-body {
+  @apply relative flex min-h-0 flex-1 flex-col overflow-x-hidden;
+}
+
+.messages-pane {
+  @apply min-h-0 flex-1 overflow-x-hidden overflow-y-auto py-6;
+  padding-inline: clamp(1rem, 4vw, 4rem);
+}
+
+.message-stack {
+  @apply mx-auto flex w-full max-w-[860px] min-w-0 flex-col gap-5 pb-6;
+}
+
+/* 虚拟滚动（Wave6）：DynamicScroller 行间距——flex gap 对绝对定位的虚拟行不生效 */
+.message-stack-virtual-row {
+  padding-bottom: 1.25rem;
+}
+
+/* 滚动锁定（Wave4.1）：解锁跟随时的回底浮钮 */
+.scroll-to-bottom-btn {
+  @apply sticky bottom-4 z-10 mx-auto block rounded-full border border-black/10 bg-white/90 px-4 py-1.5 text-xs shadow-md backdrop-blur transition hover:bg-white dark:border-white/10 dark:bg-neutral-800/90 dark:hover:bg-neutral-800;
+}
+
+/* ── Welcome / empty ─────────────────────────────────────────────────────── */
+.welcome-card {
+  @apply mx-auto mt-[10vh] max-w-3xl px-2;
+}
+
+.welcome-layout {
+  @apply flex flex-col gap-4;
+}
+
+.welcome-brand-lockup {
+  @apply mb-6 flex min-w-0 items-center;
+}
+
+.welcome-wordmark {
+  @apply block h-auto min-w-0 max-w-full object-contain;
+  width: min(420px, calc(100vw - 9rem));
+}
+
+.welcome-card h1 {
+  @apply text-2xl font-semibold tracking-tight;
+  color: rgb(var(--fg));
+}
+
+.welcome-card p {
+  @apply mt-3 text-sm leading-6;
+  color: rgb(var(--fg-muted));
+}
+
+.brand-seal-sm {
+  color: rgb(var(--accent));
+}
+
+/* ── Message rows ────────────────────────────────────────────────────────── */
+.message-row {
+  @apply relative flex w-full min-w-0 items-start gap-3;
+  container-type: inline-size;
+}
+
+.message-row.assistant {
+  @apply justify-start;
+}
+
+.message-row.user {
+  @apply justify-end;
+}
+
+.message-row.scheduler-trigger {
+  @apply justify-center;
+}
+
+.message-row.user .avatar {
+  @apply order-2;
+}
+
+.message-cluster {
+  @apply flex min-w-0 flex-col gap-1.5;
+  max-width: min(720px, calc(100% - 3rem));
+}
+
+.message-cluster.user {
+  @apply items-end;
+  max-width: min(560px, calc(100% - 3rem));
+}
+
+.avatar {
+  @apply mt-0.5 grid size-7 shrink-0 place-items-center rounded-full border;
+  border-color: rgb(var(--border));
+  color: rgb(var(--fg-muted));
+  background: rgb(var(--bg-elevated));
+}
+
+.avatar.user {
+  color: rgb(var(--accent));
+}
+
+.avatar.assistant {
+  color: rgb(var(--fg));
+}
+
+.assistant-mini-avatar {
+  color: rgb(var(--fg-muted));
+}
+
+.message-meta {
+  @apply inline-flex items-center gap-1.5 text-[11px] font-medium;
+  color: rgb(var(--fg-subtle));
+}
+
+.message-meta small {
+  @apply font-normal;
+}
+
+.message-meta.user {
+  color: rgb(var(--fg-subtle));
+}
+
+.message-meta.assistant {
+  color: rgb(var(--fg-subtle));
+}
+
+/* ── Scheduler trigger card ──────────────────────────────────────────────── */
+.scheduler-trigger-card {
+  @apply w-full max-w-[640px] rounded-md border px-4 py-3;
+  border-color: rgb(var(--border));
+  background: rgb(var(--bg-elevated));
+}
+
+.scheduler-trigger-head {
+  @apply flex min-w-0 items-center gap-2.5;
+}
+
+.scheduler-trigger-icon {
+  @apply grid size-6 shrink-0 place-items-center rounded text-[11px] font-semibold;
+  color: rgb(var(--ok));
+  background: rgb(var(--ok) / 0.12);
+}
+
+.scheduler-trigger-title {
+  @apply truncate text-xs font-semibold;
+  color: rgb(var(--fg));
+}
+
+.scheduler-trigger-name {
+  @apply truncate font-mono text-[11px];
+  color: rgb(var(--fg-muted));
+}
+
+.scheduler-trigger-body {
+  @apply mt-2.5 border-t pt-2.5 text-[13px] leading-6;
+  border-color: rgb(var(--border));
+  color: rgb(var(--fg));
+  overflow-wrap: anywhere;
+  text-wrap: pretty;
+}
+
+/* ── Bubbles ─────────────────────────────────────────────────────────────── */
+.bubble {
+  @apply relative min-w-0 max-w-full px-3.5 py-2.5 text-[14px] leading-6;
+  overflow-wrap: anywhere;
+  text-wrap: pretty;
+}
+
+.bubble.user {
+  @apply rounded-lg;
+  border: 1px solid rgb(var(--border) / 0.55);
+  background: transparent;
+  color: rgb(var(--fg));
+}
+
+.user-skill-slash {
+  @apply font-mono font-semibold;
+  color: rgb(var(--accent));
+}
+
+.user-inline-token {
+  display: inline-flex;
+  align-items: center;
+  min-height: 1.5em;
+  margin: 0 2px;
+  border: 1px solid rgb(var(--border-strong));
+  border-radius: 999px;
+  padding: 0 7px;
+  font-size: 12px;
+  font-weight: 650;
+  line-height: 1.45;
+  vertical-align: baseline;
+  white-space: nowrap;
+}
+
+.user-inline-token[data-kind='skill'] {
+  border-color: rgb(101 210 255 / 0.38);
+  background: rgb(101 210 255 / 0.1);
+  color: rgb(101 210 255);
+}
+
+.user-inline-token[data-kind='mcp'] {
+  border-color: rgb(var(--border-strong));
+  background: rgb(var(--bg-inset));
+  color: rgb(var(--fg));
+}
+
+.bubble.assistant {
+  @apply rounded-lg border;
+  border-color: rgb(var(--border));
+  background: rgb(var(--bg-elevated));
+  color: rgb(var(--fg));
+}
+
+.bubble.streaming::after {
+  content: '';
+  @apply absolute bottom-2.5 right-3 size-1.5 rounded-full bg-amber animate-pulse-seal;
+}
+
+/* ── Assistant flow / timeline ───────────────────────────────────────────── */
+.flow-body {
+  @apply flex min-w-0 flex-col items-start gap-2;
+  max-width: min(860px, 100%);
+}
+
+.timeline-flow {
+  @apply w-full;
+}
+
+.assistant-toolbar {
+  @apply flex w-full items-center justify-between gap-2 px-1;
+}
+
+.assistant-toolbar.ghost {
+  @apply justify-start;
+}
+
+.copy-message-button {
+  @apply inline-flex min-h-7 items-center gap-1.5 rounded-md border px-2 py-0.5 text-[11px] font-medium transition;
+  border-color: rgb(var(--border));
+  color: rgb(var(--fg-subtle));
+  background: transparent;
+}
+
+.copy-message-button:hover {
+  background: rgb(var(--bg-inset));
+  color: rgb(var(--fg));
+}
+
+.copy-message-button .action-icon {
+  @apply size-3.5;
+}
+
+.message-row.assistant:hover .copy-message-button,
+.copy-message-button:focus-visible {
+  @apply opacity-100;
+}
+
+.assistant-timeline-shell {
+  --timeline-axis-x: 0.35rem;
+  --timeline-content-inset: 1.25rem;
+  --timeline-dot-size: 0.5rem;
+  --timeline-dot-radius: 0.25rem;
+  @apply relative flex w-full min-w-0 flex-col gap-2;
+  padding-left: var(--timeline-content-inset);
+}
+
+.assistant-timeline-shell::before {
+  content: '';
+  @apply absolute bottom-2 top-1 w-px;
+  left: var(--timeline-axis-x);
+  background: rgb(var(--border));
+}
+
+.timeline-node {
+  @apply relative min-w-0 max-w-full;
+}
+
+.timeline-node::before {
+  content: '';
+  @apply absolute top-3 rounded-full;
+  left: calc(
+    var(--timeline-axis-x) - var(--timeline-content-inset) -
+      var(--timeline-dot-radius)
+  );
+  width: var(--timeline-dot-size);
+  height: var(--timeline-dot-size);
+  background: rgb(var(--fg-subtle));
+  box-sizing: border-box;
+}
+
+.timeline-node.text-node {
+  @apply rounded-md border px-3.5 py-2.5 text-[14px] leading-6;
+  border-color: transparent;
+  background: transparent;
+  color: rgb(var(--fg));
+}
+
+.timeline-node.text-node::before {
+  background: rgb(var(--fg-muted));
+}
+
+.timeline-node.text-node.streaming {
+  border-color: transparent;
+}
+
+.timeline-node.text-node.streaming::after {
+  content: '';
+  @apply absolute bottom-2.5 right-3 size-1.5 rounded-full bg-amber animate-pulse-seal;
+}
+
+.thought-node {
+  @apply flex w-fit max-w-full items-center gap-1.5 rounded-full border px-2 py-0.5 font-mono text-[11px];
+  border-color: rgb(var(--border));
+  color: rgb(var(--fg-subtle));
+}
+
+.thought-node::before {
+  @apply top-2;
+}
+
+.thought-node.running::before {
+  @apply bg-amber animate-pulse-seal;
+}
+
+.thought-node.done::before {
+  background: rgb(var(--ok));
+}
+
+.thought-node.error::before,
+.thought-node.error_aborted::before {
+  background: rgb(var(--danger));
+}
+
+.thought-label {
+  color: rgb(var(--fg-subtle));
+}
+
+.thought-summary-node {
+  @apply w-full max-w-[780px] rounded-md px-3.5 py-2.5 text-[14px] leading-6;
+  color: rgb(var(--fg));
+}
+
+.thought-summary {
+  @apply m-0 whitespace-pre-wrap break-words;
+  color: rgb(var(--fg));
+}
+
+.thought-chevron {
+  color: rgb(var(--fg-subtle));
+}
+
+.control-node > .control-card,
+.todo-fallback-node > .todo-panel {
+  @apply w-full max-w-none;
+}

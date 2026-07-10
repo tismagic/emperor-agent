@@ -1,5 +1,12 @@
 import { createServer } from 'node:http'
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, writeFileSync } from 'node:fs'
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  readdirSync,
+  writeFileSync,
+} from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
@@ -27,16 +34,28 @@ describe('hooks schema, audit, and matching', () => {
             id: 'block-writes',
             matcher: 'write_file|edit_file',
             if: 'Tool(write_*)',
-            handler: { type: 'command', command: 'node', args: ['hook.js'], timeoutMs: 50, allowedEnv: ['PATH'] },
+            handler: {
+              type: 'command',
+              command: 'node',
+              args: ['hook.js'],
+              timeoutMs: 50,
+              allowedEnv: ['PATH'],
+            },
           },
           { id: 'bad-handler', handler: { type: 'mcp', server: 'x' } },
         ],
         Stop: [
           {
-            handler: { type: 'http', url: 'https://example.test/hook', headers: { 'x-hook': '1' } },
+            handler: {
+              type: 'http',
+              url: 'https://example.test/hook',
+              headers: { 'x-hook': '1' },
+            },
           },
         ],
-        NotARealEvent: [{ id: 'skip', handler: { type: 'command', command: 'true' } }],
+        NotARealEvent: [
+          { id: 'skip', handler: { type: 'command', command: 'true' } },
+        ],
       },
     })
 
@@ -49,10 +68,19 @@ describe('hooks schema, audit, and matching', () => {
       eventName: 'PreToolUse',
       matcher: 'write_file|edit_file',
       condition: 'Tool(write_*)',
-      handler: { type: 'command', command: 'node', args: ['hook.js'], timeoutMs: 50, async: false },
+      handler: {
+        type: 'command',
+        command: 'node',
+        args: ['hook.js'],
+        timeoutMs: 50,
+        async: false,
+      },
       enabled: true,
     })
-    expect(parsed.diagnostics.map((d) => d.code)).toEqual(['invalid_handler', 'invalid_event'])
+    expect(parsed.diagnostics.map((d) => d.code)).toEqual([
+      'invalid_handler',
+      'invalid_event',
+    ])
   })
 
   it('preserves corrupt audit lines while replaying newest bounded records', async () => {
@@ -63,7 +91,11 @@ describe('hooks schema, audit, and matching', () => {
       hookId: 'h1',
       eventName: 'PreToolUse',
       handlerType: 'command',
-      source: { kind: 'global', path: join(root, 'hooks_config.json'), readonly: false },
+      source: {
+        kind: 'global',
+        path: join(root, 'hooks_config.json'),
+        readonly: false,
+      },
       startedAt: '2026-07-07T00:00:00.000Z',
       durationMs: 3,
       status: 'completed',
@@ -76,7 +108,11 @@ describe('hooks schema, audit, and matching', () => {
       hookId: 'h2',
       eventName: 'Stop',
       handlerType: 'http',
-      source: { kind: 'project', path: join(root, '.emperor/settings.json'), readonly: true },
+      source: {
+        kind: 'project',
+        path: join(root, '.emperor/settings.json'),
+        readonly: true,
+      },
       startedAt: '2026-07-07T00:00:01.000Z',
       durationMs: 4,
       status: 'failed',
@@ -95,12 +131,38 @@ describe('hooks schema, audit, and matching', () => {
     const parsed = parseHooksConfig({
       hooks: {
         PreToolUse: [
-          { id: 'all', matcher: '*', handler: { type: 'command', command: 'true' } },
-          { id: 'pipe', matcher: 'read_file|grep', handler: { type: 'command', command: 'true' } },
-          { id: 'regex', matcher: '/^write_/', handler: { type: 'command', command: 'true' } },
-          { id: 'tool-if', matcher: '*', if: 'Tool(write_*)', handler: { type: 'command', command: 'true' } },
-          { id: 'path-if', matcher: '*', if: 'path:src/**/*.ts', handler: { type: 'command', command: 'true' } },
-          { id: 'invalid-regex', matcher: '/(/', handler: { type: 'command', command: 'true' } },
+          {
+            id: 'all',
+            matcher: '*',
+            handler: { type: 'command', command: 'true' },
+          },
+          {
+            id: 'pipe',
+            matcher: 'read_file|grep',
+            handler: { type: 'command', command: 'true' },
+          },
+          {
+            id: 'regex',
+            matcher: '/^write_/',
+            handler: { type: 'command', command: 'true' },
+          },
+          {
+            id: 'tool-if',
+            matcher: '*',
+            if: 'Tool(write_*)',
+            handler: { type: 'command', command: 'true' },
+          },
+          {
+            id: 'path-if',
+            matcher: '*',
+            if: 'path:src/**/*.ts',
+            handler: { type: 'command', command: 'true' },
+          },
+          {
+            id: 'invalid-regex',
+            matcher: '/(/',
+            handler: { type: 'command', command: 'true' },
+          },
         ],
       },
     })
@@ -114,7 +176,12 @@ describe('hooks schema, audit, and matching', () => {
 
     const matches = findMatchingHooks(parsed.config, input)
 
-    expect(matches.map((h) => h.id)).toEqual(['all', 'regex', 'tool-if', 'path-if'])
+    expect(matches.map((h) => h.id)).toEqual([
+      'all',
+      'regex',
+      'tool-if',
+      'path-if',
+    ])
     expect(input).toMatchObject({
       hook_event_name: 'PreToolUse',
       session_id: 's1',
@@ -127,7 +194,12 @@ describe('hooks schema, audit, and matching', () => {
   it('uses deterministic defaults for empty configs', () => {
     const parsed = parseHooksConfig(null)
 
-    expect(parsed.config).toMatchObject({ version: 1, enabled: true, projectHooks: { enabled: false }, hooks: {} })
+    expect(parsed.config).toMatchObject({
+      version: 1,
+      enabled: true,
+      projectHooks: { enabled: false },
+      hooks: {},
+    })
     expect(parsed.diagnostics).toEqual([])
     expect(readdirSync(tmp('emperor-hooks-empty-'))).toEqual([])
   })
@@ -138,30 +210,62 @@ describe('hooks config loading, execution, and decision aggregation', () => {
     const stateRoot = tmp('emperor-hooks-config-state-')
     const projectRoot = tmp('emperor-hooks-config-project-')
     mkdirSync(join(projectRoot, '.emperor'), { recursive: true })
-    writeFileSync(join(stateRoot, 'hooks_config.json'), JSON.stringify({
-      projectHooks: { enabled: true },
-      hooks: {
-        PreToolUse: [{ id: 'global-read', matcher: 'read_file', handler: { type: 'command', command: 'true' } }],
-      },
-    }))
-    const projectHook = { id: 'project-write', matcher: 'write_file', handler: { type: 'command', command: 'true' } }
-    writeFileSync(join(projectRoot, '.emperor/settings.json'), JSON.stringify({ hooks: { PreToolUse: [projectHook] } }))
-    writeFileSync(join(projectRoot, '.emperor/settings.local.json'), JSON.stringify({ hooks: { PreToolUse: [projectHook] } }))
+    writeFileSync(
+      join(stateRoot, 'hooks_config.json'),
+      JSON.stringify({
+        projectHooks: { enabled: true },
+        hooks: {
+          PreToolUse: [
+            {
+              id: 'global-read',
+              matcher: 'read_file',
+              handler: { type: 'command', command: 'true' },
+            },
+          ],
+        },
+      }),
+    )
+    const projectHook = {
+      id: 'project-write',
+      matcher: 'write_file',
+      handler: { type: 'command', command: 'true' },
+    }
+    writeFileSync(
+      join(projectRoot, '.emperor/settings.json'),
+      JSON.stringify({ hooks: { PreToolUse: [projectHook] } }),
+    )
+    writeFileSync(
+      join(projectRoot, '.emperor/settings.local.json'),
+      JSON.stringify({ hooks: { PreToolUse: [projectHook] } }),
+    )
 
-    const loaded = await new HookConfigLoader({ stateRoot }).load({ projectRoot })
+    const loaded = await new HookConfigLoader({ stateRoot }).load({
+      projectRoot,
+    })
     const hooks = loaded.config.hooks.PreToolUse ?? []
 
     expect(hooks.map((h) => h.id)).toEqual(['global-read', 'project-write'])
     expect(hooks[0]?.source).toMatchObject({ kind: 'global', readonly: false })
     expect(hooks[1]?.source).toMatchObject({ kind: 'project', readonly: true })
-    expect(loaded.sources.map((s) => ({ kind: s.kind, readonly: s.readonly, enabled: s.enabled }))).toEqual([
+    expect(
+      loaded.sources.map((s) => ({
+        kind: s.kind,
+        readonly: s.readonly,
+        enabled: s.enabled,
+      })),
+    ).toEqual([
       { kind: 'global', readonly: false, enabled: true },
       { kind: 'project', readonly: true, enabled: true },
       { kind: 'project', readonly: true, enabled: true },
     ])
 
-    writeFileSync(join(stateRoot, 'hooks_config.json'), JSON.stringify({ projectHooks: { enabled: false }, hooks: {} }))
-    const disabled = await new HookConfigLoader({ stateRoot }).load({ projectRoot })
+    writeFileSync(
+      join(stateRoot, 'hooks_config.json'),
+      JSON.stringify({ projectHooks: { enabled: false }, hooks: {} }),
+    )
+    const disabled = await new HookConfigLoader({ stateRoot }).load({
+      projectRoot,
+    })
     expect(disabled.config.hooks.PreToolUse ?? []).toEqual([])
   })
 
@@ -170,106 +274,164 @@ describe('hooks config loading, execution, and decision aggregation', () => {
     const projectRoot = tmp('emperor-hooks-corrupt-project-')
     mkdirSync(join(projectRoot, '.emperor'), { recursive: true })
     writeFileSync(join(stateRoot, 'hooks_config.json'), '{bad')
-    writeFileSync(join(projectRoot, '.emperor/settings.json'), JSON.stringify({ hooks: { PreToolUse: [{ handler: { type: 'mcp' } }] } }))
+    writeFileSync(
+      join(projectRoot, '.emperor/settings.json'),
+      JSON.stringify({ hooks: { PreToolUse: [{ handler: { type: 'mcp' } }] } }),
+    )
 
-    const loaded = await new HookConfigLoader({ stateRoot }).load({ projectRoot })
+    const loaded = await new HookConfigLoader({ stateRoot }).load({
+      projectRoot,
+    })
 
     expect(loaded.config.projectHooks.enabled).toBe(false)
-    expect(readdirSync(stateRoot).some((name) => name.startsWith('hooks_config.json.corrupt-'))).toBe(true)
-    expect(loaded.diagnostics.some((d) => d.code === 'corrupt_config')).toBe(true)
-    expect(readFileSyncText(join(projectRoot, '.emperor/settings.json'))).toContain('"mcp"')
+    expect(
+      readdirSync(stateRoot).some((name) =>
+        name.startsWith('hooks_config.json.corrupt-'),
+      ),
+    ).toBe(true)
+    expect(loaded.diagnostics.some((d) => d.code === 'corrupt_config')).toBe(
+      true,
+    )
+    expect(
+      readFileSyncText(join(projectRoot, '.emperor/settings.json')),
+    ).toContain('"mcp"')
   })
 
   it('executes command hooks with stdin JSON, exit-code deny, timeout, and bounded output', async () => {
-    const input = buildHookInput('PreToolUse', { sessionId: 's1', cwd: process.cwd(), stateRoot: '/state', toolName: 'write_file' })
-    const jsonResult = await executeHook({
-      id: 'json',
-      eventName: 'PreToolUse',
-      enabled: true,
-      matcher: '*',
-      condition: '',
-      source: null,
-      handler: {
-        type: 'command',
-        command: process.execPath,
-        args: ['-e', 'let s="";process.stdin.on("data",c=>s+=c);process.stdin.on("end",()=>{const i=JSON.parse(s);console.log(JSON.stringify({decision:"deny",reason:i.tool_name,additionalContext:"ctx"}))})'],
-        timeoutMs: 1_000,
-        async: false,
-        allowedEnv: ['PATH'],
-      },
-    }, input)
-
-    expect(jsonResult).toMatchObject({ status: 'completed', decision: 'deny', reason: 'write_file', additionalContext: 'ctx' })
-
-    const exitDeny = await executeHook({
-      id: 'exit2',
-      eventName: 'PreToolUse',
-      enabled: true,
-      matcher: '*',
-      condition: '',
-      source: null,
-      handler: {
-        type: 'command',
-        command: process.execPath,
-        args: ['-e', 'process.stderr.write("blocked");process.exit(2)'],
-        timeoutMs: 1_000,
-        async: false,
-        allowedEnv: [],
-      },
-    }, input)
-    expect(exitDeny).toMatchObject({ status: 'failed', decision: 'deny', reason: 'blocked' })
-
-    const timeout = await executeHook({
-      id: 'timeout',
-      eventName: 'PreToolUse',
-      enabled: true,
-      matcher: '*',
-      condition: '',
-      source: null,
-      handler: {
-        type: 'command',
-        command: process.execPath,
-        args: ['-e', 'setTimeout(() => {}, 5000)'],
-        timeoutMs: 10,
-        async: false,
-        allowedEnv: [],
-      },
-    }, input)
-    expect(timeout).toMatchObject({ status: 'timeout', decision: 'passthrough' })
-  })
-
-  it('executes http hooks by posting hook input JSON', async () => {
-    const server = createServer((req, res) => {
-      let raw = ''
-      req.on('data', (chunk) => { raw += String(chunk) })
-      req.on('end', () => {
-        const input = JSON.parse(raw) as { hook_event_name: string }
-        res.writeHead(200, { 'content-type': 'application/json' })
-        res.end(JSON.stringify({ decision: 'allow', reason: input.hook_event_name }))
-      })
+    const input = buildHookInput('PreToolUse', {
+      sessionId: 's1',
+      cwd: process.cwd(),
+      stateRoot: '/state',
+      toolName: 'write_file',
     })
-    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
-    try {
-      const address = server.address()
-      if (!address || typeof address === 'string') throw new Error('missing server address')
-      const result = await executeHook({
-        id: 'http',
-        eventName: 'Stop',
+    const jsonResult = await executeHook(
+      {
+        id: 'json',
+        eventName: 'PreToolUse',
         enabled: true,
         matcher: '*',
         condition: '',
         source: null,
         handler: {
-          type: 'http',
-          url: `http://127.0.0.1:${address.port}/hook`,
-          headers: { 'x-hook': '1' },
+          type: 'command',
+          command: process.execPath,
+          args: [
+            '-e',
+            'let s="";process.stdin.on("data",c=>s+=c);process.stdin.on("end",()=>{const i=JSON.parse(s);console.log(JSON.stringify({decision:"deny",reason:i.tool_name,additionalContext:"ctx"}))})',
+          ],
+          timeoutMs: 1_000,
+          async: false,
+          allowedEnv: ['PATH'],
+        },
+      },
+      input,
+    )
+
+    expect(jsonResult).toMatchObject({
+      status: 'completed',
+      decision: 'deny',
+      reason: 'write_file',
+      additionalContext: 'ctx',
+    })
+
+    const exitDeny = await executeHook(
+      {
+        id: 'exit2',
+        eventName: 'PreToolUse',
+        enabled: true,
+        matcher: '*',
+        condition: '',
+        source: null,
+        handler: {
+          type: 'command',
+          command: process.execPath,
+          args: ['-e', 'process.stderr.write("blocked");process.exit(2)'],
           timeoutMs: 1_000,
           async: false,
           allowedEnv: [],
         },
-      }, buildHookInput('Stop', { sessionId: 's1', cwd: process.cwd(), stateRoot: '/state' }))
+      },
+      input,
+    )
+    expect(exitDeny).toMatchObject({
+      status: 'failed',
+      decision: 'deny',
+      reason: 'blocked',
+    })
 
-      expect(result).toMatchObject({ status: 'completed', decision: 'allow', reason: 'Stop' })
+    const timeout = await executeHook(
+      {
+        id: 'timeout',
+        eventName: 'PreToolUse',
+        enabled: true,
+        matcher: '*',
+        condition: '',
+        source: null,
+        handler: {
+          type: 'command',
+          command: process.execPath,
+          args: ['-e', 'setTimeout(() => {}, 5000)'],
+          timeoutMs: 10,
+          async: false,
+          allowedEnv: [],
+        },
+      },
+      input,
+    )
+    expect(timeout).toMatchObject({
+      status: 'timeout',
+      decision: 'passthrough',
+    })
+  })
+
+  it('executes http hooks by posting hook input JSON', async () => {
+    const server = createServer((req, res) => {
+      let raw = ''
+      req.on('data', (chunk) => {
+        raw += String(chunk)
+      })
+      req.on('end', () => {
+        const input = JSON.parse(raw) as { hook_event_name: string }
+        res.writeHead(200, { 'content-type': 'application/json' })
+        res.end(
+          JSON.stringify({ decision: 'allow', reason: input.hook_event_name }),
+        )
+      })
+    })
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
+    try {
+      const address = server.address()
+      if (!address || typeof address === 'string')
+        throw new Error('missing server address')
+      const result = await executeHook(
+        {
+          id: 'http',
+          eventName: 'Stop',
+          enabled: true,
+          matcher: '*',
+          condition: '',
+          source: null,
+          handler: {
+            type: 'http',
+            url: `http://127.0.0.1:${address.port}/hook`,
+            headers: { 'x-hook': '1' },
+            timeoutMs: 1_000,
+            async: false,
+            allowedEnv: [],
+          },
+        },
+        buildHookInput('Stop', {
+          sessionId: 's1',
+          cwd: process.cwd(),
+          stateRoot: '/state',
+        }),
+      )
+
+      expect(result).toMatchObject({
+        status: 'completed',
+        decision: 'allow',
+        reason: 'Stop',
+      })
     } finally {
       await new Promise<void>((resolve) => server.close(() => resolve()))
     }
@@ -277,9 +439,30 @@ describe('hooks config loading, execution, and decision aggregation', () => {
 
   it('aggregates hook decisions with fixed priority and bounded context', () => {
     const decision = aggregateHookResults([
-      { hookId: 'allow', status: 'completed', decision: 'allow', reason: 'ok', durationMs: 1, additionalContext: 'A' },
-      { hookId: 'ask', status: 'completed', decision: 'ask', reason: 'check', durationMs: 1, additionalContext: 'B' },
-      { hookId: 'deny', status: 'completed', decision: 'deny', reason: 'blocked', durationMs: 1, additionalContext: 'C' },
+      {
+        hookId: 'allow',
+        status: 'completed',
+        decision: 'allow',
+        reason: 'ok',
+        durationMs: 1,
+        additionalContext: 'A',
+      },
+      {
+        hookId: 'ask',
+        status: 'completed',
+        decision: 'ask',
+        reason: 'check',
+        durationMs: 1,
+        additionalContext: 'B',
+      },
+      {
+        hookId: 'deny',
+        status: 'completed',
+        decision: 'deny',
+        reason: 'blocked',
+        durationMs: 1,
+        additionalContext: 'C',
+      },
     ])
 
     expect(decision).toMatchObject({ decision: 'deny', reason: 'blocked' })
@@ -288,7 +471,14 @@ describe('hooks config loading, execution, and decision aggregation', () => {
     expect(decision.additionalContext.length).toBeLessThanOrEqual(4_000)
 
     const update = aggregateHookResults([
-      { hookId: 'update', status: 'completed', decision: 'allow', reason: '', durationMs: 1, updatedInput: { content: 'changed' } },
+      {
+        hookId: 'update',
+        status: 'completed',
+        decision: 'allow',
+        reason: '',
+        durationMs: 1,
+        updatedInput: { content: 'changed' },
+      },
     ])
     expect(update.updatedInput).toEqual({ content: 'changed' })
   })
@@ -296,20 +486,33 @@ describe('hooks config loading, execution, and decision aggregation', () => {
   it('runs matching hooks through runtime events, audit, and aggregate decisions', async () => {
     const stateRoot = tmp('emperor-hooks-runtime-state-')
     const events: Array<Record<string, unknown>> = []
-    writeFileSync(join(stateRoot, 'hooks_config.json'), JSON.stringify({
-      hooks: {
-        PreToolUse: [{
-          id: 'deny-write',
-          matcher: 'write_file',
-          handler: {
-            type: 'command',
-            command: process.execPath,
-            args: ['-e', 'process.stdout.write(JSON.stringify({decision:"deny",reason:"no writes"}))'],
-          },
-        }],
+    writeFileSync(
+      join(stateRoot, 'hooks_config.json'),
+      JSON.stringify({
+        hooks: {
+          PreToolUse: [
+            {
+              id: 'deny-write',
+              matcher: 'write_file',
+              handler: {
+                type: 'command',
+                command: process.execPath,
+                args: [
+                  '-e',
+                  'process.stdout.write(JSON.stringify({decision:"deny",reason:"no writes"}))',
+                ],
+              },
+            },
+          ],
+        },
+      }),
+    )
+    const runtime = new HookRuntime({
+      stateRoot,
+      emit: (event) => {
+        events.push(event)
       },
-    }))
-    const runtime = new HookRuntime({ stateRoot, emit: (event) => { events.push(event) } })
+    })
 
     const decision = await runtime.run('PreToolUse', {
       sessionId: 's1',
@@ -328,7 +531,11 @@ describe('hooks config loading, execution, and decision aggregation', () => {
     ])
     const audit = await runtime.audit.replay()
     expect(audit.records).toHaveLength(1)
-    expect(audit.records[0]).toMatchObject({ hookId: 'deny-write', eventName: 'PreToolUse', decision: 'deny' })
+    expect(audit.records[0]).toMatchObject({
+      hookId: 'deny-write',
+      eventName: 'PreToolUse',
+      decision: 'deny',
+    })
   })
 })
 

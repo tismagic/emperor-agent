@@ -34,7 +34,8 @@ export function compactJson(value: unknown, limit = 160) {
 export function usageTypeLabel(value: string) {
   if (value === 'main_agent') return '主 Agent'
   if (value === 'memory_compaction') return '记忆压缩'
-  if (value.startsWith('subagent:')) return `子代理 · ${value.split(':').slice(1).join(':')}`
+  if (value.startsWith('subagent:'))
+    return `子代理 · ${value.split(':').slice(1).join(':')}`
   if (value === 'subagent') return '子代理'
   return value
 }

@@ -15,9 +15,16 @@ export interface InitializeRuntimeOptions {
 }
 
 const DEFAULT_DIRS = ['templates', 'skills', 'assets']
-const DEFAULT_FILES = ['model_config.example.json', 'mcp_config.example.json', '.env.example']
+const DEFAULT_FILES = [
+  'model_config.example.json',
+  'mcp_config.example.json',
+  '.env.example',
+]
 
-export function initializePackagedRuntime({ root, defaultsRoot }: InitializeRuntimeOptions): string[] {
+export function initializePackagedRuntime({
+  root,
+  defaultsRoot,
+}: InitializeRuntimeOptions): string[] {
   fs.mkdirSync(root, { recursive: true })
   const copied: string[] = []
 

@@ -30,16 +30,40 @@ export default {
         amber: 'rgb(var(--amber) / <alpha-value>)',
       },
       fontFamily: {
-        display: ['-apple-system', 'system-ui', 'Segoe UI', 'Roboto', 'Helvetica Neue', 'Arial', 'sans-serif'],
-        body: ['-apple-system', 'system-ui', 'Segoe UI', 'Roboto', 'Helvetica Neue', 'Arial', 'sans-serif'],
-        mono: ['ui-monospace', 'SFMono-Regular', 'Menlo', 'Monaco', 'Consolas', 'monospace'],
+        display: [
+          '-apple-system',
+          'system-ui',
+          'Segoe UI',
+          'Roboto',
+          'Helvetica Neue',
+          'Arial',
+          'sans-serif',
+        ],
+        body: [
+          '-apple-system',
+          'system-ui',
+          'Segoe UI',
+          'Roboto',
+          'Helvetica Neue',
+          'Arial',
+          'sans-serif',
+        ],
+        mono: [
+          'ui-monospace',
+          'SFMono-Regular',
+          'Menlo',
+          'Monaco',
+          'Consolas',
+          'monospace',
+        ],
       },
       boxShadow: {
         imperial: '0 8px 28px rgb(0 0 0 / 0.28)',
         insetPaper: 'inset 0 0 0 1px rgb(var(--border) / 0.7)',
       },
       backgroundImage: {
-        'paper-grain': 'linear-gradient(180deg, rgb(var(--bg)) 0%, rgb(var(--bg-inset)) 100%)',
+        'paper-grain':
+          'linear-gradient(180deg, rgb(var(--bg)) 0%, rgb(var(--bg-inset)) 100%)',
       },
       animation: {
         'rise-in': 'rise-in 520ms ease both',

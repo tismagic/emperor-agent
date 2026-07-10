@@ -11,15 +11,17 @@ export class WatchlistDecision {
   provider: string | null
   model_role: string | null
 
-  constructor(opts: {
-    action?: WatchlistAction
-    reason?: string
-    message?: string
-    checked_at?: number
-    model?: string | null
-    provider?: string | null
-    model_role?: string | null
-  } = {}) {
+  constructor(
+    opts: {
+      action?: WatchlistAction
+      reason?: string
+      message?: string
+      checked_at?: number
+      model?: string | null
+      provider?: string | null
+      model_role?: string | null
+    } = {},
+  ) {
     this.action = opts.action ?? 'skip'
     this.reason = opts.reason ?? ''
     this.message = opts.message ?? ''
@@ -30,11 +32,16 @@ export class WatchlistDecision {
   }
 
   static skip(reason: string): WatchlistDecision {
-    return new WatchlistDecision({ action: 'skip', reason, checked_at: nowTs() })
+    return new WatchlistDecision({
+      action: 'skip',
+      reason,
+      checked_at: nowTs(),
+    })
   }
 
   static fromDict(raw: Record<string, unknown>): WatchlistDecision {
-    const action = String(raw.action ?? 'skip').toLowerCase() === 'run' ? 'run' : 'skip'
+    const action =
+      String(raw.action ?? 'skip').toLowerCase() === 'run' ? 'run' : 'skip'
     return new WatchlistDecision({
       action,
       reason: String(raw.reason ?? ''),
@@ -59,11 +66,15 @@ export class WatchlistDecision {
   }
 }
 
-export function decisionPrompt(opts: { content: string; items: string[] }): Array<{ role: 'system' | 'user'; content: string }> {
+export function decisionPrompt(opts: {
+  content: string
+  items: string[]
+}): Array<{ role: 'system' | 'user'; content: string }> {
   return [
     {
       role: 'system',
-      content: 'You are a local watchlist decision filter. Decide if the agent should proactively run now. Return strict JSON only: {"action":"skip|run","reason":"...","message":"..."}. Choose skip unless there is a concrete, timely, user-relevant action. Never include hidden reasoning.',
+      content:
+        'You are a local watchlist decision filter. Decide if the agent should proactively run now. Return strict JSON only: {"action":"skip|run","reason":"...","message":"..."}. Choose skip unless there is a concrete, timely, user-relevant action. Never include hidden reasoning.',
     },
     {
       role: 'user',
@@ -82,19 +93,24 @@ export function parseWatchlistDecision(text: string): WatchlistDecision {
   } catch {
     return WatchlistDecision.skip('watchlist model returned non-JSON decision')
   }
-  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return WatchlistDecision.skip('watchlist model returned invalid decision')
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed))
+    return WatchlistDecision.skip('watchlist model returned invalid decision')
   const decision = WatchlistDecision.fromDict(parsed as Record<string, unknown>)
   decision.reason = clean(decision.reason).slice(0, 500)
   decision.message = clean(decision.message).slice(0, 1200)
   if (decision.action === 'run' && !decision.message) {
     decision.action = 'skip'
-    decision.reason = decision.reason || 'run decision had no actionable message'
+    decision.reason =
+      decision.reason || 'run decision had no actionable message'
   }
   return decision
 }
 
 function clean(value: string): string {
-  return String(value || '').split(/\s+/).filter(Boolean).join(' ')
+  return String(value || '')
+    .split(/\s+/)
+    .filter(Boolean)
+    .join(' ')
 }
 
 function nullableString(value: unknown): string | null {

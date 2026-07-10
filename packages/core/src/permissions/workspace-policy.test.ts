@@ -27,10 +27,20 @@ describe('WorkspacePolicy', () => {
     const runtimeRoot = tmp('emperor-workspace-policy-runtime-')
     const stateRoot = join(runtimeRoot, '.emperor')
     mkdirSync(join(stateRoot, 'memory'), { recursive: true })
-    writeFileSync(join(stateRoot, 'memory', 'MEMORY.local.md'), 'private', 'utf8')
-    const policy = new WorkspacePolicy({ workspaceRoot: runtimeRoot, stateRoot })
+    writeFileSync(
+      join(stateRoot, 'memory', 'MEMORY.local.md'),
+      'private',
+      'utf8',
+    )
+    const policy = new WorkspacePolicy({
+      workspaceRoot: runtimeRoot,
+      stateRoot,
+    })
 
-    const denied = policy.resolvePath(join(stateRoot, 'memory', 'MEMORY.local.md'), 'read')
+    const denied = policy.resolvePath(
+      join(stateRoot, 'memory', 'MEMORY.local.md'),
+      'read',
+    )
 
     expect(denied.allowed).toBe(false)
     expect(denied.reason).toContain('denied root')

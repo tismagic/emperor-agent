@@ -4,7 +4,10 @@ import { useRouter } from 'vue-router'
 import SessionSidebar from './components/layout/SessionSidebar.vue'
 import ModelSetupRequiredDialog from './components/onboarding/ModelSetupRequiredDialog.vue'
 import OnboardingWizard from './components/onboarding/OnboardingWizard.vue'
-import { shouldShowOnboarding, type WizardModelSettings } from './components/onboarding/onboardingModel'
+import {
+  shouldShowOnboarding,
+  type WizardModelSettings,
+} from './components/onboarding/onboardingModel'
 import { runInitialStartup } from './appStartup'
 import { buildSlashPaletteItems } from './commands'
 import { useBootstrap } from './composables/useBootstrap'
@@ -18,7 +21,9 @@ import { saveOnboardingModelConfig } from './api/model'
 const router = useRouter()
 const toast = ref('')
 let toastTimer: number | undefined
-const hideAppSidebar = computed(() => router.currentRoute.value.meta?.hideAppSidebar === true)
+const hideAppSidebar = computed(
+  () => router.currentRoute.value.meta?.hideAppSidebar === true,
+)
 const onboardingOpen = ref(false)
 const modelSetupPromptOpen = ref(false)
 const modelSetupDismissed = ref(false)
@@ -26,7 +31,9 @@ const modelSetupDismissed = ref(false)
 function showToast(message: string) {
   toast.value = message
   if (toastTimer) window.clearTimeout(toastTimer)
-  toastTimer = window.setTimeout(() => { toast.value = '' }, 2600)
+  toastTimer = window.setTimeout(() => {
+    toast.value = ''
+  }, 2600)
 }
 
 function openOnboarding() {
@@ -118,10 +125,18 @@ async function onSessionActivate(id: string) {
 }
 
 const tokensClient = useTokens(showToast)
-const { data: tokensData, loading: tokensLoading, load: loadTokens } = tokensClient
-const slashPaletteItems = computed(() => buildSlashPaletteItems(boot.value?.skills || []))
-const modelSetupMessage = computed(() =>
-  boot.value?.modelConfig?.availability?.message || '还没有可用模型，请先配置模型。',
+const {
+  data: tokensData,
+  loading: tokensLoading,
+  load: loadTokens,
+} = tokensClient
+const slashPaletteItems = computed(() =>
+  buildSlashPaletteItems(boot.value?.skills || []),
+)
+const modelSetupMessage = computed(
+  () =>
+    boot.value?.modelConfig?.availability?.message ||
+    '还没有可用模型，请先配置模型。',
 )
 
 onMounted(async () => {
@@ -143,12 +158,15 @@ async function refreshAll() {
 }
 
 async function completeOnboarding(settings: WizardModelSettings) {
-  const data = await saveOnboardingModelConfig(settings as unknown as Record<string, unknown>)
+  const data = await saveOnboardingModelConfig(
+    settings as unknown as Record<string, unknown>,
+  )
   if (boot.value) {
     boot.value.modelConfig = data
     boot.value.model = data.current?.model || boot.value.model
     boot.value.provider = data.current?.provider || boot.value.provider
-    boot.value.providerLabel = data.current?.providerLabel || boot.value.providerLabel
+    boot.value.providerLabel =
+      data.current?.providerLabel || boot.value.providerLabel
   }
   await loadBootstrap(false, sessionStore.backendSessionId())
   if (!error.value) {
@@ -166,7 +184,11 @@ async function configureModelFromPrompt() {
 }
 
 watch(
-  () => [boot.value?.modelConfig?.availability?.usable, onboardingOpen.value] as const,
+  () =>
+    [
+      boot.value?.modelConfig?.availability?.usable,
+      onboardingOpen.value,
+    ] as const,
   () => {
     if (!boot.value) return
     const shouldPrompt = shouldShowOnboarding(boot.value)
@@ -175,7 +197,8 @@ watch(
       modelSetupDismissed.value = false
       return
     }
-    if (!modelSetupDismissed.value && !onboardingOpen.value) modelSetupPromptOpen.value = true
+    if (!modelSetupDismissed.value && !onboardingOpen.value)
+      modelSetupPromptOpen.value = true
   },
   { immediate: true },
 )
@@ -205,7 +228,6 @@ const { submitFromComposer, setControlMode } = useSlashCommands({
   refreshAll,
   showToast,
 })
-
 
 provideAppContext({
   boot,
@@ -266,7 +288,9 @@ provideAppContext({
 <template>
   <div v-if="loading" class="loading-shell">
     <div class="seal">令</div>
-    <div class="status-pill"><span class="dot busy" />正在连接本地智能体服务</div>
+    <div class="status-pill">
+      <span class="dot busy" />正在连接本地智能体服务
+    </div>
   </div>
 
   <div v-else-if="error" class="loading-shell">
@@ -292,7 +316,12 @@ provideAppContext({
       @close="closeModelSetupPrompt"
       @configure="configureModelFromPrompt"
     />
-    <OnboardingWizard :payload="boot" :open="onboardingOpen" :save="completeOnboarding" @close="closeOnboarding" />
+    <OnboardingWizard
+      :payload="boot"
+      :open="onboardingOpen"
+      :save="completeOnboarding"
+      @close="closeOnboarding"
+    />
   </template>
 
   <div class="toast" :class="{ show: toast }" role="status">{{ toast }}</div>

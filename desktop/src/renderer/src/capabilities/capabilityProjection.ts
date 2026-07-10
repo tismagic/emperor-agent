@@ -1,7 +1,14 @@
-import type { AttachmentRef, McpServerConfig, SkillInfo, ToolInfo } from '../types'
+import type {
+  AttachmentRef,
+  McpServerConfig,
+  SkillInfo,
+  ToolInfo,
+} from '../types'
 
-export type CapabilityKind = 'attachment' | 'skill' | 'tool' | 'mcp' | 'workspace'
-export type CapabilityTone = 'red' | 'cyan' | 'blue' | 'slate' | 'gold' | 'green' | 'violet'
+export type CapabilityKind =
+  'attachment' | 'skill' | 'tool' | 'mcp' | 'workspace'
+export type CapabilityTone =
+  'red' | 'cyan' | 'blue' | 'slate' | 'gold' | 'green' | 'violet'
 
 export interface CapabilityBadge {
   label: string
@@ -24,7 +31,9 @@ export interface ComposerCapabilityItem extends CapabilityDisplayItem {
   removable?: boolean
 }
 
-export function attachmentCapability(attachment: AttachmentRef): ComposerCapabilityItem {
+export function attachmentCapability(
+  attachment: AttachmentRef,
+): ComposerCapabilityItem {
   return {
     id: `attachment:${attachment.id}`,
     kind: 'attachment',
@@ -56,7 +65,10 @@ export function skillCapability(skill: SkillInfo): CapabilityDisplayItem {
 export function toolCapability(tool: ToolInfo): CapabilityDisplayItem {
   const isMcp = tool.source === 'mcp'
   const badges: CapabilityBadge[] = [
-    { label: tool.read_only ? '只读' : '可写', tone: tool.read_only ? 'green' : 'red' },
+    {
+      label: tool.read_only ? '只读' : '可写',
+      tone: tool.read_only ? 'green' : 'red',
+    },
   ]
   if (tool.concurrency_safe) badges.push({ label: '并发', tone: 'green' })
   if (tool.exclusive) badges.push({ label: '独占', tone: 'gold' })
@@ -69,7 +81,9 @@ export function toolCapability(tool: ToolInfo): CapabilityDisplayItem {
     name: tool.name,
     description: tool.description || '无描述',
     tone: isMcp ? 'slate' : 'violet',
-    meta: isMcp ? `MCP · ${tool.server || 'server'}` : `参数 ${paramCount(tool)} 个`,
+    meta: isMcp
+      ? `MCP · ${tool.server || 'server'}`
+      : `参数 ${paramCount(tool)} 个`,
     badges,
     sourceName: isMcp ? tool.server || 'MCP' : '内建工具',
   }
@@ -118,9 +132,12 @@ export function titleizeCapabilityName(name: string): string {
 function attachmentTitle(attachment: AttachmentRef): string {
   const lowerMime = attachment.mime.toLowerCase()
   const lowerName = attachment.name.toLowerCase()
-  if (lowerMime === 'application/pdf' || lowerName.endsWith('.pdf')) return 'PDF'
-  if (attachment.kind === 'image' || lowerMime.startsWith('image/')) return '图片'
-  if (lowerName.endsWith('.md') || lowerMime.includes('markdown')) return 'Markdown'
+  if (lowerMime === 'application/pdf' || lowerName.endsWith('.pdf'))
+    return 'PDF'
+  if (attachment.kind === 'image' || lowerMime.startsWith('image/'))
+    return '图片'
+  if (lowerName.endsWith('.md') || lowerMime.includes('markdown'))
+    return 'Markdown'
   if (lowerName.endsWith('.json') || lowerMime.includes('json')) return 'JSON'
   if (lowerName.endsWith('.csv')) return 'CSV'
   return attachment.kind === 'text' ? '文本' : '文档'
@@ -128,7 +145,9 @@ function attachmentTitle(attachment: AttachmentRef): string {
 
 function skillBadges(skill: SkillInfo): CapabilityBadge[] {
   const tags = (skill.tags || '').split(/[,;\s]+/).filter(Boolean)
-  const badges = tags.slice(0, 4).map((label) => ({ label, tone: tagTone(label) }))
+  const badges = tags
+    .slice(0, 4)
+    .map((label) => ({ label, tone: tagTone(label) }))
   if (skill.always) badges.unshift({ label: 'always', tone: 'gold' })
   return badges.slice(0, 5)
 }

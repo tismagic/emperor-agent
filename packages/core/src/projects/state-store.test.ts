@@ -1,4 +1,10 @@
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  writeFileSync,
+} from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
@@ -40,29 +46,53 @@ describe('ProjectStateStore', () => {
       version: 1,
     })
 
-    expect(ensured.memory_path).toBe(join(stateRoot, 'projects', 'project_1', 'AGENTS.local.md'))
-    expect(ensured.prompt_overlay_path).toBe(join(stateRoot, 'projects', 'project_1', 'prompt-overlay.md'))
+    expect(ensured.memory_path).toBe(
+      join(stateRoot, 'projects', 'project_1', 'AGENTS.local.md'),
+    )
+    expect(ensured.prompt_overlay_path).toBe(
+      join(stateRoot, 'projects', 'project_1', 'prompt-overlay.md'),
+    )
     expect(ensured.legacy_agents_path).toBe(workspaceAgents)
     expect(ensured.legacy_imported_at).toBeTruthy()
     expect(readFileSync(workspaceAgents, 'utf8')).toBe(legacyText)
-    expect(store.readManagedMemory('project_1')).toContain('legacy private memory')
+    expect(store.readManagedMemory('project_1')).toContain(
+      'legacy private memory',
+    )
 
     store.writeManagedMemory('project_1', '## Project\n\n- state only')
 
     expect(store.readManagedMemory('project_1')).toContain('state only')
     expect(readFileSync(workspaceAgents, 'utf8')).toBe(legacyText)
     expect(existsSync(ensured.prompt_overlay_path)).toBe(true)
-    expect(readFileSync(ensured.project_json_path, 'utf8')).toContain('"memory_path"')
+    expect(readFileSync(ensured.project_json_path, 'utf8')).toContain(
+      '"memory_path"',
+    )
   })
 
   it('reads allowed project-local collaboration files without writing private state into the workspace', () => {
     const stateRoot = tmp('emperor-project-state-')
     const workspace = tmp('emperor-project-workspace-')
-    writeFileSync(join(workspace, 'AGENTS.md'), '# Project Rules\n\n- Use pnpm for this repository.\n', 'utf8')
+    writeFileSync(
+      join(workspace, 'AGENTS.md'),
+      '# Project Rules\n\n- Use pnpm for this repository.\n',
+      'utf8',
+    )
     mkdirSync(join(workspace, '.emperor', 'rules'), { recursive: true })
-    writeFileSync(join(workspace, '.emperor', 'settings.json'), JSON.stringify({ style: 'quiet' }), 'utf8')
-    writeFileSync(join(workspace, '.emperor', 'settings.local.json'), JSON.stringify({ local: true }), 'utf8')
-    writeFileSync(join(workspace, '.emperor', 'rules', 'build.md'), '# Build Rule\n\nRun make check before handoff.\n', 'utf8')
+    writeFileSync(
+      join(workspace, '.emperor', 'settings.json'),
+      JSON.stringify({ style: 'quiet' }),
+      'utf8',
+    )
+    writeFileSync(
+      join(workspace, '.emperor', 'settings.local.json'),
+      JSON.stringify({ local: true }),
+      'utf8',
+    )
+    writeFileSync(
+      join(workspace, '.emperor', 'rules', 'build.md'),
+      '# Build Rule\n\nRun make check before handoff.\n',
+      'utf8',
+    )
 
     const store = new ProjectStateStore(join(stateRoot, 'projects'))
     store.ensureProject({

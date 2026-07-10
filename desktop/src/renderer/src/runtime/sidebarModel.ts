@@ -1,4 +1,9 @@
-import type { ProjectInfo, SessionInfo, SidebarSortMode, SidebarState } from '../types'
+import type {
+  ProjectInfo,
+  SessionInfo,
+  SidebarSortMode,
+  SidebarState,
+} from '../types'
 
 export interface SidebarProjectGroup {
   id: string
@@ -55,14 +60,18 @@ export const defaultSidebarState: SidebarState = {
   collapsed_project_ids: [],
 }
 
-export function normalizeSidebarState(value: Partial<SidebarState> | null | undefined): SidebarState {
+export function normalizeSidebarState(
+  value: Partial<SidebarState> | null | undefined,
+): SidebarState {
   return {
     section_order: normalizeSectionOrder(value?.section_order),
     project_sort: normalizeSort(value?.project_sort),
     chat_sort: normalizeSort(value?.chat_sort),
     project_order: arrayOfStrings(value?.project_order),
     chat_order: arrayOfStrings(value?.chat_order),
-    project_session_order: normalizeProjectSessionOrder(value?.project_session_order),
+    project_session_order: normalizeProjectSessionOrder(
+      value?.project_session_order,
+    ),
     collapsed_project_ids: arrayOfStrings(value?.collapsed_project_ids),
   }
 }
@@ -74,7 +83,9 @@ export function buildSidebarGroups(
 ): SidebarGroups {
   const state = normalizeSidebarState(stateInput)
   // P1-6：draft 会话未发首条消息前不出现在侧边栏
-  const visible = sessions.filter((session) => !session.archived_at && !session.draft)
+  const visible = sessions.filter(
+    (session) => !session.archived_at && !session.draft,
+  )
   const chats = sortSessions(
     visible.filter((session) => session.mode !== 'build'),
     state.chat_sort,
@@ -92,8 +103,10 @@ export function buildSidebarGroups(
     const existing = projectMap.get(id)
     if (existing) {
       existing.sessions.push(session)
-      if (existing.name === '未绑定项目' && session.project_name) existing.name = session.project_name
-      if (existing.path === '项目路径不可用' && session.project_path) existing.path = session.project_path
+      if (existing.name === '未绑定项目' && session.project_name)
+        existing.name = session.project_name
+      if (existing.path === '项目路径不可用' && session.project_path)
+        existing.path = session.project_path
       existing.updated_at = maxIso(existing.updated_at, session.updated_at)
       existing.created_at = minIso(existing.created_at, session.created_at)
       continue
@@ -121,7 +134,9 @@ export function buildSidebarGroups(
   }
 }
 
-function projectGroupFromProject(project: ProjectInfo): SidebarProjectGroup | null {
+function projectGroupFromProject(
+  project: ProjectInfo,
+): SidebarProjectGroup | null {
   const id = String(project.project_id || project.project_path || '').trim()
   if (!id) return null
   return {
@@ -134,7 +149,10 @@ function projectGroupFromProject(project: ProjectInfo): SidebarProjectGroup | nu
   }
 }
 
-export function searchSidebarSessions(sessions: SessionInfo[], query: string): SidebarSearchResult[] {
+export function searchSidebarSessions(
+  sessions: SessionInfo[],
+  query: string,
+): SidebarSearchResult[] {
   const needle = query.trim().toLowerCase()
   if (!needle) return []
   return sessions
@@ -144,15 +162,20 @@ export function searchSidebarSessions(sessions: SessionInfo[], query: string): S
     .map((session) => ({
       id: session.id,
       title: session.title || '新会话',
-      subtitle: session.mode === 'build'
-        ? [session.project_name, session.project_path].filter(Boolean).join(' · ')
-        : (session.updated_at || '').slice(0, 10),
+      subtitle:
+        session.mode === 'build'
+          ? [session.project_name, session.project_path]
+              .filter(Boolean)
+              .join(' · ')
+          : (session.updated_at || '').slice(0, 10),
       mode: session.mode === 'build' ? 'build' : 'chat',
       projectName: session.project_name,
     }))
 }
 
-export function sessionControlPendingTag(session: SessionInfo): SessionControlPendingTag | null {
+export function sessionControlPendingTag(
+  session: SessionInfo,
+): SessionControlPendingTag | null {
   const pending = session.control_pending
   if (!pending?.interaction_id) return null
   if (pending.kind === 'plan') {
@@ -164,7 +187,11 @@ export function sessionControlPendingTag(session: SessionInfo): SessionControlPe
   return null
 }
 
-function sortSessions(items: SessionInfo[], mode: SidebarSortMode, manualOrder: string[]): SessionInfo[] {
+function sortSessions(
+  items: SessionInfo[],
+  mode: SidebarSortMode,
+  manualOrder: string[],
+): SessionInfo[] {
   return [...items].sort((a, b) => {
     const manual = compareManual(a.id, b.id, manualOrder)
     if (mode === 'manual' && manual !== 0) return manual
@@ -173,7 +200,11 @@ function sortSessions(items: SessionInfo[], mode: SidebarSortMode, manualOrder: 
   })
 }
 
-function sortProjects(items: SidebarProjectGroup[], mode: SidebarSortMode, manualOrder: string[]): SidebarProjectGroup[] {
+function sortProjects(
+  items: SidebarProjectGroup[],
+  mode: SidebarSortMode,
+  manualOrder: string[],
+): SidebarProjectGroup[] {
   return [...items].sort((a, b) => {
     const manual = compareManual(a.id, b.id, manualOrder)
     if (mode === 'manual' && manual !== 0) return manual
@@ -212,22 +243,32 @@ function searchableText(session: SessionInfo): string {
     session.title,
     session.mode === 'build' ? session.project_name : '',
     session.mode === 'build' ? session.project_path : '',
-  ].filter(Boolean).join('\n').toLowerCase()
+  ]
+    .filter(Boolean)
+    .join('\n')
+    .toLowerCase()
 }
 
 function normalizeSort(value: unknown): SidebarSortMode {
-  return value === 'manual' || value === 'created_at' || value === 'updated_at' ? value : 'updated_at'
+  return value === 'manual' || value === 'created_at' || value === 'updated_at'
+    ? value
+    : 'updated_at'
 }
 
 function normalizeSectionOrder(value: unknown): Array<'projects' | 'chats'> {
-  const out = arrayOfStrings(value).filter((item): item is 'projects' | 'chats' => item === 'projects' || item === 'chats')
+  const out = arrayOfStrings(value).filter(
+    (item): item is 'projects' | 'chats' =>
+      item === 'projects' || item === 'chats',
+  )
   for (const item of defaultSidebarState.section_order) {
     if (!out.includes(item)) out.push(item)
   }
   return out.slice(0, 2)
 }
 
-function normalizeProjectSessionOrder(value: unknown): Record<string, string[]> {
+function normalizeProjectSessionOrder(
+  value: unknown,
+): Record<string, string[]> {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return {}
   const out: Record<string, string[]> = {}
   for (const [key, sessionIds] of Object.entries(value)) {
@@ -244,8 +285,14 @@ function arrayOfStrings(value: unknown): string[] {
 // ── 手工排序（W6：从 SessionSidebar.vue 下沉的纯数组算法） ──
 
 /** 把可见 id 并入既有手工顺序：保留已排序的可见项，追加未入序的新项。 */
-export function completeManualOrder(current: string[], visible: string[]): string[] {
-  return [...current.filter((id) => visible.includes(id)), ...visible.filter((id) => !current.includes(id))]
+export function completeManualOrder(
+  current: string[],
+  visible: string[],
+): string[] {
+  return [
+    ...current.filter((id) => visible.includes(id)),
+    ...visible.filter((id) => !current.includes(id)),
+  ]
 }
 
 /** 在列表内把 id 向前/向后移动一位，越界钳制，未找到返回原列表。 */

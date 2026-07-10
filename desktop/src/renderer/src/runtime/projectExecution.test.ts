@@ -12,7 +12,9 @@ describe('activeProjectPlan', () => {
   })
 
   it('returns null when only drafts exist', () => {
-    const plans = [{ id: 'a', status: 'draft', updated_at: 1 }] as unknown as RuntimePlanRecord[]
+    const plans = [
+      { id: 'a', status: 'draft', updated_at: 1 },
+    ] as unknown as RuntimePlanRecord[]
     expect(activeProjectPlan(plans)).toBeNull()
   })
 
@@ -26,13 +28,24 @@ describe('reviewerTaskId', () => {
   it('extracts task id from latest independent_verification evidence', () => {
     const plan = {
       id: 'b',
-      verification: [{ source: 'verification_reviewer', passed: true, task_id: 'subagent_abc' }],
+      verification: [
+        {
+          source: 'verification_reviewer',
+          passed: true,
+          task_id: 'subagent_abc',
+        },
+      ],
     } as unknown as RuntimePlanRecord
     expect(reviewerTaskId(plan)).toBe('subagent_abc')
   })
 
   it('returns empty string when no reviewer task id', () => {
-    expect(reviewerTaskId({ id: 'b', verification: [] } as unknown as RuntimePlanRecord)).toBe('')
+    expect(
+      reviewerTaskId({
+        id: 'b',
+        verification: [],
+      } as unknown as RuntimePlanRecord),
+    ).toBe('')
     expect(reviewerTaskId(null)).toBe('')
   })
 })

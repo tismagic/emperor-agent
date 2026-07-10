@@ -1,6 +1,13 @@
 import { ref, computed } from 'vue'
 import { core } from '../api/http'
-import type { ControlInteraction, ProjectInfo, SessionControlPending, SessionInfo, SessionMode, WsEvent } from '../types'
+import type {
+  ControlInteraction,
+  ProjectInfo,
+  SessionControlPending,
+  SessionInfo,
+  SessionMode,
+  WsEvent,
+} from '../types'
 import {
   applySessionCreated,
   applySessionTitleUpdated,
@@ -21,7 +28,9 @@ export interface CreateSessionDraftOptions {
 }
 
 export function useSession() {
-  const active = computed(() => sessions.value.find((s) => s.id === activeId.value))
+  const active = computed(() =>
+    sessions.value.find((s) => s.id === activeId.value),
+  )
 
   async function load() {
     loading.value = true
@@ -34,7 +43,10 @@ export function useSession() {
       projects.value = normalizeProjects(projectItems)
       if (!sessions.value.length) {
         await create({ mode: 'chat', title: '新会话' })
-      } else if (!activeId.value || !sessions.value.some((session) => session.id === activeId.value)) {
+      } else if (
+        !activeId.value ||
+        !sessions.value.some((session) => session.id === activeId.value)
+      ) {
         activeId.value = sessions.value[0].id
       }
     } finally {
@@ -50,7 +62,9 @@ export function useSession() {
    * P1-6 懒创建：只建本地隐藏 draft，不 POST、不落盘。
    * 首条消息提交时由 Core 创建真实 session 并通过 session_created 事件晋升。
    */
-  async function create(options: string | CreateSessionDraftOptions = '新会话'): Promise<SessionInfo> {
+  async function create(
+    options: string | CreateSessionDraftOptions = '新会话',
+  ): Promise<SessionInfo> {
     const opts = typeof options === 'string' ? { title: options } : options
     const mode: SessionMode = opts.mode === 'build' ? 'build' : 'chat'
     const draft = createDraftSession({
@@ -60,7 +74,10 @@ export function useSession() {
       projectPath: opts.project?.project_path,
       projectName: opts.project?.project_name,
     })
-    sessions.value = [draft, ...sessions.value.filter((session) => !session.draft)]
+    sessions.value = [
+      draft,
+      ...sessions.value.filter((session) => !session.draft),
+    ]
     activeId.value = draft.id
     return draft
   }
@@ -114,7 +131,9 @@ export function useSession() {
       return true
     }
     try {
-      const updated = await core<SessionInfo>('sessions.rename', id, { archived })
+      const updated = await core<SessionInfo>('sessions.rename', id, {
+        archived,
+      })
       if (archived) {
         sessions.value = sessions.value.filter((s) => s.id !== id)
         if (activeId.value === id) activeId.value = sessions.value[0]?.id || ''
@@ -133,24 +152,40 @@ export function useSession() {
   async function activate(id: string): Promise<void> {
     activeId.value = id
     if (!isDraftSessionId(id)) {
-      await core<{ active: string; complete: boolean }>('sessions.activate', id).catch(() => undefined)
+      await core<{ active: string; complete: boolean }>(
+        'sessions.activate',
+        id,
+      ).catch(() => undefined)
     }
   }
 
-  function applySessionCreatedEvent(event: Extract<WsEvent, { event: 'session_created' }>) {
+  function applySessionCreatedEvent(
+    event: Extract<WsEvent, { event: 'session_created' }>,
+  ) {
     sessions.value = applySessionCreated(sessions.value, event)
     upsertProject(projectFromSession(event.session))
-    if (event.client_draft_id && activeId.value === event.client_draft_id && event.session?.id) {
+    if (
+      event.client_draft_id &&
+      activeId.value === event.client_draft_id &&
+      event.session?.id
+    ) {
       activeId.value = event.session.id
     }
   }
 
-  function applySessionTitleUpdatedEvent(event: Extract<WsEvent, { event: 'session_title_updated' }>) {
+  function applySessionTitleUpdatedEvent(
+    event: Extract<WsEvent, { event: 'session_title_updated' }>,
+  ) {
     sessions.value = applySessionTitleUpdated(sessions.value, event)
   }
 
-  function applySessionControlPending(sessionId: string, interaction?: ControlInteraction | null) {
-    const index = sessions.value.findIndex((session) => session.id === sessionId)
+  function applySessionControlPending(
+    sessionId: string,
+    interaction?: ControlInteraction | null,
+  ) {
+    const index = sessions.value.findIndex(
+      (session) => session.id === sessionId,
+    )
     if (index < 0) return
     const next = sessions.value.slice()
     next[index] = {
@@ -203,7 +238,10 @@ function upsertProject(input?: ProjectInfo | null) {
     created_at: project.created_at || existing?.created_at,
     updated_at: project.updated_at || existing?.updated_at,
   }
-  projects.value = [merged, ...projects.value.filter((item) => projectKey(item) !== key)]
+  projects.value = [
+    merged,
+    ...projects.value.filter((item) => projectKey(item) !== key),
+  ]
 }
 
 function normalizeProjects(items: unknown): ProjectInfo[] {
@@ -212,13 +250,16 @@ function normalizeProjects(items: unknown): ProjectInfo[] {
   for (const item of items) {
     const project = normalizeProject(item as ProjectInfo)
     if (!project) continue
-    if (out.some((existing) => projectKey(existing) === projectKey(project))) continue
+    if (out.some((existing) => projectKey(existing) === projectKey(project)))
+      continue
     out.push(project)
   }
   return out
 }
 
-function normalizeProject(input?: Partial<ProjectInfo> | null): ProjectInfo | null {
+function normalizeProject(
+  input?: Partial<ProjectInfo> | null,
+): ProjectInfo | null {
   if (!input || typeof input !== 'object') return null
   const id = String(input.project_id || input.project_path || '').trim()
   const path = String(input.project_path || input.workspace_path || '').trim()
@@ -227,13 +268,17 @@ function normalizeProject(input?: Partial<ProjectInfo> | null): ProjectInfo | nu
     ...input,
     project_id: id || path,
     project_path: path,
-    project_name: String(input.project_name || basenameFromPath(path) || '未绑定项目'),
+    project_name: String(
+      input.project_name || basenameFromPath(path) || '未绑定项目',
+    ),
   } as ProjectInfo
 }
 
 function projectFromSession(session?: SessionInfo | null): ProjectInfo | null {
   if (!session || session.mode !== 'build') return null
-  const projectId = String(session.project_id || session.project_path || '').trim()
+  const projectId = String(
+    session.project_id || session.project_path || '',
+  ).trim()
   const projectPath = String(session.project_path || '').trim()
   if (!projectId && !projectPath) return null
   return normalizeProject({
@@ -254,7 +299,9 @@ function basenameFromPath(path: string): string {
   return parts[parts.length - 1] || ''
 }
 
-function sessionControlPendingFromInteraction(interaction?: ControlInteraction | null): SessionControlPending | null {
+function sessionControlPendingFromInteraction(
+  interaction?: ControlInteraction | null,
+): SessionControlPending | null {
   if (!interaction || interaction.status !== 'waiting') return null
   if (interaction.kind === 'plan') {
     return {

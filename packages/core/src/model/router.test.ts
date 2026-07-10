@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest'
-import { ModelRouter, roughTokenEstimate, type ProviderSnapshot } from './router'
+import {
+  ModelRouter,
+  roughTokenEstimate,
+  type ProviderSnapshot,
+} from './router'
 
 describe('roughTokenEstimate', () => {
   it('returns >= 1, roughly chars/3', () => {
@@ -36,7 +40,18 @@ describe('hook model routing', () => {
 })
 
 function routerWithSnapshots(): ModelRouter {
-  const main = { model: 'main-model', modelRole: 'main', contextWindowTokens: 200_000 } as ProviderSnapshot
-  const secondary = { model: 'secondary-model', modelRole: 'secondary', contextWindowTokens: 64_000 } as ProviderSnapshot
-  return Object.assign(Object.create(ModelRouter.prototype) as ModelRouter, { main, secondary })
+  const main = {
+    model: 'main-model',
+    modelRole: 'main',
+    contextWindowTokens: 200_000,
+  } as ProviderSnapshot
+  const secondary = {
+    model: 'secondary-model',
+    modelRole: 'secondary',
+    contextWindowTokens: 64_000,
+  } as ProviderSnapshot
+  return Object.assign(Object.create(ModelRouter.prototype) as ModelRouter, {
+    main,
+    secondary,
+  })
 }

@@ -49,7 +49,11 @@ export class CoreDesktopPetService {
     // Window open/close is handled by the renderer via main-process IPC
     // (emperor:pet:open / emperor:pet:close). This service only persists config.
     if (enabled) {
-      this.writeState({ running: true, lastError: null, startedAt: Date.now() / 1000 })
+      this.writeState({
+        running: true,
+        lastError: null,
+        startedAt: Date.now() / 1000,
+      })
     } else {
       this.writeState({ running: false, stoppedAt: Date.now() / 1000 })
     }
@@ -61,7 +65,11 @@ export class CoreDesktopPetService {
   }
 
   markError(message: string): void {
-    this.writeState({ running: false, lastError: message, lastErrorAt: Date.now() / 1000 })
+    this.writeState({
+      running: false,
+      lastError: message,
+      lastErrorAt: Date.now() / 1000,
+    })
   }
 
   private runtimeDir(): string {
@@ -70,8 +78,12 @@ export class CoreDesktopPetService {
 
   private readState(): Dict {
     try {
-      const data = JSON.parse(readFileSync(join(this.runtimeDir(), 'state.json'), 'utf8'))
-      return data && typeof data === 'object' && !Array.isArray(data) ? data : {}
+      const data = JSON.parse(
+        readFileSync(join(this.runtimeDir(), 'state.json'), 'utf8'),
+      )
+      return data && typeof data === 'object' && !Array.isArray(data)
+        ? data
+        : {}
     } catch {
       return {}
     }
@@ -80,6 +92,10 @@ export class CoreDesktopPetService {
   private writeState(updates: Dict): void {
     const dir = this.runtimeDir()
     mkdirSync(dir, { recursive: true })
-    writeFileSync(join(dir, 'state.json'), JSON.stringify({ ...this.readState(), ...updates }, null, 2) + '\n', 'utf8')
+    writeFileSync(
+      join(dir, 'state.json'),
+      JSON.stringify({ ...this.readState(), ...updates }, null, 2) + '\n',
+      'utf8',
+    )
   }
 }

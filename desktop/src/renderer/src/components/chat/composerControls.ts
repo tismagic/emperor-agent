@@ -1,10 +1,16 @@
-export function composerSendDisabled(opts: { busy: boolean; content: string; attachmentCount: number; sendBlockedReason?: string | null }): boolean {
+export function composerSendDisabled(opts: {
+  busy: boolean
+  content: string
+  attachmentCount: number
+  sendBlockedReason?: string | null
+}): boolean {
   if (opts.busy) return false
   if (opts.sendBlockedReason) return true
   return !opts.content.trim() && opts.attachmentCount === 0
 }
 
-export type ControlModeValue = 'ask_before_edit' | 'accept_edits' | 'auto' | 'plan'
+export type ControlModeValue =
+  'ask_before_edit' | 'accept_edits' | 'auto' | 'plan'
 
 export interface ComposerModeOption {
   value: ControlModeValue
@@ -40,7 +46,9 @@ export const composerModeOptions: ComposerModeOption[] = [
   },
 ]
 
-export function normalizeComposerControlMode(mode: string | null | undefined): ControlModeValue {
+export function normalizeComposerControlMode(
+  mode: string | null | undefined,
+): ControlModeValue {
   if (mode === 'normal' || !mode) return 'ask_before_edit'
   if (mode === 'accept_edits') return 'accept_edits'
   if (mode === 'auto') return 'auto'
@@ -48,7 +56,12 @@ export function normalizeComposerControlMode(mode: string | null | undefined): C
   return 'ask_before_edit'
 }
 
-export function currentComposerMode(mode: string | null | undefined): ComposerModeOption {
+export function currentComposerMode(
+  mode: string | null | undefined,
+): ComposerModeOption {
   const normalized = normalizeComposerControlMode(mode)
-  return composerModeOptions.find((item) => item.value === normalized) ?? composerModeOptions[0]!
+  return (
+    composerModeOptions.find((item) => item.value === normalized) ??
+    composerModeOptions[0]!
+  )
 }

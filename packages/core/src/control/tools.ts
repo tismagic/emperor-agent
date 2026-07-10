@@ -3,7 +3,13 @@
  * 生成 waiting tool result（__CONTROL_PAUSE__ 前缀）；propose_plan 经质量门。
  */
 import { Tool, type ToolExecutionContext } from '../tools/base'
-import { B, S, toolParamsSchema, type ObjectSchema, type ParamSchema } from '../tools/schema'
+import {
+  B,
+  S,
+  toolParamsSchema,
+  type ObjectSchema,
+  type ParamSchema,
+} from '../tools/schema'
 import { PlanQualityError } from '../plans/quality'
 import { interactionToDict, type Interaction } from './models'
 
@@ -13,21 +19,34 @@ export function makePauseResult(interaction: Record<string, unknown>): string {
   return CONTROL_PAUSE_PREFIX + JSON.stringify({ interaction })
 }
 
-export function parsePauseResult(value: string): Record<string, unknown> | null {
-  if (typeof value !== 'string' || !value.startsWith(CONTROL_PAUSE_PREFIX)) return null
+export function parsePauseResult(
+  value: string,
+): Record<string, unknown> | null {
+  if (typeof value !== 'string' || !value.startsWith(CONTROL_PAUSE_PREFIX))
+    return null
   let raw: unknown
   try {
     raw = JSON.parse(value.slice(CONTROL_PAUSE_PREFIX.length))
   } catch {
     return null
   }
-  const interaction = raw && typeof raw === 'object' ? (raw as Record<string, unknown>).interaction : null
-  return interaction && typeof interaction === 'object' ? (interaction as Record<string, unknown>) : null
+  const interaction =
+    raw && typeof raw === 'object'
+      ? (raw as Record<string, unknown>).interaction
+      : null
+  return interaction && typeof interaction === 'object'
+    ? (interaction as Record<string, unknown>)
+    : null
 }
 
 /** ask_user / propose_plan 调用的 ControlManager 表面。 */
 export interface ToolManagerHost {
-  createAsk(opts: { questions: Array<Record<string, unknown>>; context?: string; parentCallId?: string | null; meta?: Record<string, unknown> | null }): Interaction
+  createAsk(opts: {
+    questions: Array<Record<string, unknown>>
+    context?: string
+    parentCallId?: string | null
+    meta?: Record<string, unknown> | null
+  }): Interaction
   createPlan(opts: {
     title: string
     summary: string
@@ -40,7 +59,11 @@ export interface ToolManagerHost {
   }): Interaction
 }
 
-function obj(description: string, properties: Record<string, ParamSchema>, required?: string[]): ObjectSchema {
+function obj(
+  description: string,
+  properties: Record<string, ParamSchema>,
+  required?: string[],
+): ObjectSchema {
   return { type: 'object', description, properties, required: required ?? [] }
 }
 
@@ -70,7 +93,14 @@ export class AskUserTool extends Tool {
             question: S('要问用户的问题，单句表达'),
             options: arr(
               '2-4 个互斥选项',
-              obj('可选答案', { label: S('用户可选的短标签，建议 1-5 个词'), description: S('选择该项的影响或取舍，单句说明') }, ['label']),
+              obj(
+                '可选答案',
+                {
+                  label: S('用户可选的短标签，建议 1-5 个词'),
+                  description: S('选择该项的影响或取舍，单句说明'),
+                },
+                ['label'],
+              ),
             ),
           },
           ['id', 'header', 'question', 'options'],
@@ -82,7 +112,10 @@ export class AskUserTool extends Tool {
   )
 
   private readonly manager: ToolManagerHost
-  constructor(manager: ToolManagerHost) { super(); this.manager = manager }
+  constructor(manager: ToolManagerHost) {
+    super()
+    this.manager = manager
+  }
 
   execute(args: Record<string, unknown>, ctx?: ToolExecutionContext): string {
     const interaction = this.manager.createAsk({
@@ -113,20 +146,31 @@ export class RequestPlanModeTool extends Tool {
   )
 
   private readonly manager: ToolManagerHost
-  constructor(manager: ToolManagerHost) { super(); this.manager = manager }
+  constructor(manager: ToolManagerHost) {
+    super()
+    this.manager = manager
+  }
 
   execute(args: Record<string, unknown>, ctx?: ToolExecutionContext): string {
     const reason = String(args.reason ?? '').trim() || '高影响改动需要先规划'
     const interaction = this.manager.createAsk({
-      questions: [{
-        id: PLAN_MODE_REQUEST_QUESTION_ID,
-        header: '计划模式',
-        question: `模型请求切换到计划模式：${reason}`,
-        options: [
-          { label: PLAN_MODE_REQUEST_APPROVE_LABEL, description: '切换后模型先只读探索并提交计划，批准后才动手改动' },
-          { label: PLAN_MODE_REQUEST_DECLINE_LABEL, description: '保持当前模式，模型将改用澄清提问或缩小改动范围' },
-        ],
-      }],
+      questions: [
+        {
+          id: PLAN_MODE_REQUEST_QUESTION_ID,
+          header: '计划模式',
+          question: `模型请求切换到计划模式：${reason}`,
+          options: [
+            {
+              label: PLAN_MODE_REQUEST_APPROVE_LABEL,
+              description: '切换后模型先只读探索并提交计划，批准后才动手改动',
+            },
+            {
+              label: PLAN_MODE_REQUEST_DECLINE_LABEL,
+              description: '保持当前模式，模型将改用澄清提问或缩小改动范围',
+            },
+          ],
+        },
+      ],
       context: reason,
       parentCallId: ctx?.parentCallId ?? null,
       meta: { plan_mode_request: true },
@@ -191,7 +235,10 @@ export class ProposePlanTool extends Tool {
   )
 
   private readonly manager: ToolManagerHost
-  constructor(manager: ToolManagerHost) { super(); this.manager = manager }
+  constructor(manager: ToolManagerHost) {
+    super()
+    this.manager = manager
+  }
 
   execute(args: Record<string, unknown>, ctx?: ToolExecutionContext): string {
     let interaction: Interaction

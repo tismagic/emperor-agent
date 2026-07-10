@@ -28,16 +28,26 @@ const watchlistDraft = ref('')
 const memoryContext = computed(() => props.memory?.context || null)
 const isBuildContext = computed(() => memoryContext.value?.mode === 'build')
 const displayedMemoryContent = computed(() =>
-  isBuildContext.value ? memoryContext.value?.projectMemory || '' : props.memory?.long_term || '',
+  isBuildContext.value
+    ? memoryContext.value?.projectMemory || ''
+    : props.memory?.long_term || '',
 )
 
-watch(displayedMemoryContent, (val) => {
-  longTermDraft.value = val || ''
-}, { immediate: true })
+watch(
+  displayedMemoryContent,
+  (val) => {
+    longTermDraft.value = val || ''
+  },
+  { immediate: true },
+)
 
-watch(() => props.memory?.watchlist?.content, (val) => {
-  watchlistDraft.value = val || ''
-}, { immediate: true })
+watch(
+  () => props.memory?.watchlist?.content,
+  (val) => {
+    watchlistDraft.value = val || ''
+  },
+  { immediate: true },
+)
 
 const selectedEpisode = ref<{ date: string; content: string } | null>(null)
 const episodeDraft = ref('')
@@ -92,16 +102,25 @@ const historyStats = computed(() => props.memory?.history || null)
 const runtimeStats = computed(() => props.memory?.runtime || null)
 const semanticCompaction = computed(() => props.memory?.compaction || null)
 const semanticCursor = computed(() => semanticCompaction.value?.cursor || null)
-const semanticArchive = computed(() => semanticCompaction.value?.archive || null)
-const latestSemanticCompaction = computed(() => semanticCompaction.value?.latest || null)
-const schedulerMaintenance = computed(() => props.memory?.schedulerMaintenance || null)
-const watchlistDecision = computed(() => props.memory?.watchlist?.lastDecision || null)
+const semanticArchive = computed(
+  () => semanticCompaction.value?.archive || null,
+)
+const latestSemanticCompaction = computed(
+  () => semanticCompaction.value?.latest || null,
+)
+const schedulerMaintenance = computed(
+  () => props.memory?.schedulerMaintenance || null,
+)
+const watchlistDecision = computed(
+  () => props.memory?.watchlist?.lastDecision || null,
+)
 const versions = computed(() => props.memory?.versions?.versions || [])
 
 function formatBytes(value?: number) {
   const bytes = Math.max(0, Number(value || 0))
   if (bytes < 1024) return `${bytes} B`
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1).replace(/\.0$/, '')} KB`
+  if (bytes < 1024 * 1024)
+    return `${(bytes / 1024).toFixed(1).replace(/\.0$/, '')} KB`
   return `${(bytes / 1024 / 1024).toFixed(1).replace(/\.0$/, '')} MB`
 }
 
@@ -126,7 +145,7 @@ function formatNumber(value?: number) {
           :data-active="tab === 'episodes' ? 'true' : 'false'"
           @click="tab = 'episodes'"
         >
-        情景记忆
+          情景记忆
         </button>
         <button
           class="memory-tab"
@@ -146,59 +165,121 @@ function formatNumber(value?: number) {
     </div>
 
     <div v-if="historyStats" class="memory-stats-grid">
-      <div class="memory-stat-card" :class="{ warning: historyStats.needs_rotation }">
+      <div
+        class="memory-stat-card"
+        :class="{ warning: historyStats.needs_rotation }"
+      >
         <span>热日志</span>
         <strong>{{ formatBytes(historyStats.active_bytes) }}</strong>
-        <small>{{ formatNumber(historyStats.active_lines) }} 行 · seq {{ formatNumber(historyStats.latest_seq) }}</small>
+        <small
+          >{{ formatNumber(historyStats.active_lines) }} 行 · seq
+          {{ formatNumber(historyStats.latest_seq) }}</small
+        >
       </div>
       <div class="memory-stat-card">
         <span>冷归档</span>
         <strong>{{ formatBytes(historyStats.archive_bytes) }}</strong>
-        <small>{{ formatNumber(historyStats.archive_files) }} 个 gzip 文件</small>
+        <small
+          >{{ formatNumber(historyStats.archive_files) }} 个 gzip 文件</small
+        >
       </div>
       <div class="memory-stat-card">
         <span>最近归档</span>
-        <strong>{{ historyStats.last_archive_at ? historyStats.last_archive_at.slice(0, 10) : '暂无' }}</strong>
-        <small>{{ historyStats.needs_rotation ? '热日志接近上限' : '容量正常' }}</small>
+        <strong>{{
+          historyStats.last_archive_at
+            ? historyStats.last_archive_at.slice(0, 10)
+            : '暂无'
+        }}</strong>
+        <small>{{
+          historyStats.needs_rotation ? '热日志接近上限' : '容量正常'
+        }}</small>
       </div>
     </div>
 
     <div v-if="semanticCompaction" class="memory-stats-grid">
       <div class="memory-stat-card">
         <span>语义压缩游标</span>
-        <strong>{{ semanticCursor?.compactedUntilSeq ? `seq ${formatNumber(semanticCursor.compactedUntilSeq)}` : '未压缩' }}</strong>
-        <small>{{ semanticCursor?.status || 'active' }} · {{ semanticCursor?.lastCompactionId || '暂无 compaction id' }}</small>
+        <strong>{{
+          semanticCursor?.compactedUntilSeq
+            ? `seq ${formatNumber(semanticCursor.compactedUntilSeq)}`
+            : '未压缩'
+        }}</strong>
+        <small
+          >{{ semanticCursor?.status || 'active' }} ·
+          {{ semanticCursor?.lastCompactionId || '暂无 compaction id' }}</small
+        >
       </div>
-      <div class="memory-stat-card" :class="{ warning: semanticArchive?.archiveBlockedUntilCompacted }">
+      <div
+        class="memory-stat-card"
+        :class="{ warning: semanticArchive?.archiveBlockedUntilCompacted }"
+      >
         <span>语义归档边界</span>
-        <strong>archive seq {{ formatNumber(semanticArchive?.archivedUntilSeq) }}</strong>
-        <small>只允许归档到 compacted seq {{ formatNumber(semanticArchive?.compactedUntilSeq) }}</small>
+        <strong
+          >archive seq
+          {{ formatNumber(semanticArchive?.archivedUntilSeq) }}</strong
+        >
+        <small
+          >只允许归档到 compacted seq
+          {{ formatNumber(semanticArchive?.compactedUntilSeq) }}</small
+        >
       </div>
       <div class="memory-stat-card">
         <span>最近语义压缩</span>
-        <strong>{{ latestSemanticCompaction?.status ? String(latestSemanticCompaction.status) : '暂无' }}</strong>
-        <small>{{ latestSemanticCompaction?.compactionId ? String(latestSemanticCompaction.compactionId) : 'Runtime 事件归档与语义压缩分离' }}</small>
+        <strong>{{
+          latestSemanticCompaction?.status
+            ? String(latestSemanticCompaction.status)
+            : '暂无'
+        }}</strong>
+        <small>{{
+          latestSemanticCompaction?.compactionId
+            ? String(latestSemanticCompaction.compactionId)
+            : 'Runtime 事件归档与语义压缩分离'
+        }}</small>
       </div>
     </div>
 
     <div v-if="memoryContext" class="memory-context-strip">
       <div>
         <span>当前上下文</span>
-        <strong>{{ memoryContext.mode === 'build' ? 'Build · 项目记忆' : 'Chat · 全局记忆' }}</strong>
+        <strong>{{
+          memoryContext.mode === 'build'
+            ? 'Build · 项目记忆'
+            : 'Chat · 全局记忆'
+        }}</strong>
       </div>
       <div v-if="memoryContext.mode === 'build'">
         <span>项目</span>
-        <strong>{{ memoryContext.project?.project_name || memoryContext.session?.project_name || '未绑定项目' }}</strong>
-        <small>源码 {{ memoryContext.project?.workspace_path || memoryContext.project?.project_path || memoryContext.session?.project_path || '项目路径不可用' }}</small>
+        <strong>{{
+          memoryContext.project?.project_name ||
+          memoryContext.session?.project_name ||
+          '未绑定项目'
+        }}</strong>
+        <small
+          >源码
+          {{
+            memoryContext.project?.workspace_path ||
+            memoryContext.project?.project_path ||
+            memoryContext.session?.project_path ||
+            '项目路径不可用'
+          }}</small
+        >
       </div>
       <div v-if="memoryContext.mode === 'build'">
         <span>Agent 状态</span>
-        <strong>{{ memoryContext.project?.state_path ? '已隔离' : '未知' }}</strong>
-        <small>{{ memoryContext.project?.memory_path || memoryContext.project?.agents_path || '项目记忆路径不可用' }}</small>
+        <strong>{{
+          memoryContext.project?.state_path ? '已隔离' : '未知'
+        }}</strong>
+        <small>{{
+          memoryContext.project?.memory_path ||
+          memoryContext.project?.agents_path ||
+          '项目记忆路径不可用'
+        }}</small>
       </div>
       <div v-else>
         <span>项目索引</span>
-        <strong>{{ memoryContext.projectIndexSummary ? '已注入短摘要' : '暂无项目摘要' }}</strong>
+        <strong>{{
+          memoryContext.projectIndexSummary ? '已注入短摘要' : '暂无项目摘要'
+        }}</strong>
         <small>Chat 不读取项目 AGENTS.md 细节</small>
       </div>
       <div>
@@ -212,30 +293,58 @@ function formatNumber(value?: number) {
       <div class="memory-stat-card">
         <span>Runtime 热记录</span>
         <strong>{{ formatBytes(runtimeStats.bytes) }}</strong>
-        <small>{{ formatNumber(runtimeStats.events) }} 个事件 · seq {{ formatNumber(runtimeStats.latestSeq) }}</small>
+        <small
+          >{{ formatNumber(runtimeStats.events) }} 个事件 · seq
+          {{ formatNumber(runtimeStats.latestSeq) }}</small
+        >
       </div>
       <div class="memory-stat-card">
         <span>活跃 Turn</span>
         <strong>{{ formatNumber(runtimeStats.activeTurns) }}</strong>
-        <small>{{ formatNumber(runtimeStats.activeTurnEvents) }} 个可重放事件</small>
+        <small
+          >{{ formatNumber(runtimeStats.activeTurnEvents) }} 个可重放事件</small
+        >
       </div>
       <div class="memory-stat-card">
         <span>Runtime 冷归档</span>
         <strong>{{ formatBytes(runtimeStats.archiveBytes) }}</strong>
-        <small>{{ formatNumber(runtimeStats.archiveFiles) }} 个 gzip 文件</small>
+        <small
+          >{{ formatNumber(runtimeStats.archiveFiles) }} 个 gzip 文件</small
+        >
       </div>
     </div>
 
     <div v-if="schedulerMaintenance" class="memory-stats-grid">
-      <div class="memory-stat-card" :class="{ warning: schedulerMaintenance.lastError }">
+      <div
+        class="memory-stat-card"
+        :class="{ warning: schedulerMaintenance.lastError }"
+      >
         <span>系统维护任务</span>
-        <strong>{{ formatNumber(schedulerMaintenance.enabled) }} / {{ formatNumber(schedulerMaintenance.jobs) }}</strong>
-        <small>{{ schedulerMaintenance.lastError || '受保护 Scheduler jobs' }}</small>
+        <strong
+          >{{ formatNumber(schedulerMaintenance.enabled) }} /
+          {{ formatNumber(schedulerMaintenance.jobs) }}</strong
+        >
+        <small>{{
+          schedulerMaintenance.lastError || '受保护 Scheduler jobs'
+        }}</small>
       </div>
       <div class="memory-stat-card">
         <span>下次维护</span>
-        <strong>{{ schedulerMaintenance.nextRunAtMs ? new Date(schedulerMaintenance.nextRunAtMs).toLocaleDateString('zh-CN') : '暂无' }}</strong>
-        <small>{{ schedulerMaintenance.nextRunAtMs ? new Date(schedulerMaintenance.nextRunAtMs).toLocaleTimeString('zh-CN', { hour12: false }) : 'Scheduler 未安排' }}</small>
+        <strong>{{
+          schedulerMaintenance.nextRunAtMs
+            ? new Date(schedulerMaintenance.nextRunAtMs).toLocaleDateString(
+                'zh-CN',
+              )
+            : '暂无'
+        }}</strong>
+        <small>{{
+          schedulerMaintenance.nextRunAtMs
+            ? new Date(schedulerMaintenance.nextRunAtMs).toLocaleTimeString(
+                'zh-CN',
+                { hour12: false },
+              )
+            : 'Scheduler 未安排'
+        }}</small>
       </div>
     </div>
 
@@ -246,8 +355,16 @@ function formatNumber(value?: number) {
 
     <div v-else-if="tab === 'long_term'" class="editor flex-1">
       <div class="editor-title">
-        <span>{{ isBuildContext ? '全局私有项目记忆 · AGENTS.local.md 托管区块' : '全局长期记忆 · MEMORY.local.md' }}</span>
-        <button class="badge preview-toggle" :class="{ active: longTermPreview }" @click="longTermPreview = !longTermPreview">
+        <span>{{
+          isBuildContext
+            ? '全局私有项目记忆 · AGENTS.local.md 托管区块'
+            : '全局长期记忆 · MEMORY.local.md'
+        }}</span>
+        <button
+          class="badge preview-toggle"
+          :class="{ active: longTermPreview }"
+          @click="longTermPreview = !longTermPreview"
+        >
           {{ longTermPreview ? '编辑' : '预览' }}
         </button>
       </div>
@@ -256,8 +373,16 @@ function formatNumber(value?: number) {
       </div>
       <textarea v-else v-model="longTermDraft" :readonly="isBuildContext" />
       <div class="editor-actions">
-        <span class="status-pill">{{ isBuildContext ? 'Build 压缩会更新全局 store 中的项目记忆，不改写项目 AGENTS.md' : '保存后刷新 Agent 上下文' }}</span>
-        <button class="tool-button ink asset-button primary-action" :disabled="isBuildContext" @click="saveLongTerm">
+        <span class="status-pill">{{
+          isBuildContext
+            ? 'Build 压缩会更新全局 store 中的项目记忆，不改写项目 AGENTS.md'
+            : '保存后刷新 Agent 上下文'
+        }}</span>
+        <button
+          class="tool-button ink asset-button primary-action"
+          :disabled="isBuildContext"
+          @click="saveLongTerm"
+        >
           <component :is="actionIcons.save" class="action-icon" :size="16" />
           <span>{{ isBuildContext ? '只读' : '保存' }}</span>
         </button>
@@ -267,10 +392,15 @@ function formatNumber(value?: number) {
     <div v-else-if="tab === 'watchlist'" class="editor flex-1">
       <div class="editor-title">
         <span>memory/watchlist.md</span>
-        <button class="badge preview-toggle" @click="emit('checkWatchlist')">手动检查</button>
+        <button class="badge preview-toggle" @click="emit('checkWatchlist')">
+          手动检查
+        </button>
       </div>
       <div v-if="watchlistDecision" class="memory-stats-grid">
-        <div class="memory-stat-card" :class="{ warning: watchlistDecision.action === 'run' }">
+        <div
+          class="memory-stat-card"
+          :class="{ warning: watchlistDecision.action === 'run' }"
+        >
           <span>最近决策</span>
           <strong>{{ watchlistDecision.action || 'skip' }}</strong>
           <small>{{ watchlistDecision.reason || '暂无原因' }}</small>
@@ -278,13 +408,19 @@ function formatNumber(value?: number) {
         <div class="memory-stat-card">
           <span>决策模型</span>
           <strong>{{ watchlistDecision.modelRole || 'unknown' }}</strong>
-          <small>{{ watchlistDecision.provider || '-' }} · {{ watchlistDecision.model || '-' }}</small>
+          <small
+            >{{ watchlistDecision.provider || '-' }} ·
+            {{ watchlistDecision.model || '-' }}</small
+          >
         </div>
       </div>
       <textarea v-model="watchlistDraft" />
       <div class="editor-actions">
         <span class="status-pill">Scheduler 会周期检查 Watchlist</span>
-        <button class="tool-button ink asset-button primary-action" @click="saveWatchlist">
+        <button
+          class="tool-button ink asset-button primary-action"
+          @click="saveWatchlist"
+        >
           <component :is="actionIcons.save" class="action-icon" :size="16" />
           <span>保存</span>
         </button>
@@ -302,8 +438,16 @@ function formatNumber(value?: number) {
         >
           <div class="min-w-0">
             <div class="item-title">{{ version.label || version.relPath }}</div>
-            <div class="item-desc">{{ version.target }} · {{ version.reason }}</div>
-            <div class="item-desc">{{ new Date(version.createdAt * 1000).toLocaleString('zh-CN', { hour12: false }) }}</div>
+            <div class="item-desc">
+              {{ version.target }} · {{ version.reason }}
+            </div>
+            <div class="item-desc">
+              {{
+                new Date(version.createdAt * 1000).toLocaleString('zh-CN', {
+                  hour12: false,
+                })
+              }}
+            </div>
           </div>
           <span class="badge">{{ formatBytes(version.bytes) }}</span>
         </div>
@@ -320,9 +464,16 @@ function formatNumber(value?: number) {
       <div v-else class="editor flex-1">
         <div class="editor-title">
           <span>{{ versionDetail.version.relPath }}</span>
-          <button class="badge preview-toggle" @click="emit('restoreVersion', versionDetail.version.id)">恢复</button>
+          <button
+            class="badge preview-toggle"
+            @click="emit('restoreVersion', versionDetail.version.id)"
+          >
+            恢复
+          </button>
         </div>
-        <pre class="memory-diff-preview">{{ versionDetail.diff || '当前内容与该版本一致。' }}</pre>
+        <pre class="memory-diff-preview">{{
+          versionDetail.diff || '当前内容与该版本一致。'
+        }}</pre>
         <div class="editor-actions">
           <span class="status-pill">{{ versionDetail.version.id }}</span>
         </div>
@@ -331,14 +482,28 @@ function formatNumber(value?: number) {
 
     <div v-else class="split-body memory-body">
       <div class="resource-list episode-list">
-        <div v-for="path in sortedEpisodes" :key="path" class="list-item episode-card" :class="{ active: selectedEpisode?.date === path.split('/').pop()?.replace('.md', '') }" @click="selectEpisode(path)">
+        <div
+          v-for="path in sortedEpisodes"
+          :key="path"
+          class="list-item episode-card"
+          :class="{
+            active:
+              selectedEpisode?.date ===
+              path.split('/').pop()?.replace('.md', ''),
+          }"
+          @click="selectEpisode(path)"
+        >
           <div class="min-w-0">
-            <div class="item-title">{{ path.split('/').pop()?.replace('.md', '') }}</div>
+            <div class="item-title">
+              {{ path.split('/').pop()?.replace('.md', '') }}
+            </div>
             <div class="item-desc">{{ path }}</div>
           </div>
           <span class="badge">md</span>
         </div>
-        <div v-if="!sortedEpisodes.length" class="empty-note">还没有情景记忆。</div>
+        <div v-if="!sortedEpisodes.length" class="empty-note">
+          还没有情景记忆。
+        </div>
       </div>
 
       <div v-if="episodeLoading" class="empty-state illustrated-empty">
@@ -351,7 +516,11 @@ function formatNumber(value?: number) {
       <div v-else class="editor flex-1">
         <div class="editor-title">
           <span>{{ selectedEpisode.date }}.md</span>
-          <button class="badge preview-toggle" :class="{ active: episodePreview }" @click="episodePreview = !episodePreview">
+          <button
+            class="badge preview-toggle"
+            :class="{ active: episodePreview }"
+            @click="episodePreview = !episodePreview"
+          >
             {{ episodePreview ? '编辑' : '预览' }}
           </button>
         </div>
@@ -361,7 +530,10 @@ function formatNumber(value?: number) {
         <textarea v-else v-model="episodeDraft" />
         <div class="editor-actions">
           <span class="status-pill">{{ selectedEpisode.date }}</span>
-          <button class="tool-button ink asset-button primary-action" @click="saveEpisode">
+          <button
+            class="tool-button ink asset-button primary-action"
+            @click="saveEpisode"
+          >
             <component :is="actionIcons.save" class="action-icon" :size="16" />
             <span>保存</span>
           </button>

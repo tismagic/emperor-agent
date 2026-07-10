@@ -38,6 +38,7 @@
 ### Task 1: Correct Assistant Total Execution Time
 
 **Files:**
+
 - Modify: `desktop/src/renderer/src/types.ts`
 - Modify: `desktop/src/renderer/src/composables/useRuntime.ts`
 - Modify: `desktop/src/renderer/src/runtime/snapshot.ts`
@@ -59,6 +60,7 @@
 ### Task 2: Promote Todo Updates to Task Step Strip
 
 **Files:**
+
 - Modify: `desktop/src/renderer/src/components/chat/assistantFlowProjection.ts`
 - Modify: `desktop/src/renderer/src/components/chat/assistantFlowProjection.test.ts`
 - Modify: `desktop/src/renderer/src/components/chat/ToolGroup.vue`
@@ -79,6 +81,7 @@
 ### Task 3: Compact Tool Group Information Output
 
 **Files:**
+
 - Modify: `desktop/src/renderer/src/components/chat/ToolGroup.vue`
 - Modify: `desktop/src/renderer/src/components/chat/ToolEvent.vue`
 - Modify: `desktop/src/renderer/src/styles/activity.css`
@@ -95,6 +98,7 @@
 ### Task 4: Visual Timeline Polish
 
 **Files:**
+
 - Modify: `desktop/src/renderer/src/styles/chat.css`
 - Modify: `desktop/src/renderer/src/styles/activity.css`
 - Modify: `desktop/src/renderer/src/styles/codex-v2.css`
@@ -108,6 +112,7 @@
 ### Task 5: Backend Execution Flow Domain
 
 **Files:**
+
 - Create: `agent/execution_flow/__init__.py`
 - Create: `agent/execution_flow/models.py`
 - Create: `agent/execution_flow/manager.py`
@@ -122,6 +127,7 @@
 ### Task 6: Runtime Event Protocol
 
 **Files:**
+
 - Modify: `agent/runtime/events.py`
 - Modify: `agent/web/services/mainline_turn.py`
 - Modify: `agent/runner.py`
@@ -146,6 +152,7 @@
 ### Task 7: Tool Progress and Long Output
 
 **Files:**
+
 - Modify: `agent/tools/context.py`
 - Modify: `agent/tools/results.py`
 - Modify: `agent/tools/execution.py`
@@ -165,6 +172,7 @@
 ### Task 8: Verification Gates
 
 **Files:**
+
 - Test commands only; no production files.
 
 - [x] Run `npm run test -- assistantFlowProjection`.

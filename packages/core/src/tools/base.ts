@@ -34,7 +34,10 @@ export interface ToolResult {
 
 export type ToolExecutionResult = string | ToolResult
 
-export function okResult(content: string, opts?: { summary?: string; meta?: Record<string, unknown> }): ToolResult {
+export function okResult(
+  content: string,
+  opts?: { summary?: string; meta?: Record<string, unknown> },
+): ToolResult {
   return {
     modelContent: content,
     displaySummary: opts?.summary ?? content.slice(0, 120),
@@ -45,7 +48,10 @@ export function okResult(content: string, opts?: { summary?: string; meta?: Reco
   }
 }
 
-export function errResult(content: string, opts?: { meta?: Record<string, unknown> }): ToolResult {
+export function errResult(
+  content: string,
+  opts?: { meta?: Record<string, unknown> },
+): ToolResult {
   return { ...okResult(content, opts), isError: true }
 }
 
@@ -75,7 +81,10 @@ export class ToolResultObj {
     return this.displaySummary || this.modelContent
   }
 
-  static fromText(text: string, opts?: { isError?: boolean; meta?: Record<string, unknown> }): ToolResultObj {
+  static fromText(
+    text: string,
+    opts?: { isError?: boolean; meta?: Record<string, unknown> },
+  ): ToolResultObj {
     return new ToolResultObj({
       modelContent: text,
       displaySummary: text.slice(0, 120),
@@ -136,16 +145,25 @@ export abstract class Tool {
   concurrencySafe = false
 
   /** 子类可覆写以提供运行时参数感知的只读判定。对齐 `is_read_only(arguments)`。 */
-  isReadOnly(_args: Record<string, unknown>): boolean { return this.readOnly }
+  isReadOnly(_args: Record<string, unknown>): boolean {
+    return this.readOnly
+  }
 
-  isDestructive(args?: Record<string, unknown>): boolean { return !this.isReadOnly(args ?? {}) }
+  isDestructive(args?: Record<string, unknown>): boolean {
+    return !this.isReadOnly(args ?? {})
+  }
 
-  isConcurrencySafe(_args?: Record<string, unknown>): boolean { return this.concurrencySafe && !this.exclusive }
+  isConcurrencySafe(_args?: Record<string, unknown>): boolean {
+    return this.concurrencySafe && !this.exclusive
+  }
 
   /** 可选：返回该调用影响的路径（供权限画像/敏感路径判定）。对齐 `get_path(arguments)`。 */
   getPath?(args: Record<string, unknown>): string | null
 
-  abstract execute(args: Record<string, unknown>, ctx?: ToolExecutionContext): Promise<ToolExecutionResult> | ToolExecutionResult
+  abstract execute(
+    args: Record<string, unknown>,
+    ctx?: ToolExecutionContext,
+  ): Promise<ToolExecutionResult> | ToolExecutionResult
 
   /** 可选：把原始输出映射为 ToolResult。默认包成 okResult。 */
   mapResult(raw: string, _ctx: ToolExecutionContext): ToolResult {
@@ -153,6 +171,10 @@ export abstract class Tool {
   }
 
   definition(): ToolDefinition {
-    return { name: this.name, description: this.description, input_schema: this.parameters }
+    return {
+      name: this.name,
+      description: this.description,
+      input_schema: this.parameters,
+    }
   }
 }

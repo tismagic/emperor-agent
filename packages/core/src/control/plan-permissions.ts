@@ -29,7 +29,9 @@ function tokenToDict(t: PlanPermissionToken): Record<string, unknown> {
 
 export class PlanPermissionTokenManager {
   private readonly cm: ControlManagerHost
-  constructor(cm: ControlManagerHost) { this.cm = cm }
+  constructor(cm: ControlManagerHost) {
+    this.cm = cm
+  }
 
   issue(record: PlanRecord): PlanRecord {
     const now = nowTs()
@@ -57,10 +59,17 @@ export class PlanPermissionTokenManager {
     return { ...record, metadata }
   }
 
-  consume(opts: { toolName: string; arguments: Record<string, unknown> }): PlanPermissionToken | null {
+  consume(opts: {
+    toolName: string
+    arguments: Record<string, unknown>
+  }): PlanPermissionToken | null {
     const record = this.cm.latestExecutablePlan()
     if (record === null) return null
-    const activeStepIds = new Set(record.steps.filter((s) => s.status === PlanStepStatus.ACTIVE).map((s) => s.id))
+    const activeStepIds = new Set(
+      record.steps
+        .filter((s) => s.status === PlanStepStatus.ACTIVE)
+        .map((s) => s.id),
+    )
     if (!activeStepIds.size) return null
     const now = nowTs()
     const targetHash = permissionArgumentHash(opts.arguments ?? {})
@@ -75,11 +84,20 @@ export class PlanPermissionTokenManager {
         continue
       }
       const token = planPermissionTokenFromDict(item as Record<string, unknown>)
-      if (token.planId !== record.id || !activeStepIds.has(token.stepId) || token.expiresAt <= now || token.usesRemaining <= 0) {
+      if (
+        token.planId !== record.id ||
+        !activeStepIds.has(token.stepId) ||
+        token.expiresAt <= now ||
+        token.usesRemaining <= 0
+      ) {
         changed = true
         continue
       }
-      if (consumed === null && token.toolName === opts.toolName && token.argumentHash === targetHash) {
+      if (
+        consumed === null &&
+        token.toolName === opts.toolName &&
+        token.argumentHash === targetHash
+      ) {
         consumed = token
         changed = true
         const remaining = { ...token, usesRemaining: token.usesRemaining - 1 }
@@ -96,11 +114,22 @@ export class PlanPermissionTokenManager {
     return consumed
   }
 
-  revoke(opts?: { planId?: string | null; reason?: string }): PlanRecord | null {
-    const record = opts?.planId ? this.cm.planStore.get(opts.planId) : this.cm.latestExecutablePlan()
+  revoke(opts?: {
+    planId?: string | null
+    reason?: string
+  }): PlanRecord | null {
+    const record = opts?.planId
+      ? this.cm.planStore.get(opts.planId)
+      : this.cm.latestExecutablePlan()
     if (record === null) return null
-    if (!record.metadata.permission_tokens || !(record.metadata.permission_tokens as unknown[]).length) return record
-    const metadata = metadataWithoutPlanPermissionTokens(record.metadata, { reason: opts?.reason ?? 'revoked' })
+    if (
+      !record.metadata.permission_tokens ||
+      !(record.metadata.permission_tokens as unknown[]).length
+    )
+      return record
+    const metadata = metadataWithoutPlanPermissionTokens(record.metadata, {
+      reason: opts?.reason ?? 'revoked',
+    })
     const updated = { ...record, updatedAt: nowTs(), metadata }
     this.cm.planStore.save(updated)
     return updated

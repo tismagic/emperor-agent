@@ -28,7 +28,10 @@ describe('jsonl', () => {
   })
 
   it('returns empty for a missing file', async () => {
-    expect(await readJsonl(join(dir, 'nope.jsonl'))).toEqual({ records: [], badLines: [] })
+    expect(await readJsonl(join(dir, 'nope.jsonl'))).toEqual({
+      records: [],
+      badLines: [],
+    })
   })
 
   it('rotates the hot segment to archive when threshold is reached', async () => {
@@ -44,6 +47,8 @@ describe('jsonl', () => {
   it('does not rotate below threshold', async () => {
     const hot = join(dir, 'events.jsonl')
     await appendJsonl(hot, { i: 0 })
-    expect(await rotateToArchive(hot, join(dir, 'a.jsonl'), { keepThreshold: 5 })).toBe(false)
+    expect(
+      await rotateToArchive(hot, join(dir, 'a.jsonl'), { keepThreshold: 5 }),
+    ).toBe(false)
   })
 })

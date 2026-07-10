@@ -12,8 +12,12 @@ describe('CoreEventBridge (MIG-IPC-003)', () => {
     bridge.attach(second)
     bridge.emit({ event: 'message_delta', delta: 'hi' })
 
-    expect(first.sent).toEqual([[CORE_EVENT_CHANNEL, { event: 'message_delta', delta: 'hi' }]])
-    expect(second.sent).toEqual([[CORE_EVENT_CHANNEL, { event: 'message_delta', delta: 'hi' }]])
+    expect(first.sent).toEqual([
+      [CORE_EVENT_CHANNEL, { event: 'message_delta', delta: 'hi' }],
+    ])
+    expect(second.sent).toEqual([
+      [CORE_EVENT_CHANNEL, { event: 'message_delta', delta: 'hi' }],
+    ])
   })
 
   it('skips destroyed windows and supports detach', () => {
@@ -35,6 +39,10 @@ describe('CoreEventBridge (MIG-IPC-003)', () => {
 class FakeWebContents {
   readonly sent: unknown[][] = []
   constructor(private readonly destroyed = false) {}
-  isDestroyed(): boolean { return this.destroyed }
-  send(channel: string, payload: unknown): void { this.sent.push([channel, payload]) }
+  isDestroyed(): boolean {
+    return this.destroyed
+  }
+  send(channel: string, payload: unknown): void {
+    this.sent.push([channel, payload])
+  }
 }

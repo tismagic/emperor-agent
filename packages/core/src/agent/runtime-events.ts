@@ -6,20 +6,32 @@
 
 const MAX_RUNTIME_TOOL_OUTPUT_CHARS = 12_000
 
-export function compactRuntimeToolOutput(value: string): { output: string; output_truncated?: boolean } {
+export function compactRuntimeToolOutput(value: string): {
+  output: string
+  output_truncated?: boolean
+} {
   const text = String(value ?? '')
   if (text.length <= MAX_RUNTIME_TOOL_OUTPUT_CHARS) return { output: text }
   return {
-    output: text.slice(0, MAX_RUNTIME_TOOL_OUTPUT_CHARS) + `\n\n[truncated runtime tool output: ${text.length - MAX_RUNTIME_TOOL_OUTPUT_CHARS} chars omitted]`,
+    output:
+      text.slice(0, MAX_RUNTIME_TOOL_OUTPUT_CHARS) +
+      `\n\n[truncated runtime tool output: ${text.length - MAX_RUNTIME_TOOL_OUTPUT_CHARS} chars omitted]`,
     output_truncated: true,
   }
 }
 
-export function planEntryDecision(contract: Record<string, unknown>): Record<string, unknown> {
+export function planEntryDecision(
+  contract: Record<string, unknown>,
+): Record<string, unknown> {
   return { event: 'plan_entry_decision', ...contract }
 }
 
-export function modelRouteFallback(opts: { fromModel: string; toModel: string; reason: string; usageType: string }): Record<string, unknown> {
+export function modelRouteFallback(opts: {
+  fromModel: string
+  toModel: string
+  reason: string
+  usageType: string
+}): Record<string, unknown> {
   return {
     event: 'model_route_fallback',
     from_model: opts.fromModel,
@@ -29,8 +41,15 @@ export function modelRouteFallback(opts: { fromModel: string; toModel: string; r
   }
 }
 
-export function contextProjection(opts: { report: Record<string, unknown>; messageCount: number }): Record<string, unknown> {
-  return { event: 'context_projection', report: opts.report, message_count: opts.messageCount }
+export function contextProjection(opts: {
+  report: Record<string, unknown>
+  messageCount: number
+}): Record<string, unknown> {
+  return {
+    event: 'context_projection',
+    report: opts.report,
+    message_count: opts.messageCount,
+  }
 }
 
 export function agentThought(opts: {
@@ -66,23 +85,55 @@ export function planDraftDelta(opts: {
   }
 }
 
-export function planVerificationStart(opts: { planId: string; stepId: string; command: string }): Record<string, unknown> {
-  return { event: 'plan_verification_start', plan_id: opts.planId, step_id: opts.stepId, command: opts.command }
+export function planVerificationStart(opts: {
+  planId: string
+  stepId: string
+  command: string
+}): Record<string, unknown> {
+  return {
+    event: 'plan_verification_start',
+    plan_id: opts.planId,
+    step_id: opts.stepId,
+    command: opts.command,
+  }
 }
 
-export function planVerificationDone(opts: { planId: string; stepId: string; result: Record<string, unknown> }): Record<string, unknown> {
-  return { event: 'plan_verification_done', plan_id: opts.planId, step_id: opts.stepId, result: opts.result }
+export function planVerificationDone(opts: {
+  planId: string
+  stepId: string
+  result: Record<string, unknown>
+}): Record<string, unknown> {
+  return {
+    event: 'plan_verification_done',
+    plan_id: opts.planId,
+    step_id: opts.stepId,
+    result: opts.result,
+  }
 }
 
-export function planRuntimeUpdate(plan: Record<string, unknown>): Record<string, unknown> {
+export function planRuntimeUpdate(
+  plan: Record<string, unknown>,
+): Record<string, unknown> {
   return { event: 'plan_runtime_update', plan }
 }
 
-export function toolRunQueued(opts: { id: string; name: string; arguments: Record<string, unknown> }): Record<string, unknown> {
-  return { event: 'tool_run_queued', id: opts.id, name: opts.name, arguments: opts.arguments }
+export function toolRunQueued(opts: {
+  id: string
+  name: string
+  arguments: Record<string, unknown>
+}): Record<string, unknown> {
+  return {
+    event: 'tool_run_queued',
+    id: opts.id,
+    name: opts.name,
+    arguments: opts.arguments,
+  }
 }
 
-export function toolRunStarted(opts: { id: string; name: string }): Record<string, unknown> {
+export function toolRunStarted(opts: {
+  id: string
+  name: string
+}): Record<string, unknown> {
   return { event: 'tool_run_started', id: opts.id, name: opts.name }
 }
 
@@ -95,7 +146,12 @@ export function toolRunCompleted(opts: {
   artifacts?: Array<Record<string, unknown>> | null
   metadata?: Record<string, unknown> | null
 }): Record<string, unknown> {
-  const event: Record<string, unknown> = { event: 'tool_run_completed', id: opts.id, name: opts.name, summary: opts.summary }
+  const event: Record<string, unknown> = {
+    event: 'tool_run_completed',
+    id: opts.id,
+    name: opts.name,
+    summary: opts.summary,
+  }
   if (typeof opts.output === 'string') event.output = opts.output
   if (opts.output_truncated) event.output_truncated = true
   if (opts.artifacts) event.artifacts = opts.artifacts
@@ -103,30 +159,113 @@ export function toolRunCompleted(opts: {
   return event
 }
 
-export function toolRunFailed(opts: { id: string; name: string; message: string; reasonKind?: 'safety_refusal' | 'error' }): Record<string, unknown> {
-  return { event: 'tool_run_failed', id: opts.id, name: opts.name, message: opts.message, reason_kind: opts.reasonKind ?? 'error' }
+export function toolRunFailed(opts: {
+  id: string
+  name: string
+  message: string
+  reasonKind?: 'safety_refusal' | 'error'
+}): Record<string, unknown> {
+  return {
+    event: 'tool_run_failed',
+    id: opts.id,
+    name: opts.name,
+    message: opts.message,
+    reason_kind: opts.reasonKind ?? 'error',
+  }
 }
 
-export function toolRunCancelled(opts: { id: string; name: string; reason: string }): Record<string, unknown> {
-  return { event: 'tool_run_cancelled', id: opts.id, name: opts.name, reason: opts.reason }
+export function toolRunCancelled(opts: {
+  id: string
+  name: string
+  reason: string
+}): Record<string, unknown> {
+  return {
+    event: 'tool_run_cancelled',
+    id: opts.id,
+    name: opts.name,
+    reason: opts.reason,
+  }
 }
 
-export function hookRunStarted(opts: { hookId: string; eventName: string; handlerType: string; source?: Record<string, unknown> | null }): Record<string, unknown> {
-  return { event: 'hook_run_started', hook_id: opts.hookId, event_name: opts.eventName, handler_type: opts.handlerType, hook_source: opts.source ?? null }
+export function hookRunStarted(opts: {
+  hookId: string
+  eventName: string
+  handlerType: string
+  source?: Record<string, unknown> | null
+}): Record<string, unknown> {
+  return {
+    event: 'hook_run_started',
+    hook_id: opts.hookId,
+    event_name: opts.eventName,
+    handler_type: opts.handlerType,
+    hook_source: opts.source ?? null,
+  }
 }
 
-export function hookRunProgress(opts: { hookId: string; eventName: string; status: string; message?: string | null }): Record<string, unknown> {
-  return { event: 'hook_run_progress', hook_id: opts.hookId, event_name: opts.eventName, status: opts.status, message: opts.message ?? null }
+export function hookRunProgress(opts: {
+  hookId: string
+  eventName: string
+  status: string
+  message?: string | null
+}): Record<string, unknown> {
+  return {
+    event: 'hook_run_progress',
+    hook_id: opts.hookId,
+    event_name: opts.eventName,
+    status: opts.status,
+    message: opts.message ?? null,
+  }
 }
 
-export function hookRunCompleted(opts: { hookId: string; eventName: string; status: string; decision: string; reason: string; durationMs: number }): Record<string, unknown> {
-  return { event: 'hook_run_completed', hook_id: opts.hookId, event_name: opts.eventName, status: opts.status, decision: opts.decision, reason: opts.reason, duration_ms: opts.durationMs }
+export function hookRunCompleted(opts: {
+  hookId: string
+  eventName: string
+  status: string
+  decision: string
+  reason: string
+  durationMs: number
+}): Record<string, unknown> {
+  return {
+    event: 'hook_run_completed',
+    hook_id: opts.hookId,
+    event_name: opts.eventName,
+    status: opts.status,
+    decision: opts.decision,
+    reason: opts.reason,
+    duration_ms: opts.durationMs,
+  }
 }
 
-export function hookRunFailed(opts: { hookId: string; eventName: string; status: string; decision: string; reason: string; durationMs: number }): Record<string, unknown> {
-  return { event: 'hook_run_failed', hook_id: opts.hookId, event_name: opts.eventName, status: opts.status, decision: opts.decision, reason: opts.reason, duration_ms: opts.durationMs }
+export function hookRunFailed(opts: {
+  hookId: string
+  eventName: string
+  status: string
+  decision: string
+  reason: string
+  durationMs: number
+}): Record<string, unknown> {
+  return {
+    event: 'hook_run_failed',
+    hook_id: opts.hookId,
+    event_name: opts.eventName,
+    status: opts.status,
+    decision: opts.decision,
+    reason: opts.reason,
+    duration_ms: opts.durationMs,
+  }
 }
 
-export function hookDecisionApplied(opts: { eventName: string; decision: string; reason: string; hookIds: string[] }): Record<string, unknown> {
-  return { event: 'hook_decision_applied', event_name: opts.eventName, decision: opts.decision, reason: opts.reason, hook_ids: opts.hookIds }
+export function hookDecisionApplied(opts: {
+  eventName: string
+  decision: string
+  reason: string
+  hookIds: string[]
+}): Record<string, unknown> {
+  return {
+    event: 'hook_decision_applied',
+    event_name: opts.eventName,
+    decision: opts.decision,
+    reason: opts.reason,
+    hook_ids: opts.hookIds,
+  }
 }

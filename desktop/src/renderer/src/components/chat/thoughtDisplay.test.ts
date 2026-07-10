@@ -14,12 +14,14 @@ function thought(extra: Partial<ThoughtSegment> = {}): ThoughtSegment {
 
 describe('thought display helpers', () => {
   it('renders audit summaries as plain text without label or duration prefix', () => {
-    const presentation = thoughtPresentation(thought({
-      label: '思考参考',
-      summary: '准备调用 run_command，先通过命令获取运行证据。',
-      source: 'audit',
-      stage: 'tool_intent',
-    }))
+    const presentation = thoughtPresentation(
+      thought({
+        label: '思考参考',
+        summary: '准备调用 run_command，先通过命令获取运行证据。',
+        source: 'audit',
+        stage: 'tool_intent',
+      }),
+    )
 
     expect(presentation).toEqual({
       kind: 'summary',
@@ -28,10 +30,12 @@ describe('thought display helpers', () => {
   })
 
   it('keeps the compact status label for legacy thoughts without summaries', () => {
-    const presentation = thoughtPresentation(thought({
-      label: '整理工具结果',
-      durationMs: 2600,
-    }))
+    const presentation = thoughtPresentation(
+      thought({
+        label: '整理工具结果',
+        durationMs: 2600,
+      }),
+    )
 
     expect(presentation).toEqual({
       kind: 'status',

@@ -17,16 +17,28 @@ export interface AnthropicImageBlock {
 
 export type UserContent = string | Array<TextBlock | OpenAIImageUrlBlock>
 
-export function encodeForOpenAIBlock(ref: AttachmentRef, store: AttachmentStore): OpenAIImageUrlBlock {
+export function encodeForOpenAIBlock(
+  ref: AttachmentRef,
+  store: AttachmentStore,
+): OpenAIImageUrlBlock {
   if (!ref.has_image) throw new Error(`attachment ${ref.id} is not an image`)
   const b64 = store.readBytes(ref).toString('base64')
-  return { type: 'image_url', image_url: { url: `data:${ref.mime};base64,${b64}` } }
+  return {
+    type: 'image_url',
+    image_url: { url: `data:${ref.mime};base64,${b64}` },
+  }
 }
 
-export function encodeForAnthropicBlock(ref: AttachmentRef, store: AttachmentStore): AnthropicImageBlock {
+export function encodeForAnthropicBlock(
+  ref: AttachmentRef,
+  store: AttachmentStore,
+): AnthropicImageBlock {
   if (!ref.has_image) throw new Error(`attachment ${ref.id} is not an image`)
   const b64 = store.readBytes(ref).toString('base64')
-  return { type: 'image', source: { type: 'base64', media_type: ref.mime, data: b64 } }
+  return {
+    type: 'image',
+    source: { type: 'base64', media_type: ref.mime, data: b64 },
+  }
 }
 
 export function refToJson(ref: AttachmentRef): Record<string, unknown> {
@@ -43,9 +55,16 @@ export function refToJson(ref: AttachmentRef): Record<string, unknown> {
   }
 }
 
-export function buildUserContent(text: string, attachmentIds: string[], store: AttachmentStore, opts: { supportsVision: boolean }): UserContent {
+export function buildUserContent(
+  text: string,
+  attachmentIds: string[],
+  store: AttachmentStore,
+  opts: { supportsVision: boolean },
+): UserContent {
   if (!attachmentIds.length) return text
-  const refs = attachmentIds.map((id) => store.get(id)).filter((ref): ref is AttachmentRef => ref !== null)
+  const refs = attachmentIds
+    .map((id) => store.get(id))
+    .filter((ref): ref is AttachmentRef => ref !== null)
   if (!refs.length) return text
 
   const imageBlocks: OpenAIImageUrlBlock[] = []
@@ -56,17 +75,26 @@ export function buildUserContent(text: string, attachmentIds: string[], store: A
         try {
           imageBlocks.push(encodeForOpenAIBlock(ref, store))
         } catch (error) {
-          textPieces.push(`\n[图片附件 ${ref.name} 编码失败：${error instanceof Error ? error.message : String(error)}]`)
+          textPieces.push(
+            `\n[图片附件 ${ref.name} 编码失败：${error instanceof Error ? error.message : String(error)}]`,
+          )
         }
       } else {
-        textPieces.push(`\n[图片附件 ${ref.name}（当前模型未标记视觉，已忽略；可在 /model 测试视觉激活）]`)
+        textPieces.push(
+          `\n[图片附件 ${ref.name}（当前模型未标记视觉，已忽略；可在 /model 测试视觉激活）]`,
+        )
       }
     } else if (ref.has_text) {
       const extracted = store.readText(ref)
-      if (extracted) textPieces.push(`\n\n[附件 ${ref.name} 提取文本]\n${extracted}\n[/附件 ${ref.name}]`)
+      if (extracted)
+        textPieces.push(
+          `\n\n[附件 ${ref.name} 提取文本]\n${extracted}\n[/附件 ${ref.name}]`,
+        )
       else textPieces.push(`\n[附件 ${ref.name} 已落盘但抽取文本为空]`)
     } else {
-      textPieces.push(`\n[附件 ${ref.name} 已落盘: ${ref.rel_path}（用 read_file 读取）]`)
+      textPieces.push(
+        `\n[附件 ${ref.name} 已落盘: ${ref.rel_path}（用 read_file 读取）]`,
+      )
     }
     textPieces.push(`\n[已落盘: ${ref.rel_path}]`)
   }

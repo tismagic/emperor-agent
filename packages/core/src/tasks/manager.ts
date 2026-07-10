@@ -20,7 +20,11 @@ export interface TaskStartOptions {
 export interface TaskHookHost {
   run(
     eventName: Extract<HookEventName, 'TaskCreated' | 'TaskCompleted'>,
-    opts: { taskKind: string; task: Record<string, unknown>; sessionId: string | null },
+    opts: {
+      taskKind: string
+      task: Record<string, unknown>
+      sessionId: string | null
+    },
   ): HookAggregateDecision | Promise<HookAggregateDecision>
 }
 
@@ -56,7 +60,8 @@ export class TaskManager {
         task: record.toDict() as unknown as Record<string, unknown>,
         sessionId: record.session_id,
       })
-      if (decision.decision === 'deny' || decision.decision === 'ask') return null
+      if (decision.decision === 'deny' || decision.decision === 'ask')
+        return null
     }
     this.store.upsert(record)
     return record
@@ -82,7 +87,10 @@ export class TaskManager {
     return record
   }
 
-  updateTask(taskId: string, fields: Record<string, unknown>): TaskRecord | null {
+  updateTask(
+    taskId: string,
+    fields: Record<string, unknown>,
+  ): TaskRecord | null {
     const record = this.store.get(taskId)
     if (!record) return null
     const payload: Record<string, unknown> = { ...record.toDict() }
@@ -94,8 +102,16 @@ export class TaskManager {
       transcriptPath: 'transcript_path',
     }
     const allowed = new Set([
-      'status', 'title', 'source', 'turn_id', 'tool_call_id', 'job_id',
-      'output_path', 'transcript_path', 'progress', 'metadata',
+      'status',
+      'title',
+      'source',
+      'turn_id',
+      'tool_call_id',
+      'job_id',
+      'output_path',
+      'transcript_path',
+      'progress',
+      'metadata',
     ])
     for (const [key, value] of Object.entries(fields)) {
       const target = map[key] ?? key
@@ -110,20 +126,33 @@ export class TaskManager {
     new SidechainTranscript(this.root, taskId).append(message)
   }
 
-  readSidechain(taskId: string, opts: { offset?: number; limit?: number } = {}): ReturnType<SidechainTranscript['read']> {
+  readSidechain(
+    taskId: string,
+    opts: { offset?: number; limit?: number } = {},
+  ): ReturnType<SidechainTranscript['read']> {
     return new SidechainTranscript(this.root, taskId).read(opts)
   }
 
-  completeTask(taskId: string, opts: { summary?: string } = {}): TaskRecord | null {
+  completeTask(
+    taskId: string,
+    opts: { summary?: string } = {},
+  ): TaskRecord | null {
     const record = this.store.get(taskId)
     if (!record) return null
-    return this.finish(record, TaskStatus.COMPLETED, { summary: opts.summary ?? '' })
+    return this.finish(record, TaskStatus.COMPLETED, {
+      summary: opts.summary ?? '',
+    })
   }
 
-  async completeTaskWithHooks(taskId: string, opts: { summary?: string } = {}): Promise<TaskTransitionResult | null> {
+  async completeTaskWithHooks(
+    taskId: string,
+    opts: { summary?: string } = {},
+  ): Promise<TaskTransitionResult | null> {
     const record = this.store.get(taskId)
     if (!record) return null
-    const candidate = this.finishedCandidate(record, TaskStatus.COMPLETED, { summary: opts.summary ?? '' })
+    const candidate = this.finishedCandidate(record, TaskStatus.COMPLETED, {
+      summary: opts.summary ?? '',
+    })
     if (this.hooks) {
       const decision = await this.hooks.run('TaskCompleted', {
         taskKind: candidate.kind,
@@ -144,19 +173,32 @@ export class TaskManager {
     return this.finish(record, TaskStatus.FAILED, { error: opts.error })
   }
 
-  cancelTask(taskId: string, opts: { reason?: string } = {}): TaskRecord | null {
+  cancelTask(
+    taskId: string,
+    opts: { reason?: string } = {},
+  ): TaskRecord | null {
     const record = this.store.get(taskId)
     if (!record) return null
-    return this.finish(record, TaskStatus.CANCELLED, { reason: opts.reason ?? 'cancelled' })
+    return this.finish(record, TaskStatus.CANCELLED, {
+      reason: opts.reason ?? 'cancelled',
+    })
   }
 
-  private finish(record: TaskRecord, status: string, progress: Record<string, unknown>): TaskRecord {
+  private finish(
+    record: TaskRecord,
+    status: string,
+    progress: Record<string, unknown>,
+  ): TaskRecord {
     const updated = this.finishedCandidate(record, status, progress)
     this.store.upsert(updated)
     return updated
   }
 
-  private finishedCandidate(record: TaskRecord, status: string, progress: Record<string, unknown>): TaskRecord {
+  private finishedCandidate(
+    record: TaskRecord,
+    status: string,
+    progress: Record<string, unknown>,
+  ): TaskRecord {
     return TaskRecord.fromDict({
       ...record.toDict(),
       status,

@@ -2,7 +2,10 @@
 import { computed, ref } from 'vue'
 import { useAppContext } from '../../composables/useAppContext'
 import { planExecutionSummary } from '../../runtime/handlers/plans'
-import { activeProjectPlan, reviewerTaskId } from '../../runtime/projectExecution'
+import {
+  activeProjectPlan,
+  reviewerTaskId,
+} from '../../runtime/projectExecution'
 import ReviewerTranscriptDrawer from './ReviewerTranscriptDrawer.vue'
 
 const ctx = useAppContext()
@@ -33,18 +36,35 @@ const drawerOpen = ref(false)
         </ol>
       </section>
 
-      <section class="pe-section pe-verification" :data-status="summary.independentVerificationStatus">
+      <section
+        class="pe-section pe-verification"
+        :data-status="summary.independentVerificationStatus"
+      >
         <h3>独立复核 · {{ summary.independentVerificationStatus }}</h3>
-        <p v-if="summary.independentVerificationSummary">{{ summary.independentVerificationSummary }}</p>
-        <ul v-if="summary.independentVerificationCommands.length" class="pe-commands">
-          <li v-for="cmd in summary.independentVerificationCommands" :key="cmd"><code>{{ cmd }}</code></li>
+        <p v-if="summary.independentVerificationSummary">
+          {{ summary.independentVerificationSummary }}
+        </p>
+        <ul
+          v-if="summary.independentVerificationCommands.length"
+          class="pe-commands"
+        >
+          <li v-for="cmd in summary.independentVerificationCommands" :key="cmd">
+            <code>{{ cmd }}</code>
+          </li>
         </ul>
-        <button v-if="reviewerTask" class="tool-button" @click="drawerOpen = true">
+        <button
+          v-if="reviewerTask"
+          class="tool-button"
+          @click="drawerOpen = true"
+        >
           打开复核 transcript
         </button>
       </section>
 
-      <section v-if="summary.failedVerificationSummary" class="pe-section pe-failed">
+      <section
+        v-if="summary.failedVerificationSummary"
+        class="pe-section pe-failed"
+      >
         <h3>验证失败</h3>
         <p>{{ summary.failedVerificationSummary }}</p>
       </section>
@@ -54,7 +74,10 @@ const drawerOpen = ref(false)
         <p>{{ summary.blockedReason }}</p>
       </section>
 
-      <section v-if="summary.openQuestionsCount" class="pe-section pe-questions">
+      <section
+        v-if="summary.openQuestionsCount"
+        class="pe-section pe-questions"
+      >
         <h3>待答问题：{{ summary.openQuestionsCount }}</h3>
       </section>
 

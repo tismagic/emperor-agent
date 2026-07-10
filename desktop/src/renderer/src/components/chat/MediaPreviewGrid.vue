@@ -9,11 +9,15 @@ const selected = ref<MediaArtifactRef | null>(null)
 const failedIds = ref(new Set<string>())
 const retryNonce = ref(0)
 
-const imageItems = computed(() => props.items.filter((item) => item.kind === 'image'))
+const imageItems = computed(() =>
+  props.items.filter((item) => item.kind === 'image'),
+)
 
 function imageUrl(item: MediaArtifactRef): string {
   const base = mediaRawUrl(item.id)
-  return retryNonce.value ? `${base}${base.includes('?') ? '&' : '?'}retry=${retryNonce.value}` : base
+  return retryNonce.value
+    ? `${base}${base.includes('?') ? '&' : '?'}retry=${retryNonce.value}`
+    : base
 }
 
 function markFailed(item: MediaArtifactRef) {
@@ -40,7 +44,12 @@ function closePreview() {
         :title="item.originalPath || item.name"
         @click="selected = item"
       >
-        <img :src="imageUrl(item)" :alt="item.name" loading="lazy" @error="markFailed(item)" />
+        <img
+          :src="imageUrl(item)"
+          :alt="item.name"
+          loading="lazy"
+          @error="markFailed(item)"
+        />
         <span>{{ item.name }}</span>
       </button>
       <button
@@ -56,8 +65,21 @@ function closePreview() {
     </template>
   </div>
 
-  <div v-if="selected" class="media-preview-modal" role="dialog" aria-modal="true" @click.self="closePreview">
-    <button type="button" class="media-preview-close" aria-label="关闭预览" @click="closePreview">×</button>
+  <div
+    v-if="selected"
+    class="media-preview-modal"
+    role="dialog"
+    aria-modal="true"
+    @click.self="closePreview"
+  >
+    <button
+      type="button"
+      class="media-preview-close"
+      aria-label="关闭预览"
+      @click="closePreview"
+    >
+      ×
+    </button>
     <img :src="imageUrl(selected)" :alt="selected.name" />
     <div class="media-preview-caption">
       <strong>{{ selected.name }}</strong>

@@ -1,5 +1,15 @@
 import { randomUUID } from 'node:crypto'
-import { copyFileSync, cpSync, existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from 'node:fs'
+import {
+  copyFileSync,
+  cpSync,
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  readdirSync,
+  renameSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs'
 import { basename, dirname, join } from 'node:path'
 import { TaskRecord } from './models'
 
@@ -25,7 +35,9 @@ export class TaskStore {
 
   list(): TaskRecord[] {
     const data = this.read(this.indexFile)
-    return Object.values(data).filter(isObject).map((item) => TaskRecord.fromDict(item))
+    return Object.values(data)
+      .filter(isObject)
+      .map((item) => TaskRecord.fromDict(item))
   }
 
   get(taskId: string): TaskRecord | null {
@@ -59,9 +71,13 @@ export class TaskStore {
   }
 
   private archiveIfNeeded(data: Record<string, any>): void {
-    const terminal = Object.values(data).filter((item) => isObject(item) && TERMINAL.has(String(item.status)))
+    const terminal = Object.values(data).filter(
+      (item) => isObject(item) && TERMINAL.has(String(item.status)),
+    )
     if (terminal.length <= this.maxTerminal) return
-    terminal.sort((a, b) => Number(a.started_at || 0) - Number(b.started_at || 0))
+    terminal.sort(
+      (a, b) => Number(a.started_at || 0) - Number(b.started_at || 0),
+    )
     const overflow = terminal.slice(0, terminal.length - this.maxTerminal)
     const byMonth = new Map<string, Record<string, any>[]>()
     for (const item of overflow) {
@@ -83,7 +99,10 @@ export class TaskStore {
 
   private getArchived(taskId: string): TaskRecord | null {
     if (!existsSync(this.archiveDir)) return null
-    for (const name of readdirSync(this.archiveDir).filter((n) => n.endsWith('.json')).sort().reverse()) {
+    for (const name of readdirSync(this.archiveDir)
+      .filter((n) => n.endsWith('.json'))
+      .sort()
+      .reverse()) {
       const payload = this.read(join(this.archiveDir, name))[taskId]
       if (isObject(payload)) return TaskRecord.fromDict(payload)
     }
@@ -97,7 +116,11 @@ export class TaskStore {
     } catch (error) {
       if (existsSync(path)) {
         const corrupt = `${path}.corrupt-${Math.trunc(Date.now() / 1000)}-${randomUUID().replace(/-/g, '').slice(0, 8)}`
-        try { renameSync(path, corrupt) } catch { /* ignore */ }
+        try {
+          renameSync(path, corrupt)
+        } catch {
+          /* ignore */
+        }
         this.write(path, {})
       }
       void error
@@ -107,7 +130,10 @@ export class TaskStore {
 
   private write(path: string, data: Record<string, any>): void {
     mkdirSync(dirname(path), { recursive: true })
-    const tmp = join(dirname(path), `.${basename(path)}.${randomUUID().replace(/-/g, '')}.tmp`)
+    const tmp = join(
+      dirname(path),
+      `.${basename(path)}.${randomUUID().replace(/-/g, '')}.tmp`,
+    )
     writeFileSync(tmp, JSON.stringify(data, null, 2), 'utf8')
     renameSync(tmp, path)
   }
@@ -117,18 +143,33 @@ export class TaskStore {
     if (!existsSync(legacyDir)) return
     const legacyIndex = join(legacyDir, 'index.json')
     if (!existsSync(this.indexFile) && existsSync(legacyIndex)) {
-      try { copyFileSync(legacyIndex, this.indexFile) } catch { /* non-destructive best effort */ }
+      try {
+        copyFileSync(legacyIndex, this.indexFile)
+      } catch {
+        /* non-destructive best effort */
+      }
     }
     const legacyArchive = join(legacyDir, 'archive')
     if (!existsSync(this.archiveDir) && existsSync(legacyArchive)) {
-      try { cpSync(legacyArchive, this.archiveDir, { recursive: true, errorOnExist: false }) } catch { /* non-destructive best effort */ }
+      try {
+        cpSync(legacyArchive, this.archiveDir, {
+          recursive: true,
+          errorOnExist: false,
+        })
+      } catch {
+        /* non-destructive best effort */
+      }
     }
     for (const name of readdirSync(legacyDir)) {
       if (!name || name === 'archive' || name === 'index.json') continue
       const source = join(legacyDir, name)
       const dest = join(this.tasksDir, name)
       if (existsSync(dest)) continue
-      try { cpSync(source, dest, { recursive: true, errorOnExist: false }) } catch { /* non-destructive best effort */ }
+      try {
+        cpSync(source, dest, { recursive: true, errorOnExist: false })
+      } catch {
+        /* non-destructive best effort */
+      }
     }
   }
 }

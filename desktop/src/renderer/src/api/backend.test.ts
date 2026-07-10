@@ -27,7 +27,9 @@ describe('with an injected Core IPC bridge', () => {
       },
     }
 
-    await expect(invokeCore('bootstrap', { sessionId: 's1' })).resolves.toEqual({ ok: true })
+    await expect(invokeCore('bootstrap', { sessionId: 's1' })).resolves.toEqual(
+      { ok: true },
+    )
     expect(calls).toEqual([['bootstrap', { sessionId: 's1' }]])
   })
 
@@ -70,7 +72,9 @@ describe('with an injected Core IPC bridge', () => {
 
   it('delegates onCoreEvent to the preload bridge', () => {
     const events: unknown[] = []
-    const unsubscribe = () => { events.push('off') }
+    const unsubscribe = () => {
+      events.push('off')
+    }
     g.window = {
       emperor: {
         onCoreEvent: (listener: (event: unknown) => void) => {
@@ -80,7 +84,11 @@ describe('with an injected Core IPC bridge', () => {
       },
     }
 
-    expect(onCoreEvent((event) => { events.push(event) })).toBe(unsubscribe)
+    expect(
+      onCoreEvent((event) => {
+        events.push(event)
+      }),
+    ).toBe(unsubscribe)
     expect(events).toEqual([{ event: 'ready' }])
   })
 
@@ -98,7 +106,9 @@ describe('with an injected Core IPC bridge', () => {
     await expect(openPath('/tmp/emperor')).resolves.toBeUndefined()
     expect(calls).toEqual(['/tmp/emperor'])
 
-    g.window = { emperor: { openPath: async () => ({ ok: false, error: 'not found' }) } }
+    g.window = {
+      emperor: { openPath: async () => ({ ok: false, error: 'not found' }) },
+    }
     await expect(openPath('/missing')).rejects.toThrow('not found')
   })
 })

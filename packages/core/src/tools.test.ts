@@ -1,4 +1,10 @@
-import { existsSync, mkdirSync, writeFileSync, symlinkSync, readFileSync } from 'node:fs'
+import {
+  existsSync,
+  mkdirSync,
+  writeFileSync,
+  symlinkSync,
+  readFileSync,
+} from 'node:fs'
 import { mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -53,7 +59,11 @@ describe('ReadFileTool', () => {
     const tool = new ReadFileTool(workspace)
     const out = await tool.execute(
       { path: privatePath },
-      { root: stateRoot, workspaceRoot: workspace, arguments: { path: privatePath } },
+      {
+        root: stateRoot,
+        workspaceRoot: workspace,
+        arguments: { path: privatePath },
+      },
     )
 
     expect(out).toContain('[ERR] path denied by workspace policy')
@@ -73,14 +83,24 @@ describe('WriteFileTool + EditFileTool', () => {
     await w.execute({ path: p, content: 'hello world' })
     expect(existsSync(p)).toBe(true)
 
-    const out = await e.execute({ path: p, old_text: 'world', new_text: 'there' })
+    const out = await e.execute({
+      path: p,
+      old_text: 'world',
+      new_text: 'there',
+    })
     expect(out).toContain('Edited')
   })
 
   it('edit_file reports when old_text not found', async () => {
     writeFileSync(join(dir, 'f.txt'), 'abc', 'utf8')
     const e = new EditFileTool(dir)
-    expect(await e.execute({ path: join(dir, 'f.txt'), old_text: 'xyz', new_text: 'q' })).toContain('[ERR]')
+    expect(
+      await e.execute({
+        path: join(dir, 'f.txt'),
+        old_text: 'xyz',
+        new_text: 'q',
+      }),
+    ).toContain('[ERR]')
   })
 
   it('blocks writes through a symlink that escapes the workspace', async () => {
@@ -105,7 +125,11 @@ describe('WriteFileTool + EditFileTool', () => {
     const w = new WriteFileTool(workspace)
     const out = await w.execute(
       { path: targetPath, content: 'pwned' },
-      { root: stateRoot, workspaceRoot: workspace, arguments: { path: targetPath, content: 'pwned' } },
+      {
+        root: stateRoot,
+        workspaceRoot: workspace,
+        arguments: { path: targetPath, content: 'pwned' },
+      },
     )
 
     expect(out).toContain('[ERR] path is outside workspace')
@@ -178,14 +202,20 @@ describe('ToolRegistry truncation persistence (Wave3.1)', () => {
     override description = 'returns a huge string'
     override parameters = toolParamsSchema({}, [])
     override maxResultChars = 1_000
-    execute(): string { return 'x'.repeat(5_000) }
+    execute(): string {
+      return 'x'.repeat(5_000)
+    }
   }
 
   it('persists the full output to the tool-result store when capping, and links it via metadata', async () => {
     const registry = new ToolRegistry(dir)
     registry.register(new HugeOutputTool())
 
-    const result = await registry.executeResult('huge_output', {}, { root: dir, turnId: 'turn_big', parentCallId: 'call_big' })
+    const result = await registry.executeResult(
+      'huge_output',
+      {},
+      { root: dir, turnId: 'turn_big', parentCallId: 'call_big' },
+    )
 
     expect(result.modelContent).toContain('[truncated')
     const ref = String(result.metadata.full_output_ref ?? '')
@@ -201,12 +231,18 @@ describe('ToolRegistry truncation persistence (Wave3.1)', () => {
       override description = 'small'
       override parameters = toolParamsSchema({}, [])
       override maxResultChars = 1_000
-      execute(): string { return 'tiny' }
+      execute(): string {
+        return 'tiny'
+      }
     }
     const registry = new ToolRegistry(dir)
     registry.register(new SmallTool())
 
-    const result = await registry.executeResult('small_output', {}, { root: dir })
+    const result = await registry.executeResult(
+      'small_output',
+      {},
+      { root: dir },
+    )
 
     expect(result.metadata.full_output_ref).toBeUndefined()
   })
@@ -225,7 +261,9 @@ describe('TodoStore + UpdateTodos (test_todo_tool.py)', () => {
   it('accepts valid todos and returns the summary', async () => {
     const s = new TodoStore()
     const t = new UpdateTodos(s)
-    const out = await t.execute({ todos: [{ id: 1, content: 'a', status: 'pending' }] })
+    const out = await t.execute({
+      todos: [{ id: 1, content: 'a', status: 'pending' }],
+    })
     expect(out).toContain('todos updated: total=1')
     expect(s.todos).toHaveLength(1)
   })
@@ -233,7 +271,12 @@ describe('TodoStore + UpdateTodos (test_todo_tool.py)', () => {
   it('preserves active_form and renders it for in_progress', () => {
     const s = new TodoStore()
     const result = s.update([
-      { id: 1, content: '运行测试', active_form: '正在运行测试', status: 'in_progress' },
+      {
+        id: 1,
+        content: '运行测试',
+        active_form: '正在运行测试',
+        status: 'in_progress',
+      },
       { id: 2, content: '整理结果', status: 'pending' },
     ])
     expect(s.todos[0]!.active_form).toBe('正在运行测试')
@@ -243,7 +286,14 @@ describe('TodoStore + UpdateTodos (test_todo_tool.py)', () => {
 
   it('uses content for completed even with active_form', () => {
     const s = new TodoStore()
-    const result = s.update([{ id: 1, content: '运行测试', active_form: '正在运行测试', status: 'completed' }])
+    const result = s.update([
+      {
+        id: 1,
+        content: '运行测试',
+        active_form: '正在运行测试',
+        status: 'completed',
+      },
+    ])
     expect(result).toContain('[x] 1. 运行测试')
     expect(result).not.toContain('正在运行测试')
   })
@@ -272,10 +322,16 @@ describe('write_file overwrite nudge (2026-07-05 B2a)', () => {
     const root = mkdtempSync(join(tmpdir(), 'emperor-write-nudge-'))
     const tool = new WriteFileTool(root)
 
-    const first = await tool.execute({ path: join(root, 'a.html'), content: '<html>v1</html>' })
+    const first = await tool.execute({
+      path: join(root, 'a.html'),
+      content: '<html>v1</html>',
+    })
     expect(first).not.toContain('edit_file')
 
-    const second = await tool.execute({ path: join(root, 'a.html'), content: '<html>v2 全量重写</html>' })
+    const second = await tool.execute({
+      path: join(root, 'a.html'),
+      content: '<html>v2 全量重写</html>',
+    })
     expect(second).toContain('已整体覆盖既有文件')
     expect(second).toContain('edit_file')
   })
@@ -296,7 +352,9 @@ describe('SaveUserProfileTool (onboarding profile persistence)', () => {
     const { SaveUserProfileTool } = await import('./tools/builtin')
     let directWriteCalled = false
     const tool = new SaveUserProfileTool({
-      writeUser: () => { directWriteCalled = true },
+      writeUser: () => {
+        directWriteCalled = true
+      },
     })
 
     const result = await tool.execute({
@@ -317,17 +375,21 @@ describe('SaveUserProfileTool (onboarding profile persistence)', () => {
     const dir = mkdtempSync(join(tmpdir(), 'emperor-save-profile-'))
     const userFile = join(dir, 'USER.local.md')
     const memoryDir = join(dir, 'memory')
-    writeFileSync(userFile, [
-      '# 用户档案',
-      '',
-      '## 基本信息',
-      '- **称呼**：未设置',
-      '- **时区**：UTC+8',
-      '',
-      '## 工作背景',
-      '- **主要角色**：未设置',
-      '',
-    ].join('\n'), 'utf8')
+    writeFileSync(
+      userFile,
+      [
+        '# 用户档案',
+        '',
+        '## 基本信息',
+        '- **称呼**：未设置',
+        '- **时区**：UTC+8',
+        '',
+        '## 工作背景',
+        '- **主要角色**：未设置',
+        '',
+      ].join('\n'),
+      'utf8',
+    )
     const memory = new MemoryStore(memoryDir, userFile)
     const tool = new SaveUserProfileTool(memory)
 
@@ -343,7 +405,9 @@ describe('SaveUserProfileTool (onboarding profile persistence)', () => {
     })
 
     const next = readFileSync(userFile, 'utf8')
-    expect(next).toContain('## 基本信息\n- **称呼**：李公公\n- **时区**：Asia/Shanghai')
+    expect(next).toContain(
+      '## 基本信息\n- **称呼**：李公公\n- **时区**：Asia/Shanghai',
+    )
     expect(next).toContain('## 工作背景\n- **主要角色**：未设置')
     expect(memory.versions.list({ target: 'user' })).toHaveLength(1)
     expect(result).toContain('patch')
@@ -373,13 +437,9 @@ describe('SaveUserProfileTool (onboarding profile persistence)', () => {
     const tool = new SaveUserProfileTool(memory)
 
     const result = await tool.execute({
-      content: [
-        '# 用户档案',
-        '',
-        '## 基本信息',
-        '- **称呼**：李公公',
-        '',
-      ].join('\n'),
+      content: ['# 用户档案', '', '## 基本信息', '- **称呼**：李公公', ''].join(
+        '\n',
+      ),
     })
 
     expect(result).toContain('Error:')

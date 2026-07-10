@@ -23,7 +23,11 @@ export interface PermissionTraceEntry {
   detail: string
 }
 
-export function traceEntry(rule: string, outcome: string, detail = ''): PermissionTraceEntry {
+export function traceEntry(
+  rule: string,
+  outcome: string,
+  detail = '',
+): PermissionTraceEntry {
   return { rule, outcome, detail }
 }
 
@@ -38,7 +42,9 @@ export interface ToolPermissionProfile {
   schedulerAction: string
 }
 
-export function makeProfile(p: Partial<ToolPermissionProfile> & { name: string }): ToolPermissionProfile {
+export function makeProfile(
+  p: Partial<ToolPermissionProfile> & { name: string },
+): ToolPermissionProfile {
   return {
     name: p.name,
     arguments: p.arguments ?? {},
@@ -61,7 +67,9 @@ export interface PlanPermissionToken {
   reason: string
 }
 
-export function planPermissionTokenFromDict(raw: Record<string, unknown>): PlanPermissionToken {
+export function planPermissionTokenFromDict(
+  raw: Record<string, unknown>,
+): PlanPermissionToken {
   const s = (a: unknown, b: unknown): string => String(a ?? b ?? '')
   const n = (a: unknown, b: unknown): number => Number(a ?? b ?? 0) || 0
   return {
@@ -70,7 +78,10 @@ export function planPermissionTokenFromDict(raw: Record<string, unknown>): PlanP
     toolName: s(raw.tool_name, raw.toolName),
     argumentHash: s(raw.argument_hash, raw.argumentHash),
     expiresAt: n(raw.expires_at, raw.expiresAt),
-    usesRemaining: Math.max(0, Math.trunc(n(raw.uses_remaining, raw.usesRemaining))),
+    usesRemaining: Math.max(
+      0,
+      Math.trunc(n(raw.uses_remaining, raw.usesRemaining)),
+    ),
     reason: String(raw.reason ?? ''),
   }
 }
@@ -165,13 +176,21 @@ function jsonSafe(value: unknown): unknown {
   if (Array.isArray(value)) return value.map(jsonSafe)
   if (typeof value === 'object') {
     const out: Record<string, unknown> = {}
-    for (const [k, v] of Object.entries(value as Record<string, unknown>)) out[String(k)] = jsonSafe(v)
+    for (const [k, v] of Object.entries(value as Record<string, unknown>))
+      out[String(k)] = jsonSafe(v)
     return out
   }
-  if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') return value
+  if (
+    typeof value === 'string' ||
+    typeof value === 'number' ||
+    typeof value === 'boolean'
+  )
+    return value
   return String(value)
 }
 
 export function permissionArgumentHash(args: Record<string, unknown>): string {
-  return createHash('sha256').update(stableJson(args ?? {}), 'utf8').digest('hex')
+  return createHash('sha256')
+    .update(stableJson(args ?? {}), 'utf8')
+    .digest('hex')
 }

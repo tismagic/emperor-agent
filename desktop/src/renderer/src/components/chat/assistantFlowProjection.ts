@@ -12,9 +12,21 @@ import type {
 import { toolTitle } from './toolDisplay'
 
 export type AssistantFlowBlock =
-  | { kind: 'thought'; id: string; segment: ThoughtSegment; executionDurationMs?: number }
+  | {
+      kind: 'thought'
+      id: string
+      segment: ThoughtSegment
+      executionDurationMs?: number
+    }
   | { kind: 'text'; id: string; content: string; streaming: boolean }
-  | { kind: 'tool_group'; id: string; title: string; status: ToolStatus; tools: ToolSegment[]; durationMs?: number }
+  | {
+      kind: 'tool_group'
+      id: string
+      title: string
+      status: ToolStatus
+      tools: ToolSegment[]
+      durationMs?: number
+    }
   | { kind: 'media'; id: string; items: MediaArtifactRef[] }
   | { kind: 'control'; id: string; segment: AskSegment | PlanSegment }
   | { kind: 'todos'; id: string; todos: TodoItem[] }
@@ -25,10 +37,16 @@ export interface ProjectAssistantFlowOptions {
 
 const THOUGHT_MIN_DURATION_MS = 120
 
-export function projectAssistantFlow(message: AssistantMessage, options: ProjectAssistantFlowOptions = {}): AssistantFlowBlock[] {
+export function projectAssistantFlow(
+  message: AssistantMessage,
+  options: ProjectAssistantFlowOptions = {},
+): AssistantFlowBlock[] {
   const visible = message.segments.filter(visibleSegment)
   const blocks: AssistantFlowBlock[] = []
-  const executionDurationMs = assistantExecutionDuration(message, options.now ?? Date.now())
+  const executionDurationMs = assistantExecutionDuration(
+    message,
+    options.now ?? Date.now(),
+  )
   let executionSummaryAssigned = false
 
   for (let index = 0; index < visible.length;) {
@@ -39,12 +57,15 @@ export function projectAssistantFlow(message: AssistantMessage, options: Project
     }
 
     if (segment.type === 'thought') {
-      const useExecutionSummary = !executionSummaryAssigned && executionDurationMs !== undefined
+      const useExecutionSummary =
+        !executionSummaryAssigned && executionDurationMs !== undefined
       blocks.push({
         kind: 'thought',
         id: segment.id,
         segment,
-        executionDurationMs: useExecutionSummary ? executionDurationMs : undefined,
+        executionDurationMs: useExecutionSummary
+          ? executionDurationMs
+          : undefined,
       })
       if (useExecutionSummary) executionSummaryAssigned = true
       index += 1
@@ -52,7 +73,7 @@ export function projectAssistantFlow(message: AssistantMessage, options: Project
     }
 
     if (segment.type === 'text') {
-      const group: typeof segment[] = []
+      const group: (typeof segment)[] = []
       let cursor = index
       while (visible[cursor]?.type === 'text') {
         group.push(visible[cursor] as typeof segment)
@@ -61,7 +82,10 @@ export function projectAssistantFlow(message: AssistantMessage, options: Project
       blocks.push({
         kind: 'text',
         id: `text-${group.map((item) => item.id).join('-')}`,
-        content: group.map((item) => item.content).filter(Boolean).join('\n\n'),
+        content: group
+          .map((item) => item.content)
+          .filter(Boolean)
+          .join('\n\n'),
         streaming: Boolean(message.streaming && cursor === visible.length),
       })
       index = cursor
@@ -107,7 +131,10 @@ export function projectAssistantFlow(message: AssistantMessage, options: Project
     index += 1
   }
 
-  if (message.todos?.length && !blocks.some((block) => block.kind === 'todos')) {
+  if (
+    message.todos?.length &&
+    !blocks.some((block) => block.kind === 'todos')
+  ) {
     blocks.push({ kind: 'todos', id: 'todos-fallback', todos: message.todos })
   }
 
@@ -131,14 +158,19 @@ function mediaArtifacts(tools: ToolSegment[]): MediaArtifactRef[] {
 function latestToolTodos(tools: ToolSegment[]) {
   for (let index = tools.length - 1; index >= 0; index -= 1) {
     const tool = tools[index]
-    if (tool?.todos?.length) return { id: tool.toolId || tool.id, todos: tool.todos }
+    if (tool?.todos?.length)
+      return { id: tool.toolId || tool.id, todos: tool.todos }
   }
   return undefined
 }
 
 function assistantExecutionDuration(message: AssistantMessage, now: number) {
-  if (typeof message.durationMs === 'number') return Math.max(0, message.durationMs)
-  if (typeof message.startedAt === 'number' && typeof message.endedAt === 'number') {
+  if (typeof message.durationMs === 'number')
+    return Math.max(0, message.durationMs)
+  if (
+    typeof message.startedAt === 'number' &&
+    typeof message.endedAt === 'number'
+  ) {
     return Math.max(0, message.endedAt - message.startedAt)
   }
   if (message.streaming && typeof message.startedAt === 'number') {
@@ -147,15 +179,23 @@ function assistantExecutionDuration(message: AssistantMessage, now: number) {
   const started: number[] = []
   const ended: number[] = []
   for (const segment of message.segments) {
-    if ((segment.type === 'thought' || segment.type === 'tool') && typeof segment.startedAt === 'number') {
+    if (
+      (segment.type === 'thought' || segment.type === 'tool') &&
+      typeof segment.startedAt === 'number'
+    ) {
       started.push(segment.startedAt)
     }
-    if ((segment.type === 'thought' || segment.type === 'tool') && typeof segment.endedAt === 'number') {
+    if (
+      (segment.type === 'thought' || segment.type === 'tool') &&
+      typeof segment.endedAt === 'number'
+    ) {
       ended.push(segment.endedAt)
     }
   }
-  if (message.streaming && started.length) return Math.max(0, now - Math.min(...started))
-  if (started.length && ended.length) return Math.max(0, Math.max(...ended) - Math.min(...started))
+  if (message.streaming && started.length)
+    return Math.max(0, now - Math.min(...started))
+  if (started.length && ended.length)
+    return Math.max(0, Math.max(...ended) - Math.min(...started))
   return undefined
 }
 
@@ -175,7 +215,8 @@ function visibleThoughtSummary(segment: ThoughtSegment) {
 
 function toolGroupStatus(tools: ToolSegment[]): ToolStatus {
   if (tools.some((tool) => tool.status === 'error')) return 'error'
-  if (tools.some((tool) => tool.status === 'error_aborted')) return 'error_aborted'
+  if (tools.some((tool) => tool.status === 'error_aborted'))
+    return 'error_aborted'
   if (tools.some((tool) => tool.status === 'running')) return 'running'
   if (tools.some((tool) => tool.status === 'queued')) return 'queued'
   return 'done'
@@ -196,6 +237,9 @@ function toolGroupDuration(tools: ToolSegment[]) {
     return Math.max(0, Math.max(...ended) - Math.min(...started))
   }
 
-  const total = tools.reduce((sum, tool) => sum + Math.max(0, Number(tool.durationMs || 0)), 0)
+  const total = tools.reduce(
+    (sum, tool) => sum + Math.max(0, Number(tool.durationMs || 0)),
+    0,
+  )
   return total || undefined
 }

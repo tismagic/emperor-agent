@@ -42,7 +42,9 @@ export interface ToolCallDelta {
   argumentsText: string
 }
 
-export type ToolCallDeltaHandler = (delta: ToolCallDelta) => void | Promise<void>
+export type ToolCallDeltaHandler = (
+  delta: ToolCallDelta,
+) => void | Promise<void>
 
 export interface GenerationSettings {
   maxTokens: number
@@ -54,17 +56,26 @@ export function defaultGenerationSettings(): GenerationSettings {
   return { maxTokens: 20_000, temperature: 0.1, reasoningEffort: null }
 }
 
-export const TRUNCATED_FINISH_REASONS = new Set(['length', 'max_tokens', 'model_max_tokens'])
+export const TRUNCATED_FINISH_REASONS = new Set([
+  'length',
+  'max_tokens',
+  'model_max_tokens',
+])
 
 export function isTruncated(finishReason: string | null | undefined): boolean {
   return TRUNCATED_FINISH_REASONS.has((finishReason ?? '').toLowerCase())
 }
 
 export function shouldExecuteTools(resp: LLMResponse): boolean {
-  return resp.toolCalls.length > 0 && ['tool_calls', 'stop'].includes(resp.finishReason)
+  return (
+    resp.toolCalls.length > 0 &&
+    ['tool_calls', 'stop'].includes(resp.finishReason)
+  )
 }
 
-export function toOpenAiToolCall(req: ToolCallRequest): Record<string, unknown> {
+export function toOpenAiToolCall(
+  req: ToolCallRequest,
+): Record<string, unknown> {
   return {
     id: req.id,
     type: 'function',
@@ -82,7 +93,9 @@ export interface ChatArgs {
   signal?: AbortSignal | null
 }
 
-export type ToolCallCompleteHandler = (call: ToolCallRequest) => void | Promise<void>
+export type ToolCallCompleteHandler = (
+  call: ToolCallRequest,
+) => void | Promise<void>
 
 export interface ChatStreamArgs extends ChatArgs {
   onContentDelta?: ContentDelta
@@ -119,12 +132,15 @@ export abstract class LLMProvider {
 
   async chatStream(args: ChatStreamArgs): Promise<LLMResponse> {
     const resp = await this.chat(args)
-    if (resp.content && args.onContentDelta) await args.onContentDelta(resp.content)
+    if (resp.content && args.onContentDelta)
+      await args.onContentDelta(resp.content)
     return resp
   }
 
   /** anthropic 风格 tools → openai 风格。对齐 `anthropic_tools_to_openai`。 */
-  static anthropicToolsToOpenai(tools?: Array<Record<string, any>> | null): Array<Record<string, unknown>> | null {
+  static anthropicToolsToOpenai(
+    tools?: Array<Record<string, any>> | null,
+  ): Array<Record<string, unknown>> | null {
     if (!tools || tools.length === 0) return null
     return tools.map((tool) => {
       if (tool.type === 'function') return tool
@@ -140,14 +156,17 @@ export abstract class LLMProvider {
   }
 
   /** openai 风格 tools → anthropic 风格。对齐 `openai_tools_to_anthropic`。 */
-  static openaiToolsToAnthropic(tools?: Array<Record<string, any>> | null): Array<Record<string, unknown>> | null {
+  static openaiToolsToAnthropic(
+    tools?: Array<Record<string, any>> | null,
+  ): Array<Record<string, unknown>> | null {
     if (!tools || tools.length === 0) return null
     return tools.map((tool) => {
       const fn = (tool.function ?? tool) as Record<string, any>
       return {
         name: fn.name ?? '',
         description: fn.description ?? '',
-        input_schema: fn.parameters ?? fn.input_schema ?? { type: 'object', properties: {} },
+        input_schema: fn.parameters ??
+          fn.input_schema ?? { type: 'object', properties: {} },
       }
     })
   }
@@ -155,15 +174,20 @@ export abstract class LLMProvider {
 
 /** 解析工具调用的 JSON 参数；坏 JSON 走 jsonrepair，最终失败返回 {}。对齐 `parse_json_args`。 */
 export function parseJsonArgs(value: unknown): Record<string, unknown> {
-  if (value && typeof value === 'object' && !Array.isArray(value)) return value as Record<string, unknown>
+  if (value && typeof value === 'object' && !Array.isArray(value))
+    return value as Record<string, unknown>
   if (typeof value !== 'string' || !value.trim()) return {}
   try {
     const parsed = JSON.parse(value)
-    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {}
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed)
+      ? parsed
+      : {}
   } catch {
     try {
       const parsed = JSON.parse(jsonrepair(value))
-      return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {}
+      return parsed && typeof parsed === 'object' && !Array.isArray(parsed)
+        ? parsed
+        : {}
     } catch {
       return {}
     }

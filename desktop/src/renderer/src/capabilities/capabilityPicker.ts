@@ -1,7 +1,11 @@
 import type { IconComponent } from '../icons'
-import type { CapabilityDisplayItem, CapabilityTone } from './capabilityProjection'
+import type {
+  CapabilityDisplayItem,
+  CapabilityTone,
+} from './capabilityProjection'
 
-export type CapabilityPickerAction = 'files' | 'insert_command' | 'insert_capability_token'
+export type CapabilityPickerAction =
+  'files' | 'insert_command' | 'insert_capability_token'
 
 export interface CapabilityPickerItem {
   id: string

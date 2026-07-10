@@ -53,4 +53,4 @@
 
 ---
 
-*本文件是仓库默认模板。个人化内容请写入 `templates/USER.local.md`，不要提交到 GitHub。*
+_本文件是仓库默认模板。个人化内容请写入 `templates/USER.local.md`，不要提交到 GitHub。_

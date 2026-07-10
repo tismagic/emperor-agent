@@ -24,10 +24,16 @@ function openConfigWizard() {
     <header class="view-head">
       <div class="min-w-0">
         <h1>模型与厂家</h1>
-        <p>多条目管理；激活的条目决定后续主 Agent / 子代理 / 压缩任务用哪份凭证</p>
+        <p>
+          多条目管理；激活的条目决定后续主 Agent / 子代理 / 压缩任务用哪份凭证
+        </p>
       </div>
       <div class="view-head-actions">
-        <button class="tool-button asset-button primary-action" title="打开模型配置向导" @click="openConfigWizard">
+        <button
+          class="tool-button asset-button primary-action"
+          title="打开模型配置向导"
+          @click="openConfigWizard"
+        >
           <component :is="actionIcons.new" class="action-icon" :size="16" />
           <span>配置向导</span>
         </button>

@@ -6,7 +6,10 @@ export class TurnPaused extends Error {
   readonly interaction: Record<string, unknown>
   readonly toolMessages: Array<Record<string, unknown>>
 
-  constructor(interaction: Record<string, unknown>, toolMessages: Array<Record<string, unknown>> = []) {
+  constructor(
+    interaction: Record<string, unknown>,
+    toolMessages: Array<Record<string, unknown>> = [],
+  ) {
     const kind = interaction.kind ?? 'interaction'
     const ident = interaction.id ?? 'unknown'
     super(`turn paused for ${kind}: ${ident}`)

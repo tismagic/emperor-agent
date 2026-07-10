@@ -1,4 +1,9 @@
-import type { ControlMode as CoreControlMode, InteractionKind as CoreInteractionKind, InteractionStatus as CoreInteractionStatus, RuntimeEvent as CoreRuntimeEvent } from '@emperor/core'
+import type {
+  ControlMode as CoreControlMode,
+  InteractionKind as CoreInteractionKind,
+  InteractionStatus as CoreInteractionStatus,
+  RuntimeEvent as CoreRuntimeEvent,
+} from '@emperor/core'
 
 export interface ToolInfo {
   name: string
@@ -379,7 +384,8 @@ export interface TokenUsageRecord {
   total: number
 }
 
-export type ProviderRegion = 'foreign' | 'aggregator' | 'cloud' | 'cn' | 'local' | 'other'
+export type ProviderRegion =
+  'foreign' | 'aggregator' | 'cloud' | 'cn' | 'local' | 'other'
 
 export interface ProviderOption {
   name: string
@@ -399,12 +405,12 @@ export interface ProviderOption {
 }
 
 export interface ModelEntry {
-  name: string                     // 唯一 key（agents.defaults.model 引用）
-  id?: string                      // 兼容旧字段，等价于 mainModelId
-  mainModelId?: string             // 主模型 id：复杂任务 / 主 Agent
-  secondaryModelId?: string        // 次模型 id：简单任务 / 内部任务
-  provider: string                 // registry name
-  apiKey?: string | null           // "***last4" 占位 / 空 / 真值
+  name: string // 唯一 key（agents.defaults.model 引用）
+  id?: string // 兼容旧字段，等价于 mainModelId
+  mainModelId?: string // 主模型 id：复杂任务 / 主 Agent
+  secondaryModelId?: string // 次模型 id：简单任务 / 内部任务
+  provider: string // registry name
+  apiKey?: string | null // "***last4" 占位 / 空 / 真值
   apiBase?: string | null
   extraHeaders?: Record<string, unknown> | null
   extraBody?: Record<string, unknown> | null
@@ -413,11 +419,11 @@ export interface ModelEntry {
   contextWindowTokens?: number | null
   reasoningEffort?: string | null
   label?: string
-  supportsVision?: boolean         // 仅由"测试视觉"成功时自动 true；UI 用 👁 徽章渲染
+  supportsVision?: boolean // 仅由"测试视觉"成功时自动 true；UI 用 👁 徽章渲染
 }
 
 export interface AttachmentRef {
-  id: string                       // "att_2026-05_abc12345"
+  id: string // "att_2026-05_abc12345"
   name: string
   mime: string
   size: number
@@ -445,7 +451,7 @@ export interface ModelTestResult {
   sample?: string
   finishReason?: string
   error?: string
-  visionMarked?: boolean           // 视觉测试通过且后端已持久化 supportsVision
+  visionMarked?: boolean // 视觉测试通过且后端已持久化 supportsVision
 }
 
 export interface DiscoveredModel {
@@ -547,7 +553,8 @@ export interface DiagnosticsFileInfo {
   updatedAt?: number
 }
 
-export type DiagnosticsStatus = 'ok' | 'missing' | 'corrupt' | 'invalid' | 'unknown' | string
+export type DiagnosticsStatus =
+  'ok' | 'missing' | 'corrupt' | 'invalid' | 'unknown' | string
 
 export interface DiagnosticsConfigSummary {
   path?: string
@@ -779,7 +786,8 @@ export interface RuntimeTaskRecord {
   metadata?: Record<string, unknown>
 }
 
-export type ToolStatus = 'queued' | 'running' | 'done' | 'error' | 'error_aborted'
+export type ToolStatus =
+  'queued' | 'running' | 'done' | 'error' | 'error_aborted'
 
 export interface ToolArtifactRef {
   path: string
@@ -979,7 +987,8 @@ export interface PlanSegment {
   interaction: ControlInteraction
 }
 
-export type AssistantSegment = TextSegment | ThoughtSegment | ToolSegment | AskSegment | PlanSegment
+export type AssistantSegment =
+  TextSegment | ThoughtSegment | ToolSegment | AskSegment | PlanSegment
 
 export interface SubagentToolState {
   id?: string
@@ -1044,7 +1053,8 @@ export interface PendingState {
 
 export type RuntimeStatus = 'connecting' | 'ready' | 'error'
 
-export type TeamStatus = 'idle' | 'working' | 'offline' | 'shutdown' | 'error' | string
+export type TeamStatus =
+  'idle' | 'working' | 'offline' | 'shutdown' | 'error' | string
 
 export interface TeamMessage {
   id: string
@@ -1091,7 +1101,8 @@ export interface TeamMemberPayload {
 }
 
 export type SchedulerScheduleKind = 'at' | 'every' | 'cron' | string
-export type SchedulerPayloadKind = 'agent_turn' | 'team_wake' | 'system_event' | string
+export type SchedulerPayloadKind =
+  'agent_turn' | 'team_wake' | 'system_event' | string
 export type SchedulerRunStatus = 'ok' | 'error' | 'skipped' | string
 
 export interface SchedulerSchedule {
@@ -1159,7 +1170,15 @@ export interface SchedulerPayload {
   diagnostics?: Record<string, unknown>
 }
 
-export type WsEvent = CoreRuntimeEvent & ({ seq?: number; ts?: number; session_id?: string; turn_id?: string; client_message_id?: string; owner?: Record<string, unknown> } & WsEventVariants)
+export type WsEvent = CoreRuntimeEvent &
+  ({
+    seq?: number
+    ts?: number
+    session_id?: string
+    turn_id?: string
+    client_message_id?: string
+    owner?: Record<string, unknown>
+  } & WsEventVariants)
 
 interface HookRuntimeEventFields {
   hook_id?: string
@@ -1176,97 +1195,402 @@ interface HookRuntimeEventFields {
   duration_ms?: number
 }
 
-type WsEventVariants = (
-  | { event: 'ready'; model?: string; provider?: string; latest_seq?: number; replay_count?: number; resume_from?: number; busy?: boolean; control?: ControlPayload }
-  | { event: 'user_message'; content?: string; attachments?: AttachmentRef[]; source?: string; scheduler?: SchedulerMessageMeta; ui_hidden?: boolean }
+type WsEventVariants =
+  | {
+      event: 'ready'
+      model?: string
+      provider?: string
+      latest_seq?: number
+      replay_count?: number
+      resume_from?: number
+      busy?: boolean
+      control?: ControlPayload
+    }
+  | {
+      event: 'user_message'
+      content?: string
+      attachments?: AttachmentRef[]
+      source?: string
+      scheduler?: SchedulerMessageMeta
+      ui_hidden?: boolean
+    }
   | { event: 'message_delta'; delta?: string }
-  | { event: 'agent_thought'; stage?: string; label?: string; summary?: string; source?: string; status?: 'done' | 'running' | string; tool_call_ids?: string[]; tool_names?: string[] }
-  | { event: 'context_usage'; used?: number; max?: number; threshold?: number; usage_type?: string; model_role?: string; model?: string; provider?: string; route_reason?: string; estimated_input_tokens?: number; used_fallback?: boolean; fallback_reason?: string; provider_retry_count?: number; provider_error_kind?: string; replaced_tool_results?: number; aggregate_replaced_tool_results?: number; aggregate_tool_result_budget?: number }
-  | { event: 'context_projection'; report?: Record<string, unknown>; message_count?: number }
-  | { event: 'model_provider_retry'; model?: string; provider?: string | null; usage_type?: string; attempt?: number; max_retries?: number; error_kind?: string; reason?: string }
-  | { event: 'model_route_fallback'; from_model?: string; to_model?: string; reason?: string; usage_type?: string }
-  | { event: 'session_created'; session?: SessionInfo; client_draft_id?: string }
+  | {
+      event: 'agent_thought'
+      stage?: string
+      label?: string
+      summary?: string
+      source?: string
+      status?: 'done' | 'running' | string
+      tool_call_ids?: string[]
+      tool_names?: string[]
+    }
+  | {
+      event: 'context_usage'
+      used?: number
+      max?: number
+      threshold?: number
+      usage_type?: string
+      model_role?: string
+      model?: string
+      provider?: string
+      route_reason?: string
+      estimated_input_tokens?: number
+      used_fallback?: boolean
+      fallback_reason?: string
+      provider_retry_count?: number
+      provider_error_kind?: string
+      replaced_tool_results?: number
+      aggregate_replaced_tool_results?: number
+      aggregate_tool_result_budget?: number
+    }
+  | {
+      event: 'context_projection'
+      report?: Record<string, unknown>
+      message_count?: number
+    }
+  | {
+      event: 'model_provider_retry'
+      model?: string
+      provider?: string | null
+      usage_type?: string
+      attempt?: number
+      max_retries?: number
+      error_kind?: string
+      reason?: string
+    }
+  | {
+      event: 'model_route_fallback'
+      from_model?: string
+      to_model?: string
+      reason?: string
+      usage_type?: string
+    }
+  | {
+      event: 'session_created'
+      session?: SessionInfo
+      client_draft_id?: string
+    }
   | { event: 'session_title_updated'; session?: SessionInfo }
   | { event: 'external_inbound'; message?: Record<string, unknown> }
-  | { event: 'external_queued'; message?: Record<string, unknown>; reason?: string }
+  | {
+      event: 'external_queued'
+      message?: Record<string, unknown>
+      reason?: string
+    }
   | { event: 'external_outbound_queued'; message?: Record<string, unknown> }
-  | { event: 'external_outbound_sent'; message?: Record<string, unknown>; delivery?: Record<string, unknown> }
-  | { event: 'external_outbound_error'; message?: Record<string, unknown>; error?: string }
-  | { event: 'tool_call'; id?: string; name: string; arguments?: Record<string, unknown> }
-  | { event: 'tool_result'; id?: string; name?: string; summary?: string; output?: string; output_truncated?: boolean; artifacts?: ToolArtifactRef[]; metadata?: Record<string, unknown>; todos?: TodoItem[]; is_error?: boolean }
+  | {
+      event: 'external_outbound_sent'
+      message?: Record<string, unknown>
+      delivery?: Record<string, unknown>
+    }
+  | {
+      event: 'external_outbound_error'
+      message?: Record<string, unknown>
+      error?: string
+    }
+  | {
+      event: 'tool_call'
+      id?: string
+      name: string
+      arguments?: Record<string, unknown>
+    }
+  | {
+      event: 'tool_result'
+      id?: string
+      name?: string
+      summary?: string
+      output?: string
+      output_truncated?: boolean
+      artifacts?: ToolArtifactRef[]
+      metadata?: Record<string, unknown>
+      todos?: TodoItem[]
+      is_error?: boolean
+    }
   | { event: 'tool_error'; id?: string; name?: string; message?: string }
-  | { event: 'tool_run_queued'; id?: string; name: string; arguments?: Record<string, unknown> }
+  | {
+      event: 'tool_run_queued'
+      id?: string
+      name: string
+      arguments?: Record<string, unknown>
+    }
   | { event: 'tool_run_started'; id?: string; name: string }
-  | { event: 'tool_run_completed'; id?: string; name: string; summary?: string; output?: string; output_truncated?: boolean; artifacts?: ToolArtifactRef[]; metadata?: Record<string, unknown> }
-  | { event: 'tool_run_failed'; id?: string; name: string; message?: string; reason_kind?: 'safety_refusal' | 'error' | string }
+  | {
+      event: 'tool_run_completed'
+      id?: string
+      name: string
+      summary?: string
+      output?: string
+      output_truncated?: boolean
+      artifacts?: ToolArtifactRef[]
+      metadata?: Record<string, unknown>
+    }
+  | {
+      event: 'tool_run_failed'
+      id?: string
+      name: string
+      message?: string
+      reason_kind?: 'safety_refusal' | 'error' | string
+    }
   | { event: 'tool_run_cancelled'; id?: string; name: string; reason?: string }
   | (HookRuntimeEventFields & { event: 'hook_run_started' })
-  | (HookRuntimeEventFields & { event: 'hook_run_progress'; message?: string | null })
+  | (HookRuntimeEventFields & {
+      event: 'hook_run_progress'
+      message?: string | null
+    })
   | (HookRuntimeEventFields & { event: 'hook_run_completed' })
   | (HookRuntimeEventFields & { event: 'hook_run_failed' })
-  | (HookRuntimeEventFields & { event: 'hook_decision_applied'; hook_ids?: string[]; hook_run_ids?: string[] })
-  | { event: 'turn_phase'; phase?: string; sequence?: number; iteration?: number; detail?: Record<string, unknown> }
-  | { event: 'turn_scope'; mode?: string; workspace_root?: string; state_root?: string; session_root?: string; project_id?: string | null; project_state_root?: string | null; active_memory_binding?: Record<string, unknown> }
+  | (HookRuntimeEventFields & {
+      event: 'hook_decision_applied'
+      hook_ids?: string[]
+      hook_run_ids?: string[]
+    })
+  | {
+      event: 'turn_phase'
+      phase?: string
+      sequence?: number
+      iteration?: number
+      detail?: Record<string, unknown>
+    }
+  | {
+      event: 'turn_scope'
+      mode?: string
+      workspace_root?: string
+      state_root?: string
+      session_root?: string
+      project_id?: string | null
+      project_state_root?: string | null
+      active_memory_binding?: Record<string, unknown>
+    }
   | { event: 'assistant_done'; content?: string }
-  | { event: 'error'; message?: string; code?: string; action?: string; partial?: boolean }
+  | {
+      event: 'error'
+      message?: string
+      code?: string
+      action?: string
+      partial?: boolean
+    }
   | { event: 'control_mode_update'; control?: ControlPayload }
   | { event: 'ask_request'; interaction?: ControlInteraction }
   | { event: 'ask_answered'; interaction?: ControlInteraction }
   | { event: 'plan_draft'; interaction?: ControlInteraction }
-  | { event: 'plan_draft_delta'; tool_call_id?: string; interaction?: ControlInteraction }
-  | { event: 'plan_comment_added'; interaction?: ControlInteraction; comment?: string }
-  | { event: 'plan_approved'; interaction?: ControlInteraction; control?: ControlPayload; plan?: RuntimePlanRecord; todos?: TodoItem[] }
-  | { event: 'plan_entry_decision'; decision?: string; reason?: string; triggers?: string[]; suggested_questions?: string[]; recommended_readonly_scopes?: string[] }
+  | {
+      event: 'plan_draft_delta'
+      tool_call_id?: string
+      interaction?: ControlInteraction
+    }
+  | {
+      event: 'plan_comment_added'
+      interaction?: ControlInteraction
+      comment?: string
+    }
+  | {
+      event: 'plan_approved'
+      interaction?: ControlInteraction
+      control?: ControlPayload
+      plan?: RuntimePlanRecord
+      todos?: TodoItem[]
+    }
+  | {
+      event: 'plan_entry_decision'
+      decision?: string
+      reason?: string
+      triggers?: string[]
+      suggested_questions?: string[]
+      recommended_readonly_scopes?: string[]
+    }
   | { event: 'plan_runtime_update'; plan?: RuntimePlanRecord }
   | { event: 'plan_step_update'; plan_id?: string; step?: RuntimePlanStep }
-  | { event: 'plan_verification_start'; plan_id?: string; step_id?: string; command?: string }
-  | { event: 'plan_verification_done'; plan_id?: string; step_id?: string; result?: Record<string, unknown> }
+  | {
+      event: 'plan_verification_start'
+      plan_id?: string
+      step_id?: string
+      command?: string
+    }
+  | {
+      event: 'plan_verification_done'
+      plan_id?: string
+      step_id?: string
+      result?: Record<string, unknown>
+    }
   | { event: 'task_started'; task?: RuntimeTaskRecord }
-  | { event: 'task_progress'; task?: RuntimeTaskRecord; progress?: Record<string, unknown> }
-  | { event: 'task_output'; task?: RuntimeTaskRecord; offset?: number; chunk?: string }
+  | {
+      event: 'task_progress'
+      task?: RuntimeTaskRecord
+      progress?: Record<string, unknown>
+    }
+  | {
+      event: 'task_output'
+      task?: RuntimeTaskRecord
+      offset?: number
+      chunk?: string
+    }
   | { event: 'task_done'; task?: RuntimeTaskRecord }
   | { event: 'task_error'; task?: RuntimeTaskRecord; error?: string }
   | { event: 'task_cancelled'; task?: RuntimeTaskRecord; reason?: string }
-  | { event: 'interaction_cancelled'; interaction?: ControlInteraction; control?: ControlPayload }
+  | {
+      event: 'interaction_cancelled'
+      interaction?: ControlInteraction
+      control?: ControlPayload
+    }
   | { event: 'turn_paused'; interaction?: ControlInteraction }
-  | { event: 'subagent_start'; parent_id?: string; subagent_id?: string; agent_type?: string; purpose?: string }
-  | { event: 'subagent_delta'; parent_id?: string; subagent_id?: string; agent_type?: string; delta?: string }
-  | { event: 'subagent_tool_call'; parent_id?: string; subagent_id?: string; id?: string; name: string; arguments?: Record<string, unknown> }
-  | { event: 'subagent_tool_result'; parent_id?: string; subagent_id?: string; id?: string; name?: string; summary?: string }
-  | { event: 'subagent_tool_error'; parent_id?: string; subagent_id?: string; id?: string; name?: string; message?: string }
-  | { event: 'subagent_done'; parent_id?: string; subagent_id?: string; agent_type?: string; summary?: string }
-  | { event: 'subagent_error'; parent_id?: string; subagent_id?: string; agent_type?: string; message?: string }
+  | {
+      event: 'subagent_start'
+      parent_id?: string
+      subagent_id?: string
+      agent_type?: string
+      purpose?: string
+    }
+  | {
+      event: 'subagent_delta'
+      parent_id?: string
+      subagent_id?: string
+      agent_type?: string
+      delta?: string
+    }
+  | {
+      event: 'subagent_tool_call'
+      parent_id?: string
+      subagent_id?: string
+      id?: string
+      name: string
+      arguments?: Record<string, unknown>
+    }
+  | {
+      event: 'subagent_tool_result'
+      parent_id?: string
+      subagent_id?: string
+      id?: string
+      name?: string
+      summary?: string
+    }
+  | {
+      event: 'subagent_tool_error'
+      parent_id?: string
+      subagent_id?: string
+      id?: string
+      name?: string
+      message?: string
+    }
+  | {
+      event: 'subagent_done'
+      parent_id?: string
+      subagent_id?: string
+      agent_type?: string
+      summary?: string
+    }
+  | {
+      event: 'subagent_error'
+      parent_id?: string
+      subagent_id?: string
+      agent_type?: string
+      message?: string
+    }
   | { event: 'team_member_update'; member?: TeamMember }
   | { event: 'team_message'; message?: TeamMessage }
-  | { event: 'team_run_start'; parent_id?: string; teammate?: string; role?: string; agent_type?: string; purpose?: string }
-  | { event: 'team_run_delta'; parent_id?: string; teammate?: string; delta?: string }
-  | { event: 'team_run_tool_call'; parent_id?: string; teammate?: string; id?: string; name: string; arguments?: Record<string, unknown> }
-  | { event: 'team_run_tool_result'; parent_id?: string; teammate?: string; id?: string; name?: string; summary?: string }
-  | { event: 'team_run_tool_error'; parent_id?: string; teammate?: string; id?: string; name?: string; message?: string }
-  | { event: 'team_run_done'; parent_id?: string; teammate?: string; summary?: string }
-  | { event: 'team_run_error'; parent_id?: string; teammate?: string; message?: string }
+  | {
+      event: 'team_run_start'
+      parent_id?: string
+      teammate?: string
+      role?: string
+      agent_type?: string
+      purpose?: string
+    }
+  | {
+      event: 'team_run_delta'
+      parent_id?: string
+      teammate?: string
+      delta?: string
+    }
+  | {
+      event: 'team_run_tool_call'
+      parent_id?: string
+      teammate?: string
+      id?: string
+      name: string
+      arguments?: Record<string, unknown>
+    }
+  | {
+      event: 'team_run_tool_result'
+      parent_id?: string
+      teammate?: string
+      id?: string
+      name?: string
+      summary?: string
+    }
+  | {
+      event: 'team_run_tool_error'
+      parent_id?: string
+      teammate?: string
+      id?: string
+      name?: string
+      message?: string
+    }
+  | {
+      event: 'team_run_done'
+      parent_id?: string
+      teammate?: string
+      summary?: string
+    }
+  | {
+      event: 'team_run_error'
+      parent_id?: string
+      teammate?: string
+      message?: string
+    }
   | { event: 'scheduler_job_update'; job?: SchedulerJob; action?: string }
   | { event: 'scheduler_run_start'; job?: SchedulerJob }
   | { event: 'scheduler_run_done'; job?: SchedulerJob }
   | { event: 'scheduler_run_error'; job?: SchedulerJob; error?: string }
   | { event: 'scheduler_run_cancelled'; job?: SchedulerJob; reason?: string }
   | { event: 'task_started'; task?: RuntimeTaskRecord }
-  | { event: 'task_progress'; task?: RuntimeTaskRecord; progress?: Record<string, unknown> }
-  | { event: 'task_output'; task?: RuntimeTaskRecord; offset?: number; chunk?: string }
+  | {
+      event: 'task_progress'
+      task?: RuntimeTaskRecord
+      progress?: Record<string, unknown>
+    }
+  | {
+      event: 'task_output'
+      task?: RuntimeTaskRecord
+      offset?: number
+      chunk?: string
+    }
   | { event: 'task_done'; task?: RuntimeTaskRecord }
   | { event: 'task_error'; task?: RuntimeTaskRecord; error?: string }
   | { event: 'task_cancelled'; task?: RuntimeTaskRecord; reason?: string }
-  | { event: 'runtime_task_cancelled'; task?: { id?: string; kind?: string; label?: string; turnId?: string; jobId?: string }; reason?: string }
-  | { event: 'record_degraded'; kind?: string; reason?: string; taskId?: string }
-)
+  | {
+      event: 'runtime_task_cancelled'
+      task?: {
+        id?: string
+        kind?: string
+        label?: string
+        turnId?: string
+        jobId?: string
+      }
+      reason?: string
+    }
+  | {
+      event: 'record_degraded'
+      kind?: string
+      reason?: string
+      taskId?: string
+    }
 
 // INV-005 绊线：desktop 手抄的事件 union 与 core RuntimeEvent 的事件名必须保持一一对应。
 // 任一侧新增/改名事件而另一侧未同步时，这两行在编译期直接报错（此前漂移是静默的）。
 type _WsEventName = WsEventVariants['event']
 type _CoreEventName = CoreRuntimeEvent['event']
-type _AssertDesktopSubset = [_WsEventName] extends [_CoreEventName] ? true : ['desktop 声明了 core 不存在的事件', Exclude<_WsEventName, _CoreEventName>]
-type _AssertCoreCovered = [_CoreEventName] extends [_WsEventName] ? true : ['core 事件未在 desktop union 声明', Exclude<_CoreEventName, _WsEventName>]
-export const WS_EVENT_NAME_PARITY: _AssertDesktopSubset extends true ? (_AssertCoreCovered extends true ? true : _AssertCoreCovered) : _AssertDesktopSubset = true
+type _AssertDesktopSubset = [_WsEventName] extends [_CoreEventName]
+  ? true
+  : ['desktop 声明了 core 不存在的事件', Exclude<_WsEventName, _CoreEventName>]
+type _AssertCoreCovered = [_CoreEventName] extends [_WsEventName]
+  ? true
+  : ['core 事件未在 desktop union 声明', Exclude<_CoreEventName, _WsEventName>]
+export const WS_EVENT_NAME_PARITY: _AssertDesktopSubset extends true
+  ? _AssertCoreCovered extends true
+    ? true
+    : _AssertCoreCovered
+  : _AssertDesktopSubset = true
 
 export interface SessionInfo {
   id: string

@@ -42,7 +42,10 @@ export interface ReadBoundsOptions {
 
 // Read persisted bounds; any read/parse failure yields the default size so the
 // window always opens.
-export function readBounds(boundsPath: string, { readFile = defaultReadFile }: ReadBoundsOptions = {}): Bounds {
+export function readBounds(
+  boundsPath: string,
+  { readFile = defaultReadFile }: ReadBoundsOptions = {},
+): Bounds {
   try {
     return normalizeBounds(JSON.parse(readFile(boundsPath)))
   } catch {

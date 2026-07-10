@@ -11,7 +11,11 @@ describe('preload core IPC bridge (MIG-IPC-002)', () => {
       },
     })
 
-    await expect(bridge.invokeCore('sessions.create', { title: 'A' })).resolves.toEqual({ ok: true })
-    expect(calls).toEqual([{ channel: 'emperor:core:sessions:create', args: [{ title: 'A' }] }])
+    await expect(
+      bridge.invokeCore('sessions.create', { title: 'A' }),
+    ).resolves.toEqual({ ok: true })
+    expect(calls).toEqual([
+      { channel: 'emperor:core:sessions:create', args: [{ title: 'A' }] },
+    ])
   })
 })

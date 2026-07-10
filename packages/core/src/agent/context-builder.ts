@@ -6,7 +6,10 @@
  */
 import { existsSync, readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
-import { normalizePromptProfile, type PromptProfile } from '../config/local-config'
+import {
+  normalizePromptProfile,
+  type PromptProfile,
+} from '../config/local-config'
 import type { PromptContextPlan } from '../prompts/manifest'
 import { ContextAssembler } from '../context/assembler'
 import { ContextPlanner } from '../context/planner'
@@ -66,17 +69,28 @@ export class ContextBuilder {
   projectId = ''
   projectPath = ''
   projectIndexSummary = ''
-  compactionOmittedRanges: Array<{ fromSeq: number; toSeq: number; compactionId?: string | null; targetScopes?: string[] }> = []
+  compactionOmittedRanges: Array<{
+    fromSeq: number
+    toSeq: number
+    compactionId?: string | null
+    targetScopes?: string[]
+  }> = []
 
   constructor(
     docsDir: string,
     skillsLoader: SkillsLoaderLike,
-    opts?: { memory?: MemoryLike | null; memoryBudgetChars?: number; userFile?: string | null; promptProfile?: PromptProfile | string | null },
+    opts?: {
+      memory?: MemoryLike | null
+      memoryBudgetChars?: number
+      userFile?: string | null
+      promptProfile?: PromptProfile | string | null
+    },
   ) {
     this.docsDir = docsDir
     this.skills = skillsLoader
     this.memory = opts?.memory ?? null
-    this.memoryBudgetChars = opts?.memoryBudgetChars ?? DEFAULT_MEMORY_BUDGET_CHARS
+    this.memoryBudgetChars =
+      opts?.memoryBudgetChars ?? DEFAULT_MEMORY_BUDGET_CHARS
     this.userFile = opts?.userFile ?? null
     this.promptProfile = normalizePromptProfile(opts?.promptProfile)
   }
@@ -92,7 +106,12 @@ export class ContextBuilder {
     projectAgentsSource?: string
     projectPath?: string
     projectIndexSummary?: string
-    compactionOmittedRanges?: Array<{ fromSeq: number; toSeq: number; compactionId?: string | null; targetScopes?: string[] }>
+    compactionOmittedRanges?: Array<{
+      fromSeq: number
+      toSeq: number
+      compactionId?: string | null
+      targetScopes?: string[]
+    }>
   }): void {
     this.sessionMode = opts?.mode === 'build' ? 'build' : 'chat'
     this.projectId = String(opts?.projectId ?? '').trim()
@@ -117,7 +136,10 @@ export class ContextBuilder {
       let text = readFileSync(path, 'utf8')
       // jinja {{ var }} → 插值（仅三个已知变量；容忍任意空白）。
       for (const [key, value] of Object.entries(vars)) {
-        text = text.replace(new RegExp(`\\{\\{\\s*${key}\\s*\\}\\}`, 'g'), value)
+        text = text.replace(
+          new RegExp(`\\{\\{\\s*${key}\\s*\\}\\}`, 'g'),
+          value,
+        )
       }
       return text
     } catch {
@@ -192,8 +214,14 @@ export class ContextBuilder {
       scope: 'prompt',
     })
 
-    const workspace = this.policyRegistry.includes(policy, 'project_path') && this.projectPath ? this.projectPath : dirname(this.docsDir)
-    const identity = this.renderTemplate('identity.md', { workspace, subagents_summary: this.subagentsSummary() })
+    const workspace =
+      this.policyRegistry.includes(policy, 'project_path') && this.projectPath
+        ? this.projectPath
+        : dirname(this.docsDir)
+    const identity = this.renderTemplate('identity.md', {
+      workspace,
+      subagents_summary: this.subagentsSummary(),
+    })
     if (identity) {
       sections.push({
         name: 'identity',
@@ -206,14 +234,18 @@ export class ContextBuilder {
       })
     }
 
-    if (this.policyRegistry.includes(policy, 'project_memory') && this.projectAgents) {
+    if (
+      this.policyRegistry.includes(policy, 'project_memory') &&
+      this.projectAgents
+    ) {
       sections.push({
         name: 'project_agents',
         content:
           '# Project State\n\n' +
           `Project path: ${this.projectPath || '(unknown)'}\n\n` +
           `${clipText(this.projectAgents, this.memoryBudgetChars, 'Project State')}`,
-        source: this.projectAgentsSource || 'projects/<project-id>/AGENTS.local.md',
+        source:
+          this.projectAgentsSource || 'projects/<project-id>/AGENTS.local.md',
         priority: 85,
         budgetChars: this.memoryBudgetChars,
         version: null,
@@ -224,7 +256,11 @@ export class ContextBuilder {
     if (this.policyRegistry.includes(policy, 'global_memory') && this.memory) {
       const memory = this.memory.readMemory().trim()
       if (memory) {
-        const budgeted = clipText(memory, this.memoryBudgetChars, 'Long-term Memory')
+        const budgeted = clipText(
+          memory,
+          this.memoryBudgetChars,
+          'Long-term Memory',
+        )
         sections.push({
           name: 'long_term_memory',
           content: `# Long-term Memory\n\n${budgeted}`,
@@ -237,7 +273,10 @@ export class ContextBuilder {
       }
     }
 
-    if (this.policyRegistry.includes(policy, 'project_index') && this.projectIndexSummary) {
+    if (
+      this.policyRegistry.includes(policy, 'project_index') &&
+      this.projectIndexSummary
+    ) {
       sections.push({
         name: 'project_index_summary',
         content: `# Project Index Summary\n\n${this.projectIndexSummary}`,
@@ -265,9 +304,13 @@ export class ContextBuilder {
       }
     }
 
-    const skillsSummary = this.skills.buildSkillsSummary({ exclude: new Set(alwaysSkills) })
+    const skillsSummary = this.skills.buildSkillsSummary({
+      exclude: new Set(alwaysSkills),
+    })
     if (skillsSummary) {
-      const skillsSection = this.renderTemplate('skills_section.md', { skills_summary: skillsSummary })
+      const skillsSection = this.renderTemplate('skills_section.md', {
+        skills_summary: skillsSummary,
+      })
       sections.push({
         name: 'skills_summary',
         content: skillsSection,
@@ -289,7 +332,9 @@ export class ContextBuilder {
       projectId: this.projectId,
       memoryFile: this.memory?.memoryFile ?? 'memory/MEMORY.local.md',
       userFile: this.userFile,
-      projectMemoryFile: this.projectAgentsSource || (this.projectId ? `projects/${this.projectId}/AGENTS.local.md` : null),
+      projectMemoryFile:
+        this.projectAgentsSource ||
+        (this.projectId ? `projects/${this.projectId}/AGENTS.local.md` : null),
       policy: this.policyRegistry.policyForMode(this.sessionMode),
       compactionOmittedRanges: this.compactionOmittedRanges,
     })
@@ -305,7 +350,8 @@ export class ContextBuilder {
   }
 
   private subagentsSummary(): string {
-    if (this.subagentRegistry === null) return '(subagent registry not yet attached)'
+    if (this.subagentRegistry === null)
+      return '(subagent registry not yet attached)'
     return this.subagentRegistry.describe()
   }
 }
@@ -342,7 +388,10 @@ function profilePrompt(profile: PromptProfile): string {
   ].join('\n')
 }
 
-export function renderContextSections(sections: ContextSection[], contextPlan?: PromptContextPlan | null): string {
+export function renderContextSections(
+  sections: ContextSection[],
+  contextPlan?: PromptContextPlan | null,
+): string {
   return new ContextAssembler().renderSystemPrompt(sections, contextPlan)
 }
 

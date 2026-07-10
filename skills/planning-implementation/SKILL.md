@@ -43,18 +43,18 @@ The plan document must meet this bar: **an engineer who has never seen this code
 
 These thoughts mean STOP — you're producing an insufficient plan:
 
-| Thought | Reality |
-|---------|---------|
-| "This is too simple to need detailed design" | Simple things become complex with no fallback. Write the design. |
-| "Passing tests is the acceptance criteria" | That's not AC. Write a binary checklist. |
-| "I'll figure out dependencies later" | Dependencies determine execution order. Draw the topology now. |
-| "One sentence for design is enough" | One sentence cannot guide implementation. Write data models, algorithms, invariants. |
-| "Edge cases will be handled in code" | Edge cases not listed now will be missed during implementation. |
-| "Risks don't need mitigation strategies" | Identifying without mitigating = not identifying. Every risk needs a response. |
-| "Too many source files to list them all" | Then it's not a complete plan. Trace every file. |
-| "Estimates are always wrong anyway" | A wrong estimate beats no estimate. Estimate by order of magnitude. |
-| "I'll think about tests later" | Tests are a design tool now. List test cases before writing tasks. |
-| "Skipping RED confirmation saves time" | Skipping RED = tests are invalid. Fail first, then pass. |
+| Thought                                      | Reality                                                                              |
+| -------------------------------------------- | ------------------------------------------------------------------------------------ |
+| "This is too simple to need detailed design" | Simple things become complex with no fallback. Write the design.                     |
+| "Passing tests is the acceptance criteria"   | That's not AC. Write a binary checklist.                                             |
+| "I'll figure out dependencies later"         | Dependencies determine execution order. Draw the topology now.                       |
+| "One sentence for design is enough"          | One sentence cannot guide implementation. Write data models, algorithms, invariants. |
+| "Edge cases will be handled in code"         | Edge cases not listed now will be missed during implementation.                      |
+| "Risks don't need mitigation strategies"     | Identifying without mitigating = not identifying. Every risk needs a response.       |
+| "Too many source files to list them all"     | Then it's not a complete plan. Trace every file.                                     |
+| "Estimates are always wrong anyway"          | A wrong estimate beats no estimate. Estimate by order of magnitude.                  |
+| "I'll think about tests later"               | Tests are a design tool now. List test cases before writing tasks.                   |
+| "Skipping RED confirmation saves time"       | Skipping RED = tests are invalid. Fail first, then pass.                             |
 
 ## The 4-Phase Process
 
@@ -162,38 +162,39 @@ Organized per `references/plan-template.md`. 8 core sections:
 
 Each task written per `references/task-template.md`. Overview:
 
-| # | Field | Description |
-|---|-------|-------------|
-| 1 | Task ID + Title | Namespaced `<AREA>-NNN`, e.g. `MIG-FND-002` |
-| 2 | Purpose & Scope | Why + what's covered + **explicitly excluded** |
-| 3 | Source Mapping | Existing code/artifact paths (function-level precision) |
-| 4 | Target Spec | Output file paths + API signatures + data shapes |
-| 5 | Detailed Design | Data models, algorithm pseudocode, state machines, invariants, edge case table, compatibility, library selection |
-| 6 | Dependencies | Internal task IDs + external libraries/services |
-| 7 | Risk/Complexity | S/M/L/XL + risk source + mitigation strategy |
-| 8 | Test Plan | Test case list (≥8: happy≥3 + edge≥3 + error≥2) + TDD flow + golden data |
-| 9 | Acceptance Criteria | **Checklist** (grouped: function/safety/edge/compat/quality), binary ✓/✗ |
-| 10 | Effort Estimate | Story points or hours + breakdown rationale |
-| 11 | Status | ☐ todo / ◐ wip / ☑ done / ⛔ blocked + PR |
-| 12 | Notes | Design decisions, known limitations, deferred TODOs + tracking issue |
+| #   | Field               | Description                                                                                                      |
+| --- | ------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| 1   | Task ID + Title     | Namespaced `<AREA>-NNN`, e.g. `MIG-FND-002`                                                                      |
+| 2   | Purpose & Scope     | Why + what's covered + **explicitly excluded**                                                                   |
+| 3   | Source Mapping      | Existing code/artifact paths (function-level precision)                                                          |
+| 4   | Target Spec         | Output file paths + API signatures + data shapes                                                                 |
+| 5   | Detailed Design     | Data models, algorithm pseudocode, state machines, invariants, edge case table, compatibility, library selection |
+| 6   | Dependencies        | Internal task IDs + external libraries/services                                                                  |
+| 7   | Risk/Complexity     | S/M/L/XL + risk source + mitigation strategy                                                                     |
+| 8   | Test Plan           | Test case list (≥8: happy≥3 + edge≥3 + error≥2) + TDD flow + golden data                                         |
+| 9   | Acceptance Criteria | **Checklist** (grouped: function/safety/edge/compat/quality), binary ✓/✗                                         |
+| 10  | Effort Estimate     | Story points or hours + breakdown rationale                                                                      |
+| 11  | Status              | ☐ todo / ◐ wip / ☑ done / ⛔ blocked + PR                                                                        |
+| 12  | Notes               | Design decisions, known limitations, deferred TODOs + tracking issue                                             |
 
 ## Quantified Standards
 
-| Dimension | Standard | Source |
-|-----------|----------|--------|
-| Test cases | ≥8 per task (happy≥3 + edge≥3 + error≥2) | step-2 prompts |
-| TDD flow | Write all tests → RED confirm → implement → GREEN confirm | step-2 prompts |
-| Task granularity | Half-day to two days to complete | Project practice |
-| Zero placeholders | No TBD/TODO/"implement later"/"handle appropriately" | step-2 prompts |
-| Anti-stub | No stub/echo/placeholder fake implementations | step-2 prompts |
-| Real verification | System tasks must actually start + verify real functionality | step-3 prompts |
-| RED confirmation | Must see tests fail before implementing | step-2 prompts |
+| Dimension         | Standard                                                     | Source           |
+| ----------------- | ------------------------------------------------------------ | ---------------- |
+| Test cases        | ≥8 per task (happy≥3 + edge≥3 + error≥2)                     | step-2 prompts   |
+| TDD flow          | Write all tests → RED confirm → implement → GREEN confirm    | step-2 prompts   |
+| Task granularity  | Half-day to two days to complete                             | Project practice |
+| Zero placeholders | No TBD/TODO/"implement later"/"handle appropriately"         | step-2 prompts   |
+| Anti-stub         | No stub/echo/placeholder fake implementations                | step-2 prompts   |
+| Real verification | System tasks must actually start + verify real functionality | step-3 prompts   |
+| RED confirmation  | Must see tests fail before implementing                      | step-2 prompts   |
 
 ## Self-Review
 
 After writing the plan, check against:
 
 ### 1. Completeness Check
+
 - [ ] Every spec requirement maps to at least one task?
 - [ ] Every task has 12 fields + TDD flow + test case list?
 - [ ] Every AC checklist item is binary-decidable?
@@ -201,23 +202,27 @@ After writing the plan, check against:
 - [ ] Receipt verification covers startup + quality + functional completeness?
 
 ### 2. Design Depth Check (sample 3 tasks)
+
 - [ ] Data models written as concrete code blocks (not descriptions)?
 - [ ] Key algorithms have pseudocode or decision tables?
 - [ ] Edge cases list ≥5 concrete scenarios?
 - [ ] Invariants written as assertions?
 
 ### 3. Test Adequacy Check
+
 - [ ] Each task has ≥8 test cases?
 - [ ] Covers happy path, edge conditions, error handling?
 - [ ] TDD flow explicitly states RED → GREEN?
 - [ ] I/O tasks have mock + real integration tests?
 
 ### 4. Dependency Consistency Check
+
 - [ ] Mermaid diagram covers all tasks?
 - [ ] Topological sort correct (dependencies come first)?
 - [ ] progress.json total_tasks matches plan?
 
 ### 5. Placeholder Scan
+
 Search for: `TBD`, `TODO`, `implement later`, `handle appropriately`, `reference X` (without concrete content), "Similar to Task N"
 
 Fix issues inline. No need to re-review — just fix and move on.

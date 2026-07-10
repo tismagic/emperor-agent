@@ -1,5 +1,13 @@
 import { randomUUID } from 'node:crypto'
-import { appendFileSync, existsSync, mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from 'node:fs'
+import {
+  appendFileSync,
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  renameSync,
+  unlinkSync,
+  writeFileSync,
+} from 'node:fs'
 import { dirname, join } from 'node:path'
 import { TeamMessage, validateActorName } from './models'
 import { TeamStore } from './store'
@@ -28,16 +36,30 @@ export class MessageBus {
     return message
   }
 
-  send(opts: { from_actor: string; to: string; content: string; type?: string; task_id?: string | null; in_reply_to?: string | null; meta?: Record<string, unknown> | null }): TeamMessage {
+  send(opts: {
+    from_actor: string
+    to: string
+    content: string
+    type?: string
+    task_id?: string | null
+    in_reply_to?: string | null
+    meta?: Record<string, unknown> | null
+  }): TeamMessage {
     return this.append(TeamMessage.create(opts))
   }
 
-  read(actor: string, opts: { limit?: number; mark_read?: boolean } = {}): TeamMessage[] {
+  read(
+    actor: string,
+    opts: { limit?: number; mark_read?: boolean } = {},
+  ): TeamMessage[] {
     const safe = validateActorName(actor)
     const messages = this.allMessages(safe)
     const cursor = Math.min(this.store.readCursor(safe), messages.length)
     const limit = opts.limit ?? 20
-    const unread = limit <= 0 ? messages.slice(cursor) : messages.slice(cursor, cursor + limit)
+    const unread =
+      limit <= 0
+        ? messages.slice(cursor)
+        : messages.slice(cursor, cursor + limit)
     if ((opts.mark_read ?? true) && unread.length) {
       this.store.writeCursor(safe, cursor + unread.length)
       this.rotateReadPrefixIfNeeded(safe)
@@ -53,7 +75,9 @@ export class MessageBus {
     if (archiveCount <= 0) return
     const path = this.store.inboxPath(actor)
     if (!existsSync(path)) return
-    const lines = readFileSync(path, 'utf8').split(/\r?\n/).filter((line) => line.trim())
+    const lines = readFileSync(path, 'utf8')
+      .split(/\r?\n/)
+      .filter((line) => line.trim())
     if (lines.length <= archiveCount) return
     const archived = lines.slice(0, archiveCount)
     const kept = lines.slice(archiveCount)
@@ -68,7 +92,11 @@ export class MessageBus {
       writeFileSync(tmp, kept.length ? kept.join('\n') + '\n' : '', 'utf8')
       renameSync(tmp, path)
     } catch (error) {
-      try { unlinkSync(tmp) } catch { /* ignore */ }
+      try {
+        unlinkSync(tmp)
+      } catch {
+        /* ignore */
+      }
       throw error
     }
     this.store.writeCursor(actor, HOT_CURSOR_KEEP)
@@ -96,7 +124,8 @@ export class MessageBus {
       if (!line.trim()) continue
       try {
         const raw = JSON.parse(line)
-        if (raw && typeof raw === 'object' && !Array.isArray(raw)) out.push(TeamMessage.fromDict(raw))
+        if (raw && typeof raw === 'object' && !Array.isArray(raw))
+          out.push(TeamMessage.fromDict(raw))
       } catch {}
     }
     return out

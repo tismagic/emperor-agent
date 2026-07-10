@@ -15,11 +15,24 @@ describe('provider registry', () => {
   })
 
   it('preserves backend + behavior flags faithfully', () => {
-    expect(findByName('anthropic')).toMatchObject({ backend: 'anthropic', supportsPromptCaching: true })
-    expect(findByName('openai')).toMatchObject({ supportsMaxCompletionTokens: true })
-    expect(findByName('deepseek')).toMatchObject({ thinkingStyle: 'thinking_type' })
-    expect(findByName('bedrock')).toMatchObject({ backend: 'bedrock', isDirect: true })
-    expect(findByName('custom')).toMatchObject({ isDirect: true, backend: 'openai_compat' })
+    expect(findByName('anthropic')).toMatchObject({
+      backend: 'anthropic',
+      supportsPromptCaching: true,
+    })
+    expect(findByName('openai')).toMatchObject({
+      supportsMaxCompletionTokens: true,
+    })
+    expect(findByName('deepseek')).toMatchObject({
+      thinkingStyle: 'thinking_type',
+    })
+    expect(findByName('bedrock')).toMatchObject({
+      backend: 'bedrock',
+      isDirect: true,
+    })
+    expect(findByName('custom')).toMatchObject({
+      isDirect: true,
+      backend: 'openai_compat',
+    })
   })
 
   it('moonshot keeps kimi temperature overrides', () => {
@@ -33,7 +46,11 @@ describe('provider registry', () => {
   it('providerOptions exposes UI metadata only for selectable specs', () => {
     const opts = providerOptions()
     expect(opts).toHaveLength(PROVIDERS.length - 2)
-    expect(opts[0]).toMatchObject({ name: 'openai', displayName: 'OpenAI', backend: 'openai_compat' })
+    expect(opts[0]).toMatchObject({
+      name: 'openai',
+      displayName: 'OpenAI',
+      backend: 'openai_compat',
+    })
     expect(opts.some((option) => option.name === 'openai_codex')).toBe(false)
     expect(opts.some((option) => option.name === 'github_copilot')).toBe(false)
     expect(opts.find((option) => option.name === 'deepseek')).toMatchObject({

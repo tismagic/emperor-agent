@@ -2,10 +2,16 @@ import { describe, expect, it } from 'vitest'
 import { HOOK_EVENT_NAMES } from './models'
 
 type Dict = Record<string, unknown>
-type ParseResult = { config: Dict; diagnostics: Array<{ code: string; path: string; message: string }> }
+type ParseResult = {
+  config: Dict
+  diagnostics: Array<{ code: string; path: string; message: string }>
+}
 type ParseV2 = (raw: unknown, opts?: { sourceKind?: string }) => ParseResult
 type SerializeV2 = (config: Dict) => Dict
-type ParseOutput = (eventName: string, raw: unknown) => { output: Dict | null; diagnostics: Array<{ code: string }> }
+type ParseOutput = (
+  eventName: string,
+  raw: unknown,
+) => { output: Dict | null; diagnostics: Array<{ code: string }> }
 
 async function v2Api(): Promise<{
   parse: ParseV2
@@ -13,7 +19,10 @@ async function v2Api(): Promise<{
   parseOutput: ParseOutput
   defaultConfig: () => Dict
 }> {
-  const module = await import('./schema') as unknown as Record<string, unknown>
+  const module = (await import('./schema')) as unknown as Record<
+    string,
+    unknown
+  >
   expect(module.parseHooksConfigV2).toBeTypeOf('function')
   expect(module.serializeHooksConfigV2).toBeTypeOf('function')
   expect(module.parseHookOutput).toBeTypeOf('function')
@@ -51,18 +60,36 @@ describe('hooks v2 foundation contracts', () => {
   })
 
   it('defines event capabilities in the same registry as the event union', async () => {
-    const module = await import('./models') as unknown as Record<string, unknown>
-    const specs = module.HOOK_EVENT_SPECS as Record<string, {
-      matcherField: string | null
-      mode: string
-      allowedHandlers: string[]
-    }> | undefined
+    const module = (await import('./models')) as unknown as Record<
+      string,
+      unknown
+    >
+    const specs = module.HOOK_EVENT_SPECS as
+      | Record<
+          string,
+          {
+            matcherField: string | null
+            mode: string
+            allowedHandlers: string[]
+          }
+        >
+      | undefined
 
     expect(specs).toBeDefined()
     expect(Object.keys(specs ?? {})).toEqual(HOOK_EVENT_NAMES)
-    expect(specs?.PermissionRequest).toMatchObject({ matcherField: 'tool_name', mode: 'transform' })
-    expect(specs?.Stop).toMatchObject({ mode: 'continue', allowedHandlers: ['command', 'http', 'prompt', 'agent'] })
-    expect(specs?.SessionEnd).toMatchObject({ matcherField: 'reason', mode: 'observe', allowedHandlers: ['command'] })
+    expect(specs?.PermissionRequest).toMatchObject({
+      matcherField: 'tool_name',
+      mode: 'transform',
+    })
+    expect(specs?.Stop).toMatchObject({
+      mode: 'continue',
+      allowedHandlers: ['command', 'http', 'prompt', 'agent'],
+    })
+    expect(specs?.SessionEnd).toMatchObject({
+      matcherField: 'reason',
+      mode: 'observe',
+      allowedHandlers: ['command'],
+    })
   })
 
   it('parses matcher groups containing all four persistent handler types', async () => {
@@ -72,17 +99,36 @@ describe('hooks v2 foundation contracts', () => {
       enabled: true,
       projectHooks: { enabled: true },
       hooks: {
-        Stop: [{
-          id: 'finish-gates',
-          matcher: '*',
-          if: '',
-          handlers: [
-            { id: 'command-check', type: 'command', command: 'node', args: ['check.mjs'] },
-            { id: 'http-check', type: 'http', url: 'https://hooks.example.test/stop' },
-            { id: 'prompt-check', type: 'prompt', prompt: 'Check completion.' },
-            { id: 'agent-check', type: 'agent', prompt: 'Inspect the result.' },
-          ],
-        }],
+        Stop: [
+          {
+            id: 'finish-gates',
+            matcher: '*',
+            if: '',
+            handlers: [
+              {
+                id: 'command-check',
+                type: 'command',
+                command: 'node',
+                args: ['check.mjs'],
+              },
+              {
+                id: 'http-check',
+                type: 'http',
+                url: 'https://hooks.example.test/stop',
+              },
+              {
+                id: 'prompt-check',
+                type: 'prompt',
+                prompt: 'Check completion.',
+              },
+              {
+                id: 'agent-check',
+                type: 'agent',
+                prompt: 'Inspect the result.',
+              },
+            ],
+          },
+        ],
       },
     })
 
@@ -92,19 +138,39 @@ describe('hooks v2 foundation contracts', () => {
       enabled: true,
       projectHooks: { enabled: true },
       hooks: {
-        Stop: [{
-          id: 'finish-gates',
-          enabled: true,
-          matcher: '*',
-          if: '',
-          failureMode: 'open',
-          handlers: [
-            { id: 'command-check', type: 'command', shell: 'none', timeoutMs: 10_000, async: false, asyncRewake: false },
-            { id: 'http-check', type: 'http', timeoutMs: 10_000 },
-            { id: 'prompt-check', type: 'prompt', modelRole: 'secondary', timeoutMs: 30_000 },
-            { id: 'agent-check', type: 'agent', modelRole: 'secondary', timeoutMs: 60_000, maxTurns: 12 },
-          ],
-        }],
+        Stop: [
+          {
+            id: 'finish-gates',
+            enabled: true,
+            matcher: '*',
+            if: '',
+            failureMode: 'open',
+            handlers: [
+              {
+                id: 'command-check',
+                type: 'command',
+                shell: 'none',
+                timeoutMs: 10_000,
+                async: false,
+                asyncRewake: false,
+              },
+              { id: 'http-check', type: 'http', timeoutMs: 10_000 },
+              {
+                id: 'prompt-check',
+                type: 'prompt',
+                modelRole: 'secondary',
+                timeoutMs: 30_000,
+              },
+              {
+                id: 'agent-check',
+                type: 'agent',
+                modelRole: 'secondary',
+                timeoutMs: 60_000,
+                maxTurns: 12,
+              },
+            ],
+          },
+        ],
       },
     })
   })
@@ -115,8 +181,15 @@ describe('hooks v2 foundation contracts', () => {
       version: 1,
       hooks: {
         PreToolUse: [
-          { id: 'protect-write', matcher: 'write_file', handler: { type: 'command', command: 'node', args: ['guard.mjs'] } },
-          { matcher: 'edit_file', handler: { type: 'http', url: 'https://hooks.example.test/edit' } },
+          {
+            id: 'protect-write',
+            matcher: 'write_file',
+            handler: { type: 'command', command: 'node', args: ['guard.mjs'] },
+          },
+          {
+            matcher: 'edit_file',
+            handler: { type: 'http', url: 'https://hooks.example.test/edit' },
+          },
         ],
       },
     })
@@ -124,8 +197,15 @@ describe('hooks v2 foundation contracts', () => {
       version: 1,
       hooks: {
         PreToolUse: [
-          { id: 'protect-write', matcher: 'write_file', handler: { type: 'command', command: 'node', args: ['guard.mjs'] } },
-          { matcher: 'edit_file', handler: { type: 'http', url: 'https://hooks.example.test/edit' } },
+          {
+            id: 'protect-write',
+            matcher: 'write_file',
+            handler: { type: 'command', command: 'node', args: ['guard.mjs'] },
+          },
+          {
+            matcher: 'edit_file',
+            handler: { type: 'http', url: 'https://hooks.example.test/edit' },
+          },
         ],
       },
     })
@@ -136,8 +216,14 @@ describe('hooks v2 foundation contracts', () => {
       version: 2,
       hooks: {
         PreToolUse: [
-          { id: 'protect-write', handlers: [{ id: 'protect-write-handler-1', type: 'command' }] },
-          { id: 'PreToolUse-2', handlers: [{ id: 'PreToolUse-2-handler-1', type: 'http' }] },
+          {
+            id: 'protect-write',
+            handlers: [{ id: 'protect-write-handler-1', type: 'command' }],
+          },
+          {
+            id: 'PreToolUse-2',
+            handlers: [{ id: 'PreToolUse-2-handler-1', type: 'http' }],
+          },
         ],
       },
     })
@@ -145,24 +231,45 @@ describe('hooks v2 foundation contracts', () => {
 
   it('reports path diagnostics for duplicate ids and invalid source policy', async () => {
     const { parse } = await v2Api()
-    const parsed = parse({
-      version: 2,
-      policy: { maxConcurrency: 8 },
-      hooks: {
-        Stop: [
-          { id: 'duplicate', handlers: [{ id: 'same', type: 'command', command: 'true' }, { id: 'same', type: 'command', command: 'true' }] },
-          { id: 'duplicate', handlers: [{ id: 'other', type: 'command', command: 'true' }] },
-        ],
-        NotARealEvent: [{ id: 'bad', handlers: [{ id: 'bad-handler', type: 'command', command: 'true' }] }],
+    const parsed = parse(
+      {
+        version: 2,
+        policy: { maxConcurrency: 8 },
+        hooks: {
+          Stop: [
+            {
+              id: 'duplicate',
+              handlers: [
+                { id: 'same', type: 'command', command: 'true' },
+                { id: 'same', type: 'command', command: 'true' },
+              ],
+            },
+            {
+              id: 'duplicate',
+              handlers: [{ id: 'other', type: 'command', command: 'true' }],
+            },
+          ],
+          NotARealEvent: [
+            {
+              id: 'bad',
+              handlers: [
+                { id: 'bad-handler', type: 'command', command: 'true' },
+              ],
+            },
+          ],
+        },
       },
-    }, { sourceKind: 'project' })
+      { sourceKind: 'project' },
+    )
 
-    expect(parsed.diagnostics.map((item) => [item.code, item.path])).toEqual(expect.arrayContaining([
-      ['policy_not_allowed', 'policy'],
-      ['duplicate_handler_id', 'hooks.Stop.0.handlers.1.id'],
-      ['duplicate_group_id', 'hooks.Stop.1.id'],
-      ['invalid_event', 'hooks.NotARealEvent'],
-    ]))
+    expect(parsed.diagnostics.map((item) => [item.code, item.path])).toEqual(
+      expect.arrayContaining([
+        ['policy_not_allowed', 'policy'],
+        ['duplicate_handler_id', 'hooks.Stop.0.handlers.1.id'],
+        ['duplicate_group_id', 'hooks.Stop.1.id'],
+        ['invalid_event', 'hooks.NotARealEvent'],
+      ]),
+    )
     expect((parsed.config.hooks as Dict).NotARealEvent).toBeUndefined()
   })
 
@@ -175,14 +282,28 @@ describe('hooks v2 foundation contracts', () => {
       additionalContext: 'context',
       updatedInput: { path: 'README.md' },
     })
-    const stop = parseOutput('Stop', { continue: false, stopReason: 'finished' })
-    const invalid = parseOutput('SessionEnd', { decision: 'deny', updatedInput: { value: true } })
+    const stop = parseOutput('Stop', {
+      continue: false,
+      stopReason: 'finished',
+    })
+    const invalid = parseOutput('SessionEnd', {
+      decision: 'deny',
+      updatedInput: { value: true },
+    })
 
     expect(preTool.diagnostics).toEqual([])
-    expect(preTool.output).toMatchObject({ decision: 'allow', updatedInput: { path: 'README.md' } })
-    expect(stop).toMatchObject({ output: { continue: false, stopReason: 'finished' }, diagnostics: [] })
+    expect(preTool.output).toMatchObject({
+      decision: 'allow',
+      updatedInput: { path: 'README.md' },
+    })
+    expect(stop).toMatchObject({
+      output: { continue: false, stopReason: 'finished' },
+      diagnostics: [],
+    })
     expect(invalid.output).toBeNull()
-    expect(invalid.diagnostics.map((item) => item.code)).toContain('invalid_hook_output')
+    expect(invalid.diagnostics.map((item) => item.code)).toContain(
+      'invalid_hook_output',
+    )
   })
 
   it('serializes normalized v2 config deterministically and round-trips it', async () => {
@@ -190,8 +311,19 @@ describe('hooks v2 foundation contracts', () => {
     const parsed = parse({
       version: 2,
       hooks: {
-        Stop: [{ id: 'z-last', handlers: [{ id: 'z', type: 'command', command: 'true' }] }],
-        PreToolUse: [{ id: 'a-first', matcher: 'read_file', handlers: [{ id: 'a', type: 'prompt', prompt: 'Check.' }] }],
+        Stop: [
+          {
+            id: 'z-last',
+            handlers: [{ id: 'z', type: 'command', command: 'true' }],
+          },
+        ],
+        PreToolUse: [
+          {
+            id: 'a-first',
+            matcher: 'read_file',
+            handlers: [{ id: 'a', type: 'prompt', prompt: 'Check.' }],
+          },
+        ],
       },
     })
     const serializedA = serialize(parsed.config)
@@ -215,7 +347,11 @@ describe('hooks v2 foundation contracts', () => {
         maxConcurrency: 4,
         maxContextBytes: 8_192,
         command: { allowShell: false, maxOutputBytes: 65_536 },
-        http: { allowedUrlPatterns: [], maxResponseBytes: 1_048_576, allowLoopback: false },
+        http: {
+          allowedUrlPatterns: [],
+          maxResponseBytes: 1_048_576,
+          allowLoopback: false,
+        },
       },
       hooks: {},
     })

@@ -6,7 +6,9 @@ const root = process.cwd()
 const parityPath = join(root, 'docs', 'migration', 'ts', 'PARITY.md')
 const parity = readFileSync(parityPath, 'utf8')
 
-const sourceTests = [...parity.matchAll(/\|\s*`(tests\/[^`]+?test_[^`]+?\.py)`\s*\|/g)]
+const sourceTests = [
+  ...parity.matchAll(/\|\s*`(tests\/[^`]+?test_[^`]+?\.py)`\s*\|/g),
+]
   .map((match) => match[1])
   .filter(Boolean)
   .sort()
@@ -17,16 +19,27 @@ const discoveredPythonTests = walk(join(root, 'tests'))
   .map(rel)
   .sort()
 
-const missingDiscoveredPython = discoveredPythonTests.filter((path) => !sourceTests.includes(path))
+const missingDiscoveredPython = discoveredPythonTests.filter(
+  (path) => !sourceTests.includes(path),
+)
 
-const mappedTests = [...parity.matchAll(/`((?:packages\/core\/src|desktop\/src|desktop-pet\/test)\/[^`]+?\.(?:test\.ts|test\.js))`/g)]
+const mappedTests = [
+  ...parity.matchAll(
+    /`((?:packages\/core\/src|desktop\/src|desktop-pet\/test)\/[^`]+?\.(?:test\.ts|test\.js))`/g,
+  ),
+]
   .map((match) => match[1])
   .filter(Boolean)
 const missingMapped = [...new Set(mappedTests)]
   .filter((path) => !existsSync(join(root, path)))
   .sort()
 
-if (!sourceTests.length || duplicateSourceTests.length || missingDiscoveredPython.length || missingMapped.length) {
+if (
+  !sourceTests.length ||
+  duplicateSourceTests.length ||
+  missingDiscoveredPython.length ||
+  missingMapped.length
+) {
   if (!sourceTests.length) {
     console.error('PARITY.md does not contain a frozen Python test inventory.')
   }
@@ -45,7 +58,9 @@ if (!sourceTests.length || duplicateSourceTests.length || missingDiscoveredPytho
   process.exit(1)
 }
 
-console.log(`PARITY.md covers ${sourceTests.length} frozen Python test files and references ${new Set(mappedTests).size} TS/JS test files.`)
+console.log(
+  `PARITY.md covers ${sourceTests.length} frozen Python test files and references ${new Set(mappedTests).size} TS/JS test files.`,
+)
 
 function walk(dir) {
   if (!existsSync(dir)) return []

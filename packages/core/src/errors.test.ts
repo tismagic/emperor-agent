@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest'
-import { EmperorError, ParseError, StoreCorruptError, ValidationError, toSafeError } from './errors'
+import {
+  EmperorError,
+  ParseError,
+  StoreCorruptError,
+  ValidationError,
+  toSafeError,
+} from './errors'
 
 describe('errors', () => {
   it('carries a stable code and a safe projection', () => {
@@ -19,8 +25,17 @@ describe('errors', () => {
   })
 
   it('toSafeError never leaks internal stacks', () => {
-    expect(toSafeError(new ValidationError('nope'))).toEqual({ code: 'validation_error', message: 'nope' })
-    expect(toSafeError(new Error('raw'))).toEqual({ code: 'internal_error', message: 'raw' })
-    expect(toSafeError('weird')).toEqual({ code: 'internal_error', message: 'weird' })
+    expect(toSafeError(new ValidationError('nope'))).toEqual({
+      code: 'validation_error',
+      message: 'nope',
+    })
+    expect(toSafeError(new Error('raw'))).toEqual({
+      code: 'internal_error',
+      message: 'raw',
+    })
+    expect(toSafeError('weird')).toEqual({
+      code: 'internal_error',
+      message: 'weird',
+    })
   })
 })

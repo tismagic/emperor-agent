@@ -6,14 +6,21 @@
 import type { LLMProviderConfig } from './base'
 import type { ProviderSpec } from './registry'
 import { AnthropicProvider } from './anthropic'
-import { AzureOpenAIProvider, GitHubCopilotProvider, OpenAICodexProvider, OpenAICompatProvider } from './openai-compat'
+import {
+  AzureOpenAIProvider,
+  GitHubCopilotProvider,
+  OpenAICodexProvider,
+  OpenAICompatProvider,
+} from './openai-compat'
 import { BedrockProvider } from './bedrock'
 
 export interface CreateProviderArgs extends LLMProviderConfig {
   spec?: ProviderSpec
 }
 
-export function createProvider(args: CreateProviderArgs): AnthropicProvider | OpenAICompatProvider | BedrockProvider {
+export function createProvider(
+  args: CreateProviderArgs,
+): AnthropicProvider | OpenAICompatProvider | BedrockProvider {
   const { spec, ...common } = args
   const backend = spec?.backend ?? 'openai_compat'
   switch (backend) {

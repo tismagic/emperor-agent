@@ -16,7 +16,8 @@ import { assessStepVerification, failedRequired } from '../plans/evidence'
 import { requirementFromDict } from '../plans/verification'
 
 export const INDEPENDENT_VERIFICATION_SOURCE = 'independent_verification'
-export const INDEPENDENT_VERIFICATION_WAIVER_SOURCE = 'independent_verification_waiver'
+export const INDEPENDENT_VERIFICATION_WAIVER_SOURCE =
+  'independent_verification_waiver'
 export const INDEPENDENT_VERIFICATION_SOURCES = new Set([
   INDEPENDENT_VERIFICATION_SOURCE,
   'verification_reviewer',
@@ -36,7 +37,8 @@ const TASK_STATUS = {
 export function firstHeading(text: string): string {
   for (const line of text.split('\n')) {
     const stripped = line.trim()
-    if (stripped.startsWith('#')) return stripped.replace(/^#+/, '').trim().slice(0, 160)
+    if (stripped.startsWith('#'))
+      return stripped.replace(/^#+/, '').trim().slice(0, 160)
   }
   return ''
 }
@@ -53,14 +55,16 @@ export function plainSummary(text: string): string {
 export function looksLikePlan(text: string): boolean {
   return Boolean(
     text.includes('##') ||
-      text.includes('\n-') ||
-      text.includes('\n1.') ||
-      text.includes('验收') ||
-      text.includes('Test Plan'),
+    text.includes('\n-') ||
+    text.includes('\n1.') ||
+    text.includes('验收') ||
+    text.includes('Test Plan'),
   )
 }
 
-export function parsePlanSteps(items: Array<Record<string, unknown>>): PlanStep[] {
+export function parsePlanSteps(
+  items: Array<Record<string, unknown>>,
+): PlanStep[] {
   const steps: PlanStep[] = []
   items.forEach((item, idx) => {
     const index = idx + 1
@@ -69,30 +73,57 @@ export function parsePlanSteps(items: Array<Record<string, unknown>>): PlanStep[
     if (!title) return
     steps.push(
       makeStep({
-        id: (String(item.id ?? `step_${index}`).trim() || `step_${index}`).slice(0, 64),
+        id: (
+          String(item.id ?? `step_${index}`).trim() || `step_${index}`
+        ).slice(0, 64),
         title: title.slice(0, 160),
-        description: String(item.description ?? '').trim().slice(0, 1000),
-        files: ((item.files as unknown[]) ?? []).map((p) => String(p)).slice(0, 30),
-        commands: ((item.commands as unknown[]) ?? []).map((c) => String(c)).slice(0, 12),
-        acceptance: ((item.acceptance as unknown[]) ?? []).map((r) => String(r)).slice(0, 12),
-        discoveryRefs: ((item.discovery_refs ?? item.discoveryRefs ?? []) as unknown[])
+        description: String(item.description ?? '')
+          .trim()
+          .slice(0, 1000),
+        files: ((item.files as unknown[]) ?? [])
+          .map((p) => String(p))
+          .slice(0, 30),
+        commands: ((item.commands as unknown[]) ?? [])
+          .map((c) => String(c))
+          .slice(0, 12),
+        acceptance: ((item.acceptance as unknown[]) ?? [])
+          .map((r) => String(r))
+          .slice(0, 12),
+        discoveryRefs: (
+          (item.discovery_refs ?? item.discoveryRefs ?? []) as unknown[]
+        )
           .map((r) => String(r))
           .filter((r) => r.trim())
           .slice(0, 12),
-        verification: ((item.verification ?? item.verification_requirements ?? []) as unknown[])
+        verification: (
+          (item.verification ??
+            item.verification_requirements ??
+            []) as unknown[]
+        )
           .filter((raw) => raw && typeof raw === 'object')
           .map((raw) => requirementFromDict(raw as Record<string, unknown>))
           .slice(0, 20),
-        risk: String(item.risk ?? 'medium').trim().slice(0, 24),
-        riskNote: String(item.risk_note ?? item.riskNote ?? '').trim().slice(0, 1000),
-        rollback: String(item.rollback ?? item.rollback_path ?? item.rollbackPath ?? '').trim().slice(0, 1000),
+        risk: String(item.risk ?? 'medium')
+          .trim()
+          .slice(0, 24),
+        riskNote: String(item.risk_note ?? item.riskNote ?? '')
+          .trim()
+          .slice(0, 1000),
+        rollback: String(
+          item.rollback ?? item.rollback_path ?? item.rollbackPath ?? '',
+        )
+          .trim()
+          .slice(0, 1000),
       }),
     )
   })
   return steps
 }
 
-export function readyForApprovalDraft(draft: PlanDraftState, opts: { summary: string; steps: PlanStep[] }): PlanDraftState {
+export function readyForApprovalDraft(
+  draft: PlanDraftState,
+  opts: { summary: string; steps: PlanStep[] },
+): PlanDraftState {
   const files = [...draft.relevantFiles]
   const commands = [...draft.verificationStrategy]
   for (const step of opts.steps) {
@@ -103,7 +134,9 @@ export function readyForApprovalDraft(draft: PlanDraftState, opts: { summary: st
     ...draft,
     phase: PlanDraftPhase.READY_FOR_APPROVAL,
     relevantFiles: dedupeStrings(files),
-    recommendedApproach: String(opts.summary ?? '').trim().slice(0, 1200),
+    recommendedApproach: String(opts.summary ?? '')
+      .trim()
+      .slice(0, 1200),
     verificationStrategy: dedupeStrings(commands),
   }
 }
@@ -133,11 +166,22 @@ export function planStatusFromTodo(status: string): string {
 }
 
 export function normalizeCommand(command: unknown): string {
-  return String(command ?? '').trim().split(/\s+/).filter((p) => p).join(' ')
+  return String(command ?? '')
+    .trim()
+    .split(/\s+/)
+    .filter((p) => p)
+    .join(' ')
 }
 
 export function planStepsFinished(record: PlanRecord): boolean {
-  return record.steps.length > 0 && record.steps.every((step) => step.status === PlanStepStatus.DONE || step.status === PlanStepStatus.SKIPPED)
+  return (
+    record.steps.length > 0 &&
+    record.steps.every(
+      (step) =>
+        step.status === PlanStepStatus.DONE ||
+        step.status === PlanStepStatus.SKIPPED,
+    )
+  )
 }
 
 export function planChangedFiles(record: PlanRecord): string[] {
@@ -152,18 +196,42 @@ export function planCommands(record: PlanRecord): string[] {
   return dedupeStrings(commands)
 }
 
-export function independentVerificationRiskSignals(record: PlanRecord, changedFiles: string[]): string[] {
+export function independentVerificationRiskSignals(
+  record: PlanRecord,
+  changedFiles: string[],
+): string[] {
   const signals: string[] = []
   if (changedFiles.length >= 3) signals.push('changed_files>=3')
   for (const path of changedFiles) appendFileRiskSignals(signals, path)
   const text = planRiskText(record)
   const tokenSignals: Array<[string, string]> = [
-    ['delete', 'deletion'], ['remove', 'deletion'], ['rm ', 'deletion'], ['删除', 'deletion'], ['移除', 'deletion'],
-    ['deploy', 'deployment'], ['deployment', 'deployment'], ['publish', 'deployment'], ['release', 'deployment'], ['部署', 'deployment'], ['发布', 'deployment'],
-    ['external send', 'external_send'], ['send_external', 'external_send'], ['outbound', 'external_send'], ['外发', 'external_send'], ['外部发送', 'external_send'],
-    ['security', 'security'], ['auth', 'security'], ['secret', 'security'], ['token', 'security'],
-    ['permission', 'permission'], ['权限', 'permission'], ['安全', 'security'],
-    ['migration', 'data_migration'], ['migrate', 'data_migration'], ['schema', 'data_migration'], ['迁移', 'data_migration'],
+    ['delete', 'deletion'],
+    ['remove', 'deletion'],
+    ['rm ', 'deletion'],
+    ['删除', 'deletion'],
+    ['移除', 'deletion'],
+    ['deploy', 'deployment'],
+    ['deployment', 'deployment'],
+    ['publish', 'deployment'],
+    ['release', 'deployment'],
+    ['部署', 'deployment'],
+    ['发布', 'deployment'],
+    ['external send', 'external_send'],
+    ['send_external', 'external_send'],
+    ['outbound', 'external_send'],
+    ['外发', 'external_send'],
+    ['外部发送', 'external_send'],
+    ['security', 'security'],
+    ['auth', 'security'],
+    ['secret', 'security'],
+    ['token', 'security'],
+    ['permission', 'permission'],
+    ['权限', 'permission'],
+    ['安全', 'security'],
+    ['migration', 'data_migration'],
+    ['migrate', 'data_migration'],
+    ['schema', 'data_migration'],
+    ['迁移', 'data_migration'],
   ]
   for (const [token, signal] of tokenSignals) {
     if (text.includes(token)) appendUnique(signals, signal)
@@ -172,40 +240,126 @@ export function independentVerificationRiskSignals(record: PlanRecord, changedFi
 }
 
 function appendFileRiskSignals(signals: string[], path: string): void {
-  const normalized = String(path ?? '').trim().replace(/\\/g, '/').toLowerCase()
+  const normalized = String(path ?? '')
+    .trim()
+    .replace(/\\/g, '/')
+    .toLowerCase()
   if (!normalized) return
   const checks: Array<[string[], string]> = [
-    [['packages/core/src/api/', 'desktop/src/main/core-host', 'desktop/src/main/ipc', 'desktop/src/preload/', 'desktop/src/renderer/src/api/', 'agent/web/', 'agent/webui.py', 'webui.py', '/routes/', '/api/'], 'api'],
-    [['packages/core/src/permissions/', 'agent/permissions/', 'permission'], 'permission'],
-    [['packages/core/src/control/', 'packages/core/src/plans/', 'agent/control/'], 'control'],
-    [['packages/core/src/scheduler/', 'agent/scheduler/', 'scheduler'], 'scheduler'],
-    [['packages/core/src/runtime/', 'packages/core/src/agent/runtime-events', 'desktop/src/renderer/src/runtime/', 'agent/runtime/', '/runtime/'], 'runtime'],
-    [['packages/core/src/external/', 'agent/external/', 'external', 'outbox', 'outbound'], 'external_send'],
-    [['packages/core/src/agent/', 'packages/core/src/tools/', 'packages/core/src/tasks/', 'packages/core/src/team/', 'packages/core/src/subagents/', 'packages/core/src/mcp/', 'agent/runner.py', 'agent/loop.py', 'agent/tools/', 'agent/tasks/', 'agent/team/', 'agent/mcp/'], 'backend'],
+    [
+      [
+        'packages/core/src/api/',
+        'desktop/src/main/core-host',
+        'desktop/src/main/ipc',
+        'desktop/src/preload/',
+        'desktop/src/renderer/src/api/',
+        'agent/web/',
+        'agent/webui.py',
+        'webui.py',
+        '/routes/',
+        '/api/',
+      ],
+      'api',
+    ],
+    [
+      ['packages/core/src/permissions/', 'agent/permissions/', 'permission'],
+      'permission',
+    ],
+    [
+      [
+        'packages/core/src/control/',
+        'packages/core/src/plans/',
+        'agent/control/',
+      ],
+      'control',
+    ],
+    [
+      ['packages/core/src/scheduler/', 'agent/scheduler/', 'scheduler'],
+      'scheduler',
+    ],
+    [
+      [
+        'packages/core/src/runtime/',
+        'packages/core/src/agent/runtime-events',
+        'desktop/src/renderer/src/runtime/',
+        'agent/runtime/',
+        '/runtime/',
+      ],
+      'runtime',
+    ],
+    [
+      [
+        'packages/core/src/external/',
+        'agent/external/',
+        'external',
+        'outbox',
+        'outbound',
+      ],
+      'external_send',
+    ],
+    [
+      [
+        'packages/core/src/agent/',
+        'packages/core/src/tools/',
+        'packages/core/src/tasks/',
+        'packages/core/src/team/',
+        'packages/core/src/subagents/',
+        'packages/core/src/mcp/',
+        'agent/runner.py',
+        'agent/loop.py',
+        'agent/tools/',
+        'agent/tasks/',
+        'agent/team/',
+        'agent/mcp/',
+      ],
+      'backend',
+    ],
     [['security', 'auth', 'secret', 'token', 'credential'], 'security'],
     [['migration', 'migrations', 'schema'], 'data_migration'],
     [['deploy', 'release', 'publish'], 'deployment'],
     [['delete', 'remove', 'unlink'], 'deletion'],
   ]
   for (const [needles, signal] of checks) {
-    if (needles.some((n) => normalized.includes(n))) appendUnique(signals, signal)
+    if (needles.some((n) => normalized.includes(n)))
+      appendUnique(signals, signal)
   }
 }
 
 function planRiskText(record: PlanRecord): string {
-  const parts: string[] = [record.title, record.summary, record.planMarkdown, ...(record.assumptions ?? [])]
+  const parts: string[] = [
+    record.title,
+    record.summary,
+    record.planMarkdown,
+    ...(record.assumptions ?? []),
+  ]
   for (const step of record.steps) {
-    parts.push(step.title, step.description, step.riskNote, step.rollback, ...(step.acceptance ?? []), ...(step.commands ?? []), ...(step.files ?? []))
+    parts.push(
+      step.title,
+      step.description,
+      step.riskNote,
+      step.rollback,
+      ...(step.acceptance ?? []),
+      ...(step.commands ?? []),
+      ...(step.files ?? []),
+    )
   }
-  return parts.map((item) => String(item ?? '')).join('\n').toLowerCase()
+  return parts
+    .map((item) => String(item ?? ''))
+    .join('\n')
+    .toLowerCase()
 }
 
-export function latestIndependentVerificationEvidence(record: PlanRecord): Record<string, unknown> | null {
+export function latestIndependentVerificationEvidence(
+  record: PlanRecord,
+): Record<string, unknown> | null {
   const candidates: Array<Record<string, unknown>> = []
   for (const item of record.verification) {
     if (!item || typeof item !== 'object') continue
     const source = String((item as Record<string, unknown>).source ?? '')
-    if (INDEPENDENT_VERIFICATION_SOURCES.has(source) || source === INDEPENDENT_VERIFICATION_WAIVER_SOURCE) {
+    if (
+      INDEPENDENT_VERIFICATION_SOURCES.has(source) ||
+      source === INDEPENDENT_VERIFICATION_WAIVER_SOURCE
+    ) {
       candidates.push(item as Record<string, unknown>)
     }
   }
@@ -216,14 +370,32 @@ export function hasCommandEvidence(evidence: Record<string, unknown>): boolean {
   const command = String(evidence.command ?? '').trim()
   if (command) return true
   const commands = evidence.commands
-  if (Array.isArray(commands) && commands.some((item) => String(item ?? '').trim())) return true
+  if (
+    Array.isArray(commands) &&
+    commands.some((item) => String(item ?? '').trim())
+  )
+    return true
   const commandEvidence = evidence.command_evidence
-  return Array.isArray(commandEvidence) && commandEvidence.some((item) => item && typeof item === 'object' && String((item as Record<string, unknown>).command ?? '').trim())
+  return (
+    Array.isArray(commandEvidence) &&
+    commandEvidence.some(
+      (item) =>
+        item &&
+        typeof item === 'object' &&
+        String((item as Record<string, unknown>).command ?? '').trim(),
+    )
+  )
 }
 
-export function metadataWithoutPlanPermissionTokens(metadata: Record<string, unknown>, opts?: { reason?: string }): Record<string, unknown> {
+export function metadataWithoutPlanPermissionTokens(
+  metadata: Record<string, unknown>,
+  opts?: { reason?: string },
+): Record<string, unknown> {
   const payload = { ...(metadata ?? {}) }
-  const hadTokens = Boolean(payload.permission_tokens && (payload.permission_tokens as unknown[]).length)
+  const hadTokens = Boolean(
+    payload.permission_tokens &&
+    (payload.permission_tokens as unknown[]).length,
+  )
   payload.permission_tokens = []
   if (hadTokens) {
     payload.permission_tokens_revoked = {
@@ -237,7 +409,8 @@ export function metadataWithoutPlanPermissionTokens(metadata: Record<string, unk
 export function taskStatusFromPlanStep(status: string): string {
   if (status === PlanStepStatus.ACTIVE) return TASK_STATUS.RUNNING
   if (status === PlanStepStatus.PENDING) return TASK_STATUS.QUEUED
-  if (status === PlanStepStatus.DONE || status === PlanStepStatus.SKIPPED) return TASK_STATUS.COMPLETED
+  if (status === PlanStepStatus.DONE || status === PlanStepStatus.SKIPPED)
+    return TASK_STATUS.COMPLETED
   if (status === PlanStepStatus.FAILED) return TASK_STATUS.FAILED
   if (status === PlanStepStatus.BLOCKED) return TASK_STATUS.PENDING
   return TASK_STATUS.PENDING

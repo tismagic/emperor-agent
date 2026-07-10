@@ -47,9 +47,18 @@ const REGION_LABEL: Record<ProviderRegion, string> = {
   local: '本地部署',
   other: 'OAuth / 其它',
 }
-const REGION_ORDER: ProviderRegion[] = ['foreign', 'aggregator', 'cloud', 'cn', 'local', 'other']
+const REGION_ORDER: ProviderRegion[] = [
+  'foreign',
+  'aggregator',
+  'cloud',
+  'cn',
+  'local',
+  'other',
+]
 
-const options = computed<ProviderOption[]>(() => props.payload?.providerOptions || [])
+const options = computed<ProviderOption[]>(
+  () => props.payload?.providerOptions || [],
+)
 const current = computed(() => props.payload?.current)
 
 const groupedOptions = computed(() => {
@@ -59,21 +68,28 @@ const groupedOptions = computed(() => {
     if (!groups.has(region)) groups.set(region, [])
     groups.get(region)!.push(opt)
   }
-  return REGION_ORDER
-    .filter(r => groups.has(r))
-    .map(r => ({ region: r, label: REGION_LABEL[r], items: groups.get(r)! }))
+  return REGION_ORDER.filter((r) => groups.has(r)).map((r) => ({
+    region: r,
+    label: REGION_LABEL[r],
+    items: groups.get(r)!,
+  }))
 })
 
 const editing = computed<ModelEntry | null>(() =>
-  editingIndex.value >= 0 ? entries.value[editingIndex.value] : null
+  editingIndex.value >= 0 ? entries.value[editingIndex.value] : null,
 )
 
 const editingProviderSpec = computed<ProviderOption | undefined>(() =>
-  editing.value ? options.value.find(o => o.name === editing.value!.provider) : undefined
+  editing.value
+    ? options.value.find((o) => o.name === editing.value!.provider)
+    : undefined,
 )
 
-const editingHidesApiKey = computed(() =>
-  !!(editingProviderSpec.value?.isOauth || editingProviderSpec.value?.isLocal)
+const editingHidesApiKey = computed(
+  () =>
+    !!(
+      editingProviderSpec.value?.isOauth || editingProviderSpec.value?.isLocal
+    ),
 )
 
 const modelCandidates = ref<DiscoveredModel[]>([])
@@ -85,7 +101,11 @@ const modelDiscovery = reactive({
 })
 
 const canDiscoverModels = computed(() =>
-  Boolean(editing.value && editingProviderSpec.value && editingProviderSpec.value.modelDiscovery !== 'unsupported')
+  Boolean(
+    editing.value &&
+    editingProviderSpec.value &&
+    editingProviderSpec.value.modelDiscovery !== 'unsupported',
+  ),
 )
 const discoveryStatusMessage = computed(() => {
   if (modelDiscovery.message) return modelDiscovery.message
@@ -97,7 +117,9 @@ const discoveryStatusMessage = computed(() => {
   if (!spec.isLocal && !spec.isOauth && !apiKey) return '缺少 API Key'
   return ''
 })
-const discoveryStatusOk = computed(() => Boolean(modelDiscovery.message && modelDiscovery.ok))
+const discoveryStatusOk = computed(() =>
+  Boolean(modelDiscovery.message && modelDiscovery.ok),
+)
 
 // ────────────────────────────────────────────────────────────
 // 从 payload 同步进本地 state
@@ -110,19 +132,29 @@ function hydrate() {
   defaultName.value = String(config?.agents?.defaults?.model || '')
   defaults.maxTokens = Number(config?.agents?.defaults?.maxTokens ?? 8192)
   defaults.temperature = Number(config?.agents?.defaults?.temperature ?? 0.1)
-  defaults.reasoningEffort = String(config?.agents?.defaults?.reasoningEffort || '')
-  defaults.contextWindowTokens = Number(config?.agents?.defaults?.contextWindowTokens ?? 128000)
+  defaults.reasoningEffort = String(
+    config?.agents?.defaults?.reasoningEffort || '',
+  )
+  defaults.contextWindowTokens = Number(
+    config?.agents?.defaults?.contextWindowTokens ?? 128000,
+  )
 
   // 旧 schema 兼容：models[] 空但后端合成了一个临时 entry，UI 把它预填给用户。
   // 用户保存后真正写入 models[]，完成 schema 升级。
   if (entries.value.length === 0 && current.value?.entryName) {
     const synth: ModelEntry = {
       name: current.value.entryName,
-      id: current.value.mainModelId || current.value.model || current.value.entryName,
-      mainModelId: current.value.mainModelId || current.value.model || current.value.entryName,
+      id:
+        current.value.mainModelId ||
+        current.value.model ||
+        current.value.entryName,
+      mainModelId:
+        current.value.mainModelId ||
+        current.value.model ||
+        current.value.entryName,
       secondaryModelId: current.value.secondaryModelId || '',
       provider: current.value.provider || 'custom',
-      apiKey: '',  // 后端脱敏过；让用户主动重填
+      apiKey: '', // 后端脱敏过；让用户主动重填
       apiBase: current.value.apiBase || null,
       label: current.value.entryLabel || '',
     }
@@ -132,8 +164,8 @@ function hydrate() {
 
   // 默认编辑当前激活 entry
   const activeName = current.value?.entryName || defaultName.value
-  const idx = entries.value.findIndex(e => e.name === activeName)
-  editingIndex.value = idx >= 0 ? idx : (entries.value.length ? 0 : -1)
+  const idx = entries.value.findIndex((e) => e.name === activeName)
+  editingIndex.value = idx >= 0 ? idx : entries.value.length ? 0 : -1
 }
 
 watch(() => props.payload, hydrate, { immediate: true, deep: true })
@@ -164,10 +196,10 @@ function cloneEntry(e: ModelEntry): ModelEntry {
 // ────────────────────────────────────────────────────────────
 
 function uniqueName(base: string): string {
-  if (!entries.value.some(e => e.name === base)) return base
+  if (!entries.value.some((e) => e.name === base)) return base
   for (let i = 2; i < 999; i++) {
     const candidate = `${base}-${i}`
-    if (!entries.value.some(e => e.name === candidate)) return candidate
+    if (!entries.value.some((e) => e.name === candidate)) return candidate
   }
   return `${base}-${Date.now()}`
 }
@@ -203,7 +235,8 @@ function removeEntry(idx: number) {
     defaultName.value = ''
     editingIndex.value = -1
   } else {
-    if (defaultName.value === removed.name) defaultName.value = entries.value[0].name
+    if (defaultName.value === removed.name)
+      defaultName.value = entries.value[0].name
     editingIndex.value = Math.min(idx, entries.value.length - 1)
   }
 }
@@ -220,11 +253,11 @@ function pickEditing(idx: number) {
 function onProviderChange() {
   const e = editing.value
   if (!e) return
-  const spec = options.value.find(o => o.name === e.provider)
+  const spec = options.value.find((o) => o.name === e.provider)
   if (!spec) return
   // apiBase: 若用户从未自定义（null），用 spec 默认；已经是字符串就不动
   if (e.apiBase === null || e.apiBase === '' || e.apiBase === undefined) {
-    e.apiBase = null  // null 表示用 spec 默认
+    e.apiBase = null // null 表示用 spec 默认
   }
   // OAuth/local 一律不需要 apiKey
   if (spec.isOauth || spec.isLocal) {
@@ -237,14 +270,19 @@ function onNameChange(newName: string) {
   const e = editing.value
   if (!e) return
   // 重名校验：本地立即提示，但不阻断输入
-  const dup = entries.value.some((x, i) => i !== editingIndex.value && x.name === newName)
+  const dup = entries.value.some(
+    (x, i) => i !== editingIndex.value && x.name === newName,
+  )
   if (dup) emit('error', `名称 "${newName}" 已被其它条目占用，保存前请改名。`)
   // 如果当前 entry 是默认条目，跟着改名
   if (defaultName.value === e.name) defaultName.value = newName
   e.name = newName
 }
 
-function parseOptionalJsonField(raw: string | null | undefined, label: string): Record<string, unknown> | null {
+function parseOptionalJsonField(
+  raw: string | null | undefined,
+  label: string,
+): Record<string, unknown> | null {
   if (!raw || typeof raw !== 'string') return null
   const text = raw.trim()
   if (!text) return null
@@ -255,7 +293,9 @@ function parseOptionalJsonField(raw: string | null | undefined, label: string): 
     }
     return parsed as Record<string, unknown>
   } catch (err) {
-    throw new Error(`${label}: ${err instanceof Error ? err.message : String(err)}`)
+    throw new Error(
+      `${label}: ${err instanceof Error ? err.message : String(err)}`,
+    )
   }
 }
 
@@ -297,8 +337,14 @@ function save() {
     }
     // 最终校验当前编辑条目里 textarea 的 JSON 文本（watch 静默吞错时兜底）
     if (editing.value) {
-      editing.value.extraHeaders = parseOptionalJsonField(extraHeadersText.value, 'Extra Headers')
-      editing.value.extraBody = parseOptionalJsonField(extraBodyText.value, 'Extra Body')
+      editing.value.extraHeaders = parseOptionalJsonField(
+        extraHeadersText.value,
+        'Extra Headers',
+      )
+      editing.value.extraBody = parseOptionalJsonField(
+        extraBodyText.value,
+        'Extra Body',
+      )
     }
     const names = new Set<string>()
     for (const e of entries.value) {
@@ -306,8 +352,10 @@ function save() {
       if (!n) throw new Error('条目名称不能为空')
       if (names.has(n)) throw new Error(`条目名 "${n}" 重复`)
       names.add(n)
-      if (!(e.mainModelId || e.id)?.trim()) throw new Error(`条目 "${n}" 的 Main Model ID 不能为空`)
-      if (!e.secondaryModelId?.trim()) throw new Error(`条目 "${n}" 的 Secondary Model ID 不能为空`)
+      if (!(e.mainModelId || e.id)?.trim())
+        throw new Error(`条目 "${n}" 的 Main Model ID 不能为空`)
+      if (!e.secondaryModelId?.trim())
+        throw new Error(`条目 "${n}" 的 Secondary Model ID 不能为空`)
       if (!e.provider) throw new Error(`条目 "${n}" 必须选择 provider`)
     }
     if (!names.has(defaultName.value)) {
@@ -318,7 +366,7 @@ function save() {
     config.agents ||= {}
     config.agents.defaults ||= {}
     config.agents.defaults.model = defaultName.value
-    config.agents.defaults.provider = 'auto'  // entry 自带 provider，defaults 不需要锁
+    config.agents.defaults.provider = 'auto' // entry 自带 provider，defaults 不需要锁
     config.agents.defaults.maxTokens = defaults.maxTokens
     config.agents.defaults.temperature = defaults.temperature
     config.agents.defaults.reasoningEffort = defaults.reasoningEffort || null
@@ -338,63 +386,111 @@ function save() {
 const extraHeadersText = ref('')
 const extraBodyText = ref('')
 
-watch(editing, (e) => {
-  extraHeadersText.value = e?.extraHeaders ? JSON.stringify(e.extraHeaders, null, 2) : ''
-  extraBodyText.value = e?.extraBody ? JSON.stringify(e.extraBody, null, 2) : ''
-}, { immediate: true, deep: true })
+watch(
+  editing,
+  (e) => {
+    extraHeadersText.value = e?.extraHeaders
+      ? JSON.stringify(e.extraHeaders, null, 2)
+      : ''
+    extraBodyText.value = e?.extraBody
+      ? JSON.stringify(e.extraBody, null, 2)
+      : ''
+  },
+  { immediate: true, deep: true },
+)
 
 watch(extraHeadersText, (text) => {
   if (!editing.value) return
-  if (!text.trim()) { editing.value.extraHeaders = null; return }
+  if (!text.trim()) {
+    editing.value.extraHeaders = null
+    return
+  }
   try {
     const parsed = JSON.parse(text)
-    editing.value.extraHeaders = (parsed && typeof parsed === 'object' && !Array.isArray(parsed))
-      ? parsed : null
-  } catch { /* 容忍错误，保存时再校验 */ }
+    editing.value.extraHeaders =
+      parsed && typeof parsed === 'object' && !Array.isArray(parsed)
+        ? parsed
+        : null
+  } catch {
+    /* 容忍错误，保存时再校验 */
+  }
 })
 
 watch(extraBodyText, (text) => {
   if (!editing.value) return
-  if (!text.trim()) { editing.value.extraBody = null; return }
+  if (!text.trim()) {
+    editing.value.extraBody = null
+    return
+  }
   try {
     const parsed = JSON.parse(text)
-    editing.value.extraBody = (parsed && typeof parsed === 'object' && !Array.isArray(parsed))
-      ? parsed : null
-  } catch { /* same as above */ }
+    editing.value.extraBody =
+      parsed && typeof parsed === 'object' && !Array.isArray(parsed)
+        ? parsed
+        : null
+  } catch {
+    /* same as above */
+  }
 })
 
 // ────────────────────────────────────────────────────────────
 // dirty 判断：本地状态 vs 服务端 payload 是否有差异
 // ────────────────────────────────────────────────────────────
 
-const dirtySignature = computed(() => JSON.stringify({
-  entries: entries.value.map(e => ({
-    name: e.name, id: e.id, mainModelId: e.mainModelId, secondaryModelId: e.secondaryModelId, provider: e.provider,
-    apiKey: e.apiKey || '', apiBase: e.apiBase || null,
-    extraHeaders: e.extraHeaders || null, extraBody: e.extraBody || null,
-    maxTokens: e.maxTokens ?? null, temperature: e.temperature ?? null,
-    contextWindowTokens: e.contextWindowTokens ?? null,
-    reasoningEffort: e.reasoningEffort ?? null,
-    label: e.label || '',
-    supportsVision: !!e.supportsVision,
-  })),
-  default: defaultName.value,
-  defaults: { ...defaults },
-}))
+const dirtySignature = computed(() =>
+  JSON.stringify({
+    entries: entries.value.map((e) => ({
+      name: e.name,
+      id: e.id,
+      mainModelId: e.mainModelId,
+      secondaryModelId: e.secondaryModelId,
+      provider: e.provider,
+      apiKey: e.apiKey || '',
+      apiBase: e.apiBase || null,
+      extraHeaders: e.extraHeaders || null,
+      extraBody: e.extraBody || null,
+      maxTokens: e.maxTokens ?? null,
+      temperature: e.temperature ?? null,
+      contextWindowTokens: e.contextWindowTokens ?? null,
+      reasoningEffort: e.reasoningEffort ?? null,
+      label: e.label || '',
+      supportsVision: !!e.supportsVision,
+    })),
+    default: defaultName.value,
+    defaults: { ...defaults },
+  }),
+)
 
 const serverSignature = ref('')
 
-watch(() => props.payload, () => {
-  // 用 hydrate 后的状态作为基准
-  // 用 setTimeout 0 保证 hydrate 已经跑完
-  setTimeout(() => { serverSignature.value = dirtySignature.value }, 0)
-}, { immediate: true, deep: true })
+watch(
+  () => props.payload,
+  () => {
+    // 用 hydrate 后的状态作为基准
+    // 用 setTimeout 0 保证 hydrate 已经跑完
+    setTimeout(() => {
+      serverSignature.value = dirtySignature.value
+    }, 0)
+  },
+  { immediate: true, deep: true },
+)
 
-const hasChanges = computed(() => serverSignature.value !== '' && serverSignature.value !== dirtySignature.value)
+const hasChanges = computed(
+  () =>
+    serverSignature.value !== '' &&
+    serverSignature.value !== dirtySignature.value,
+)
 
 watch(
-  () => [editingIndex.value, editing.value?.provider, editing.value?.apiBase, editing.value?.apiKey],
-  () => { resetModelDiscovery() },
+  () => [
+    editingIndex.value,
+    editing.value?.provider,
+    editing.value?.apiBase,
+    editing.value?.apiKey,
+  ],
+  () => {
+    resetModelDiscovery()
+  },
 )
 
 function resetModelDiscovery() {
@@ -424,7 +520,12 @@ async function discoverModels() {
     modelDiscovery.ok = Boolean(result.ok)
     modelDiscovery.code = result.code || ''
     modelCandidates.value = result.ok ? result.models : []
-    modelDiscovery.message = discoveryMessage(result.ok, result.models?.length || 0, result.code, result.message)
+    modelDiscovery.message = discoveryMessage(
+      result.ok,
+      result.models?.length || 0,
+      result.code,
+      result.message,
+    )
   } catch (err) {
     modelCandidates.value = []
     modelDiscovery.code = 'request_failed'
@@ -434,7 +535,12 @@ async function discoverModels() {
   }
 }
 
-function discoveryMessage(ok: boolean, count: number, code?: string, message?: string): string {
+function discoveryMessage(
+  ok: boolean,
+  count: number,
+  code?: string,
+  message?: string,
+): string {
   if (ok) return count ? `已获取 ${count} 个模型` : '未返回模型，请手动填写'
   if (code === 'credential_required') return '缺少 API Key'
   if (code === 'unsupported_backend') return '当前厂商暂不支持自动获取'
@@ -451,17 +557,28 @@ function onModelSelection(role: 'main' | 'secondary', value: string) {
 // 连通测试 + 视觉徽章
 // ────────────────────────────────────────────────────────────
 
-const testing = reactive({ mainText: false, secondaryText: false, vision: false })
+const testing = reactive({
+  mainText: false,
+  secondaryText: false,
+  vision: false,
+})
 const lastResult = ref<ModelTestResult | null>(null)
 
-async function runTest(kind: 'text' | 'vision', role: 'main' | 'secondary' = 'main') {
+async function runTest(
+  kind: 'text' | 'vision',
+  role: 'main' | 'secondary' = 'main',
+) {
   if (!editing.value?.name) return
   if (hasChanges.value) {
     emit('error', '请先保存配置再测试')
     return
   }
   const key: 'mainText' | 'secondaryText' | 'vision' =
-    kind === 'vision' ? 'vision' : (role === 'secondary' ? 'secondaryText' : 'mainText')
+    kind === 'vision'
+      ? 'vision'
+      : role === 'secondary'
+        ? 'secondaryText'
+        : 'mainText'
   testing[key] = true
   lastResult.value = null
   try {
@@ -484,7 +601,6 @@ async function runTest(kind: 'text' | 'vision', role: 'main' | 'secondary' = 'ma
     testing[key] = false
   }
 }
-
 </script>
 
 <template>
@@ -514,7 +630,11 @@ async function runTest(kind: 'text' | 'vision', role: 'main' | 'secondary' = 'ma
         <div class="entry-editor-head">
           <div class="entry-editor-title">
             <h3>编辑 · {{ editing.label || editing.name }}</h3>
-            <span v-if="editing.name === defaultName" class="entry-active-inline">✓ 当前激活</span>
+            <span
+              v-if="editing.name === defaultName"
+              class="entry-active-inline"
+              >✓ 当前激活</span
+            >
           </div>
           <div class="flex shrink-0 items-center gap-2">
             <button
@@ -522,8 +642,15 @@ async function runTest(kind: 'text' | 'vision', role: 'main' | 'secondary' = 'ma
               class="tool-button ink"
               title="把此条目切为激活（保存后真正生效）"
               @click="setActive(editingIndex)"
-            >设为激活</button>
-            <button class="tool-button danger" @click="removeEntry(editingIndex)">删除条目</button>
+            >
+              设为激活
+            </button>
+            <button
+              class="tool-button danger"
+              @click="removeEntry(editingIndex)"
+            >
+              删除条目
+            </button>
           </div>
         </div>
 
@@ -540,12 +667,18 @@ async function runTest(kind: 'text' | 'vision', role: 'main' | 'secondary' = 'ma
                   :value="editing.name"
                   class="form-input"
                   placeholder="deepseek-personal"
-                  @input="onNameChange(($event.target as HTMLInputElement).value)"
+                  @input="
+                    onNameChange(($event.target as HTMLInputElement).value)
+                  "
                 />
               </label>
               <label class="form-row">
                 <span class="form-label">显示标签（可选）</span>
-                <input v-model="editing.label" class="form-input" placeholder="DeepSeek 个人 key" />
+                <input
+                  v-model="editing.label"
+                  class="form-input"
+                  placeholder="DeepSeek 个人 key"
+                />
               </label>
             </div>
           </section>
@@ -562,20 +695,33 @@ async function runTest(kind: 'text' | 'vision', role: 'main' | 'secondary' = 'ma
                   v-model="editing.apiKey"
                   class="form-input"
                   type="password"
-                  :placeholder="editingProviderSpec?.isLocal ? '(本地服务通常不需要)' : '保存为明文，仅本地，不回传明文'"
+                  :placeholder="
+                    editingProviderSpec?.isLocal
+                      ? '(本地服务通常不需要)'
+                      : '保存为明文，仅本地，不回传明文'
+                  "
                 />
               </label>
               <div v-else class="empty-note compact span-2">
-                <span v-if="editingProviderSpec?.isOauth">该 provider 走 OAuth 授权流程，无需 API Key。</span>
-                <span v-else-if="editingProviderSpec?.isLocal">本地服务通常不需要 API Key（除非你单独开了认证）。</span>
+                <span v-if="editingProviderSpec?.isOauth"
+                  >该 provider 走 OAuth 授权流程，无需 API Key。</span
+                >
+                <span v-else-if="editingProviderSpec?.isLocal"
+                  >本地服务通常不需要 API Key（除非你单独开了认证）。</span
+                >
               </div>
               <label class="form-row span-2">
                 <span class="form-label">API Base</span>
                 <input
                   :value="editing.apiBase ?? ''"
                   class="form-input"
-                  :placeholder="editingProviderSpec?.defaultApiBase || '由 SDK 决定'"
-                  @input="editing.apiBase = ($event.target as HTMLInputElement).value || null"
+                  :placeholder="
+                    editingProviderSpec?.defaultApiBase || '由 SDK 决定'
+                  "
+                  @input="
+                    editing.apiBase =
+                      ($event.target as HTMLInputElement).value || null
+                  "
                 />
               </label>
             </div>
@@ -590,9 +736,21 @@ async function runTest(kind: 'text' | 'vision', role: 'main' | 'secondary' = 'ma
               <div class="form-row span-2">
                 <span class="form-label">Provider</span>
                 <div class="provider-control-row">
-                  <select v-model="editing.provider" class="form-select" @change="onProviderChange">
-                    <optgroup v-for="group in groupedOptions" :key="group.region" :label="group.label">
-                      <option v-for="opt in group.items" :key="opt.name" :value="opt.name">
+                  <select
+                    v-model="editing.provider"
+                    class="form-select"
+                    @change="onProviderChange"
+                  >
+                    <optgroup
+                      v-for="group in groupedOptions"
+                      :key="group.region"
+                      :label="group.label"
+                    >
+                      <option
+                        v-for="opt in group.items"
+                        :key="opt.name"
+                        :value="opt.name"
+                      >
                         {{ opt.displayName || opt.name }}
                       </option>
                     </optgroup>
@@ -601,7 +759,11 @@ async function runTest(kind: 'text' | 'vision', role: 'main' | 'secondary' = 'ma
                     type="button"
                     class="tool-button compact provider-fetch-button"
                     :disabled="modelDiscovery.loading || !canDiscoverModels"
-                    :title="canDiscoverModels ? '从当前厂商获取可用模型列表' : '当前厂商暂不支持自动获取模型列表'"
+                    :title="
+                      canDiscoverModels
+                        ? '从当前厂商获取可用模型列表'
+                        : '当前厂商暂不支持自动获取模型列表'
+                    "
                     @click="discoverModels"
                   >
                     <span v-if="modelDiscovery.loading">获取中</span>
@@ -609,13 +771,26 @@ async function runTest(kind: 'text' | 'vision', role: 'main' | 'secondary' = 'ma
                   </button>
                 </div>
                 <div class="provider-meta-row">
-                  <a v-if="editingProviderSpec?.websiteUrl" :href="editingProviderSpec.websiteUrl" target="_blank" rel="noreferrer">官网</a>
-                  <a v-if="editingProviderSpec?.apiKeyUrl" :href="editingProviderSpec.apiKeyUrl" target="_blank" rel="noreferrer">API Key</a>
+                  <a
+                    v-if="editingProviderSpec?.websiteUrl"
+                    :href="editingProviderSpec.websiteUrl"
+                    target="_blank"
+                    rel="noreferrer"
+                    >官网</a
+                  >
+                  <a
+                    v-if="editingProviderSpec?.apiKeyUrl"
+                    :href="editingProviderSpec.apiKeyUrl"
+                    target="_blank"
+                    rel="noreferrer"
+                    >API Key</a
+                  >
                   <span
                     v-if="discoveryStatusMessage"
                     class="model-discovery-message"
                     :class="{ ok: discoveryStatusOk, fail: !discoveryStatusOk }"
-                  >{{ discoveryStatusMessage }}</span>
+                    >{{ discoveryStatusMessage }}</span
+                  >
                 </div>
               </div>
               <ModelPicker
@@ -646,31 +821,50 @@ async function runTest(kind: 'text' | 'vision', role: 'main' | 'secondary' = 'ma
               <label class="form-row">
                 <span class="form-label">Context Window</span>
                 <input
-                  type="number" min="1000" step="1000"
+                  type="number"
+                  min="1000"
+                  step="1000"
                   :value="editing.contextWindowTokens ?? ''"
                   class="form-input"
                   :placeholder="String(defaults.contextWindowTokens)"
-                  @input="editing.contextWindowTokens = parseInt(($event.target as HTMLInputElement).value) || null"
+                  @input="
+                    editing.contextWindowTokens =
+                      parseInt(($event.target as HTMLInputElement).value) ||
+                      null
+                  "
                 />
               </label>
               <label class="form-row">
                 <span class="form-label">Max Tokens</span>
                 <input
-                  type="number" min="0" step="100"
+                  type="number"
+                  min="0"
+                  step="100"
                   :value="editing.maxTokens ?? ''"
                   class="form-input"
                   :placeholder="String(defaults.maxTokens)"
-                  @input="editing.maxTokens = parseInt(($event.target as HTMLInputElement).value) || null"
+                  @input="
+                    editing.maxTokens =
+                      parseInt(($event.target as HTMLInputElement).value) ||
+                      null
+                  "
                 />
               </label>
               <label class="form-row">
                 <span class="form-label">Temperature（覆写）</span>
                 <input
-                  type="number" min="0" max="2" step="0.05"
+                  type="number"
+                  min="0"
+                  max="2"
+                  step="0.05"
                   :value="editing.temperature ?? ''"
                   class="form-input"
                   :placeholder="String(defaults.temperature)"
-                  @input="editing.temperature = parseFloat(($event.target as HTMLInputElement).value) || null"
+                  @input="
+                    editing.temperature =
+                      parseFloat(($event.target as HTMLInputElement).value) ||
+                      null
+                  "
                 />
               </label>
               <label class="form-row">
@@ -678,7 +872,10 @@ async function runTest(kind: 'text' | 'vision', role: 'main' | 'secondary' = 'ma
                 <select
                   :value="editing.reasoningEffort ?? ''"
                   class="form-select"
-                  @change="editing.reasoningEffort = ($event.target as HTMLSelectElement).value || null"
+                  @change="
+                    editing.reasoningEffort =
+                      ($event.target as HTMLSelectElement).value || null
+                  "
                 >
                   <option value="">默认（由 Composer 快捷切换）</option>
                   <option value="none">none</option>
@@ -690,11 +887,19 @@ async function runTest(kind: 'text' | 'vision', role: 'main' | 'secondary' = 'ma
               </label>
               <label class="form-row span-2">
                 <span class="form-label">Extra Headers JSON</span>
-                <textarea v-model="extraHeadersText" rows="3" placeholder='{"X-Custom": "value"}' />
+                <textarea
+                  v-model="extraHeadersText"
+                  rows="3"
+                  placeholder='{"X-Custom": "value"}'
+                />
               </label>
               <label class="form-row span-2">
                 <span class="form-label">Extra Body JSON</span>
-                <textarea v-model="extraBodyText" rows="3" placeholder='{"enable_thinking": false}' />
+                <textarea
+                  v-model="extraBodyText"
+                  rows="3"
+                  placeholder='{"enable_thinking": false}'
+                />
               </label>
             </div>
             <ModelTestPanel
@@ -713,7 +918,9 @@ async function runTest(kind: 'text' | 'vision', role: 'main' | 'secondary' = 'ma
     <div class="model-action-bar" :class="{ dirty: hasChanges }">
       <div class="action-bar-status">
         <span v-if="hasChanges" class="dirty-badge">● 有未保存的更改</span>
-        <span v-else-if="entries.length" class="saved-badge">✓ 已与服务端同步</span>
+        <span v-else-if="entries.length" class="saved-badge"
+          >✓ 已与服务端同步</span
+        >
       </div>
       <button
         class="tool-button ink asset-button primary-action save-action"

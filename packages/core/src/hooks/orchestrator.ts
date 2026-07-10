@@ -2,7 +2,12 @@ import { createHash, randomUUID } from 'node:crypto'
 import { TextDecoder } from 'node:util'
 import type { HookExecutorContext, HookExecutorResultV2 } from './executor'
 import type { CompiledHookPlan, CompiledHookPlanItem } from './matcher'
-import type { HookDecision, HookEventName, HookHandlerV2, HookSourceV2 } from './models'
+import type {
+  HookDecision,
+  HookEventName,
+  HookHandlerV2,
+  HookSourceV2,
+} from './models'
 import { parseHookOutput } from './schema'
 
 export interface HookExecutorHost {
@@ -13,7 +18,8 @@ export interface HookExecutorHost {
   ): Promise<HookExecutorResultV2>
 }
 
-export type HookOrchestratorStatus = HookExecutorResultV2['outcome'] | 'accepted' | 'skipped'
+export type HookOrchestratorStatus =
+  HookExecutorResultV2['outcome'] | 'accepted' | 'skipped'
 
 export interface HookOrchestratorRunResult {
   hookRunId: string
@@ -69,7 +75,9 @@ export interface HookAuditSinkV2 {
   appendRun(record: HookAuditRunRecordV2): Promise<void> | void
 }
 
-export type HookOrchestratorEmitter = (event: Record<string, unknown>) => Promise<void> | void
+export type HookOrchestratorEmitter = (
+  event: Record<string, unknown>,
+) => Promise<void> | void
 
 export class HookOnceRegistry {
   private readonly claims = new Set<string>()
@@ -82,7 +90,8 @@ export class HookOnceRegistry {
 
   clearSession(sessionId: string): void {
     const prefix = `${sessionId}\0`
-    for (const key of this.claims) if (key.startsWith(prefix)) this.claims.delete(key)
+    for (const key of this.claims)
+      if (key.startsWith(prefix)) this.claims.delete(key)
   }
 
   clear(): void {
@@ -108,10 +117,16 @@ interface AsyncHookRun<T> {
 
 export class AsyncHookRegistry {
   private readonly runs = new Map<string, AsyncHookRun<unknown>>()
-  private readonly onCompleted: ((entry: AsyncHookCompletion) => Promise<void> | void) | null
+  private readonly onCompleted:
+    ((entry: AsyncHookCompletion) => Promise<void> | void) | null
   private shuttingDown = false
 
-  constructor(opts: { onCompleted?: ((entry: AsyncHookCompletion) => Promise<void> | void) | null } = {}) {
+  constructor(
+    opts: {
+      onCompleted?:
+        ((entry: AsyncHookCompletion) => Promise<void> | void) | null
+    } = {},
+  ) {
     this.onCompleted = opts.onCompleted ?? null
   }
 
@@ -124,19 +139,35 @@ export class AsyncHookRegistry {
     deadlineMs: number
     rewakeEligible: boolean
     task: (signal: AbortSignal) => Promise<T>
-    onCompleted?: ((entry: AsyncHookCompletion<T>) => Promise<void> | void) | null
+    onCompleted?:
+      ((entry: AsyncHookCompletion<T>) => Promise<void> | void) | null
   }): { runId: string; status: 'running'; rewakeEligible: boolean } {
-    if (this.shuttingDown) throw new Error('Async hook registry is shutting down')
-    if (this.runs.has(opts.runId)) throw new Error(`Async hook run already exists: ${opts.runId}`)
+    if (this.shuttingDown)
+      throw new Error('Async hook registry is shutting down')
+    if (this.runs.has(opts.runId))
+      throw new Error(`Async hook run already exists: ${opts.runId}`)
     const controller = new AbortController()
     const started = Date.now()
-    const run: AsyncHookRun<T> = { controller, forcedStatus: null, promise: Promise.resolve(null as never) }
-    const timeout = setTimeout(() => {
-      run.forcedStatus = 'timeout'
-      controller.abort(new Error(`Async hook deadline exceeded after ${opts.deadlineMs}ms`))
-    }, Math.max(1, opts.deadlineMs))
+    const run: AsyncHookRun<T> = {
+      controller,
+      forcedStatus: null,
+      promise: Promise.resolve(null as never),
+    }
+    const timeout = setTimeout(
+      () => {
+        run.forcedStatus = 'timeout'
+        controller.abort(
+          new Error(`Async hook deadline exceeded after ${opts.deadlineMs}ms`),
+        )
+      },
+      Math.max(1, opts.deadlineMs),
+    )
     const abortPromise = new Promise<never>((_resolve, reject) => {
-      controller.signal.addEventListener('abort', () => reject(controller.signal.reason), { once: true })
+      controller.signal.addEventListener(
+        'abort',
+        () => reject(controller.signal.reason),
+        { once: true },
+      )
     })
     const operation = Promise.resolve().then(() => opts.task(controller.signal))
     const promise = Promise.race([operation, abortPromise])
@@ -171,7 +202,11 @@ export class AsyncHookRegistry {
       })
     run.promise = promise
     this.runs.set(opts.runId, run as AsyncHookRun<unknown>)
-    return { runId: opts.runId, status: 'running', rewakeEligible: opts.rewakeEligible }
+    return {
+      runId: opts.runId,
+      status: 'running',
+      rewakeEligible: opts.rewakeEligible,
+    }
   }
 
   async cancel(runId: string): Promise<boolean> {
@@ -234,12 +269,23 @@ export class HookOrchestrator {
       while (nextIndex < plan.items.length) {
         const itemIndex = nextIndex
         nextIndex += 1
-        results[itemIndex] = await this.runItem(plan, plan.items[itemIndex]!, input, context)
+        results[itemIndex] = await this.runItem(
+          plan,
+          plan.items[itemIndex]!,
+          input,
+          context,
+        )
       }
     }
-    const workerCount = Math.min(plan.items.length, Math.max(1, context.policy.maxConcurrency))
+    const workerCount = Math.min(
+      plan.items.length,
+      Math.max(1, context.policy.maxConcurrency),
+    )
     await Promise.all(Array.from({ length: workerCount }, worker))
-    const aggregate = aggregateOrchestratorResults(results, context.policy.maxContextBytes)
+    const aggregate = aggregateOrchestratorResults(
+      results,
+      context.policy.maxContextBytes,
+    )
     if (results.length) {
       await this.safeEmit({
         event: 'hook_decision_applied',
@@ -264,41 +310,104 @@ export class HookOrchestrator {
     const started = Date.now()
     const onceKey = `${String(input.session_id ?? '')}\0${item.eventName}\0${item.source.id}\0${item.groupId}\0${item.handlerId}`
     if (item.handler.once && !this.once.claim(onceKey)) {
-      const skipped = runResult(item, hookRunId, 'skipped', null, 'once handler already claimed', started, false)
+      const skipped = runResult(
+        item,
+        hookRunId,
+        'skipped',
+        null,
+        'once handler already claimed',
+        started,
+        false,
+      )
       await this.observe(plan, skipped, input, started)
       return skipped
     }
-    await this.safeEmit(runEvent('hook_run_started', item, hookRunId, plan.snapshotRevision, { status: 'started' }))
-    await this.safeEmit(runEvent('hook_run_progress', item, hookRunId, plan.snapshotRevision, { status: 'executing' }))
+    await this.safeEmit(
+      runEvent('hook_run_started', item, hookRunId, plan.snapshotRevision, {
+        status: 'started',
+      }),
+    )
+    await this.safeEmit(
+      runEvent('hook_run_progress', item, hookRunId, plan.snapshotRevision, {
+        status: 'executing',
+      }),
+    )
 
     if (item.handler.type === 'command' && item.handler.async) {
-      const rewakeEligible = item.handler.asyncRewake && ASYNC_REWAKE_EVENTS.has(item.eventName)
+      const rewakeEligible =
+        item.handler.asyncRewake && ASYNC_REWAKE_EVENTS.has(item.eventName)
       try {
         this.background.start({
           runId: hookRunId,
-          deadlineMs: Math.min(item.handler.timeoutMs, context.policy.command.maxTimeoutMs),
+          deadlineMs: Math.min(
+            item.handler.timeoutMs,
+            context.policy.command.maxTimeoutMs,
+          ),
           rewakeEligible,
-          task: async (signal) => await this.executor.execute(item.handler, input, { ...context, signal }),
+          task: async (signal) =>
+            await this.executor.execute(item.handler, input, {
+              ...context,
+              signal,
+            }),
           onCompleted: async (completion) => {
             const execution = completion.value
             const completed = execution
-              ? normalizedExecutionResult(item, hookRunId, execution, started, rewakeEligible)
-              : runResult(item, hookRunId, completion.status, null, completion.reason, started, rewakeEligible)
+              ? normalizedExecutionResult(
+                  item,
+                  hookRunId,
+                  execution,
+                  started,
+                  rewakeEligible,
+                )
+              : runResult(
+                  item,
+                  hookRunId,
+                  completion.status,
+                  null,
+                  completion.reason,
+                  started,
+                  rewakeEligible,
+                )
             await this.observe(plan, completed, input, started)
-            await this.safeEmit(runEvent(
-              completed.status === 'completed' ? 'hook_run_completed' : 'hook_run_failed',
-              item,
-              hookRunId,
-              plan.snapshotRevision,
-              { status: completed.status, reason: completed.reason, async: true, async_rewake_eligible: rewakeEligible },
-            ))
+            await this.safeEmit(
+              runEvent(
+                completed.status === 'completed'
+                  ? 'hook_run_completed'
+                  : 'hook_run_failed',
+                item,
+                hookRunId,
+                plan.snapshotRevision,
+                {
+                  status: completed.status,
+                  reason: completed.reason,
+                  async: true,
+                  async_rewake_eligible: rewakeEligible,
+                },
+              ),
+            )
           },
         })
-        const accepted = runResult(item, hookRunId, 'accepted', null, 'async hook accepted', started, rewakeEligible)
+        const accepted = runResult(
+          item,
+          hookRunId,
+          'accepted',
+          null,
+          'async hook accepted',
+          started,
+          rewakeEligible,
+        )
         await this.observe(plan, accepted, input, started)
         return accepted
       } catch (error) {
-        const failed = runResult(item, hookRunId, 'failed', null, error instanceof Error ? error.message : String(error), started, false)
+        const failed = runResult(
+          item,
+          hookRunId,
+          'failed',
+          null,
+          error instanceof Error ? error.message : String(error),
+          started,
+          false,
+        )
         await this.observe(plan, failed, input, started)
         return failed
       }
@@ -306,19 +415,39 @@ export class HookOrchestrator {
 
     let result: HookOrchestratorRunResult
     try {
-      const execution = await this.executor.execute(item.handler, input, context)
+      const execution = await this.executor.execute(
+        item.handler,
+        input,
+        context,
+      )
       result = normalizedExecutionResult(item, hookRunId, execution, started)
     } catch (error) {
-      result = runResult(item, hookRunId, 'failed', null, error instanceof Error ? error.message : String(error), started, false)
+      result = runResult(
+        item,
+        hookRunId,
+        'failed',
+        null,
+        error instanceof Error ? error.message : String(error),
+        started,
+        false,
+      )
     }
     await this.observe(plan, result, input, started)
-    await this.safeEmit(runEvent(
-      result.status === 'completed' ? 'hook_run_completed' : 'hook_run_failed',
-      item,
-      hookRunId,
-      plan.snapshotRevision,
-      { status: result.status, reason: result.reason, duration_ms: result.durationMs },
-    ))
+    await this.safeEmit(
+      runEvent(
+        result.status === 'completed'
+          ? 'hook_run_completed'
+          : 'hook_run_failed',
+        item,
+        hookRunId,
+        plan.snapshotRevision,
+        {
+          status: result.status,
+          reason: result.reason,
+          duration_ms: result.durationMs,
+        },
+      ),
+    )
     return result
   }
 
@@ -338,7 +467,8 @@ export class HookOrchestrator {
       source: result.source,
       snapshotRevision: plan.snapshotRevision,
       sessionId: String(input.session_id ?? ''),
-      toolUseId: typeof input.tool_use_id === 'string' ? input.tool_use_id : null,
+      toolUseId:
+        typeof input.tool_use_id === 'string' ? input.tool_use_id : null,
       startedAt: new Date(started).toISOString(),
       durationMs: result.durationMs,
       status: result.status,
@@ -357,8 +487,17 @@ export class HookOrchestrator {
   }
 }
 
-const ASYNC_REWAKE_EVENTS = new Set<HookEventName>(['Stop', 'SubagentStop', 'TeammateIdle'])
-const DECISION_PRIORITY: Record<HookDecision, number> = { passthrough: 0, allow: 1, ask: 2, deny: 3 }
+const ASYNC_REWAKE_EVENTS = new Set<HookEventName>([
+  'Stop',
+  'SubagentStop',
+  'TeammateIdle',
+])
+const DECISION_PRIORITY: Record<HookDecision, number> = {
+  passthrough: 0,
+  allow: 1,
+  ask: 2,
+  deny: 3,
+}
 
 function normalizedExecutionResult(
   item: CompiledHookPlanItem,
@@ -368,7 +507,15 @@ function normalizedExecutionResult(
   asyncRewakeEligible = false,
 ): HookOrchestratorRunResult {
   if (execution.outcome !== 'completed') {
-    return runResult(item, hookRunId, execution.outcome, null, execution.reason, started, asyncRewakeEligible)
+    return runResult(
+      item,
+      hookRunId,
+      execution.outcome,
+      null,
+      execution.reason,
+      started,
+      asyncRewakeEligible,
+    )
   }
   const parsed = parseHookOutput(item.eventName, execution.output ?? {})
   if (!parsed.output) {
@@ -377,12 +524,21 @@ function normalizedExecutionResult(
       hookRunId,
       'failed',
       null,
-      parsed.diagnostics.map((diagnostic) => diagnostic.message).join('; ') || 'Invalid hook output',
+      parsed.diagnostics.map((diagnostic) => diagnostic.message).join('; ') ||
+        'Invalid hook output',
       started,
       asyncRewakeEligible,
     )
   }
-  return runResult(item, hookRunId, 'completed', parsed.output, execution.reason, started, asyncRewakeEligible)
+  return runResult(
+    item,
+    hookRunId,
+    'completed',
+    parsed.output,
+    execution.reason,
+    started,
+    asyncRewakeEligible,
+  )
 }
 
 function runResult(
@@ -417,27 +573,38 @@ function aggregateOrchestratorResults(
 ): HookOrchestrationResult {
   let decision: HookDecision = 'passthrough'
   let reason = ''
-  const outputs: Array<{ result: HookOrchestratorRunResult; output: Record<string, unknown> }> = []
+  const outputs: Array<{
+    result: HookOrchestratorRunResult
+    output: Record<string, unknown>
+  }> = []
   for (const result of results) {
     if (result.status === 'completed' && result.output) {
       outputs.push({ result, output: result.output })
       const candidate = asDecision(result.output.decision)
       if (DECISION_PRIORITY[candidate] > DECISION_PRIORITY[decision]) {
         decision = candidate
-        reason = typeof result.output.reason === 'string' ? result.output.reason : result.reason
+        reason =
+          typeof result.output.reason === 'string'
+            ? result.output.reason
+            : result.reason
       }
       continue
     }
     if (result.status !== 'accepted' && result.status !== 'skipped') {
       const itemFailureMode = resultFailureMode(result)
-      if (itemFailureMode === 'closed' && DECISION_PRIORITY.deny > DECISION_PRIORITY[decision]) {
+      if (
+        itemFailureMode === 'closed' &&
+        DECISION_PRIORITY.deny > DECISION_PRIORITY[decision]
+      ) {
         decision = 'deny'
         reason = `Hook ${result.handlerId} failed closed: ${result.reason}`
       }
     }
   }
 
-  const updates = uniqueValues(outputs.map(({ output }) => output.updatedInput).filter(isRecord))
+  const updates = uniqueValues(
+    outputs.map(({ output }) => output.updatedInput).filter(isRecord),
+  )
   if (updates.length > 1) {
     decision = 'deny'
     reason = 'Conflicting updatedInput values from matching hooks'
@@ -448,36 +615,72 @@ function aggregateOrchestratorResults(
     results,
     additionalContext: boundedContext(outputs, maxContextBytes),
   }
-  if (decision !== 'deny' && updates.length === 1) aggregate.updatedInput = updates[0]
+  if (decision !== 'deny' && updates.length === 1)
+    aggregate.updatedInput = updates[0]
   applyStableFields(aggregate, outputs)
   return aggregate
 }
 
-function resultFailureMode(result: HookOrchestratorRunResult): 'open' | 'closed' {
+function resultFailureMode(
+  result: HookOrchestratorRunResult,
+): 'open' | 'closed' {
   return result.failureMode
 }
 
 function applyStableFields(
   aggregate: HookOrchestrationResult,
-  outputs: Array<{ result: HookOrchestratorRunResult; output: Record<string, unknown> }>,
+  outputs: Array<{
+    result: HookOrchestratorRunResult
+    output: Record<string, unknown>
+  }>,
 ): void {
   for (const { output } of outputs) {
     if (output.suppressOutput === true) aggregate.suppressOutput = true
-    if (typeof output.systemMessage === 'string' && aggregate.systemMessage === undefined) aggregate.systemMessage = output.systemMessage
-    if (output.updatedToolOutput !== undefined && aggregate.updatedToolOutput === undefined) aggregate.updatedToolOutput = output.updatedToolOutput
-    if (typeof output.continue === 'boolean' && aggregate.continue === undefined) aggregate.continue = output.continue
-    if (typeof output.stopReason === 'string' && aggregate.stopReason === undefined) aggregate.stopReason = output.stopReason
-    if (typeof output.compactInstructions === 'string' && aggregate.compactInstructions === undefined) aggregate.compactInstructions = output.compactInstructions
+    if (
+      typeof output.systemMessage === 'string' &&
+      aggregate.systemMessage === undefined
+    )
+      aggregate.systemMessage = output.systemMessage
+    if (
+      output.updatedToolOutput !== undefined &&
+      aggregate.updatedToolOutput === undefined
+    )
+      aggregate.updatedToolOutput = output.updatedToolOutput
+    if (
+      typeof output.continue === 'boolean' &&
+      aggregate.continue === undefined
+    )
+      aggregate.continue = output.continue
+    if (
+      typeof output.stopReason === 'string' &&
+      aggregate.stopReason === undefined
+    )
+      aggregate.stopReason = output.stopReason
+    if (
+      typeof output.compactInstructions === 'string' &&
+      aggregate.compactInstructions === undefined
+    )
+      aggregate.compactInstructions = output.compactInstructions
   }
 }
 
 function boundedContext(
-  outputs: Array<{ result: HookOrchestratorRunResult; output: Record<string, unknown> }>,
+  outputs: Array<{
+    result: HookOrchestratorRunResult
+    output: Record<string, unknown>
+  }>,
   maxBytes: number,
 ): string {
   const combined = outputs
-    .filter(({ output }) => typeof output.additionalContext === 'string' && output.additionalContext.trim())
-    .map(({ result, output }) => `[${result.handlerId}]\n${String(output.additionalContext)}`)
+    .filter(
+      ({ output }) =>
+        typeof output.additionalContext === 'string' &&
+        output.additionalContext.trim(),
+    )
+    .map(
+      ({ result, output }) =>
+        `[${result.handlerId}]\n${String(output.additionalContext)}`,
+    )
     .join('\n\n')
   return truncateUtf8(combined, Math.max(0, maxBytes))
 }
@@ -497,7 +700,9 @@ function truncateUtf8(value: string, maxBytes: number): string {
   return ''
 }
 
-function uniqueValues(values: Record<string, unknown>[]): Record<string, unknown>[] {
+function uniqueValues(
+  values: Record<string, unknown>[],
+): Record<string, unknown>[] {
   const unique = new Map<string, Record<string, unknown>>()
   for (const value of values) unique.set(stableStringify(value), value)
   return [...unique.values()]
@@ -505,7 +710,11 @@ function uniqueValues(values: Record<string, unknown>[]): Record<string, unknown
 
 function stableStringify(value: unknown): string {
   if (Array.isArray(value)) return `[${value.map(stableStringify).join(',')}]`
-  if (isRecord(value)) return `{${Object.keys(value).sort().map((key) => `${JSON.stringify(key)}:${stableStringify(value[key])}`).join(',')}}`
+  if (isRecord(value))
+    return `{${Object.keys(value)
+      .sort()
+      .map((key) => `${JSON.stringify(key)}:${stableStringify(value[key])}`)
+      .join(',')}}`
   return JSON.stringify(value) ?? 'null'
 }
 
@@ -525,13 +734,22 @@ function runEvent(
     handler_id: item.handlerId,
     handler_type: item.handler.type,
     snapshot_revision: snapshotRevision,
-    hook_source: { id: item.source.id, kind: item.source.kind, revision: item.source.revision },
+    hook_source: {
+      id: item.source.id,
+      kind: item.source.kind,
+      revision: item.source.revision,
+    },
     ...extra,
   }
 }
 
 function asDecision(value: unknown): HookDecision {
-  return value === 'deny' || value === 'ask' || value === 'allow' || value === 'passthrough' ? value : 'passthrough'
+  return value === 'deny' ||
+    value === 'ask' ||
+    value === 'allow' ||
+    value === 'passthrough'
+    ? value
+    : 'passthrough'
 }
 
 function decisionFromOutput(output: Record<string, unknown> | null): string {
@@ -544,7 +762,10 @@ function objectHash(value: unknown): string {
 
 function scrubReason(reason: string): string {
   return reason
-    .replace(/(api[_-]?key|token|secret|password|authorization|cookie)\s*[:=]\s*[^\s,;]+/gi, '$1=[REDACTED]')
+    .replace(
+      /(api[_-]?key|token|secret|password|authorization|cookie)\s*[:=]\s*[^\s,;]+/gi,
+      '$1=[REDACTED]',
+    )
     .slice(0, 1_000)
 }
 

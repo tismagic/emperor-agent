@@ -35,7 +35,9 @@ describe('brand mark usage', () => {
       expect(source, file).not.toContain('brandIcon')
     }
 
-    const setupDialog = readRenderer('components/onboarding/ModelSetupRequiredDialog.vue')
+    const setupDialog = readRenderer(
+      'components/onboarding/ModelSetupRequiredDialog.vue',
+    )
     expect(setupDialog).toContain('emperoragent-wordmark.png')
     expect(setupDialog).not.toContain('brandIcon')
   })

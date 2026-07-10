@@ -22,8 +22,14 @@ type Registry = {
   execute(handler: Dict, input: Dict, context: Dict): Promise<Result>
 }
 
-async function executorApi(): Promise<{ registry(): Registry; command(): unknown }> {
-  const module = await import('./executor') as unknown as Record<string, new (...args: unknown[]) => unknown>
+async function executorApi(): Promise<{
+  registry(): Registry
+  command(): unknown
+}> {
+  const module = (await import('./executor')) as unknown as Record<
+    string,
+    new (...args: unknown[]) => unknown
+  >
   expect(module.HookExecutorRegistry).toBeTypeOf('function')
   expect(module.CommandHookExecutor).toBeTypeOf('function')
   const HookExecutorRegistry = module.HookExecutorRegistry!
@@ -83,16 +89,30 @@ async function registry(): Promise<Registry> {
 describe('hooks v2 command executor', () => {
   it('routes by handler type and parses event JSON from stdout', async () => {
     const run = await registry()
-    const result = await run.execute(command({
-      args: ['-e', 'let s="";process.stdin.on("data",c=>s+=c);process.stdin.on("end",()=>{const i=JSON.parse(s);process.stdout.write(JSON.stringify({decision:"deny",reason:i.tool_name}))})'],
-    }), input(), context())
+    const result = await run.execute(
+      command({
+        args: [
+          '-e',
+          'let s="";process.stdin.on("data",c=>s+=c);process.stdin.on("end",()=>{const i=JSON.parse(s);process.stdout.write(JSON.stringify({decision:"deny",reason:i.tool_name}))})',
+        ],
+      }),
+      input(),
+      context(),
+    )
 
-    expect(result).toMatchObject({ outcome: 'completed', output: { decision: 'deny', reason: 'write_file' } })
+    expect(result).toMatchObject({
+      outcome: 'completed',
+      output: { decision: 'deny', reason: 'write_file' },
+    })
   })
 
   it('rejects shell execution unless the global policy enables it', async () => {
     const run = await registry()
-    const result = await run.execute(command({ command: 'printf shell', shell: 'bash' }), input(), context())
+    const result = await run.execute(
+      command({ command: 'printf shell', shell: 'bash' }),
+      input(),
+      context(),
+    )
 
     expect(result).toMatchObject({ outcome: 'failed', output: null })
     expect(result.reason).toMatch(/shell.*disabled/i)
@@ -105,14 +125,28 @@ describe('hooks v2 command executor', () => {
       const run = await registry()
       const policy = defaultHooksConfigV2().policy
       policy.command.allowedEnv = ['HOOK_EXECUTOR_SECRET']
-      const visible = await run.execute(command({
-        allowedEnv: ['HOOK_EXECUTOR_SECRET'],
-        args: ['-e', 'process.stdout.write(JSON.stringify({reason:process.env.HOOK_EXECUTOR_SECRET||"missing"}))'],
-      }), input(), context({ policy }))
-      const hidden = await run.execute(command({
-        allowedEnv: [],
-        args: ['-e', 'process.stdout.write(JSON.stringify({reason:process.env.HOOK_EXECUTOR_SECRET||"missing"}))'],
-      }), input(), context({ policy }))
+      const visible = await run.execute(
+        command({
+          allowedEnv: ['HOOK_EXECUTOR_SECRET'],
+          args: [
+            '-e',
+            'process.stdout.write(JSON.stringify({reason:process.env.HOOK_EXECUTOR_SECRET||"missing"}))',
+          ],
+        }),
+        input(),
+        context({ policy }),
+      )
+      const hidden = await run.execute(
+        command({
+          allowedEnv: [],
+          args: [
+            '-e',
+            'process.stdout.write(JSON.stringify({reason:process.env.HOOK_EXECUTOR_SECRET||"missing"}))',
+          ],
+        }),
+        input(),
+        context({ policy }),
+      )
 
       expect(visible.output).toMatchObject({ reason: 'visible' })
       expect(hidden.output).toMatchObject({ reason: 'missing' })
@@ -124,20 +158,38 @@ describe('hooks v2 command executor', () => {
 
   it('treats exit 2 as deny and never lets nonzero JSON grant allow', async () => {
     const run = await registry()
-    const denied = await run.execute(command({
-      args: ['-e', 'process.stderr.write("blocked");process.exit(2)'],
-    }), input(), context())
-    const failed = await run.execute(command({
-      args: ['-e', 'process.stdout.write(JSON.stringify({decision:"allow"}));process.exit(3)'],
-    }), input(), context())
+    const denied = await run.execute(
+      command({
+        args: ['-e', 'process.stderr.write("blocked");process.exit(2)'],
+      }),
+      input(),
+      context(),
+    )
+    const failed = await run.execute(
+      command({
+        args: [
+          '-e',
+          'process.stdout.write(JSON.stringify({decision:"allow"}));process.exit(3)',
+        ],
+      }),
+      input(),
+      context(),
+    )
 
-    expect(denied).toMatchObject({ outcome: 'completed', output: { decision: 'deny', reason: 'blocked' } })
+    expect(denied).toMatchObject({
+      outcome: 'completed',
+      output: { decision: 'deny', reason: 'blocked' },
+    })
     expect(failed).toMatchObject({ outcome: 'failed', output: null })
   })
 
   it('fails malformed JSON instead of silently passing through', async () => {
     const run = await registry()
-    const result = await run.execute(command({ args: ['-e', 'process.stdout.write("{bad")'] }), input(), context())
+    const result = await run.execute(
+      command({ args: ['-e', 'process.stdout.write("{bad")'] }),
+      input(),
+      context(),
+    )
 
     expect(result).toMatchObject({ outcome: 'failed', output: null })
     expect(result.reason).toMatch(/json/i)
@@ -145,15 +197,23 @@ describe('hooks v2 command executor', () => {
 
   it('distinguishes timeout from caller cancellation', async () => {
     const run = await registry()
-    const timedOut = await run.execute(command({
-      timeoutMs: 20,
-      args: ['-e', 'setTimeout(()=>{},5000)'],
-    }), input(), context())
+    const timedOut = await run.execute(
+      command({
+        timeoutMs: 20,
+        args: ['-e', 'setTimeout(()=>{},5000)'],
+      }),
+      input(),
+      context(),
+    )
     const controller = new AbortController()
-    const cancelling = run.execute(command({
-      timeoutMs: 5_000,
-      args: ['-e', 'setTimeout(()=>{},5000)'],
-    }), input(), context({ signal: controller.signal }))
+    const cancelling = run.execute(
+      command({
+        timeoutMs: 5_000,
+        args: ['-e', 'setTimeout(()=>{},5000)'],
+      }),
+      input(),
+      context({ signal: controller.signal }),
+    )
     controller.abort()
     const cancelled = await cancelling
 
@@ -165,9 +225,13 @@ describe('hooks v2 command executor', () => {
     const run = await registry()
     const policy = defaultHooksConfigV2().policy
     policy.command.maxOutputBytes = 32
-    const result = await run.execute(command({
-      args: ['-e', 'process.stdout.write("x".repeat(100)+"TAIL")'],
-    }), input(), context({ policy }))
+    const result = await run.execute(
+      command({
+        args: ['-e', 'process.stdout.write("x".repeat(100)+"TAIL")'],
+      }),
+      input(),
+      context({ policy }),
+    )
 
     expect(result.outcome).toBe('completed')
     expect(result.stdoutBytes).toBe(104)
@@ -178,22 +242,33 @@ describe('hooks v2 command executor', () => {
 
   it('fails before spawning when cwd does not exist', async () => {
     const run = await registry()
-    const result = await run.execute(command(), input(), context({ cwd: join(tmpdir(), 'missing-hooks-cwd') }))
+    const result = await run.execute(
+      command(),
+      input(),
+      context({ cwd: join(tmpdir(), 'missing-hooks-cwd') }),
+    )
 
     expect(result).toMatchObject({ outcome: 'failed', output: null })
     expect(result.reason).toMatch(/cwd/i)
   })
 
-  it.skipIf(process.platform === 'win32')('kills descendant processes on timeout', async () => {
-    const run = await registry()
-    const root = mkdtempSync(join(tmpdir(), 'hooks-process-tree-'))
-    const sentinel = join(root, 'descendant-finished')
-    const childScript = `setTimeout(()=>require('node:fs').writeFileSync(${JSON.stringify(sentinel)},'done'),150)`
-    const parentScript = `require('node:child_process').spawn(process.execPath,['-e',${JSON.stringify(childScript)}]);setTimeout(()=>{},5000)`
-    const result = await run.execute(command({ timeoutMs: 30, args: ['-e', parentScript] }), input(), context())
-    await delay(250)
+  it.skipIf(process.platform === 'win32')(
+    'kills descendant processes on timeout',
+    async () => {
+      const run = await registry()
+      const root = mkdtempSync(join(tmpdir(), 'hooks-process-tree-'))
+      const sentinel = join(root, 'descendant-finished')
+      const childScript = `setTimeout(()=>require('node:fs').writeFileSync(${JSON.stringify(sentinel)},'done'),150)`
+      const parentScript = `require('node:child_process').spawn(process.execPath,['-e',${JSON.stringify(childScript)}]);setTimeout(()=>{},5000)`
+      const result = await run.execute(
+        command({ timeoutMs: 30, args: ['-e', parentScript] }),
+        input(),
+        context(),
+      )
+      await delay(250)
 
-    expect(result.outcome).toBe('timeout')
-    expect(existsSync(sentinel)).toBe(false)
-  })
+      expect(result.outcome).toBe('timeout')
+      expect(existsSync(sentinel)).toBe(false)
+    },
+  )
 })

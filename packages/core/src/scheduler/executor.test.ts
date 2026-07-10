@@ -6,15 +6,32 @@ import { ActiveTaskRegistry } from '../runtime/active'
 import { TaskManager } from '../tasks/manager'
 import { TaskStatus } from '../tasks/models'
 import { WatchlistDecision } from '../watchlist/models'
-import { SCHEDULER_TARGET_SESSION_METADATA_KEY, SchedulerJob, SchedulerPayload, SchedulerSchedule } from './models'
-import { SchedulerJobExecutor, type SchedulerAgentTurnPayload } from './executor'
+import {
+  SCHEDULER_TARGET_SESSION_METADATA_KEY,
+  SchedulerJob,
+  SchedulerPayload,
+  SchedulerSchedule,
+} from './models'
+import {
+  SchedulerJobExecutor,
+  type SchedulerAgentTurnPayload,
+} from './executor'
 import { inSchedulerRun } from './tool'
 
 function tmp(prefix: string): string {
   return mkdtempSync(join(tmpdir(), prefix))
 }
 
-function makeJob(kind: 'agent_turn' | 'team_wake' | 'system_event', opts: Partial<{ message: string; target: string; project_id: string; deliver: boolean; meta: Record<string, unknown> }> = {}): SchedulerJob {
+function makeJob(
+  kind: 'agent_turn' | 'team_wake' | 'system_event',
+  opts: Partial<{
+    message: string
+    target: string
+    project_id: string
+    deliver: boolean
+    meta: Record<string, unknown>
+  }> = {},
+): SchedulerJob {
   return SchedulerJob.create({
     jobId: `${kind}-job`,
     name: `${kind} job`,
@@ -50,7 +67,12 @@ describe('SchedulerJobExecutor', () => {
       },
     })
 
-    const result = await executor.run(makeJob('agent_turn', { deliver: false, meta: { [SCHEDULER_TARGET_SESSION_METADATA_KEY]: 'sess_sched' } }))
+    const result = await executor.run(
+      makeJob('agent_turn', {
+        deliver: false,
+        meta: { [SCHEDULER_TARGET_SESSION_METADATA_KEY]: 'sess_sched' },
+      }),
+    )
     expect(result).toBe('agent_turn completed')
     expect(submitted[0]!.content).toContain('[SCHEDULER_TRIGGER]')
     expect(submitted[0]!.displayContent).toContain('定时任务触发')
@@ -67,7 +89,9 @@ describe('SchedulerJobExecutor', () => {
       controlPending: () => true,
       submitAgentTurn: async () => 'never',
     })
-    await expect(executor.run(makeJob('agent_turn'))).rejects.toThrow(/Ask \/ Plan/)
+    await expect(executor.run(makeJob('agent_turn'))).rejects.toThrow(
+      /Ask \/ Plan/,
+    )
   })
 
   it('routes team_wake payloads to the project team manager', async () => {
@@ -81,30 +105,68 @@ describe('SchedulerJobExecutor', () => {
         },
       }),
     })
-    const result = await executor.run(makeJob('team_wake', { target: 'alice', project_id: 'project-1', message: 'wake up' }))
+    const result = await executor.run(
+      makeJob('team_wake', {
+        target: 'alice',
+        project_id: 'project-1',
+        message: 'wake up',
+      }),
+    )
     expect(result).toBe('team wake done')
-    expect(sent).toEqual([{ projectId: 'project-1', to: 'alice', content: 'wake up', wake: true, type: 'task' }])
+    expect(sent).toEqual([
+      {
+        projectId: 'project-1',
+        to: 'alice',
+        content: 'wake up',
+        wake: true,
+        type: 'task',
+      },
+    ])
   })
 
   it('handles system_event jobs and watchlist run decisions', async () => {
     const submitted: SchedulerAgentTurnPayload[] = []
     const executor = new SchedulerJobExecutor({
-      submitAgentTurn: async (payload) => { submitted.push(payload); return 'watchlist turn done' },
+      submitAgentTurn: async (payload) => {
+        submitted.push(payload)
+        return 'watchlist turn done'
+      },
       systemHandlers: { 'memory-maintenance': async () => 'memory ok' },
       watchlistService: {
-        check: async () => new WatchlistDecision({ action: 'run', reason: 'timely', message: 'Check issue queue' }),
+        check: async () =>
+          new WatchlistDecision({
+            action: 'run',
+            reason: 'timely',
+            message: 'Check issue queue',
+          }),
       },
     })
 
-    expect(await executor.run(makeJob('system_event', { meta: { system_event: 'memory-maintenance' } }))).toBe('memory ok')
-    expect(await executor.run(makeJob('system_event', { meta: { system_event: 'watchlist-check' } }))).toBe('watchlist turn done')
+    expect(
+      await executor.run(
+        makeJob('system_event', {
+          meta: { system_event: 'memory-maintenance' },
+        }),
+      ),
+    ).toBe('memory ok')
+    expect(
+      await executor.run(
+        makeJob('system_event', { meta: { system_event: 'watchlist-check' } }),
+      ),
+    ).toBe('watchlist turn done')
     expect(submitted[0]!.content).toContain('[WATCHLIST_TRIGGER]')
     expect(submitted[0]!.content).toContain('Check issue queue')
 
     const skipExecutor = new SchedulerJobExecutor({
       submitAgentTurn: async () => 'unused',
-      watchlistService: { check: async () => WatchlistDecision.skip('nothing timely') },
+      watchlistService: {
+        check: async () => WatchlistDecision.skip('nothing timely'),
+      },
     })
-    expect(await skipExecutor.run(makeJob('system_event', { meta: { system_event: 'watchlist-check' } }))).toBe('watchlist-check skipped: nothing timely')
+    expect(
+      await skipExecutor.run(
+        makeJob('system_event', { meta: { system_event: 'watchlist-check' } }),
+      ),
+    ).toBe('watchlist-check skipped: nothing timely')
   })
 })

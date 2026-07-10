@@ -2,7 +2,13 @@
  * ToolRegistry (MIG-TOOL-003)。
  * 对齐 Python `agent/tools/registry.py`：注册、生成 definitions、参数校验/转型、执行。
  */
-import { ToolResultObj, type Tool, type ToolDefinition, type ToolExecutionContext, type ToolResult } from './base'
+import {
+  ToolResultObj,
+  type Tool,
+  type ToolDefinition,
+  type ToolExecutionContext,
+  type ToolResult,
+} from './base'
 import { ingestToolResultMedia } from '../media/ingest'
 import { truncationNotice, ToolResultStore } from '../context/tool-results'
 
@@ -19,7 +25,8 @@ export class ToolRegistry {
   }
 
   register(tool: Tool): void {
-    if (this.#tools.has(tool.name)) throw new Error(`Tool "${tool.name}" is already registered`)
+    if (this.#tools.has(tool.name))
+      throw new Error(`Tool "${tool.name}" is already registered`)
     this.#tools.set(tool.name, tool)
   }
 
@@ -33,9 +40,13 @@ export class ToolRegistry {
     return removed
   }
 
-  get(name: string): Tool | undefined { return this.#tools.get(name) }
+  get(name: string): Tool | undefined {
+    return this.#tools.get(name)
+  }
 
-  has(name: string): boolean { return this.#tools.has(name) }
+  has(name: string): boolean {
+    return this.#tools.has(name)
+  }
 
   /** builtin 在前，mcp_ 在后。对齐 `get_definitions`。 */
   getDefinitions(): ToolDefinition[] {
@@ -49,12 +60,23 @@ export class ToolRegistry {
   }
 
   /** 参数转型 + 类型校验。对齐 `prepare_call` → `cast_params`。 */
-  prepareCall(name: string, args: Record<string, unknown>): Record<string, unknown> {
+  prepareCall(
+    name: string,
+    args: Record<string, unknown>,
+  ): Record<string, unknown> {
     const tool = this.#tools.get(name)
     if (!tool) throw new Error(`Unknown tool: ${name}`)
-    const prepared = castOne(args, tool.parameters as unknown as Record<string, unknown>) as Record<string, unknown>
-    const error = validateValue(prepared, tool.parameters as unknown as Record<string, unknown>, 'arguments')
-    if (error) throw new Error(`Tool schema validation failed for ${name}: ${error}`)
+    const prepared = castOne(
+      args,
+      tool.parameters as unknown as Record<string, unknown>,
+    ) as Record<string, unknown>
+    const error = validateValue(
+      prepared,
+      tool.parameters as unknown as Record<string, unknown>,
+      'arguments',
+    )
+    if (error)
+      throw new Error(`Tool schema validation failed for ${name}: ${error}`)
     return prepared
   }
 
@@ -90,11 +112,18 @@ export class ToolRegistry {
       mapped = tool.mapResult(capped, execCtx)
       // 约定：字符串结果以 'Error:' 开头即失败（与 execution.coerceToolResult 一致）。
       // 默认 mapResult 不设 isError，缺了这步 deny/非零退出会被当成 tool_run_completed（B4.3 实测）。
-      if (!mapped.isError && capped.startsWith('Error:')) mapped = { ...mapped, isError: true }
+      if (!mapped.isError && capped.startsWith('Error:'))
+        mapped = { ...mapped, isError: true }
       if (capped !== raw) attachFullOutputRef(mapped, execCtx, name, raw)
     } else {
       mapped = capToolResult(raw, tool.maxResultChars)
-      if (raw.modelContent.length > tool.maxResultChars) attachFullOutputRef(mapped, execCtx, name, raw.rawContent || raw.modelContent)
+      if (raw.modelContent.length > tool.maxResultChars)
+        attachFullOutputRef(
+          mapped,
+          execCtx,
+          name,
+          raw.rawContent || raw.modelContent,
+        )
     }
     return ingestToolResultMedia(ToolResultObj.fromData(mapped), {
       root: execCtx.root,
@@ -115,7 +144,12 @@ export class ToolRegistry {
 }
 
 /** 截断即落盘：完整输出内容寻址存入 tool-result store，metadata 带回可回看 ref。持久化失败不阻塞结果。 */
-function attachFullOutputRef(mapped: ToolResult, execCtx: ToolExecutionContext, toolName: string, fullText: string): void {
+function attachFullOutputRef(
+  mapped: ToolResult,
+  execCtx: ToolExecutionContext,
+  toolName: string,
+  fullText: string,
+): void {
   try {
     const store = new ToolResultStore(execCtx.root)
     const record = store.persistLargeResult(
@@ -124,7 +158,10 @@ function attachFullOutputRef(mapped: ToolResult, execCtx: ToolExecutionContext, 
       toolName,
       fullText,
     )
-    mapped.metadata = { ...(mapped.metadata ?? {}), full_output_ref: record.artifact_path }
+    mapped.metadata = {
+      ...(mapped.metadata ?? {}),
+      full_output_ref: record.artifact_path,
+    }
   } catch {
     // 落盘失败时保持原截断行为
   }
@@ -143,9 +180,10 @@ function capToolResult(result: ToolResult, limit: number): ToolResult {
     ...result,
     modelContent,
     rawContent,
-    displaySummary: result.displaySummary.length > limit
-      ? capText(result.displaySummary, limit)
-      : result.displaySummary,
+    displaySummary:
+      result.displaySummary.length > limit
+        ? capText(result.displaySummary, limit)
+        : result.displaySummary,
   }
 }
 
@@ -195,8 +233,14 @@ function castOne(value: unknown, schema: Record<string, unknown>): unknown {
     return value.map((v) => castOne(v, itemSchema))
   }
 
-  if (t === 'object' && value && typeof value === 'object' && !Array.isArray(value)) {
-    const props = (schema.properties as Record<string, Record<string, unknown>>) ?? {}
+  if (
+    t === 'object' &&
+    value &&
+    typeof value === 'object' &&
+    !Array.isArray(value)
+  ) {
+    const props =
+      (schema.properties as Record<string, Record<string, unknown>>) ?? {}
     const out: Record<string, unknown> = {}
     for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
       out[k] = k in props ? castOne(v, props[k]!) : v
@@ -207,51 +251,91 @@ function castOne(value: unknown, schema: Record<string, unknown>): unknown {
   return value
 }
 
-function validateValue(value: unknown, schema: Record<string, unknown>, path: string): string | null {
+function validateValue(
+  value: unknown,
+  schema: Record<string, unknown>,
+  path: string,
+): string | null {
   const type = schema.type
   if (Array.isArray(type)) {
-    const matches = type.some((candidate) => candidate === 'null'
-      ? value === null
-      : candidate === 'string'
-        ? typeof value === 'string'
-        : candidate === 'boolean'
-          ? typeof value === 'boolean'
-          : candidate === 'integer'
-            ? typeof value === 'number' && Number.isInteger(value)
-            : candidate === 'number'
-              ? typeof value === 'number'
-              : false)
+    const matches = type.some((candidate) =>
+      candidate === 'null'
+        ? value === null
+        : candidate === 'string'
+          ? typeof value === 'string'
+          : candidate === 'boolean'
+            ? typeof value === 'boolean'
+            : candidate === 'integer'
+              ? typeof value === 'number' && Number.isInteger(value)
+              : candidate === 'number'
+                ? typeof value === 'number'
+                : false,
+    )
     return matches ? null : `${path} must match one of: ${type.join(', ')}`
   }
   if (type === 'object') {
-    if (!value || typeof value !== 'object' || Array.isArray(value)) return `${path} must be an object`
+    if (!value || typeof value !== 'object' || Array.isArray(value))
+      return `${path} must be an object`
     const record = value as Record<string, unknown>
-    const required = Array.isArray(schema.required) ? schema.required.map(String) : []
+    const required = Array.isArray(schema.required)
+      ? schema.required.map(String)
+      : []
     for (const name of required) {
-      if (!(name in record) || record[name] === undefined || record[name] === null) return `${path}.${name} is required`
+      if (
+        !(name in record) ||
+        record[name] === undefined ||
+        record[name] === null
+      )
+        return `${path}.${name} is required`
     }
-    const properties = (schema.properties && typeof schema.properties === 'object' && !Array.isArray(schema.properties))
-      ? schema.properties as Record<string, Record<string, unknown>>
-      : {}
+    const properties =
+      schema.properties &&
+      typeof schema.properties === 'object' &&
+      !Array.isArray(schema.properties)
+        ? (schema.properties as Record<string, Record<string, unknown>>)
+        : {}
     for (const [name, childSchema] of Object.entries(properties)) {
-      if (!(name in record) || record[name] === undefined || record[name] === null) continue
-      const childError = validateValue(record[name], childSchema, `${path}.${name}`)
+      if (
+        !(name in record) ||
+        record[name] === undefined ||
+        record[name] === null
+      )
+        continue
+      const childError = validateValue(
+        record[name],
+        childSchema,
+        `${path}.${name}`,
+      )
       if (childError) return childError
     }
     return null
   }
   if (type === 'array') {
     if (!Array.isArray(value)) return `${path} must be an array`
-    const itemSchema = (schema.items && typeof schema.items === 'object') ? schema.items as Record<string, unknown> : {}
+    const itemSchema =
+      schema.items && typeof schema.items === 'object'
+        ? (schema.items as Record<string, unknown>)
+        : {}
     for (let index = 0; index < value.length; index++) {
-      const itemError = validateValue(value[index], itemSchema, `${path}[${index}]`)
+      const itemError = validateValue(
+        value[index],
+        itemSchema,
+        `${path}[${index}]`,
+      )
       if (itemError) return itemError
     }
     return null
   }
-  if (type === 'string' && typeof value !== 'string') return `${path} must be a string`
-  if (type === 'boolean' && typeof value !== 'boolean') return `${path} must be a boolean`
-  if (type === 'number' && typeof value !== 'number') return `${path} must be a number`
-  if (type === 'integer' && (typeof value !== 'number' || !Number.isInteger(value))) return `${path} must be an integer`
+  if (type === 'string' && typeof value !== 'string')
+    return `${path} must be a string`
+  if (type === 'boolean' && typeof value !== 'boolean')
+    return `${path} must be a boolean`
+  if (type === 'number' && typeof value !== 'number')
+    return `${path} must be a number`
+  if (
+    type === 'integer' &&
+    (typeof value !== 'number' || !Number.isInteger(value))
+  )
+    return `${path} must be an integer`
   return null
 }

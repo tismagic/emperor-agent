@@ -17,7 +17,9 @@ export function resolveToolProfile(
   args: Record<string, unknown>,
   opts?: { registry?: ToolRegistry | null },
 ): ToolPermissionProfile {
-  const tool: Tool | undefined = opts?.registry ? opts.registry.get(toolName) : undefined
+  const tool: Tool | undefined = opts?.registry
+    ? opts.registry.get(toolName)
+    : undefined
   let readOnly = tool ? Boolean(tool.readOnly) : false
   let concurrencySafe = tool ? Boolean(tool.concurrencySafe) : false
   let destructive = !readOnly

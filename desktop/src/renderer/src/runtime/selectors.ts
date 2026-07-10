@@ -5,7 +5,11 @@ export function findToolSegment(
   id: string | undefined,
 ): ToolSegment | null {
   if (!assistant || !id) return null
-  return assistant.segments.find((seg): seg is ToolSegment => seg.type === 'tool' && seg.toolId === id) || null
+  return (
+    assistant.segments.find(
+      (seg): seg is ToolSegment => seg.type === 'tool' && seg.toolId === id,
+    ) || null
+  )
 }
 
 export function findSubagent(

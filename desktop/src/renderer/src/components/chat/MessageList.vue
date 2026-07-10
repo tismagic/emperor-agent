@@ -6,10 +6,18 @@ import 'vue-virtual-scroller/dist/vue-virtual-scroller.css'
 import type { ChatMessage, RuntimePlanRecord } from '../../types'
 import MessageRow from './MessageRow.vue'
 import { CHAT_EXPANSION_STORE_KEY } from './expansionStoreKey'
-import { createExpansionStore, messageScrollSignature, shouldFollowBottom, shouldVirtualize } from './messageListModel'
+import {
+  createExpansionStore,
+  messageScrollSignature,
+  shouldFollowBottom,
+  shouldVirtualize,
+} from './messageListModel'
 import wordmarkUrl from '../../../../../../assets/generated/emperoragent-wordmark.png'
 
-const props = defineProps<{ messages: ChatMessage[]; plans?: RuntimePlanRecord[] }>()
+const props = defineProps<{
+  messages: ChatMessage[]
+  plans?: RuntimePlanRecord[]
+}>()
 const scroller = ref<HTMLElement | null>(null)
 const followBottom = ref(true)
 
@@ -56,9 +64,19 @@ watch(
 
 function sizeDependencies(message: ChatMessage): unknown[] {
   if (message.role === 'user') {
-    return [message.content.length, message.attachments?.length ?? 0, expansion.version.value]
+    return [
+      message.content.length,
+      message.attachments?.length ?? 0,
+      expansion.version.value,
+    ]
   }
-  return [message.content.length, message.segments.length, message.streaming, message.todos?.length ?? 0, expansion.version.value]
+  return [
+    message.content.length,
+    message.segments.length,
+    message.streaming,
+    message.todos?.length ?? 0,
+    expansion.version.value,
+  ]
 }
 </script>
 
@@ -66,12 +84,19 @@ function sizeDependencies(message: ChatMessage): unknown[] {
   <section ref="scroller" class="messages-pane" @scroll.passive="onScroll">
     <div v-if="!props.messages.length" class="welcome-card animate-rise-in">
       <div class="welcome-brand-lockup" aria-label="emperoragent">
-        <img :src="wordmarkUrl" class="welcome-wordmark" alt="emperoragent" draggable="false" />
+        <img
+          :src="wordmarkUrl"
+          class="welcome-wordmark"
+          alt="emperoragent"
+          draggable="false"
+        />
       </div>
       <div class="welcome-layout">
         <div>
           <h1>把任务交给本地 Agent。</h1>
-          <p>从代码修改、资料整理到长期提醒，都在独立会话里推进；需要时会调用工具、队友和记忆，留下清晰的执行轨迹。</p>
+          <p>
+            从代码修改、资料整理到长期提醒，都在独立会话里推进；需要时会调用工具、队友和记忆，留下清晰的执行轨迹。
+          </p>
         </div>
       </div>
     </div>
@@ -85,7 +110,11 @@ function sizeDependencies(message: ChatMessage): unknown[] {
       page-mode
     >
       <template #default="{ item, active }">
-        <DynamicScrollerItem :item="item" :active="active" :size-dependencies="sizeDependencies(item)">
+        <DynamicScrollerItem
+          :item="item"
+          :active="active"
+          :size-dependencies="sizeDependencies(item)"
+        >
           <div class="message-stack-virtual-row">
             <MessageRow :message="item" :plans="props.plans || []" />
           </div>
@@ -107,6 +136,8 @@ function sizeDependencies(message: ChatMessage): unknown[] {
       class="scroll-to-bottom-btn"
       aria-label="回到底部"
       @click="resumeFollow"
-    >回到底部 ↓</button>
+    >
+      回到底部 ↓
+    </button>
   </section>
 </template>

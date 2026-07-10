@@ -12,7 +12,7 @@ export function normalizeModelOptions(
   const seen = new Set<string>()
   const current = currentValue.trim()
 
-  if (current && !options.some(option => option.id.trim() === current)) {
+  if (current && !options.some((option) => option.id.trim() === current)) {
     result.push({ id: current, custom: true })
     seen.add(current)
   }
@@ -33,10 +33,14 @@ export function filterModelOptions(
 ): ModelPickerOption[] {
   const normalizedQuery = query.trim().toLocaleLowerCase()
   if (!normalizedQuery) return options
-  return options.filter(option => !option.custom && (
-    option.id.toLocaleLowerCase().includes(normalizedQuery)
-      || String(option.ownedBy || '').toLocaleLowerCase().includes(normalizedQuery)
-  ))
+  return options.filter(
+    (option) =>
+      !option.custom &&
+      (option.id.toLocaleLowerCase().includes(normalizedQuery) ||
+        String(option.ownedBy || '')
+          .toLocaleLowerCase()
+          .includes(normalizedQuery)),
+  )
 }
 
 export function applyModelSelection(

@@ -4,7 +4,14 @@ import { nowTs } from '../util/time'
 export const TEAM_SCHEMA_VERSION = 1
 export const LEAD_ACTOR = 'lead'
 const NAME_RE = /^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,63}$/
-const RESERVED_NAMES = new Set([LEAD_ACTOR, 'config', 'inbox', 'threads', 'checkpoints', 'cursors'])
+const RESERVED_NAMES = new Set([
+  LEAD_ACTOR,
+  'config',
+  'inbox',
+  'threads',
+  'checkpoints',
+  'cursors',
+])
 
 export enum TeamStatus {
   IDLE = 'idle',
@@ -20,8 +27,10 @@ export function newTeamId(prefix: string): string {
 
 export function validateMemberName(name: string): string {
   const safe = String(name || '').trim()
-  if (!NAME_RE.test(safe)) throw new Error('member name must match [a-zA-Z0-9][a-zA-Z0-9_.-]{0,63}')
-  if (RESERVED_NAMES.has(safe)) throw new Error(`member name ${JSON.stringify(safe)} is reserved`)
+  if (!NAME_RE.test(safe))
+    throw new Error('member name must match [a-zA-Z0-9][a-zA-Z0-9_.-]{0,63}')
+  if (RESERVED_NAMES.has(safe))
+    throw new Error(`member name ${JSON.stringify(safe)} is reserved`)
   return safe
 }
 
@@ -39,7 +48,15 @@ export class TeamMember {
   updated_at: number
   last_error: string | null
 
-  constructor(opts: { name: string; role: string; agent_type: string; status?: TeamStatus | string; created_at?: number; updated_at?: number; last_error?: string | null }) {
+  constructor(opts: {
+    name: string
+    role: string
+    agent_type: string
+    status?: TeamStatus | string
+    created_at?: number
+    updated_at?: number
+    last_error?: string | null
+  }) {
     this.name = validateMemberName(opts.name)
     this.role = opts.role
     this.agent_type = opts.agent_type
@@ -57,7 +74,10 @@ export class TeamMember {
       status: String(raw.status ?? TeamStatus.IDLE),
       created_at: Number(raw.created_at ?? raw.createdAt ?? nowTs()),
       updated_at: Number(raw.updated_at ?? raw.updatedAt ?? nowTs()),
-      last_error: raw.last_error || raw.lastError ? String(raw.last_error ?? raw.lastError) : null,
+      last_error:
+        raw.last_error || raw.lastError
+          ? String(raw.last_error ?? raw.lastError)
+          : null,
     })
   }
 
@@ -73,7 +93,12 @@ export class TeamMember {
     }
   }
 
-  touch(opts: { status?: TeamStatus | string | null; last_error?: string | null } = {}): TeamMember {
+  touch(
+    opts: {
+      status?: TeamStatus | string | null
+      last_error?: string | null
+    } = {},
+  ): TeamMember {
     return new TeamMember({
       name: this.name,
       role: this.role,
@@ -97,7 +122,17 @@ export class TeamMessage {
   in_reply_to: string | null
   meta: Record<string, unknown>
 
-  constructor(opts: { id: string; type: string; from_actor: string; to: string; content: string; timestamp?: number; task_id?: string | null; in_reply_to?: string | null; meta?: Record<string, unknown> }) {
+  constructor(opts: {
+    id: string
+    type: string
+    from_actor: string
+    to: string
+    content: string
+    timestamp?: number
+    task_id?: string | null
+    in_reply_to?: string | null
+    meta?: Record<string, unknown>
+  }) {
     this.id = opts.id || newTeamId('msg')
     this.type = opts.type || 'message'
     this.from_actor = validateActorName(opts.from_actor)
@@ -109,7 +144,15 @@ export class TeamMessage {
     this.meta = opts.meta ?? {}
   }
 
-  static create(opts: { from_actor: string; to: string; content: string; type?: string; task_id?: string | null; in_reply_to?: string | null; meta?: Record<string, unknown> | null }): TeamMessage {
+  static create(opts: {
+    from_actor: string
+    to: string
+    content: string
+    type?: string
+    task_id?: string | null
+    in_reply_to?: string | null
+    meta?: Record<string, unknown> | null
+  }): TeamMessage {
     return new TeamMessage({
       id: newTeamId('msg'),
       type: opts.type ?? 'message',
@@ -132,7 +175,10 @@ export class TeamMessage {
       timestamp: Number(raw.timestamp ?? nowTs()),
       task_id: raw.task_id ? String(raw.task_id) : null,
       in_reply_to: raw.in_reply_to ? String(raw.in_reply_to) : null,
-      meta: raw.meta && typeof raw.meta === 'object' && !Array.isArray(raw.meta) ? raw.meta as Record<string, unknown> : {},
+      meta:
+        raw.meta && typeof raw.meta === 'object' && !Array.isArray(raw.meta)
+          ? (raw.meta as Record<string, unknown>)
+          : {},
     })
   }
 
@@ -152,5 +198,7 @@ export class TeamMessage {
 }
 
 function normalizeStatus(value: unknown): TeamStatus {
-  return Object.values(TeamStatus).includes(value as TeamStatus) ? value as TeamStatus : TeamStatus.IDLE
+  return Object.values(TeamStatus).includes(value as TeamStatus)
+    ? (value as TeamStatus)
+    : TeamStatus.IDLE
 }

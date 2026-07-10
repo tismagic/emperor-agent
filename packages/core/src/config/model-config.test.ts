@@ -26,7 +26,14 @@ describe('parseModelConfig', () => {
   it('treats legacy id as mainModelId and fills providers for every spec', () => {
     const cfg = parseModelConfig({
       agents: { defaults: { model: 'a', maxTokens: 100 } },
-      models: [{ name: 'a', id: 'gpt-4o', secondaryModelId: 'gpt-4o-mini', provider: 'openai' }],
+      models: [
+        {
+          name: 'a',
+          id: 'gpt-4o',
+          secondaryModelId: 'gpt-4o-mini',
+          provider: 'openai',
+        },
+      ],
     })
     expect(cfg.defaults.model).toBe('a')
     expect(cfg.defaults.maxTokens).toBe(100)
@@ -51,7 +58,10 @@ describe('parseModelConfig', () => {
   })
 
   it('activeEntry prefers defaults.model then first entry', () => {
-    const cfg = parseModelConfig({ agents: { defaults: { model: 'b' } }, models: [{ name: 'a' }, { name: 'b' }] })
+    const cfg = parseModelConfig({
+      agents: { defaults: { model: 'b' } },
+      models: [{ name: 'a' }, { name: 'b' }],
+    })
     expect(activeEntry(cfg)?.name).toBe('b')
     const cfg2 = parseModelConfig({ models: [{ name: 'a' }] })
     expect(activeEntry(cfg2)?.name).toBe('a')
@@ -62,20 +72,37 @@ describe('resolveProviderName', () => {
   it('honors explicit provider, else keyword-matches the model', () => {
     expect(resolveProviderName('openai', 'whatever', {})).toBe('openai')
     expect(resolveProviderName('bogus', 'x', {})).toBe('custom')
-    expect(resolveProviderName('auto', 'claude-3-5-sonnet', {})).toBe('anthropic')
+    expect(resolveProviderName('auto', 'claude-3-5-sonnet', {})).toBe(
+      'anthropic',
+    )
     expect(resolveProviderName('auto', 'deepseek-chat', {})).toBe('deepseek')
   })
 
   it('falls back to first provider with an apiKey, else deepseek', () => {
-    expect(resolveProviderName('auto', 'mystery', { groq: { apiKey: 'k', apiBase: null, extraHeaders: null, extraBody: null } })).toBe('groq')
+    expect(
+      resolveProviderName('auto', 'mystery', {
+        groq: {
+          apiKey: 'k',
+          apiBase: null,
+          extraHeaders: null,
+          extraBody: null,
+        },
+      }),
+    ).toBe('groq')
     expect(resolveProviderName('auto', 'mystery', {})).toBe('deepseek')
   })
 })
 
 describe('validateCompleteModelEntries', () => {
   it('rejects empty, duplicate names, and missing model ids', () => {
-    expect(() => validateCompleteModelEntries({ models: [] })).toThrow(ValidationError)
-    expect(() => validateCompleteModelEntries({ models: [{ name: 'a', mainModelId: 'm' }] })).toThrow(/Secondary/)
+    expect(() => validateCompleteModelEntries({ models: [] })).toThrow(
+      ValidationError,
+    )
+    expect(() =>
+      validateCompleteModelEntries({
+        models: [{ name: 'a', mainModelId: 'm' }],
+      }),
+    ).toThrow(/Secondary/)
     expect(() =>
       validateCompleteModelEntries({
         models: [
@@ -88,7 +115,9 @@ describe('validateCompleteModelEntries', () => {
 
   it('accepts complete entries', () => {
     expect(() =>
-      validateCompleteModelEntries({ models: [{ name: 'a', mainModelId: 'm', secondaryModelId: 's' }] }),
+      validateCompleteModelEntries({
+        models: [{ name: 'a', mainModelId: 'm', secondaryModelId: 's' }],
+      }),
     ).not.toThrow()
   })
 })
@@ -99,7 +128,14 @@ describe('model-config IO', () => {
     expect(cfg.models).toHaveLength(0)
     await saveModelConfig(dir, {
       agents: { defaults: { model: 'a' } },
-      models: [{ name: 'a', mainModelId: 'm', secondaryModelId: 's', provider: 'openai' }],
+      models: [
+        {
+          name: 'a',
+          mainModelId: 'm',
+          secondaryModelId: 's',
+          provider: 'openai',
+        },
+      ],
     })
     const onDisk = await readFile(join(dir, 'model_config.json'), 'utf8')
     expect(onDisk.endsWith('}\n')).toBe(true) // indent=2 + trailing newline
@@ -115,18 +151,29 @@ describe('model-config IO', () => {
 
     await saveModelConfig(dir, {
       agents: { defaults: { model: 'a' } },
-      models: [{ name: 'a', mainModelId: 'm', secondaryModelId: 's', provider: 'openai' }],
+      models: [
+        {
+          name: 'a',
+          mainModelId: 'm',
+          secondaryModelId: 's',
+          provider: 'openai',
+        },
+      ],
     })
 
     expect(existsSync(join(dir, 'model_config.example.json'))).toBe(false)
   })
 
   it('markEntryVision flips supportsVision and persists', async () => {
-    await saveModelConfig(dir, { models: [{ name: 'a', mainModelId: 'm', secondaryModelId: 's' }] })
+    await saveModelConfig(dir, {
+      models: [{ name: 'a', mainModelId: 'm', secondaryModelId: 's' }],
+    })
     await markEntryVision(dir, 'a', true)
     const reloaded = await loadModelConfig(dir)
     expect(findEntry(reloaded, 'a')?.supportsVision).toBe(true)
-    await expect(markEntryVision(dir, 'missing')).rejects.toThrow(ValidationError)
+    await expect(markEntryVision(dir, 'missing')).rejects.toThrow(
+      ValidationError,
+    )
   })
 })
 
@@ -148,14 +195,16 @@ describe('onboarding model config builder', () => {
   it('preserves an existing entry api key when the wizard key is blank', () => {
     const raw = defaultRaw()
     raw.agents.defaults.model = 'old'
-    raw.models = [{
-      name: 'old',
-      provider: 'deepseek',
-      apiKey: 'sk-old-secret',
-      apiBase: 'https://api.deepseek.com',
-      mainModelId: 'deepseek-chat',
-      secondaryModelId: 'deepseek-chat',
-    }]
+    raw.models = [
+      {
+        name: 'old',
+        provider: 'deepseek',
+        apiKey: 'sk-old-secret',
+        apiBase: 'https://api.deepseek.com',
+        mainModelId: 'deepseek-chat',
+        secondaryModelId: 'deepseek-chat',
+      },
+    ]
 
     const out = buildWizardModelConfig(raw, settings(''))
     const cfg = parseModelConfig(out)
@@ -173,16 +222,21 @@ describe('onboarding model config builder', () => {
     // 占位符字符串本身——必须和空字符串一样触发回退到旧密钥，不能被当成"新密钥"存盘。
     const raw = defaultRaw()
     raw.agents.defaults.model = 'old'
-    raw.models = [{
-      name: 'old',
-      provider: 'deepseek',
-      apiKey: 'sk-old-secret',
-      apiBase: 'https://api.deepseek.com',
-      mainModelId: 'deepseek-chat',
-      secondaryModelId: 'deepseek-chat',
-    }]
+    raw.models = [
+      {
+        name: 'old',
+        provider: 'deepseek',
+        apiKey: 'sk-old-secret',
+        apiBase: 'https://api.deepseek.com',
+        mainModelId: 'deepseek-chat',
+        secondaryModelId: 'deepseek-chat',
+      },
+    ]
 
-    const out = buildWizardModelConfig(raw, settings(maskSecret('sk-old-secret')))
+    const out = buildWizardModelConfig(
+      raw,
+      settings(maskSecret('sk-old-secret')),
+    )
     const entry = activeEntry(parseModelConfig(out))!
 
     expect(entry.apiKey).toBe('sk-old-secret')

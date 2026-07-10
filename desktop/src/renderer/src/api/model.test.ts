@@ -1,5 +1,9 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { discoverProviderModels, saveOnboardingModelConfig, testModelEntry } from './model'
+import {
+  discoverProviderModels,
+  saveOnboardingModelConfig,
+  testModelEntry,
+} from './model'
 
 const g = globalThis as unknown as { window?: any; fetch?: unknown }
 
@@ -11,68 +15,108 @@ afterEach(() => {
 describe('model API Core IPC (MIG-IPC-010)', () => {
   it('runs model tests through Core IPC when the bridge is available', async () => {
     const calls: unknown[][] = []
-    g.window = { emperor: { invokeCore: async (...args: unknown[]) => { calls.push(args); return { ok: true, sample: 'pong' } } } }
+    g.window = {
+      emperor: {
+        invokeCore: async (...args: unknown[]) => {
+          calls.push(args)
+          return { ok: true, sample: 'pong' }
+        },
+      },
+    }
     const fetchSpy = vi.spyOn(globalThis, 'fetch')
 
-    await expect(testModelEntry('main', 'text', 'secondary')).resolves.toEqual({ ok: true, sample: 'pong' })
+    await expect(testModelEntry('main', 'text', 'secondary')).resolves.toEqual({
+      ok: true,
+      sample: 'pong',
+    })
 
-    expect(calls).toEqual([['model.test', { entryName: 'main', kind: 'text', role: 'secondary' }]])
+    expect(calls).toEqual([
+      ['model.test', { entryName: 'main', kind: 'text', role: 'secondary' }],
+    ])
     expect(fetchSpy).not.toHaveBeenCalled()
   })
 
   it('saves onboarding wizard settings through Core IPC', async () => {
     const calls: unknown[][] = []
-    g.window = { emperor: { invokeCore: async (...args: unknown[]) => { calls.push(args); return { current: { model: 'deepseek-chat' } } } } }
+    g.window = {
+      emperor: {
+        invokeCore: async (...args: unknown[]) => {
+          calls.push(args)
+          return { current: { model: 'deepseek-chat' } }
+        },
+      },
+    }
     const fetchSpy = vi.spyOn(globalThis, 'fetch')
 
-    await expect(saveOnboardingModelConfig({
-      provider: 'deepseek',
-      name: 'deepseek-work',
-      label: '',
-      apiKey: 'sk',
-      apiBase: 'https://api.deepseek.com',
-      mainModelId: 'deepseek-chat',
-      secondaryModelId: 'deepseek-chat',
-      maxTokens: 4096,
-      temperature: 0.2,
-      contextWindowTokens: 64000,
-      reasoningEffort: null,
-    })).resolves.toEqual({ current: { model: 'deepseek-chat' } })
+    await expect(
+      saveOnboardingModelConfig({
+        provider: 'deepseek',
+        name: 'deepseek-work',
+        label: '',
+        apiKey: 'sk',
+        apiBase: 'https://api.deepseek.com',
+        mainModelId: 'deepseek-chat',
+        secondaryModelId: 'deepseek-chat',
+        maxTokens: 4096,
+        temperature: 0.2,
+        contextWindowTokens: 64000,
+        reasoningEffort: null,
+      }),
+    ).resolves.toEqual({ current: { model: 'deepseek-chat' } })
 
-    expect(calls).toEqual([['model.saveOnboardingConfig', {
-      provider: 'deepseek',
-      name: 'deepseek-work',
-      label: '',
-      apiKey: 'sk',
-      apiBase: 'https://api.deepseek.com',
-      mainModelId: 'deepseek-chat',
-      secondaryModelId: 'deepseek-chat',
-      maxTokens: 4096,
-      temperature: 0.2,
-      contextWindowTokens: 64000,
-      reasoningEffort: null,
-    }]])
+    expect(calls).toEqual([
+      [
+        'model.saveOnboardingConfig',
+        {
+          provider: 'deepseek',
+          name: 'deepseek-work',
+          label: '',
+          apiKey: 'sk',
+          apiBase: 'https://api.deepseek.com',
+          mainModelId: 'deepseek-chat',
+          secondaryModelId: 'deepseek-chat',
+          maxTokens: 4096,
+          temperature: 0.2,
+          contextWindowTokens: 64000,
+          reasoningEffort: null,
+        },
+      ],
+    ])
     expect(fetchSpy).not.toHaveBeenCalled()
   })
 
   it('discovers provider models through Core IPC', async () => {
     const calls: unknown[][] = []
-    g.window = { emperor: { invokeCore: async (...args: unknown[]) => { calls.push(args); return { ok: true, models: [{ id: 'deepseek-chat' }] } } } }
+    g.window = {
+      emperor: {
+        invokeCore: async (...args: unknown[]) => {
+          calls.push(args)
+          return { ok: true, models: [{ id: 'deepseek-chat' }] }
+        },
+      },
+    }
     const fetchSpy = vi.spyOn(globalThis, 'fetch')
 
-    await expect(discoverProviderModels({
-      provider: 'deepseek',
-      entryName: 'deepseek-work',
-      apiBase: 'https://api.deepseek.com',
-      apiKey: '***1234',
-    })).resolves.toEqual({ ok: true, models: [{ id: 'deepseek-chat' }] })
+    await expect(
+      discoverProviderModels({
+        provider: 'deepseek',
+        entryName: 'deepseek-work',
+        apiBase: 'https://api.deepseek.com',
+        apiKey: '***1234',
+      }),
+    ).resolves.toEqual({ ok: true, models: [{ id: 'deepseek-chat' }] })
 
-    expect(calls).toEqual([['model.discoverModels', {
-      provider: 'deepseek',
-      entryName: 'deepseek-work',
-      apiBase: 'https://api.deepseek.com',
-      apiKey: '***1234',
-    }]])
+    expect(calls).toEqual([
+      [
+        'model.discoverModels',
+        {
+          provider: 'deepseek',
+          entryName: 'deepseek-work',
+          apiBase: 'https://api.deepseek.com',
+          apiKey: '***1234',
+        },
+      ],
+    ])
     expect(fetchSpy).not.toHaveBeenCalled()
   })
 

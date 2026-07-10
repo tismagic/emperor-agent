@@ -20,19 +20,37 @@ export interface FloatingMenuLayout {
   maxHeight: number
 }
 
-export function floatingMenuLayout(input: FloatingMenuLayoutInput): FloatingMenuLayout {
+export function floatingMenuLayout(
+  input: FloatingMenuLayoutInput,
+): FloatingMenuLayout {
   const margin = input.margin ?? 12
   const gap = input.gap ?? 8
   const menuWidth = Math.min(input.menuWidth, input.viewportWidth - margin * 2)
-  const menuHeight = Math.min(input.menuHeight, input.viewportHeight - margin * 2)
+  const menuHeight = Math.min(
+    input.menuHeight,
+    input.viewportHeight - margin * 2,
+  )
   const spaceAbove = input.buttonRect.top - margin - gap
-  const spaceBelow = input.viewportHeight - input.buttonRect.bottom - margin - gap
+  const spaceBelow =
+    input.viewportHeight - input.buttonRect.bottom - margin - gap
   const placeBelow = spaceAbove < menuHeight && spaceBelow > spaceAbove
   const maxHeight = Math.max(180, placeBelow ? spaceBelow : spaceAbove)
-  const left = clamp(input.buttonRect.right - menuWidth, margin, input.viewportWidth - menuWidth - margin)
+  const left = clamp(
+    input.buttonRect.right - menuWidth,
+    margin,
+    input.viewportWidth - menuWidth - margin,
+  )
   const top = placeBelow
-    ? clamp(input.buttonRect.bottom + gap, margin, input.viewportHeight - menuHeight - margin)
-    : clamp(input.buttonRect.top - gap - menuHeight, margin, input.viewportHeight - menuHeight - margin)
+    ? clamp(
+        input.buttonRect.bottom + gap,
+        margin,
+        input.viewportHeight - menuHeight - margin,
+      )
+    : clamp(
+        input.buttonRect.top - gap - menuHeight,
+        margin,
+        input.viewportHeight - menuHeight - margin,
+      )
 
   return {
     placement: placeBelow ? 'bottom' : 'top',
@@ -85,8 +103,10 @@ export function useFloatingMenu(opts: {
   }
 
   function isInside(target: EventTarget | null) {
-    return target instanceof Node && (
-      Boolean(opts.button.value?.contains(target)) || Boolean(opts.menu.value?.contains(target))
+    return (
+      target instanceof Node &&
+      (Boolean(opts.button.value?.contains(target)) ||
+        Boolean(opts.menu.value?.contains(target)))
     )
   }
 

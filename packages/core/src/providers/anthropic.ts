@@ -27,7 +27,9 @@ export class AnthropicProvider extends LLMProvider {
       maxRetries: DEFAULT_MAX_RETRIES,
       ...(this.apiKey ? { apiKey: this.apiKey } : {}),
       ...(this.apiBase ? { baseURL: this.apiBase } : {}),
-      ...(Object.keys(this.extraHeaders).length ? { defaultHeaders: this.extraHeaders } : {}),
+      ...(Object.keys(this.extraHeaders).length
+        ? { defaultHeaders: this.extraHeaders }
+        : {}),
     })
   }
 
@@ -37,12 +39,18 @@ export class AnthropicProvider extends LLMProvider {
   }
 
   async chat(args: ChatArgs): Promise<LLMResponse> {
-    const resp = await this.client.messages.create({ ...(this.kwargsFor(args) as any), stream: false }, requestOptions(args.signal))
+    const resp = await this.client.messages.create(
+      { ...(this.kwargsFor(args) as any), stream: false },
+      requestOptions(args.signal),
+    )
     return AnthropicProvider.parseResponse(resp)
   }
 
   override async chatStream(args: ChatStreamArgs): Promise<LLMResponse> {
-    const stream = this.client.messages.stream(this.kwargsFor(args) as any, requestOptions(args.signal))
+    const stream = this.client.messages.stream(
+      this.kwargsFor(args) as any,
+      requestOptions(args.signal),
+    )
     if (args.onContentDelta) {
       stream.on('text', (text: string) => {
         void args.onContentDelta?.(text)
@@ -54,7 +62,8 @@ export class AnthropicProvider extends LLMProvider {
         void args.onToolCallComplete?.({
           id: block.id,
           name: block.name,
-          arguments: block.input && typeof block.input === 'object' ? block.input : {},
+          arguments:
+            block.input && typeof block.input === 'object' ? block.input : {},
         })
       })
     }
@@ -66,7 +75,8 @@ export class AnthropicProvider extends LLMProvider {
   kwargsFor(args: ChatArgs): Record<string, unknown> {
     const reasoningEffort = args.reasoningEffort ?? null
     const [system, messages] = this.convertMessages(args.messages)
-    if (this.needsReasoningBackfill(reasoningEffort)) backfillReasoning(messages)
+    if (this.needsReasoningBackfill(reasoningEffort))
+      backfillReasoning(messages)
 
     const maxTokens = Math.max(1, args.maxTokens ?? 4096)
     const kwargs: Record<string, unknown> = {
@@ -77,16 +87,23 @@ export class AnthropicProvider extends LLMProvider {
     }
     const cache = this.supportsPromptCaching()
     if (system) {
-      kwargs.system = cache ? [{ type: 'text', text: system, cache_control: EPHEMERAL }] : system
+      kwargs.system = cache
+        ? [{ type: 'text', text: system, cache_control: EPHEMERAL }]
+        : system
     }
     const tools = LLMProvider.openaiToolsToAnthropic(args.tools)
     if (tools && tools.length) {
-      if (cache) tools[tools.length - 1] = { ...tools[tools.length - 1], cache_control: EPHEMERAL }
+      if (cache)
+        tools[tools.length - 1] = {
+          ...tools[tools.length - 1],
+          cache_control: EPHEMERAL,
+        }
       kwargs.tools = tools
       kwargs.tool_choice = { type: 'auto' }
     }
     if (reasoningEffort && reasoningEffort !== 'none') {
-      const budget = { low: 1024, medium: 4096, high: 8192 }[reasoningEffort] ?? 4096
+      const budget =
+        { low: 1024, medium: 4096, high: 8192 }[reasoningEffort] ?? 4096
       kwargs.thinking = { type: 'enabled', budget_tokens: budget }
       kwargs.temperature = 1.0
       kwargs.max_tokens = Math.max(maxTokens, budget + 1024)
@@ -102,7 +119,9 @@ export class AnthropicProvider extends LLMProvider {
   }
 
   /** 对齐 `_convert_messages`：拆出 system 字符串 + Anthropic 消息列表。 */
-  convertMessages(messages: OpenAiMessage[]): [string, Array<Record<string, any>>] {
+  convertMessages(
+    messages: OpenAiMessage[],
+  ): [string, Array<Record<string, any>>] {
     const systemParts: string[] = []
     const converted: Array<Record<string, any>> = []
     for (const msg of messages) {
@@ -117,20 +136,31 @@ export class AnthropicProvider extends LLMProvider {
         continue
       }
       if (role === 'assistant') {
-        const assistantMsg: Record<string, any> = { role: 'assistant', content: assistantBlocks(msg) }
-        if ('reasoning_content' in msg) assistantMsg.reasoning_content = String(msg.reasoning_content ?? '')
+        const assistantMsg: Record<string, any> = {
+          role: 'assistant',
+          content: assistantBlocks(msg),
+        }
+        if ('reasoning_content' in msg)
+          assistantMsg.reasoning_content = String(msg.reasoning_content ?? '')
         converted.push(assistantMsg)
         continue
       }
       if (role === 'user') {
-        converted.push({ role: 'user', content: contentToAnthropic(content) || '(empty)' })
+        converted.push({
+          role: 'user',
+          content: contentToAnthropic(content) || '(empty)',
+        })
       }
     }
     return [systemParts.filter((p) => p).join('\n\n'), mergeRoles(converted)]
   }
 
   needsReasoningBackfill(reasoningEffort: string | null): boolean {
-    if (!reasoningEffort || ['none', 'minimal', 'minimum'].includes(reasoningEffort.toLowerCase())) return false
+    if (
+      !reasoningEffort ||
+      ['none', 'minimal', 'minimum'].includes(reasoningEffort.toLowerCase())
+    )
+      return false
     const base = (this.apiBase ?? '').toLowerCase()
     return Boolean(base && !base.includes('anthropic.com'))
   }
@@ -143,7 +173,12 @@ export class AnthropicProvider extends LLMProvider {
     for (const block of response.content ?? []) {
       if (block.type === 'text') parts.push(block.text)
       else if (block.type === 'tool_use') {
-        tools.push({ id: block.id, name: block.name, arguments: block.input && typeof block.input === 'object' ? block.input : {} })
+        tools.push({
+          id: block.id,
+          name: block.name,
+          arguments:
+            block.input && typeof block.input === 'object' ? block.input : {},
+        })
       } else if (block.type === 'thinking') {
         const thinking = String(block.thinking ?? '')
         reasoningParts.push(thinking)
@@ -161,13 +196,19 @@ export class AnthropicProvider extends LLMProvider {
       usage.cache_read = response.usage.cache_read_input_tokens ?? 0
       usage.cache_create = response.usage.cache_creation_input_tokens ?? 0
       if (usage.cache_read || usage.cache_create) {
-        logger.debug('[prompt-cache]', { read: usage.cache_read, create: usage.cache_create, input: usage.input })
+        logger.debug('[prompt-cache]', {
+          read: usage.cache_read,
+          create: usage.cache_create,
+          input: usage.input,
+        })
       }
     }
     return {
       content: parts.join('') || null,
       toolCalls: tools,
-      finishReason: tools.length ? 'tool_calls' : response.stop_reason || 'stop',
+      finishReason: tools.length
+        ? 'tool_calls'
+        : response.stop_reason || 'stop',
       usage,
       reasoningContent: reasoningParts.join('') || null,
       thinkingBlocks: thinkingBlocks.length ? thinkingBlocks : null,
@@ -177,7 +218,9 @@ export class AnthropicProvider extends LLMProvider {
 
 // ── module-private helpers（对齐 Python 静态方法）──
 
-function requestOptions(signal?: AbortSignal | null): { signal: AbortSignal } | undefined {
+function requestOptions(
+  signal?: AbortSignal | null,
+): { signal: AbortSignal } | undefined {
   return signal ? { signal } : undefined
 }
 
@@ -187,7 +230,8 @@ function contentToAnthropic(content: unknown): unknown {
   const out: Array<Record<string, unknown>> = []
   for (const block of content as any[]) {
     if (!block || typeof block !== 'object') continue
-    if (block.type === 'text') out.push({ type: 'text', text: String(block.text ?? '') })
+    if (block.type === 'text')
+      out.push({ type: 'text', text: String(block.text ?? '') })
     else if (block.type === 'image_url') {
       const url = block.image_url?.url ?? ''
       if (typeof url === 'string' && url.startsWith('data:')) {
@@ -197,15 +241,25 @@ function contentToAnthropic(content: unknown): unknown {
         const data = url.slice(comma + 1)
         const mediaType = meta.split(';')[0]?.split(':')[1]
         if (!mediaType) continue
-        out.push({ type: 'image', source: { type: 'base64', media_type: mediaType, data } })
+        out.push({
+          type: 'image',
+          source: { type: 'base64', media_type: mediaType, data },
+        })
       }
     }
   }
   return out
 }
 
-function appendToolResult(converted: Array<Record<string, any>>, msg: OpenAiMessage): void {
-  const block = { type: 'tool_result', tool_use_id: msg.tool_call_id ?? '', content: String(msg.content ?? '') }
+function appendToolResult(
+  converted: Array<Record<string, any>>,
+  msg: OpenAiMessage,
+): void {
+  const block = {
+    type: 'tool_result',
+    tool_use_id: msg.tool_call_id ?? '',
+    content: String(msg.content ?? ''),
+  }
   const last = converted[converted.length - 1]
   if (last && last.role === 'user') {
     if (Array.isArray(last.content)) last.content.push(block)
@@ -220,7 +274,10 @@ function assistantBlocks(msg: OpenAiMessage): Array<Record<string, unknown>> {
   for (const block of (msg.thinking_blocks as any[]) ?? []) {
     if (!block || typeof block !== 'object') continue
     if (block.type === 'thinking') {
-      const item: Record<string, unknown> = { type: 'thinking', thinking: block.thinking ?? '' }
+      const item: Record<string, unknown> = {
+        type: 'thinking',
+        thinking: block.thinking ?? '',
+      }
       if (block.signature) item.signature = block.signature
       blocks.push(item)
     } else if (block.type === 'redacted_thinking') {
@@ -230,12 +287,19 @@ function assistantBlocks(msg: OpenAiMessage): Array<Record<string, unknown>> {
   if (msg.content) blocks.push({ type: 'text', text: String(msg.content) })
   for (const tc of (msg.tool_calls as any[]) ?? []) {
     const fn = tc.function ?? {}
-    blocks.push({ type: 'tool_use', id: tc.id || newToolId(), name: fn.name ?? '', input: parseJsonArgs(fn.arguments) })
+    blocks.push({
+      type: 'tool_use',
+      id: tc.id || newToolId(),
+      name: fn.name ?? '',
+      input: parseJsonArgs(fn.arguments),
+    })
   }
   return blocks.length ? blocks : [{ type: 'text', text: '' }]
 }
 
-function mergeRoles(messages: Array<Record<string, any>>): Array<Record<string, any>> {
+function mergeRoles(
+  messages: Array<Record<string, any>>,
+): Array<Record<string, any>> {
   const merged: Array<Record<string, any>> = []
   for (const msg of messages) {
     const last = merged[merged.length - 1]
@@ -250,21 +314,26 @@ function mergeRoles(messages: Array<Record<string, any>>): Array<Record<string, 
       merged.push(msg)
     }
   }
-  while (merged.length && merged[merged.length - 1]!.role === 'assistant') merged.pop()
-  if (!merged.length) merged.push({ role: 'user', content: '(conversation continued)' })
-  if (merged[0]!.role === 'assistant') merged.unshift({ role: 'user', content: '(conversation continued)' })
+  while (merged.length && merged[merged.length - 1]!.role === 'assistant')
+    merged.pop()
+  if (!merged.length)
+    merged.push({ role: 'user', content: '(conversation continued)' })
+  if (merged[0]!.role === 'assistant')
+    merged.unshift({ role: 'user', content: '(conversation continued)' })
   return merged
 }
 
 function backfillReasoning(messages: Array<Record<string, any>>): void {
   for (const msg of messages) {
-    if (msg.role === 'assistant' && !('reasoning_content' in msg)) msg.reasoning_content = ''
+    if (msg.role === 'assistant' && !('reasoning_content' in msg))
+      msg.reasoning_content = ''
   }
 }
 
 const ALNUM = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789'
 function newToolId(): string {
   let s = 'toolu_'
-  for (let i = 0; i < 22; i++) s += ALNUM[Math.floor(Math.random() * ALNUM.length)]
+  for (let i = 0; i < 22; i++)
+    s += ALNUM[Math.floor(Math.random() * ALNUM.length)]
   return s
 }

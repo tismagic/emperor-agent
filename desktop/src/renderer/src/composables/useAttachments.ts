@@ -8,7 +8,10 @@ import type { AttachmentRef } from '../types'
 
 export const MAX_ATTACHMENT_DRAFTS = 5
 
-export function useAttachments(options: { isBusy: () => boolean; onError: (message: string) => void }) {
+export function useAttachments(options: {
+  isBusy: () => boolean
+  onError: (message: string) => void
+}) {
   const drafts = ref<AttachmentRef[]>([])
   const uploading = ref<Set<string>>(new Set())
   const dragActive = ref(false)
@@ -17,7 +20,9 @@ export function useAttachments(options: { isBusy: () => boolean; onError: (messa
     if (!files) return
     const slots = MAX_ATTACHMENT_DRAFTS - drafts.value.length
     if (slots <= 0) {
-      options.onError(`最多 ${MAX_ATTACHMENT_DRAFTS} 个附件，请先发送或移除已有的`)
+      options.onError(
+        `最多 ${MAX_ATTACHMENT_DRAFTS} 个附件，请先发送或移除已有的`,
+      )
       return
     }
     const list = Array.from(files).slice(0, slots)
@@ -77,7 +82,19 @@ export function useAttachments(options: { isBusy: () => boolean; onError: (messa
     return taken
   }
 
-  return { drafts, uploading, dragActive, handleFiles, onFileInput, onDragEnter, onDragOver, onDragLeave, onDrop, removeDraft, takeDrafts }
+  return {
+    drafts,
+    uploading,
+    dragActive,
+    handleFiles,
+    onFileInput,
+    onDragEnter,
+    onDragOver,
+    onDragLeave,
+    onDrop,
+    removeDraft,
+    takeDrafts,
+  }
 }
 
 function hasFiles(dt: DataTransfer | null): boolean {

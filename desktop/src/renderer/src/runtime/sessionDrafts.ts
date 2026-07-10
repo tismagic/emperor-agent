@@ -17,9 +17,10 @@ function nowStamp() {
 }
 
 function randomId() {
-  const value = typeof crypto !== 'undefined' && 'randomUUID' in crypto
-    ? crypto.randomUUID()
-    : `${Date.now()}-${Math.random().toString(16).slice(2)}`
+  const value =
+    typeof crypto !== 'undefined' && 'randomUUID' in crypto
+      ? crypto.randomUUID()
+      : `${Date.now()}-${Math.random().toString(16).slice(2)}`
   return `${DRAFT_SESSION_PREFIX}${value}`
 }
 
@@ -27,7 +28,9 @@ export function isDraftSessionId(id: string | undefined | null) {
   return String(id || '').startsWith(DRAFT_SESSION_PREFIX)
 }
 
-export function createDraftSession(options: DraftSessionOptions = {}): SessionInfo {
+export function createDraftSession(
+  options: DraftSessionOptions = {},
+): SessionInfo {
   const now = nowStamp()
   const mode = options.mode === 'build' ? 'build' : 'chat'
   return {
@@ -55,7 +58,9 @@ export function applySessionCreated(
   const incoming = normalizeBackendSession(event.session)
   if (!incoming) return sessions
   const draftId = event.client_draft_id || ''
-  const index = sessions.findIndex((session) => session.id === draftId || session.id === incoming.id)
+  const index = sessions.findIndex(
+    (session) => session.id === draftId || session.id === incoming.id,
+  )
   if (index < 0) return [incoming, ...sessions]
   const next = sessions.slice()
   next[index] = { ...sessions[index], ...incoming, draft: undefined }
@@ -98,16 +103,24 @@ function normalizeBackendSession(value: unknown): SessionInfo | null {
 
 function normalizeControlPending(value: unknown): SessionControlPending | null {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return null
-  const raw = value as Partial<SessionControlPending> & { interactionId?: unknown; updatedAt?: unknown }
+  const raw = value as Partial<SessionControlPending> & {
+    interactionId?: unknown
+    updatedAt?: unknown
+  }
   const kind = raw.kind === 'plan' ? 'plan' : raw.kind === 'ask' ? 'ask' : ''
-  const interactionId = String(raw.interaction_id ?? raw.interactionId ?? '').trim()
+  const interactionId = String(
+    raw.interaction_id ?? raw.interactionId ?? '',
+  ).trim()
   if (!kind || !interactionId) return null
   return {
     kind,
-    label: String(raw.label || (kind === 'plan' ? '计划需要用户确认' : '需要用户输入')).slice(0, 40),
+    label: String(
+      raw.label || (kind === 'plan' ? '计划需要用户确认' : '需要用户输入'),
+    ).slice(0, 40),
     tone: kind === 'plan' ? 'green' : 'blue',
     interaction_id: interactionId,
-    updated_at: Number(raw.updated_at ?? raw.updatedAt ?? Date.now()) || Date.now(),
+    updated_at:
+      Number(raw.updated_at ?? raw.updatedAt ?? Date.now()) || Date.now(),
   }
 }
 

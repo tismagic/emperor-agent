@@ -1,6 +1,15 @@
 import { existsSync, realpathSync } from 'node:fs'
 import { homedir } from 'node:os'
-import { basename, dirname, isAbsolute, join, normalize, relative, resolve, sep } from 'node:path'
+import {
+  basename,
+  dirname,
+  isAbsolute,
+  join,
+  normalize,
+  relative,
+  resolve,
+  sep,
+} from 'node:path'
 
 export type WorkspaceAccess = 'read' | 'write' | 'execute' | 'media'
 export type OutsideWorkspaceBehavior = 'deny' | 'allow_read'
@@ -59,21 +68,42 @@ export class WorkspacePolicy {
     this.workspaceRoot = normalizeRoot(opts.workspaceRoot)
     this.stateRoot = normalizeRoot(opts.stateRoot)
     this.outsideWorkspace = opts.outsideWorkspace ?? 'deny'
-    const defaultAllow = this.workspaceRoot ? [{ path: this.workspaceRoot, label: 'workspace' }] : []
-    const defaultDeny = this.stateRoot && this.stateRoot !== this.workspaceRoot
-      ? [{ path: this.stateRoot, label: 'state' }]
+    const defaultAllow = this.workspaceRoot
+      ? [{ path: this.workspaceRoot, label: 'workspace' }]
       : []
-    this.allowRootEntries = normalizeRoots(opts.allowRoots ?? defaultAllow, 'workspace')
-    this.denyRootEntries = normalizeRoots(opts.denyRoots ?? defaultDeny, 'denied')
-    this.readOnlyRootEntries = normalizeRoots(opts.readOnlyRoots ?? [], 'read_only')
+    const defaultDeny =
+      this.stateRoot && this.stateRoot !== this.workspaceRoot
+        ? [{ path: this.stateRoot, label: 'state' }]
+        : []
+    this.allowRootEntries = normalizeRoots(
+      opts.allowRoots ?? defaultAllow,
+      'workspace',
+    )
+    this.denyRootEntries = normalizeRoots(
+      opts.denyRoots ?? defaultDeny,
+      'denied',
+    )
+    this.readOnlyRootEntries = normalizeRoots(
+      opts.readOnlyRoots ?? [],
+      'read_only',
+    )
   }
 
-  resolvePath(rawPath: string, access: WorkspaceAccess, opts: { baseRoot?: string | null } = {}): WorkspacePathDecision {
+  resolvePath(
+    rawPath: string,
+    access: WorkspaceAccess,
+    opts: { baseRoot?: string | null } = {},
+  ): WorkspacePathDecision {
     const requestedPath = String(rawPath ?? '')
     const baseRoot = normalizeRoot(opts.baseRoot) ?? this.workspaceRoot
     const resolvedPath = resolveCandidatePath(requestedPath, baseRoot)
     const realPath = realExisting(resolvedPath)
-    const base = this.baseDecision(access, requestedPath, resolvedPath, realPath)
+    const base = this.baseDecision(
+      access,
+      requestedPath,
+      resolvedPath,
+      realPath,
+    )
 
     const denied = this.findRoot(this.denyRootEntries, resolvedPath, realPath)
     if (denied) {
@@ -85,7 +115,11 @@ export class WorkspacePolicy {
       }
     }
 
-    const readOnly = this.findRoot(this.readOnlyRootEntries, resolvedPath, realPath)
+    const readOnly = this.findRoot(
+      this.readOnlyRootEntries,
+      resolvedPath,
+      realPath,
+    )
     if (readOnly && access !== 'read' && access !== 'media') {
       return {
         ...base,
@@ -95,7 +129,11 @@ export class WorkspacePolicy {
       }
     }
 
-    const allowed = this.findAllowedRoot(this.allowRootEntries, resolvedPath, realPath)
+    const allowed = this.findAllowedRoot(
+      this.allowRootEntries,
+      resolvedPath,
+      realPath,
+    )
     if (allowed) {
       return {
         ...base,
@@ -133,7 +171,12 @@ export class WorkspacePolicy {
     }
   }
 
-  private baseDecision(access: WorkspaceAccess, requestedPath: string, resolvedPath: string, realPath: string): WorkspacePathDecision {
+  private baseDecision(
+    access: WorkspaceAccess,
+    requestedPath: string,
+    resolvedPath: string,
+    realPath: string,
+  ): WorkspacePathDecision {
     return {
       allowed: false,
       access,
@@ -149,12 +192,32 @@ export class WorkspacePolicy {
     }
   }
 
-  private findRoot(roots: ResolvedRoot[], resolvedPath: string, realPath: string): ResolvedRoot | null {
-    return roots.find((root) => isWithin(resolvedPath, root.path) || isWithin(realPath, root.realPath)) ?? null
+  private findRoot(
+    roots: ResolvedRoot[],
+    resolvedPath: string,
+    realPath: string,
+  ): ResolvedRoot | null {
+    return (
+      roots.find(
+        (root) =>
+          isWithin(resolvedPath, root.path) ||
+          isWithin(realPath, root.realPath),
+      ) ?? null
+    )
   }
 
-  private findAllowedRoot(roots: ResolvedRoot[], resolvedPath: string, realPath: string): ResolvedRoot | null {
-    return roots.find((root) => isWithin(resolvedPath, root.path) && isWithin(realPath, root.realPath)) ?? null
+  private findAllowedRoot(
+    roots: ResolvedRoot[],
+    resolvedPath: string,
+    realPath: string,
+  ): ResolvedRoot | null {
+    return (
+      roots.find(
+        (root) =>
+          isWithin(resolvedPath, root.path) &&
+          isWithin(realPath, root.realPath),
+      ) ?? null
+    )
   }
 }
 
@@ -162,15 +225,23 @@ export function workspacePolicyForTool(
   ctx: WorkspacePolicyExecutionContext | null | undefined,
   fallbackWorkspace: string | null,
 ): WorkspacePolicy {
-  const workspaceRoot = normalizeRoot(ctx?.workspaceRoot) ?? normalizeRoot(ctx?.root) ?? normalizeRoot(fallbackWorkspace)
+  const workspaceRoot =
+    normalizeRoot(ctx?.workspaceRoot) ??
+    normalizeRoot(ctx?.root) ??
+    normalizeRoot(fallbackWorkspace)
   const root = normalizeRoot(ctx?.root)
-  const stateRoot = root && workspaceRoot && root !== workspaceRoot ? root : null
+  const stateRoot =
+    root && workspaceRoot && root !== workspaceRoot ? root : null
   return new WorkspacePolicy({ workspaceRoot, stateRoot })
 }
 
-export function formatWorkspacePolicyError(decision: WorkspacePathDecision): string {
+export function formatWorkspacePolicyError(
+  decision: WorkspacePathDecision,
+): string {
   const deniedRoot = decision.reason.includes('denied root')
-  const prefix = deniedRoot ? '[ERR] path denied by workspace policy' : '[ERR] path is outside workspace'
+  const prefix = deniedRoot
+    ? '[ERR] path denied by workspace policy'
+    : '[ERR] path is outside workspace'
   return [
     `${prefix}: ${decision.reason || 'blocked'}`,
     `requested: ${decision.requestedPath || '(empty)'}`,
@@ -189,7 +260,10 @@ function normalizeRoot(root: string | null | undefined): string | null {
   return value ? resolve(expandHome(value)) : null
 }
 
-function normalizeRoots(values: Array<string | WorkspaceRootSpec>, defaultLabel: string): ResolvedRoot[] {
+function normalizeRoots(
+  values: Array<string | WorkspaceRootSpec>,
+  defaultLabel: string,
+): ResolvedRoot[] {
   const out: ResolvedRoot[] = []
   const seen = new Set<string>()
   for (const value of values) {
@@ -200,7 +274,8 @@ function normalizeRoots(values: Array<string | WorkspaceRootSpec>, defaultLabel:
     out.push({
       path,
       realPath: realExisting(path),
-      label: typeof value === 'string' ? defaultLabel : value.label || defaultLabel,
+      label:
+        typeof value === 'string' ? defaultLabel : value.label || defaultLabel,
     })
   }
   return out
@@ -214,7 +289,10 @@ function formatRoots(roots: WorkspaceRootReceipt[]): string {
   return roots.map((root) => root.path).join(', ') || '(none)'
 }
 
-function resolveCandidatePath(rawPath: string, baseRoot: string | null): string {
+function resolveCandidatePath(
+  rawPath: string,
+  baseRoot: string | null,
+): string {
   const expanded = expandHome(normalize(String(rawPath || '.')))
   if (isAbsolute(expanded)) return resolve(expanded)
   return baseRoot ? resolve(baseRoot, expanded) : resolve(expanded)
@@ -222,7 +300,8 @@ function resolveCandidatePath(rawPath: string, baseRoot: string | null): string 
 
 function expandHome(path: string): string {
   if (path === '~') return homedir()
-  if (path.startsWith('~/') || path.startsWith('~\\')) return join(homedir(), path.slice(2))
+  if (path.startsWith('~/') || path.startsWith('~\\'))
+    return join(homedir(), path.slice(2))
   return path
 }
 

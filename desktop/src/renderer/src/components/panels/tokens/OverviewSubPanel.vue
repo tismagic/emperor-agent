@@ -11,7 +11,10 @@ import {
   topModelDisplay,
 } from '../../../utils/tokens'
 
-const props = defineProps<{ tokens: TokensPayload | null; range: TokensRange }>()
+const props = defineProps<{
+  tokens: TokensPayload | null
+  range: TokensRange
+}>()
 
 const heatmap = computed(() => buildHeatmap(props.tokens?.byDate ?? {}))
 
@@ -35,34 +38,86 @@ const rangedTotals = computed(() => {
     cacheCreate += b.cacheCreate
     if (b.total > 0) active += 1
   }
-  return { total, active, input, output, cacheRead, cacheCreate, cacheTotal: cacheRead + cacheCreate }
+  return {
+    total,
+    active,
+    input,
+    output,
+    cacheRead,
+    cacheCreate,
+    cacheTotal: cacheRead + cacheCreate,
+  }
 })
 
-const composition = computed(() => buildTokenComposition({
-  input: rangedTotals.value.input,
-  output: rangedTotals.value.output,
-  cache_read: rangedTotals.value.cacheRead,
-  cache_create: rangedTotals.value.cacheCreate,
-  total: rangedTotals.value.total,
-}))
+const composition = computed(() =>
+  buildTokenComposition({
+    input: rangedTotals.value.input,
+    output: rangedTotals.value.output,
+    cache_read: rangedTotals.value.cacheRead,
+    cache_create: rangedTotals.value.cacheCreate,
+    total: rangedTotals.value.total,
+  }),
+)
 
 const cards = computed(() => {
   const tokens = props.tokens
   if (!tokens) {
     const empty = '—'
     return [
-      { label: '输入缓存命中', value: empty, hint: 'cache_read', raw: 0, tone: 'hit' },
-      { label: '输入缓存未命中', value: empty, hint: 'input + cache_create', raw: 0, tone: 'miss' },
+      {
+        label: '输入缓存命中',
+        value: empty,
+        hint: 'cache_read',
+        raw: 0,
+        tone: 'hit',
+      },
+      {
+        label: '输入缓存未命中',
+        value: empty,
+        hint: 'input + cache_create',
+        raw: 0,
+        tone: 'miss',
+      },
       { label: '输出', value: empty, hint: 'output', raw: 0, tone: 'output' },
-      { label: '总 Token', value: empty, hint: 'input + cache + output', raw: 0, tone: 'total' },
+      {
+        label: '总 Token',
+        value: empty,
+        hint: 'input + cache + output',
+        raw: 0,
+        tone: 'total',
+      },
     ]
   }
   const c = composition.value
   return [
-    { label: '输入缓存命中', value: formatTokenCompact(c.cacheHit), hint: `命中率 ${formatPercent(c.cacheHit, c.inputTotal)}`, raw: c.cacheHit, tone: 'hit' },
-    { label: '输入缓存未命中', value: formatTokenCompact(c.cacheMiss), hint: '普通输入 + 写入缓存', raw: c.cacheMiss, tone: 'miss' },
-    { label: '输出', value: formatTokenCompact(c.output), hint: '模型生成消耗', raw: c.output, tone: 'output' },
-    { label: '总 Token', value: formatTokenCompact(c.total), hint: '输入命中 + 未命中 + 输出', raw: c.total, tone: 'total' },
+    {
+      label: '输入缓存命中',
+      value: formatTokenCompact(c.cacheHit),
+      hint: `命中率 ${formatPercent(c.cacheHit, c.inputTotal)}`,
+      raw: c.cacheHit,
+      tone: 'hit',
+    },
+    {
+      label: '输入缓存未命中',
+      value: formatTokenCompact(c.cacheMiss),
+      hint: '普通输入 + 写入缓存',
+      raw: c.cacheMiss,
+      tone: 'miss',
+    },
+    {
+      label: '输出',
+      value: formatTokenCompact(c.output),
+      hint: '模型生成消耗',
+      raw: c.output,
+      tone: 'output',
+    },
+    {
+      label: '总 Token',
+      value: formatTokenCompact(c.total),
+      hint: '输入命中 + 未命中 + 输出',
+      raw: c.total,
+      tone: 'total',
+    },
   ]
 })
 
@@ -70,11 +125,31 @@ const quickStats = computed(() => {
   const tokens = props.tokens
   if (!tokens) return []
   return [
-    { label: 'Sessions', value: formatTokenCompact(tokens.sessions), title: `${formatNumber(tokens.sessions)} sessions` },
-    { label: 'Messages', value: formatTokenCompact(tokens.messages), title: `${formatNumber(tokens.messages)} messages` },
-    { label: 'Active days', value: formatTokenCompact(rangedTotals.value.active), title: `${formatNumber(rangedTotals.value.active)} active days` },
-    { label: 'Peak hour', value: peakHourLabel(tokens.byHour), title: '消耗最多 Token 的时段' },
-    { label: 'Favorite model', value: topModelDisplay(tokens.byModel), title: '总量最高的模型' },
+    {
+      label: 'Sessions',
+      value: formatTokenCompact(tokens.sessions),
+      title: `${formatNumber(tokens.sessions)} sessions`,
+    },
+    {
+      label: 'Messages',
+      value: formatTokenCompact(tokens.messages),
+      title: `${formatNumber(tokens.messages)} messages`,
+    },
+    {
+      label: 'Active days',
+      value: formatTokenCompact(rangedTotals.value.active),
+      title: `${formatNumber(rangedTotals.value.active)} active days`,
+    },
+    {
+      label: 'Peak hour',
+      value: peakHourLabel(tokens.byHour),
+      title: '消耗最多 Token 的时段',
+    },
+    {
+      label: 'Favorite model',
+      value: topModelDisplay(tokens.byModel),
+      title: '总量最高的模型',
+    },
   ]
 })
 
@@ -97,7 +172,11 @@ function cellTitle(date: string | null, total: number, calls: number) {
     <section class="stat-grid">
       <article v-for="card in cards" :key="card.label" class="stat-card">
         <span class="stat-card-label">{{ card.label }}</span>
-        <strong class="stat-card-value compact-value" :data-tone="card.tone" :title="`${formatNumber(card.raw)} tokens`">
+        <strong
+          class="stat-card-value compact-value"
+          :data-tone="card.tone"
+          :title="`${formatNumber(card.raw)} tokens`"
+        >
           {{ card.value }}
         </strong>
         <small class="stat-card-hint">{{ card.hint }}</small>
@@ -110,13 +189,18 @@ function cellTitle(date: string | null, total: number, calls: number) {
           <strong>Token 构成</strong>
           <p>输入缓存命中、输入缓存未命中与输出的实际占比。</p>
         </div>
-        <span :title="`${formatNumber(composition.total)} tokens`">{{ formatTokenCompact(composition.total) }}</span>
+        <span :title="`${formatNumber(composition.total)} tokens`">{{
+          formatTokenCompact(composition.total)
+        }}</span>
       </header>
       <div class="token-composition-meter">
         <span
           v-for="part in composition.parts"
           :key="part.key"
-          :style="{ width: partWidth(part.value, composition.total), background: part.color }"
+          :style="{
+            width: partWidth(part.value, composition.total),
+            background: part.color,
+          }"
           :title="`${part.label}: ${formatNumber(part.value)} tokens`"
         />
       </div>
@@ -124,7 +208,9 @@ function cellTitle(date: string | null, total: number, calls: number) {
         <span v-for="part in composition.parts" :key="part.key">
           <i :style="{ background: part.color }" />
           <em>{{ part.label }}</em>
-          <strong :title="`${formatNumber(part.value)} tokens`">{{ formatTokenCompact(part.value) }}</strong>
+          <strong :title="`${formatNumber(part.value)} tokens`">{{
+            formatTokenCompact(part.value)
+          }}</strong>
         </span>
       </div>
       <div v-if="quickStats.length" class="tokens-quick-grid">
@@ -149,7 +235,12 @@ function cellTitle(date: string | null, total: number, calls: number) {
         </span>
       </header>
       <div class="heatmap-frame">
-        <div class="heatmap-months" :style="{ gridTemplateColumns: `repeat(${heatmap.weeks.length}, 14px)` }">
+        <div
+          class="heatmap-months"
+          :style="{
+            gridTemplateColumns: `repeat(${heatmap.weeks.length}, 14px)`,
+          }"
+        >
           <span
             v-for="m in heatmap.months"
             :key="`${m.weekIndex}-${m.label}`"
@@ -160,13 +251,19 @@ function cellTitle(date: string | null, total: number, calls: number) {
         </div>
         <div class="heatmap-body">
           <div class="heatmap-weekdays">
-            <span v-for="(label, idx) in weekdayLabels" :key="label" :style="{ gridRowStart: idx * 2 + 2 }">
+            <span
+              v-for="(label, idx) in weekdayLabels"
+              :key="label"
+              :style="{ gridRowStart: idx * 2 + 2 }"
+            >
               {{ label }}
             </span>
           </div>
           <div
             class="heatmap-grid"
-            :style="{ gridTemplateColumns: `repeat(${heatmap.weeks.length}, 14px)` }"
+            :style="{
+              gridTemplateColumns: `repeat(${heatmap.weeks.length}, 14px)`,
+            }"
           >
             <div
               v-for="(week, wIdx) in heatmap.weeks"

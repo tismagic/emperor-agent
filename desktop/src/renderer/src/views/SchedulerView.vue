@@ -16,11 +16,19 @@ const schedulerPanel = ref<InstanceType<typeof SchedulerPanel> | null>(null)
         <p>本地定时任务、运行历史与自动化入口</p>
       </div>
       <div class="view-head-actions">
-        <button class="tool-button asset-button refresh-action" title="刷新" @click="ctx.refreshAll()">
+        <button
+          class="tool-button asset-button refresh-action"
+          title="刷新"
+          @click="ctx.refreshAll()"
+        >
           <component :is="actionIcons.refresh" class="action-icon" :size="16" />
           <span>刷新</span>
         </button>
-        <button class="tool-button asset-button primary-action" title="新增任务" @click="schedulerPanel?.openCreate()">
+        <button
+          class="tool-button asset-button primary-action"
+          title="新增任务"
+          @click="schedulerPanel?.openCreate()"
+        >
           <component :is="actionIcons.new" class="action-icon" :size="16" />
           <span>新增任务</span>
         </button>

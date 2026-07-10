@@ -23,6 +23,7 @@
 ### Task 1: 保存实施计划文档
 
 **Files**
+
 - Create: `docs/superpowers/plans/2026-06-24-plugin-scheduler-card-ui-reform.md`
 
 - [ ] 写入本计划全文，作为后续代码执行依据。
@@ -36,6 +37,7 @@
 ### Task 2: MCP 迁入插件页
 
 **Files**
+
 - Modify: `desktop/src/renderer/src/views/PluginsView.vue`
 - Create: `desktop/src/renderer/src/components/panels/McpPanel.vue`
 - Modify: `desktop/src/renderer/src/views/McpView.vue`
@@ -53,6 +55,7 @@
 ### Task 3: 定时任务列表化与新增弹窗
 
 **Files**
+
 - Modify: `desktop/src/renderer/src/views/SchedulerView.vue`
 - Modify: `desktop/src/renderer/src/components/panels/SchedulerPanel.vue`
 - Optional create: `desktop/src/renderer/src/components/panels/SchedulerJobModal.vue`
@@ -72,6 +75,7 @@
 ### Task 4: Skill / Tool 等高卡片与详情入口
 
 **Files**
+
 - Modify: `desktop/src/renderer/src/components/panels/SkillsPanel.vue`
 - Modify: `desktop/src/renderer/src/components/panels/ToolsPanel.vue`
 - Optional create: `desktop/src/renderer/src/components/panels/CapabilityDetailDrawer.vue`
@@ -87,6 +91,7 @@
 ### Task 5: 样式收敛与视觉验收
 
 **Files**
+
 - Modify: `desktop/src/renderer/src/styles/panels.css`
 - Modify: `desktop/src/renderer/src/styles/codex-v2.css` only if global controls need adjustment
 - Modify: `desktop/src/renderer/src/styles/responsive.css`

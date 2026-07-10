@@ -1,7 +1,10 @@
 import type { SlashPaletteItem } from '../commands'
 import { actionIcons, navIcon, toolIcon } from '../icons'
 import type { ToolInfo } from '../types'
-import type { CapabilityPickerGroup, CapabilityPickerItem } from './capabilityPicker'
+import type {
+  CapabilityPickerGroup,
+  CapabilityPickerItem,
+} from './capabilityPicker'
 
 export interface CapabilityPickerModelInput {
   commands: SlashPaletteItem[]
@@ -9,26 +12,32 @@ export interface CapabilityPickerModelInput {
   mcpContent?: string
 }
 
-export function buildCapabilityPickerGroups(input: CapabilityPickerModelInput): CapabilityPickerGroup[] {
+export function buildCapabilityPickerGroups(
+  input: CapabilityPickerModelInput,
+): CapabilityPickerGroup[] {
   const commandItems = prioritizedCommands(input.commands)
   const skillItems = input.commands
     .filter((item) => item.kind === 'skill')
     .slice(0, 8)
     .map(skillPickerItem)
-  const mcpItems = mcpServerNames(input.tools, input.mcpContent).map(mcpPickerItem)
+  const mcpItems = mcpServerNames(input.tools, input.mcpContent).map(
+    mcpPickerItem,
+  )
 
   return [
     {
       label: '附件',
-      items: [{
-        id: 'files',
-        action: 'files' as const,
-        label: '文件与图片',
-        description: '上传 PDF、图片、文档或数据文件',
-        meta: '本轮上下文',
-        icon: actionIcons.attach,
-        tone: 'red' as const,
-      }],
+      items: [
+        {
+          id: 'files',
+          action: 'files' as const,
+          label: '文件与图片',
+          description: '上传 PDF、图片、文档或数据文件',
+          meta: '本轮上下文',
+          icon: actionIcons.attach,
+          tone: 'red' as const,
+        },
+      ],
     },
     {
       label: 'Skills',
@@ -45,10 +54,14 @@ export function buildCapabilityPickerGroups(input: CapabilityPickerModelInput): 
   ].filter((group) => group.items.length)
 }
 
-function prioritizedCommands(commands: SlashPaletteItem[]): CapabilityPickerItem[] {
+function prioritizedCommands(
+  commands: SlashPaletteItem[],
+): CapabilityPickerItem[] {
   const priority = ['/plan', '/tools', '/skills', '/mode', '/status']
   return priority
-    .map((name) => commands.find((item) => item.kind === 'command' && item.name === name))
+    .map((name) =>
+      commands.find((item) => item.kind === 'command' && item.name === name),
+    )
     .filter((item): item is SlashPaletteItem => Boolean(item))
     .map((item) => ({
       id: item.id,

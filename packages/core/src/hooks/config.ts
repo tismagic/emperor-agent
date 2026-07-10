@@ -16,7 +16,13 @@ import {
   type ProjectHookTrustStatus,
   type ResolvedHookGroup,
 } from './models'
-import { defaultHooksConfig, defaultHooksConfigV2, parseHooksConfig, parseHooksConfigV2, serializeHooksConfigV2 } from './schema'
+import {
+  defaultHooksConfig,
+  defaultHooksConfigV2,
+  parseHooksConfig,
+  parseHooksConfigV2,
+  serializeHooksConfigV2,
+} from './schema'
 
 export const HOOKS_CONFIG_FILE = 'hooks_config.json'
 
@@ -39,23 +45,32 @@ export class HookConfigLoader {
     this.globalConfigPath = join(this.stateRoot, HOOKS_CONFIG_FILE)
   }
 
-  async load(opts: { projectRoot?: string | null } = {}): Promise<HookConfigLoadResult> {
+  async load(
+    opts: { projectRoot?: string | null } = {},
+  ): Promise<HookConfigLoadResult> {
     const diagnostics: HookDiagnostic[] = []
-    const globalSource: HookSource = { kind: 'global', path: this.globalConfigPath, readonly: false }
+    const globalSource: HookSource = {
+      kind: 'global',
+      path: this.globalConfigPath,
+      readonly: false,
+    }
     const globalRaw = await readJson<unknown>(this.globalConfigPath, null, {
-      onCorrupt: (info) => diagnostics.push({
-        code: 'corrupt_config',
-        path: info.path,
-        message: `Corrupt hooks config preserved at ${info.backupPath}`,
-      }),
+      onCorrupt: (info) =>
+        diagnostics.push({
+          code: 'corrupt_config',
+          path: info.path,
+          message: `Corrupt hooks config preserved at ${info.backupPath}`,
+        }),
     })
     const globalParsed = parseHooksConfig(globalRaw, { source: globalSource })
     diagnostics.push(...globalParsed.diagnostics)
-    const sources: HookConfigSourceInfo[] = [{
-      ...globalSource,
-      enabled: globalParsed.config.enabled,
-      diagnostics: globalParsed.diagnostics,
-    }]
+    const sources: HookConfigSourceInfo[] = [
+      {
+        ...globalSource,
+        enabled: globalParsed.config.enabled,
+        diagnostics: globalParsed.diagnostics,
+      },
+    ]
 
     const config = cloneConfig(globalParsed.config)
     const seen = new Set<string>()
@@ -81,39 +96,67 @@ export class HookConfigLoader {
   }
 
   async saveGlobalConfig(input: unknown): Promise<HookConfigLoadResult> {
-    const parsed = parseHooksConfig(input, { source: { kind: 'global', path: this.globalConfigPath, readonly: false } })
+    const parsed = parseHooksConfig(input, {
+      source: { kind: 'global', path: this.globalConfigPath, readonly: false },
+    })
     if (parsed.diagnostics.length > 0) {
       return {
         config: parsed.config,
         diagnostics: parsed.diagnostics,
-        sources: [{ kind: 'global', path: this.globalConfigPath, readonly: false, enabled: parsed.config.enabled, diagnostics: parsed.diagnostics }],
+        sources: [
+          {
+            kind: 'global',
+            path: this.globalConfigPath,
+            readonly: false,
+            enabled: parsed.config.enabled,
+            diagnostics: parsed.diagnostics,
+          },
+        ],
       }
     }
     await writeJsonAtomic(this.globalConfigPath, serializeConfig(parsed.config))
     return this.load()
   }
 
-  private async loadProjectFile(path: string): Promise<{ parsed: ReturnType<typeof parseHooksConfig>; source: HookConfigSourceInfo } | null> {
+  private async loadProjectFile(path: string): Promise<{
+    parsed: ReturnType<typeof parseHooksConfig>
+    source: HookConfigSourceInfo
+  } | null> {
     if (!existsSync(path)) return null
     const source: HookSource = { kind: 'project', path, readonly: true }
     let raw: unknown
     try {
       raw = JSON.parse((await readFile(path, 'utf8')) || '{}')
     } catch (error) {
-      const diagnostics = [{
-        code: 'corrupt_project_config',
-        path,
-        message: error instanceof Error ? error.message : String(error),
-      }]
-      return { parsed: { config: defaultHooksConfig(), diagnostics }, source: { ...source, enabled: false, diagnostics } }
+      const diagnostics = [
+        {
+          code: 'corrupt_project_config',
+          path,
+          message: error instanceof Error ? error.message : String(error),
+        },
+      ]
+      return {
+        parsed: { config: defaultHooksConfig(), diagnostics },
+        source: { ...source, enabled: false, diagnostics },
+      }
     }
     const parsed = parseHooksConfig(raw, { source })
-    return { parsed, source: { ...source, enabled: parsed.config.enabled, diagnostics: parsed.diagnostics } }
+    return {
+      parsed,
+      source: {
+        ...source,
+        enabled: parsed.config.enabled,
+        diagnostics: parsed.diagnostics,
+      },
+    }
   }
 }
 
 const PROJECT_TRUST_FILE = join('hooks', 'project-trust.json')
-const SOURCE_RANK: Record<'global' | 'project' | 'project-local' | 'session', number> = {
+const SOURCE_RANK: Record<
+  'global' | 'project' | 'project-local' | 'session',
+  number
+> = {
   global: 100,
   project: 200,
   'project-local': 300,
@@ -151,18 +194,30 @@ export class ProjectHookTrustStore {
     const file = await this.read()
     const record = file.records[canonicalRoot]
     let status: ProjectHookTrustStatus['status'] = 'untrusted'
-    if (record && !record.revokedAt) status = record.digest === digest ? 'trusted' : 'stale'
+    if (record && !record.revokedAt)
+      status = record.digest === digest ? 'trusted' : 'stale'
     return { canonicalRoot, digest, status }
   }
 
-  async set(opts: { projectRoot: string; expectedDigest: string; trusted: boolean }): Promise<ProjectHookTrustStatus> {
+  async set(opts: {
+    projectRoot: string
+    expectedDigest: string
+    trusted: boolean
+  }): Promise<ProjectHookTrustStatus> {
     const current = await this.status(opts.projectRoot)
-    if (current.digest !== opts.expectedDigest) throw new Error('project hooks digest changed before trust could be saved')
+    if (current.digest !== opts.expectedDigest)
+      throw new Error(
+        'project hooks digest changed before trust could be saved',
+      )
     const file = await this.read()
     const now = new Date().toISOString()
     file.records[current.canonicalRoot] = opts.trusted
       ? { digest: current.digest, trustedAt: now, revokedAt: null }
-      : { digest: current.digest, trustedAt: file.records[current.canonicalRoot]?.trustedAt ?? null, revokedAt: now }
+      : {
+          digest: current.digest,
+          trustedAt: file.records[current.canonicalRoot]?.trustedAt ?? null,
+          revokedAt: now,
+        }
     await writeJsonAtomic(this.path, file)
     return { ...current, status: opts.trusted ? 'trusted' : 'untrusted' }
   }
@@ -177,8 +232,10 @@ export class ProjectHookTrustStore {
       if (!record || typeof record.digest !== 'string') continue
       records[root] = {
         digest: record.digest,
-        trustedAt: typeof record.trustedAt === 'string' ? record.trustedAt : null,
-        revokedAt: typeof record.revokedAt === 'string' ? record.revokedAt : null,
+        trustedAt:
+          typeof record.trustedAt === 'string' ? record.trustedAt : null,
+        revokedAt:
+          typeof record.revokedAt === 'string' ? record.revokedAt : null,
       }
     }
     return { version: 1, records }
@@ -188,9 +245,14 @@ export class ProjectHookTrustStore {
 export class HookSessionRegistry {
   private readonly sourcesBySession = new Map<string, SessionHookSource[]>()
 
-  register(sessionId: string, config: unknown, opts: { sourceId?: string } = {}): void {
+  register(
+    sessionId: string,
+    config: unknown,
+    opts: { sourceId?: string } = {},
+  ): void {
     const cleanSessionId = String(sessionId).trim()
-    if (!cleanSessionId) throw new Error('sessionId is required for session hooks')
+    if (!cleanSessionId)
+      throw new Error('sessionId is required for session hooks')
     const sourceId = String(opts.sourceId ?? 'session').trim() || 'session'
     const sources = [...(this.sourcesBySession.get(cleanSessionId) ?? [])]
     const next = { sourceId, raw: config }
@@ -216,24 +278,30 @@ export class HookSourceResolver {
   readonly trustStore: ProjectHookTrustStore
   readonly sessionRegistry: HookSessionRegistry
 
-  constructor(opts: { stateRoot: string; sessionRegistry?: HookSessionRegistry }) {
+  constructor(opts: {
+    stateRoot: string
+    sessionRegistry?: HookSessionRegistry
+  }) {
     this.stateRoot = resolve(opts.stateRoot)
     this.globalConfigPath = join(this.stateRoot, HOOKS_CONFIG_FILE)
     this.trustStore = new ProjectHookTrustStore({ stateRoot: this.stateRoot })
     this.sessionRegistry = opts.sessionRegistry ?? new HookSessionRegistry()
   }
 
-  async resolve(opts: { projectRoot?: string | null; sessionId?: string | null } = {}): Promise<HookSnapshot> {
+  async resolve(
+    opts: { projectRoot?: string | null; sessionId?: string | null } = {},
+  ): Promise<HookSnapshot> {
     const diagnostics: HookDiagnostic[] = []
     const sources: HookSourceV2[] = []
     const effective = new Map<string, ResolvedHookGroup>()
 
     const globalRaw = await readJson<unknown>(this.globalConfigPath, null, {
-      onCorrupt: (info) => diagnostics.push({
-        code: 'corrupt_config',
-        path: info.path,
-        message: `Corrupt hooks config preserved at ${info.backupPath}`,
-      }),
+      onCorrupt: (info) =>
+        diagnostics.push({
+          code: 'corrupt_config',
+          path: info.path,
+          message: `Corrupt hooks config preserved at ${info.backupPath}`,
+        }),
     })
     const globalParsed = parseHooksConfigV2(globalRaw, { sourceKind: 'global' })
     diagnostics.push(...globalParsed.diagnostics)
@@ -246,29 +314,57 @@ export class HookSourceResolver {
       blockedReason: globalParsed.config.enabled ? null : 'hooks_disabled',
     })
     sources.push(globalSource)
-    if (globalSource.active) mergeResolvedGroups(effective, globalParsed.config, globalSource)
+    if (globalSource.active)
+      mergeResolvedGroups(effective, globalParsed.config, globalSource)
 
     let projectTrust: ProjectHookTrustStatus | null = null
     const projectRoot = opts.projectRoot ? resolve(opts.projectRoot) : null
     if (projectRoot && globalParsed.config.projectHooks.enabled) {
       projectTrust = await this.trustStore.status(projectRoot)
-      const projectFiles: Array<{ id: string; kind: 'project' | 'project-local'; path: string }> = [
-        { id: 'project', kind: 'project', path: join(projectTrust.canonicalRoot, '.emperor', 'settings.json') },
-        { id: 'project-local', kind: 'project-local', path: join(projectTrust.canonicalRoot, '.emperor', 'settings.local.json') },
+      const projectFiles: Array<{
+        id: string
+        kind: 'project' | 'project-local'
+        path: string
+      }> = [
+        {
+          id: 'project',
+          kind: 'project',
+          path: join(projectTrust.canonicalRoot, '.emperor', 'settings.json'),
+        },
+        {
+          id: 'project-local',
+          kind: 'project-local',
+          path: join(
+            projectTrust.canonicalRoot,
+            '.emperor',
+            'settings.local.json',
+          ),
+        },
       ]
       for (const descriptor of projectFiles) {
-        const loaded = await readProjectConfigV2(descriptor.path, descriptor.kind)
+        const loaded = await readProjectConfigV2(
+          descriptor.path,
+          descriptor.kind,
+        )
         if (!loaded) continue
         diagnostics.push(...loaded.diagnostics)
-        const trustBlocked = projectTrust.status === 'trusted'
-          ? null
-          : projectTrust.status === 'stale' ? 'project_trust_stale' : 'project_untrusted'
-        const active = globalSource.active && loaded.config.enabled && trustBlocked === null
+        const trustBlocked =
+          projectTrust.status === 'trusted'
+            ? null
+            : projectTrust.status === 'stale'
+              ? 'project_trust_stale'
+              : 'project_untrusted'
+        const active =
+          globalSource.active && loaded.config.enabled && trustBlocked === null
         const source = sourceV2({
           ...descriptor,
           revision: loaded.revision,
           active,
-          blockedReason: !globalSource.active ? 'hooks_disabled' : !loaded.config.enabled ? 'source_disabled' : trustBlocked,
+          blockedReason: !globalSource.active
+            ? 'hooks_disabled'
+            : !loaded.config.enabled
+              ? 'source_disabled'
+              : trustBlocked,
         })
         sources.push(source)
         if (source.active) mergeResolvedGroups(effective, loaded.config, source)
@@ -278,15 +374,25 @@ export class HookSourceResolver {
     const sessionSources = this.sessionRegistry.sources(opts.sessionId)
     for (let index = 0; index < sessionSources.length; index++) {
       const registered = sessionSources[index]!
-      const parsed = parseHooksConfigV2(registered.raw, { sourceKind: 'session' })
-      diagnostics.push(...parsed.diagnostics.map((item) => ({ ...item, path: `session.${registered.sourceId}.${item.path}` })))
+      const parsed = parseHooksConfigV2(registered.raw, {
+        sourceKind: 'session',
+      })
+      diagnostics.push(
+        ...parsed.diagnostics.map((item) => ({
+          ...item,
+          path: `session.${registered.sourceId}.${item.path}`,
+        })),
+      )
       const source = sourceV2({
         id: `session:${registered.sourceId}`,
         kind: 'session',
         path: `session://${String(opts.sessionId ?? '')}/${registered.sourceId}`,
         revision: digestValue(serializeHooksConfigV2(parsed.config)),
         active: globalSource.active && parsed.config.enabled,
-        blockedReason: globalSource.active && parsed.config.enabled ? null : 'hooks_disabled',
+        blockedReason:
+          globalSource.active && parsed.config.enabled
+            ? null
+            : 'hooks_disabled',
       })
       source.rank += index
       sources.push(source)
@@ -297,34 +403,51 @@ export class HookSourceResolver {
     const config = effectiveConfig(globalParsed.config, groups)
     const revision = digestValue({
       config: serializeHooksConfigV2(config),
-      sources: sources.map((source) => ({ id: source.id, revision: source.revision, active: source.active })),
+      sources: sources.map((source) => ({
+        id: source.id,
+        revision: source.revision,
+        active: source.active,
+      })),
     })
-    return deepFreeze({ revision, config, groups, sources, diagnostics, projectTrust })
+    return deepFreeze({
+      revision,
+      config,
+      groups,
+      sources,
+      diagnostics,
+      projectTrust,
+    })
   }
 }
 
 export class HookSnapshotStore {
   private readonly resolver: HookSourceResolver
-  private readonly reviewCandidate: ((
-    previous: HookSnapshot | null,
-    candidate: HookSnapshot,
-    scope: { projectRoot?: string | null; sessionId?: string | null },
-  ) => boolean | Promise<boolean>) | null
+  private readonly reviewCandidate:
+    | ((
+        previous: HookSnapshot | null,
+        candidate: HookSnapshot,
+        scope: { projectRoot?: string | null; sessionId?: string | null },
+      ) => boolean | Promise<boolean>)
+    | null
   private readonly accepted = new Map<string, HookSnapshot>()
 
   constructor(opts: {
     resolver: HookSourceResolver
-    reviewCandidate?: ((
-      previous: HookSnapshot | null,
-      candidate: HookSnapshot,
-      scope: { projectRoot?: string | null; sessionId?: string | null },
-    ) => boolean | Promise<boolean>) | null
+    reviewCandidate?:
+      | ((
+          previous: HookSnapshot | null,
+          candidate: HookSnapshot,
+          scope: { projectRoot?: string | null; sessionId?: string | null },
+        ) => boolean | Promise<boolean>)
+      | null
   }) {
     this.resolver = opts.resolver
     this.reviewCandidate = opts.reviewCandidate ?? null
   }
 
-  async get(opts: { projectRoot?: string | null; sessionId?: string | null } = {}): Promise<HookSnapshot> {
+  async get(
+    opts: { projectRoot?: string | null; sessionId?: string | null } = {},
+  ): Promise<HookSnapshot> {
     const key = `${resolve(opts.projectRoot ?? '')}\0${String(opts.sessionId ?? '')}`
     const previous = this.accepted.get(key) ?? null
     const candidate = await this.resolver.resolve(opts)
@@ -335,28 +458,50 @@ export class HookSnapshotStore {
     if (previous.revision === candidate.revision) return previous
     let accepted = true
     try {
-      if (this.reviewCandidate) accepted = await this.reviewCandidate(previous, candidate, opts)
+      if (this.reviewCandidate)
+        accepted = await this.reviewCandidate(previous, candidate, opts)
     } catch (error) {
-      return rejectedSnapshot(previous, 'candidate_review_failed', error instanceof Error ? error.message : String(error))
+      return rejectedSnapshot(
+        previous,
+        'candidate_review_failed',
+        error instanceof Error ? error.message : String(error),
+      )
     }
-    if (!accepted) return rejectedSnapshot(previous, 'candidate_rejected', `Hook snapshot candidate ${candidate.revision} was rejected`)
+    if (!accepted)
+      return rejectedSnapshot(
+        previous,
+        'candidate_rejected',
+        `Hook snapshot candidate ${candidate.revision} was rejected`,
+      )
     this.accepted.set(key, candidate)
     return candidate
   }
 
-  accept(snapshot: HookSnapshot, opts: { projectRoot?: string | null; sessionId?: string | null } = {}): void {
+  accept(
+    snapshot: HookSnapshot,
+    opts: { projectRoot?: string | null; sessionId?: string | null } = {},
+  ): void {
     this.accepted.set(snapshotKey(opts), snapshot)
   }
 }
 
-function snapshotKey(opts: { projectRoot?: string | null; sessionId?: string | null }): string {
+function snapshotKey(opts: {
+  projectRoot?: string | null
+  sessionId?: string | null
+}): string {
   return `${resolve(opts.projectRoot ?? '')}\0${String(opts.sessionId ?? '')}`
 }
 
 function cloneConfig(config: HooksConfig): HooksConfig {
   const hooks: HooksConfig['hooks'] = {}
-  for (const [eventName, entries] of Object.entries(config.hooks) as Array<[keyof HooksConfig['hooks'], HookDefinition[] | undefined]>) {
-    if (entries?.length) hooks[eventName] = entries.map((entry) => ({ ...entry, handler: { ...entry.handler } }))
+  for (const [eventName, entries] of Object.entries(config.hooks) as Array<
+    [keyof HooksConfig['hooks'], HookDefinition[] | undefined]
+  >) {
+    if (entries?.length)
+      hooks[eventName] = entries.map((entry) => ({
+        ...entry,
+        handler: { ...entry.handler },
+      }))
   }
   return {
     version: 1,
@@ -366,8 +511,15 @@ function cloneConfig(config: HooksConfig): HooksConfig {
   }
 }
 
-function mergeHooks(target: HooksConfig, incoming: HooksConfig, seen: Set<string>, sourceRoot: string): void {
-  for (const [eventName, entries] of Object.entries(incoming.hooks) as Array<[keyof HooksConfig['hooks'], HookDefinition[] | undefined]>) {
+function mergeHooks(
+  target: HooksConfig,
+  incoming: HooksConfig,
+  seen: Set<string>,
+  sourceRoot: string,
+): void {
+  for (const [eventName, entries] of Object.entries(incoming.hooks) as Array<
+    [keyof HooksConfig['hooks'], HookDefinition[] | undefined]
+  >) {
     if (!entries?.length) continue
     const existing = target.hooks[eventName] ?? []
     for (const hook of entries) {
@@ -380,9 +532,14 @@ function mergeHooks(target: HooksConfig, incoming: HooksConfig, seen: Set<string
   }
 }
 
-function recordSeenHooks(seen: Set<string>, sourceRoot: string, config: HooksConfig): void {
+function recordSeenHooks(
+  seen: Set<string>,
+  sourceRoot: string,
+  config: HooksConfig,
+): void {
   for (const entries of Object.values(config.hooks)) {
-    for (const hook of entries ?? []) seen.add(dedupeKey(sourceRootForHook(sourceRoot, hook), hook))
+    for (const hook of entries ?? [])
+      seen.add(dedupeKey(sourceRootForHook(sourceRoot, hook), hook))
   }
 }
 
@@ -437,7 +594,10 @@ async function projectHooksDigest(canonicalRoot: string): Promise<string> {
     try {
       hash.update(await readFile(path))
     } catch (error) {
-      const code = error && typeof error === 'object' && 'code' in error ? String((error as { code?: unknown }).code) : ''
+      const code =
+        error && typeof error === 'object' && 'code' in error
+          ? String((error as { code?: unknown }).code)
+          : ''
       if (code !== 'ENOENT') throw error
       hash.update('<missing>')
     }
@@ -449,7 +609,11 @@ async function projectHooksDigest(canonicalRoot: string): Promise<string> {
 async function readProjectConfigV2(
   path: string,
   sourceKind: 'project' | 'project-local',
-): Promise<{ config: HooksConfigV2; diagnostics: HookDiagnostic[]; revision: string } | null> {
+): Promise<{
+  config: HooksConfigV2
+  diagnostics: HookDiagnostic[]
+  revision: string
+} | null> {
   if (!existsSync(path)) return null
   let text: string
   try {
@@ -457,7 +621,13 @@ async function readProjectConfigV2(
   } catch (error) {
     return {
       config: { ...defaultHooksConfigV2(), enabled: false },
-      diagnostics: [{ code: 'project_config_read_failed', path, message: error instanceof Error ? error.message : String(error) }],
+      diagnostics: [
+        {
+          code: 'project_config_read_failed',
+          path,
+          message: error instanceof Error ? error.message : String(error),
+        },
+      ],
       revision: digestValue({ path, error: String(error) }),
     }
   }
@@ -467,7 +637,13 @@ async function readProjectConfigV2(
   } catch (error) {
     return {
       config: { ...defaultHooksConfigV2(), enabled: false },
-      diagnostics: [{ code: 'corrupt_project_config', path, message: error instanceof Error ? error.message : String(error) }],
+      diagnostics: [
+        {
+          code: 'corrupt_project_config',
+          path,
+          message: error instanceof Error ? error.message : String(error),
+        },
+      ],
       revision: digestText(text),
     }
   }
@@ -495,23 +671,38 @@ function sourceV2(opts: {
   }
 }
 
-function mergeResolvedGroups(target: Map<string, ResolvedHookGroup>, config: HooksConfigV2, source: HookSourceV2): void {
+function mergeResolvedGroups(
+  target: Map<string, ResolvedHookGroup>,
+  config: HooksConfigV2,
+  source: HookSourceV2,
+): void {
   for (const eventName of HOOK_EVENT_NAMES) {
     for (const group of config.hooks[eventName] ?? []) {
       if (!group.enabled) continue
       const key = `${eventName}\0${group.id}`
       if (target.has(key)) target.delete(key)
-      target.set(key, { eventName, group: cloneV2Group(group), source: { ...source } })
+      target.set(key, {
+        eventName,
+        group: cloneV2Group(group),
+        source: { ...source },
+      })
     }
   }
 }
 
-function orderedResolvedGroups(groups: Map<string, ResolvedHookGroup>): ResolvedHookGroup[] {
+function orderedResolvedGroups(
+  groups: Map<string, ResolvedHookGroup>,
+): ResolvedHookGroup[] {
   const values = [...groups.values()]
-  return HOOK_EVENT_NAMES.flatMap((eventName) => values.filter((group) => group.eventName === eventName))
+  return HOOK_EVENT_NAMES.flatMap((eventName) =>
+    values.filter((group) => group.eventName === eventName),
+  )
 }
 
-function effectiveConfig(globalConfig: HooksConfigV2, groups: ResolvedHookGroup[]): HooksConfigV2 {
+function effectiveConfig(
+  globalConfig: HooksConfigV2,
+  groups: ResolvedHookGroup[],
+): HooksConfigV2 {
   const hooks: HooksConfigV2['hooks'] = {}
   for (const resolvedGroup of groups) {
     const eventGroups = hooks[resolvedGroup.eventName] ?? []
@@ -524,7 +715,10 @@ function effectiveConfig(globalConfig: HooksConfigV2, groups: ResolvedHookGroup[
     projectHooks: { enabled: globalConfig.projectHooks.enabled },
     policy: {
       ...globalConfig.policy,
-      command: { ...globalConfig.policy.command, allowedEnv: [...globalConfig.policy.command.allowedEnv] },
+      command: {
+        ...globalConfig.policy.command,
+        allowedEnv: [...globalConfig.policy.command.allowedEnv],
+      },
       http: {
         ...globalConfig.policy.http,
         allowedUrlPatterns: [...globalConfig.policy.http.allowedUrlPatterns],
@@ -541,8 +735,18 @@ function cloneV2Group(group: HookGroup): HookGroup {
   return {
     ...group,
     handlers: group.handlers.map((handler) => {
-      if (handler.type === 'command') return { ...handler, args: [...handler.args], allowedEnv: [...handler.allowedEnv] }
-      if (handler.type === 'http') return { ...handler, headers: { ...handler.headers }, allowedEnv: [...handler.allowedEnv] }
+      if (handler.type === 'command')
+        return {
+          ...handler,
+          args: [...handler.args],
+          allowedEnv: [...handler.allowedEnv],
+        }
+      if (handler.type === 'http')
+        return {
+          ...handler,
+          headers: { ...handler.headers },
+          allowedEnv: [...handler.allowedEnv],
+        }
       return { ...handler }
     }),
   }
@@ -567,12 +771,18 @@ function sortKeysDeep(value: unknown): unknown {
 }
 
 function deepFreeze<T>(value: T): T {
-  if (!value || typeof value !== 'object' || Object.isFrozen(value)) return value
-  for (const child of Object.values(value as Record<string, unknown>)) deepFreeze(child)
+  if (!value || typeof value !== 'object' || Object.isFrozen(value))
+    return value
+  for (const child of Object.values(value as Record<string, unknown>))
+    deepFreeze(child)
   return Object.freeze(value)
 }
 
-function rejectedSnapshot(previous: HookSnapshot, code: string, message: string): HookSnapshot {
+function rejectedSnapshot(
+  previous: HookSnapshot,
+  code: string,
+  message: string,
+): HookSnapshot {
   return deepFreeze({
     ...previous,
     diagnostics: [...previous.diagnostics, { code, path: 'snapshot', message }],
@@ -581,6 +791,6 @@ function rejectedSnapshot(previous: HookSnapshot, code: string, message: string)
 
 function objectOrNull(value: unknown): Record<string, unknown> | null {
   return value !== null && typeof value === 'object' && !Array.isArray(value)
-    ? value as Record<string, unknown>
+    ? (value as Record<string, unknown>)
     : null
 }

@@ -21,7 +21,12 @@ export interface TaskManagerLike {
   store: { get(id: string): { progress: Record<string, unknown> } | null }
   appendSidechain(taskId: string, message: Record<string, unknown>): void
   updateTask(taskId: string, fields: Record<string, unknown>): unknown
-  startTask(opts: { kind: string; title: string; source: string; [key: string]: unknown }): { id: string }
+  startTask(opts: {
+    kind: string
+    title: string
+    source: string
+    [key: string]: unknown
+  }): { id: string }
 }
 
 export interface ControlManagerHost {
@@ -39,5 +44,8 @@ export interface ControlManagerHost {
   latestExecutablePlan(): PlanRecord | null
   latestReviewablePlan(): PlanRecord | null
   hasAskInteraction(): boolean
-  appendPlanStepVerification(record: PlanRecord, opts: { stepId: string; result: Record<string, unknown> }): void
+  appendPlanStepVerification(
+    record: PlanRecord,
+    opts: { stepId: string; result: Record<string, unknown> },
+  ): void
 }

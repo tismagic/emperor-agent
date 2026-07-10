@@ -17,7 +17,10 @@ export class HookAuditStore {
     await appendJsonl(this.auditPath, record)
   }
 
-  async replay(opts: { limit?: number } = {}): Promise<{ records: HookAuditRecord[]; badLines: { line: number; raw: string }[] }> {
+  async replay(opts: { limit?: number } = {}): Promise<{
+    records: HookAuditRecord[]
+    badLines: { line: number; raw: string }[]
+  }> {
     const replay = await readJsonl<HookAuditRecord>(this.auditPath)
     const limit = Math.max(0, Math.trunc(opts.limit ?? 100))
     const records = limit > 0 ? replay.records.slice(-limit) : []
@@ -25,7 +28,10 @@ export class HookAuditStore {
   }
 
   async appendRun(record: HookAuditRunRecordV2): Promise<void> {
-    await appendJsonl(this.dailyPath(record.startedAt), sanitizeRunRecord(record))
+    await appendJsonl(
+      this.dailyPath(record.startedAt),
+      sanitizeRunRecord(record),
+    )
   }
 
   async replayRuns(opts: { limit?: number } = {}): Promise<{
@@ -34,7 +40,9 @@ export class HookAuditStore {
   }> {
     let names: string[] = []
     try {
-      names = (await readdir(this.auditDir)).filter((name) => /^\d{4}-\d{2}-\d{2}\.jsonl$/.test(name)).sort()
+      names = (await readdir(this.auditDir))
+        .filter((name) => /^\d{4}-\d{2}-\d{2}\.jsonl$/.test(name))
+        .sort()
     } catch {
       return { records: [], badLines: [] }
     }
@@ -51,7 +59,9 @@ export class HookAuditStore {
   }
 
   dailyPath(startedAt: string): string {
-    const date = /^\d{4}-\d{2}-\d{2}/.exec(startedAt)?.[0] ?? new Date().toISOString().slice(0, 10)
+    const date =
+      /^\d{4}-\d{2}-\d{2}/.exec(startedAt)?.[0] ??
+      new Date().toISOString().slice(0, 10)
     return join(this.auditDir, `${date}.jsonl`)
   }
 }
@@ -59,13 +69,21 @@ export class HookAuditStore {
 function sanitizeRunRecord(record: HookAuditRunRecordV2): HookAuditRunRecordV2 {
   return {
     ...record,
-    source: { ...record.source, blockedReason: record.source.blockedReason ? scrub(record.source.blockedReason) : null },
+    source: {
+      ...record.source,
+      blockedReason: record.source.blockedReason
+        ? scrub(record.source.blockedReason)
+        : null,
+    },
     reason: scrub(record.reason),
   }
 }
 
 function scrub(value: string): string {
   return value
-    .replace(/(api[_-]?key|token|secret|password|authorization|cookie)\s*[:=]\s*(?:"[^"]*"|'[^']*'|[^\s,;]+)/gi, '$1=[REDACTED]')
+    .replace(
+      /(api[_-]?key|token|secret|password|authorization|cookie)\s*[:=]\s*(?:"[^"]*"|'[^']*'|[^\s,;]+)/gi,
+      '$1=[REDACTED]',
+    )
     .slice(0, 1_000)
 }

@@ -40,7 +40,10 @@ function samplePlan(): PlanRecord {
     status: PlanStatus.APPROVED,
     createdAt: 1.0,
     updatedAt: 1.0,
-    steps: [makeStep({ id: 'step_1', title: 'Edit code' }), makeStep({ id: 'step_2', title: 'Run tests' })],
+    steps: [
+      makeStep({ id: 'step_1', title: 'Edit code' }),
+      makeStep({ id: 'step_2', title: 'Run tests' }),
+    ],
   })
 }
 
@@ -63,7 +66,9 @@ describe('PlanStore (test_plan_store.py)', () => {
           title: 'Add tests',
           status: PlanStepStatus.PENDING,
           files: ['tests/unit/test_context_pipeline.py'],
-          commands: ['.venv/bin/python -m pytest tests/unit/test_context_pipeline.py -q'],
+          commands: [
+            '.venv/bin/python -m pytest tests/unit/test_context_pipeline.py -q',
+          ],
           acceptance: ['test_context_pipeline.py passes'],
         }),
       ],
@@ -89,8 +94,12 @@ describe('PlanStore (test_plan_store.py)', () => {
 
     // legacy dict（无 session_id）宽容加载为 null
     const legacy = planFromDict({
-      id: 'plan_legacy', title: 'l', summary: 's', status: PlanStatus.DRAFT,
-      created_at: 1, updated_at: 1,
+      id: 'plan_legacy',
+      title: 'l',
+      summary: 's',
+      status: PlanStatus.DRAFT,
+      created_at: 1,
+      updated_at: 1,
     })
     expect(legacy.sessionId).toBeNull()
   })
@@ -99,7 +108,11 @@ describe('PlanStore (test_plan_store.py)', () => {
     const store = new PlanStore(tmp('emperor-plan-corrupt-'))
     writeFileSync(store.indexFile, '{bad json', 'utf8')
     expect(store.list()).toEqual([])
-    expect(readdirSync(store.planDir).some((f) => f.startsWith('index.json.corrupt-'))).toBe(true)
+    expect(
+      readdirSync(store.planDir).some((f) =>
+        f.startsWith('index.json.corrupt-'),
+      ),
+    ).toBe(true)
   })
 
   it('writes index.json keyed by plan id (disk-format compat)', () => {
@@ -115,14 +128,52 @@ describe('PlanStore (test_plan_store.py)', () => {
     const root = tmp('emperor-plan-archive-')
     const store = new PlanStore(root, { maxTerminal: 5 })
     // 三个未完结的计划——无论多久都不该被归档，永远留在热索引里。
-    store.save(makePlanRecord({ id: 'active_1', title: 'Active', summary: '', status: PlanStatus.APPROVED, createdAt: 1, updatedAt: 1 }))
-    store.save(makePlanRecord({ id: 'active_2', title: 'Active', summary: '', status: PlanStatus.EXECUTING, createdAt: 2, updatedAt: 2 }))
-    store.save(makePlanRecord({ id: 'active_3', title: 'Active', summary: '', status: PlanStatus.WAITING_APPROVAL, createdAt: 3, updatedAt: 3 }))
+    store.save(
+      makePlanRecord({
+        id: 'active_1',
+        title: 'Active',
+        summary: '',
+        status: PlanStatus.APPROVED,
+        createdAt: 1,
+        updatedAt: 1,
+      }),
+    )
+    store.save(
+      makePlanRecord({
+        id: 'active_2',
+        title: 'Active',
+        summary: '',
+        status: PlanStatus.EXECUTING,
+        createdAt: 2,
+        updatedAt: 2,
+      }),
+    )
+    store.save(
+      makePlanRecord({
+        id: 'active_3',
+        title: 'Active',
+        summary: '',
+        status: PlanStatus.WAITING_APPROVAL,
+        createdAt: 3,
+        updatedAt: 3,
+      }),
+    )
     for (let i = 0; i < 20; i++) {
-      store.save(makePlanRecord({ id: `done_${i}`, title: 'Done', summary: '', status: PlanStatus.COMPLETED, createdAt: i + 10, updatedAt: i + 10 }))
+      store.save(
+        makePlanRecord({
+          id: `done_${i}`,
+          title: 'Done',
+          summary: '',
+          status: PlanStatus.COMPLETED,
+          createdAt: i + 10,
+          updatedAt: i + 10,
+        }),
+      )
     }
 
-    expect(store.list().filter((plan) => plan.status === PlanStatus.COMPLETED)).toHaveLength(5)
+    expect(
+      store.list().filter((plan) => plan.status === PlanStatus.COMPLETED),
+    ).toHaveLength(5)
     const hotIds = new Set(store.list().map((plan) => plan.id))
     expect(hotIds.has('active_1')).toBe(true)
     expect(hotIds.has('active_2')).toBe(true)
@@ -145,19 +196,27 @@ describe('PlanExecutionState (test_plan_execution_state.py)', () => {
 
   it('complete active step moves to next', () => {
     const running = new PlanExecutionState(samplePlan()).startNextStep()
-    const completed = new PlanExecutionState(running).completeStep('step_1', { evidence: { command: 'pytest', exit_code: 0 } })
+    const completed = new PlanExecutionState(running).completeStep('step_1', {
+      evidence: { command: 'pytest', exit_code: 0 },
+    })
     expect(completed.status).toBe(PlanStatus.EXECUTING)
     expect(completed.steps[0]!.status).toBe(PlanStepStatus.DONE)
-    expect(completed.steps[0]!.evidence).toEqual([{ command: 'pytest', exit_code: 0 }])
+    expect(completed.steps[0]!.evidence).toEqual([
+      { command: 'pytest', exit_code: 0 },
+    ])
     expect(completed.steps[1]!.status).toBe(PlanStepStatus.PENDING)
   })
 
   it('fail step records failed status and evidence', () => {
     const running = new PlanExecutionState(samplePlan()).startNextStep()
-    const failed = new PlanExecutionState(running).failStep('step_1', { evidence: { command: 'pytest', passed: false } })
+    const failed = new PlanExecutionState(running).failStep('step_1', {
+      evidence: { command: 'pytest', passed: false },
+    })
     expect(failed.status).toBe(PlanStatus.FAILED)
     expect(failed.steps[0]!.status).toBe(PlanStepStatus.FAILED)
-    expect(failed.steps[0]!.evidence[failed.steps[0]!.evidence.length - 1]).toEqual({ command: 'pytest', passed: false })
+    expect(
+      failed.steps[0]!.evidence[failed.steps[0]!.evidence.length - 1],
+    ).toEqual({ command: 'pytest', passed: false })
   })
 
   it('completes the plan when all steps are done', () => {
@@ -177,24 +236,53 @@ describe('assess_step_verification (test_plan_verification_matrix.py)', () => {
     const step = makeStep({
       id: 'step_1',
       title: 'Optional smoke',
-      verification: [makeRequirement({ id: 'optional_smoke', kind: 'command', required: false, command: 'npm run smoke', description: 'Optional smoke test.' })],
-      evidence: [{ command: 'npm run smoke', passed: false, summary: 'smoke failed' }],
+      verification: [
+        makeRequirement({
+          id: 'optional_smoke',
+          kind: 'command',
+          required: false,
+          command: 'npm run smoke',
+          description: 'Optional smoke test.',
+        }),
+      ],
+      evidence: [
+        { command: 'npm run smoke', passed: false, summary: 'smoke failed' },
+      ],
     })
     const assessment = assessStepVerification(step)
     expect(assessment.blockingErrors).toEqual([])
-    expect(assessment.riskNotes).toEqual(['optional_smoke failed: smoke failed'])
+    expect(assessment.riskNotes).toEqual([
+      'optional_smoke failed: smoke failed',
+    ])
   })
 
   it('manual verification requires external evidence', () => {
-    const requirement = makeRequirement({ id: 'manual_ui', kind: 'manual', required: true, description: 'User or reviewer confirms the UI manually.' })
-    const missing = makeStep({ id: 'step_1', title: 'Manual', verification: [requirement] })
+    const requirement = makeRequirement({
+      id: 'manual_ui',
+      kind: 'manual',
+      required: true,
+      description: 'User or reviewer confirms the UI manually.',
+    })
+    const missing = makeStep({
+      id: 'step_1',
+      title: 'Manual',
+      verification: [requirement],
+    })
     const passed = makeStep({
       id: 'step_1',
       title: 'Manual',
       verification: [requirement],
-      evidence: [{ requirement_id: 'manual_ui', passed: true, summary: 'reviewed in browser' }],
+      evidence: [
+        {
+          requirement_id: 'manual_ui',
+          passed: true,
+          summary: 'reviewed in browser',
+        },
+      ],
     })
-    expect(assessStepVerification(missing).blockingErrors).toContain('manual_ui missing required evidence')
+    expect(assessStepVerification(missing).blockingErrors).toContain(
+      'manual_ui missing required evidence',
+    )
     expect(assessStepVerification(passed).blockingErrors).toEqual([])
   })
 
@@ -202,16 +290,37 @@ describe('assess_step_verification (test_plan_verification_matrix.py)', () => {
     const withoutReason = makeStep({
       id: 'step_1',
       title: 'Skip',
-      verification: [makeRequirement({ id: 'manual_skip', kind: 'manual', required: true, status: 'skipped', description: 'Manual check.' })],
+      verification: [
+        makeRequirement({
+          id: 'manual_skip',
+          kind: 'manual',
+          required: true,
+          status: 'skipped',
+          description: 'Manual check.',
+        }),
+      ],
     })
     const withReason = makeStep({
       id: 'step_1',
       title: 'Skip',
-      verification: [makeRequirement({ id: 'manual_skip', kind: 'manual', required: true, status: 'skipped', description: 'Manual check.', reason: 'not applicable to CLI-only change' })],
+      verification: [
+        makeRequirement({
+          id: 'manual_skip',
+          kind: 'manual',
+          required: true,
+          status: 'skipped',
+          description: 'Manual check.',
+          reason: 'not applicable to CLI-only change',
+        }),
+      ],
     })
-    expect(assessStepVerification(withoutReason).blockingErrors).toContain('manual_skip skipped without reason')
+    expect(assessStepVerification(withoutReason).blockingErrors).toContain(
+      'manual_skip skipped without reason',
+    )
     expect(assessStepVerification(withReason).blockingErrors).toEqual([])
-    expect(assessStepVerification(withReason).riskNotes).toEqual(['manual_skip skipped: not applicable to CLI-only change'])
+    expect(assessStepVerification(withReason).riskNotes).toEqual([
+      'manual_skip skipped: not applicable to CLI-only change',
+    ])
   })
 })
 
@@ -224,14 +333,25 @@ describe('PlanQualityGate', () => {
     const result = gate.assess({
       steps: [
         makeStep({ id: 'step_1', title: 'fix issue', risk: 'medium' }),
-        makeStep({ id: 'step_2', title: 'improve code', description: 'Change implementation', risk: 'medium' }),
+        makeStep({
+          id: 'step_2',
+          title: 'improve code',
+          description: 'Change implementation',
+          risk: 'medium',
+        }),
       ],
       draft: emptyDraft(),
     })
     expect(result.ok).toBe(false)
-    expect(result.errors).toContain('step_1 has no target files, discovery reference, or concrete scope')
-    expect(result.errors.some((e) => e.startsWith('step_1 title is too generic'))).toBe(true)
-    expect(result.errors).toContain('step_2 has no verification command or manual verification rule')
+    expect(result.errors).toContain(
+      'step_1 has no target files, discovery reference, or concrete scope',
+    )
+    expect(
+      result.errors.some((e) => e.startsWith('step_1 title is too generic')),
+    ).toBe(true)
+    expect(result.errors).toContain(
+      'step_2 has no verification command or manual verification rule',
+    )
   })
 
   it('rejects high-risk step without risk note + rollback', () => {
@@ -242,7 +362,9 @@ describe('PlanQualityGate', () => {
           title: 'Migrate auth token storage',
           description: 'Move auth tokens to the new encrypted storage path.',
           files: ['agent/auth/storage.py'],
-          commands: ['.venv/bin/python -m pytest tests/unit/test_auth_storage.py -q'],
+          commands: [
+            '.venv/bin/python -m pytest tests/unit/test_auth_storage.py -q',
+          ],
           acceptance: ['existing sessions can still be read'],
           risk: 'high',
         }),
@@ -251,7 +373,9 @@ describe('PlanQualityGate', () => {
     })
     expect(result.ok).toBe(false)
     expect(result.errors).toContain('step_1 is high risk but has no risk note')
-    expect(result.errors).toContain('step_1 is high risk but has no rollback path')
+    expect(result.errors).toContain(
+      'step_1 is high risk but has no rollback path',
+    )
   })
 
   it('accepts a concrete verifiable plan', () => {
@@ -262,20 +386,27 @@ describe('PlanQualityGate', () => {
           title: 'Add plan quality gate tests',
           description: 'Cover weak plans and accepted concrete plans.',
           files: ['tests/unit/test_plan_quality_gate.py'],
-          commands: ['.venv/bin/python -m pytest tests/unit/test_plan_quality_gate.py -q'],
+          commands: [
+            '.venv/bin/python -m pytest tests/unit/test_plan_quality_gate.py -q',
+          ],
           acceptance: ['weak plans return a repairable tool error'],
           risk: 'low',
         }),
         makeStep({
           id: 'step_2',
           title: 'Enforce plan quality before PlanCard creation',
-          description: 'Wire the gate through ProposePlanTool without changing approved execution state.',
+          description:
+            'Wire the gate through ProposePlanTool without changing approved execution state.',
           files: ['agent/control/tools.py', 'agent/plans/quality.py'],
-          commands: ['.venv/bin/python -m pytest tests/unit/test_plan_runtime.py -q'],
+          commands: [
+            '.venv/bin/python -m pytest tests/unit/test_plan_runtime.py -q',
+          ],
           acceptance: ['accepted plans still create a pending PlanCard'],
           risk: 'high',
-          riskNote: 'The gate can over-block model-generated plans if rules are too strict.',
-          rollback: 'Disable enforce_quality on ProposePlanTool while keeping low-level create_plan available.',
+          riskNote:
+            'The gate can over-block model-generated plans if rules are too strict.',
+          rollback:
+            'Disable enforce_quality on ProposePlanTool while keeping low-level create_plan available.',
         }),
       ],
       draft: emptyDraft(),
@@ -295,7 +426,8 @@ describe('PlanQualityGate', () => {
 
 describe('parseReviewerVerdict', () => {
   it('parses the last verdict block', () => {
-    const text = 'noise\n```verdict\n{"passed": false}\n```\nmore\n```verdict\n{"passed": true, "summary": "ok", "commands": ["pytest"]}\n```'
+    const text =
+      'noise\n```verdict\n{"passed": false}\n```\nmore\n```verdict\n{"passed": true, "summary": "ok", "commands": ["pytest"]}\n```'
     const verdict = parseReviewerVerdict(text)
     expect(verdict).not.toBeNull()
     expect(verdict!.passed).toBe(true)

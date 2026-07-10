@@ -22,4 +22,4 @@
 
 ---
 
-*本文件是仓库默认模板。运行期长期记忆请写入 `memory/MEMORY.local.md`，不要提交到 GitHub。*
+_本文件是仓库默认模板。运行期长期记忆请写入 `memory/MEMORY.local.md`，不要提交到 GitHub。_

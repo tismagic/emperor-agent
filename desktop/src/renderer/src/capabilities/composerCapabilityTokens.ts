@@ -28,7 +28,9 @@ export interface NormalizedComposerCapabilityInput {
 
 const TOKEN_PATTERN = /@(skill|mcp)\(([A-Za-z0-9_.-]+)\)/g
 
-export function parseComposerCapabilityTokens(text: string): ParsedComposerCapabilityTokens {
+export function parseComposerCapabilityTokens(
+  text: string,
+): ParsedComposerCapabilityTokens {
   const tokens: ComposerCapabilityToken[] = []
   const skills: string[] = []
   const mcps: string[] = []
@@ -61,16 +63,23 @@ export function parseComposerCapabilityTokens(text: string): ParsedComposerCapab
   return { tokens, skills, mcps }
 }
 
-export function normalizeComposerCapabilityInput(text: string): NormalizedComposerCapabilityInput {
+export function normalizeComposerCapabilityInput(
+  text: string,
+): NormalizedComposerCapabilityInput {
   const parsed = parseComposerCapabilityTokens(text)
   return {
     content: replaceCapabilityTokensForModel(text),
     displayContent: text,
-    requestedSkills: parsed.skills.map((name) => ({ name, source: 'slash' as const })),
+    requestedSkills: parsed.skills.map((name) => ({
+      name,
+      source: 'slash' as const,
+    })),
   }
 }
 
-export function renderComposerInlineTokens(text: string): ComposerInlineSegment[] {
+export function renderComposerInlineTokens(
+  text: string,
+): ComposerInlineSegment[] {
   const parsed = parseComposerCapabilityTokens(text)
   if (!parsed.tokens.length) return [{ kind: 'text', text }]
 
@@ -101,7 +110,10 @@ export function hasComposerCapabilityTokens(text: string): boolean {
 
 function replaceCapabilityTokensForModel(text: string): string {
   TOKEN_PATTERN.lastIndex = 0
-  return text.replace(TOKEN_PATTERN, (_raw, kind: ComposerTokenKind, name: string) => {
-    return kind === 'skill' ? `Skill: ${name}` : `MCP: ${name}`
-  })
+  return text.replace(
+    TOKEN_PATTERN,
+    (_raw, kind: ComposerTokenKind, name: string) => {
+      return kind === 'skill' ? `Skill: ${name}` : `MCP: ${name}`
+    },
+  )
 }

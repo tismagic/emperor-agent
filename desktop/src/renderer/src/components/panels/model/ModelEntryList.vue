@@ -29,7 +29,10 @@ const emit = defineEmits<{
         v-for="(entry, idx) in entries"
         :key="idx"
         class="entry-item"
-        :class="{ active: idx === editingIndex, default: entry.name === defaultName }"
+        :class="{
+          active: idx === editingIndex,
+          default: entry.name === defaultName,
+        }"
         @click="emit('pick', idx)"
       >
         <div class="entry-meta">
@@ -48,20 +51,25 @@ const emit = defineEmits<{
             <code>{{ entry.provider }}</code> ·
             <code>{{ entry.mainModelId || entry.id || '(no main)' }}</code>
             /
-            <code :class="{ 'text-seal': !entry.secondaryModelId }">{{ entry.secondaryModelId || '需补次模型' }}</code>
+            <code :class="{ 'text-seal': !entry.secondaryModelId }">{{
+              entry.secondaryModelId || '需补次模型'
+            }}</code>
           </div>
         </div>
         <span
           v-if="entry.name === defaultName"
           class="entry-active-badge"
           title="此条目当前为激活状态"
-        >激活</span>
+          >激活</span
+        >
         <button
           v-else
           class="entry-activate-btn"
           title="切换为激活条目（保存后生效）"
           @click.stop="emit('setActive', idx)"
-        >设为激活</button>
+        >
+          设为激活
+        </button>
       </div>
     </div>
   </aside>

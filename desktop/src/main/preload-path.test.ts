@@ -7,7 +7,14 @@ describe('resolveMainPreloadPath', () => {
     const mainDir = path.join('/tmp', 'emperor-agent', 'desktop', 'out', 'main')
 
     expect(resolveMainPreloadPath(mainDir)).toBe(
-      path.join('/tmp', 'emperor-agent', 'desktop', 'out', 'preload', 'index.mjs'),
+      path.join(
+        '/tmp',
+        'emperor-agent',
+        'desktop',
+        'out',
+        'preload',
+        'index.mjs',
+      ),
     )
   })
 })

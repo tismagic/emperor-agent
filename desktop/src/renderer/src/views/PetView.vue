@@ -10,11 +10,13 @@ function toggleDesktopPet() {
   if (petBusy.value) return
   petBusy.value = true
   const next = !desktopPet.value?.enabled
-  void ctx.runSafely(async () => {
-    await ctx.setDesktopPetEnabled(next)
-  }).finally(() => {
-    petBusy.value = false
-  })
+  void ctx
+    .runSafely(async () => {
+      await ctx.setDesktopPetEnabled(next)
+    })
+    .finally(() => {
+      petBusy.value = false
+    })
 }
 </script>
 
@@ -29,7 +31,13 @@ function toggleDesktopPet() {
         class="team-status-pill"
         :class="{ working: desktopPet?.running, error: desktopPet?.lastError }"
       >
-        {{ desktopPet?.running ? '运行中' : desktopPet?.enabled ? '待启动' : '已关闭' }}
+        {{
+          desktopPet?.running
+            ? '运行中'
+            : desktopPet?.enabled
+              ? '待启动'
+              : '已关闭'
+        }}
       </span>
     </header>
 
@@ -56,7 +64,11 @@ function toggleDesktopPet() {
                 <div class="pet-meta-item">
                   <span class="pet-meta-label">启动方式</span>
                   <span class="pet-meta-value">
-                    {{ desktopPet?.autoStartWithWebui ? '跟随 WebUI 自动启动' : '手动控制' }}
+                    {{
+                      desktopPet?.autoStartWithWebui
+                        ? '跟随 WebUI 自动启动'
+                        : '手动控制'
+                    }}
                   </span>
                 </div>
               </div>
@@ -68,7 +80,13 @@ function toggleDesktopPet() {
                 :disabled="petBusy"
                 @click="toggleDesktopPet"
               >
-                {{ petBusy ? '处理中...' : desktopPet?.enabled ? '关闭桌宠' : '开启桌宠' }}
+                {{
+                  petBusy
+                    ? '处理中...'
+                    : desktopPet?.enabled
+                      ? '关闭桌宠'
+                      : '开启桌宠'
+                }}
               </button>
             </div>
           </section>
@@ -78,22 +96,26 @@ function toggleDesktopPet() {
             <h2>Clawd 动画精灵</h2>
             <p class="section-desc">14 种绑定到运行时事件的 SVG 动画状态</p>
             <div class="sprite-grid">
-              <figure v-for="sprite in [
-                { src: 'clawd-idle-living', label: '待机' },
-                { src: 'clawd-working-thinking', label: '思考' },
-                { src: 'clawd-working-typing', label: '回复' },
-                { src: 'clawd-working-debugger', label: '查阅文件' },
-                { src: 'clawd-working-building', label: '运行命令' },
-                { src: 'clawd-working-conducting', label: '派遣队友' },
-                { src: 'clawd-working-wizard', label: '查看网页' },
-                { src: 'clawd-working-beacon', label: '外部工具' },
-                { src: 'clawd-working-sweeping', label: '扫除' },
-                { src: 'clawd-happy', label: '完成' },
-                { src: 'clawd-notification', label: '等待拍板' },
-                { src: 'clawd-dizzy', label: '出错' },
-                { src: 'clawd-sleeping', label: '睡觉' },
-                { src: 'clawd-disconnected', label: '断连' },
-              ]" :key="sprite.src" class="sprite-card">
+              <figure
+                v-for="sprite in [
+                  { src: 'clawd-idle-living', label: '待机' },
+                  { src: 'clawd-working-thinking', label: '思考' },
+                  { src: 'clawd-working-typing', label: '回复' },
+                  { src: 'clawd-working-debugger', label: '查阅文件' },
+                  { src: 'clawd-working-building', label: '运行命令' },
+                  { src: 'clawd-working-conducting', label: '派遣队友' },
+                  { src: 'clawd-working-wizard', label: '查看网页' },
+                  { src: 'clawd-working-beacon', label: '外部工具' },
+                  { src: 'clawd-working-sweeping', label: '扫除' },
+                  { src: 'clawd-happy', label: '完成' },
+                  { src: 'clawd-notification', label: '等待拍板' },
+                  { src: 'clawd-dizzy', label: '出错' },
+                  { src: 'clawd-sleeping', label: '睡觉' },
+                  { src: 'clawd-disconnected', label: '断连' },
+                ]"
+                :key="sprite.src"
+                class="sprite-card"
+              >
                 <img
                   :src="`../../../../../assets/desktop-pet/clawd-tank/${sprite.src}.svg`"
                   :alt="sprite.label"

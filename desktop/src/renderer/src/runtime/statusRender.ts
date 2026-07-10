@@ -3,7 +3,12 @@
  * 全部为显式输入的纯函数，便于 headless 测试；不得触碰组件作用域。
  */
 import { slashCommands } from '../commands'
-import type { BootstrapPayload, CompactResult, ControlPayload, TokenStatsRow } from '../types'
+import type {
+  BootstrapPayload,
+  CompactResult,
+  ControlPayload,
+  TokenStatsRow,
+} from '../types'
 import { formatNumber, usageTypeLabel } from '../utils/format'
 
 export function inlineCode(value: string) {
@@ -14,7 +19,9 @@ export function renderCommandHelp() {
   return [
     '## 斜杠命令',
     '',
-    ...slashCommands.map((command) => `- ${inlineCode(command.usage)}：${command.description}`),
+    ...slashCommands.map(
+      (command) => `- ${inlineCode(command.usage)}：${command.description}`,
+    ),
     '',
     '### Skill 快捷调用',
     '',
@@ -33,7 +40,13 @@ export interface StatusRenderInput {
   routeName: string
 }
 
-export function renderStatus({ boot, busy, runtimeText, eventTransportText, routeName }: StatusRenderInput) {
+export function renderStatus({
+  boot,
+  busy,
+  runtimeText,
+  eventTransportText,
+  routeName,
+}: StatusRenderInput) {
   const current = boot?.modelConfig?.current
   const totals = boot?.memory?.tokenTotals || {}
   const unarchived = boot?.unarchivedHistory?.length || 0
@@ -135,7 +148,9 @@ export function renderToolsInfo(boot: BootstrapPayload | null) {
         tool.read_only ? 'read' : 'write',
         tool.concurrency_safe ? 'parallel' : '',
         tool.exclusive ? 'exclusive' : '',
-      ].filter(Boolean).join(', ')
+      ]
+        .filter(Boolean)
+        .join(', ')
       return `- ${inlineCode(tool.name)}：${tool.description || '无描述'} (${flags})`
     }),
   ].join('\n')
@@ -146,7 +161,10 @@ export function renderSkillsInfo(boot: BootstrapPayload | null) {
   return [
     `## Skills (${skills.length})`,
     '',
-    ...skills.map((skill) => `- ${inlineCode(skill.name)}：${skill.description || skill.path}`),
+    ...skills.map(
+      (skill) =>
+        `- ${inlineCode(skill.name)}：${skill.description || skill.path}`,
+    ),
   ].join('\n')
 }
 
@@ -186,10 +204,14 @@ export function renderMemoryVersions(boot: BootstrapPayload | null) {
   return [
     `## 记忆版本 (${boot?.memory?.versions?.count || versions.length})`,
     '',
-    ...versions.slice(0, 12).map((version) => [
-      `- ${inlineCode(version.id)} · ${version.target} · ${version.relPath}`,
-      `  ${new Date(version.createdAt * 1000).toLocaleString('zh-CN', { hour12: false })} · ${version.reason} · ${formatNumber(version.bytes)} bytes`,
-    ].join('\n')),
+    ...versions
+      .slice(0, 12)
+      .map((version) =>
+        [
+          `- ${inlineCode(version.id)} · ${version.target} · ${version.relPath}`,
+          `  ${new Date(version.createdAt * 1000).toLocaleString('zh-CN', { hour12: false })} · ${version.reason} · ${formatNumber(version.bytes)} bytes`,
+        ].join('\n'),
+      ),
     '',
     `恢复：${inlineCode('/memory-restore <id>')}`,
   ].join('\n')
@@ -199,11 +221,12 @@ export function renderCompactResult(result: CompactResult) {
   const applied = result.compaction?.applied || []
   const discarded = result.compaction?.discarded || []
   const cursor = result.compaction?.cursor
-  const statusLabel = result.status === 'compacted'
-    ? '已压缩'
-    : result.status === 'degraded'
-      ? '失败但已保留历史'
-      : '跳过'
+  const statusLabel =
+    result.status === 'compacted'
+      ? '已压缩'
+      : result.status === 'degraded'
+        ? '失败但已保留历史'
+        : '跳过'
   const lines = [
     '## 会话压缩',
     '',
@@ -214,12 +237,16 @@ export function renderCompactResult(result: CompactResult) {
   ]
   if (result.error) lines.push(`- 错误：${result.error}`)
   if (cursor) {
-    lines.push(`- 语义压缩游标：compacted seq ${formatNumber(cursor.compactedUntilSeq)} / archived seq ${formatNumber(cursor.archivedUntilSeq)}`)
+    lines.push(
+      `- 语义压缩游标：compacted seq ${formatNumber(cursor.compactedUntilSeq)} / archived seq ${formatNumber(cursor.archivedUntilSeq)}`,
+    )
   }
   if (applied.length) {
     lines.push('- 已应用 patch：')
     for (const item of applied) {
-      lines.push(`  - ${compactScopeLabel(item.scope)} · ${formatNumber(item.operationCount)} 个操作 · ${inlineCode(String(item.path || 'unknown'))}`)
+      lines.push(
+        `  - ${compactScopeLabel(item.scope)} · ${formatNumber(item.operationCount)} 个操作 · ${inlineCode(String(item.path || 'unknown'))}`,
+      )
     }
   } else if (result.status === 'compacted') {
     lines.push('- 已应用 patch：无明细')
@@ -234,15 +261,25 @@ function compactScopeLabel(scope: Record<string, unknown> | undefined) {
   const kind = String(scope?.kind || 'unknown')
   if (kind === 'user_profile') return '用户偏好档案'
   if (kind === 'global') return '全局长期记忆'
-  if (kind === 'project') return `全局私有项目记忆 ${scope?.projectId ? `(${String(scope.projectId)})` : ''}`.trim()
-  if (kind === 'episode') return `情景记忆 ${scope?.date ? String(scope.date) : ''}`.trim()
+  if (kind === 'project')
+    return `全局私有项目记忆 ${scope?.projectId ? `(${String(scope.projectId)})` : ''}`.trim()
+  if (kind === 'episode')
+    return `情景记忆 ${scope?.date ? String(scope.date) : ''}`.trim()
   return kind
 }
 
-export function renderStats(stats: Record<string, TokenStatsRow> | undefined, kind: 'model' | 'usage' | 'date') {
-  const rows = Object.entries(stats || {}).sort((a, b) => (b[1].total || 0) - (a[1].total || 0)).slice(0, 8)
+export function renderStats(
+  stats: Record<string, TokenStatsRow> | undefined,
+  kind: 'model' | 'usage' | 'date',
+) {
+  const rows = Object.entries(stats || {})
+    .sort((a, b) => (b[1].total || 0) - (a[1].total || 0))
+    .slice(0, 8)
   if (!rows.length) return '- 暂无记录'
   return rows
-    .map(([key, row]) => `- ${kind === 'usage' ? usageTypeLabel(key) : key}：${formatNumber(row.total || 0)} tokens / ${formatNumber(row.calls || 0)} calls`)
+    .map(
+      ([key, row]) =>
+        `- ${kind === 'usage' ? usageTypeLabel(key) : key}：${formatNumber(row.total || 0)} tokens / ${formatNumber(row.calls || 0)} calls`,
+    )
     .join('\n')
 }

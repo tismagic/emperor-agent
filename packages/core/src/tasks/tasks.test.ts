@@ -1,5 +1,12 @@
 import { createHash } from 'node:crypto'
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, writeFileSync } from 'node:fs'
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  readdirSync,
+  writeFileSync,
+} from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
@@ -44,7 +51,11 @@ describe('TaskStore (test_tasks_store.py)', () => {
     writeFileSync(join(root, 'tasks', 'index.json'), '{bad json', 'utf8')
     expect(store.list()).toEqual([])
     expect(existsSync(join(root, 'tasks', 'index.json'))).toBe(true)
-    expect(readdirSync(join(root, 'tasks')).some((name) => name.startsWith('index.json.corrupt-'))).toBe(true)
+    expect(
+      readdirSync(join(root, 'tasks')).some((name) =>
+        name.startsWith('index.json.corrupt-'),
+      ),
+    ).toBe(true)
   })
 
   it('round-trips session ownership and tolerates legacy records without it', () => {
@@ -65,8 +76,12 @@ describe('TaskStore (test_tasks_store.py)', () => {
 
     // legacy 记录（磁盘上无 session_id 字段）宽容加载为 null
     const legacy = TaskRecord.fromDict({
-      id: 'task_legacy', kind: 'subagent', status: 'completed',
-      title: 'legacy', source: 'dispatch_subagent', started_at: 1,
+      id: 'task_legacy',
+      kind: 'subagent',
+      status: 'completed',
+      title: 'legacy',
+      source: 'dispatch_subagent',
+      started_at: 1,
     })
     expect(legacy.session_id).toBeNull()
   })
@@ -79,7 +94,9 @@ describe('TaskStore (test_tasks_store.py)', () => {
     store.upsert(rec(102, TaskStatus.RUNNING))
     for (let i = 0; i < 20; i++) store.upsert(rec(i))
 
-    expect(store.list().filter((task) => task.status === TaskStatus.COMPLETED)).toHaveLength(5)
+    expect(
+      store.list().filter((task) => task.status === TaskStatus.COMPLETED),
+    ).toHaveLength(5)
     expect(store.get('t0')?.status).toBe(TaskStatus.COMPLETED)
     const hotIds = new Set(store.list().map((task) => task.id))
     expect(hotIds.has('t100')).toBe(true)
@@ -106,11 +123,22 @@ describe('TaskManager and SidechainTranscript (test_task_runtime_api.py)', () =>
     expect(task.toRuntimeDict().turnId).toBe('turn_1')
     manager.appendSidechain(task.id, { role: 'user', content: 'inspect' })
     manager.appendSidechain(task.id, { role: 'assistant', content: 'done' })
-    expect(manager.readSidechain(task.id, { offset: 0, limit: 1 }).messages[0]!.content).toBe('inspect')
-    expect(manager.readSidechain(task.id, { offset: 0, limit: 1 }).nextOffset).toBe(1)
-    expect(manager.completeTask(task.id, { summary: 'done' })?.status).toBe(TaskStatus.COMPLETED)
-    expect(manager.failTask(task.id, { error: 'boom' })?.progress.error).toBe('boom')
-    expect(manager.cancelTask(task.id, { reason: 'stop' })?.progress.reason).toBe('stop')
+    expect(
+      manager.readSidechain(task.id, { offset: 0, limit: 1 }).messages[0]!
+        .content,
+    ).toBe('inspect')
+    expect(
+      manager.readSidechain(task.id, { offset: 0, limit: 1 }).nextOffset,
+    ).toBe(1)
+    expect(manager.completeTask(task.id, { summary: 'done' })?.status).toBe(
+      TaskStatus.COMPLETED,
+    )
+    expect(manager.failTask(task.id, { error: 'boom' })?.progress.error).toBe(
+      'boom',
+    )
+    expect(
+      manager.cancelTask(task.id, { reason: 'stop' })?.progress.reason,
+    ).toBe('stop')
   })
 
   it('stamps session ownership onto started tasks', () => {
@@ -128,7 +156,11 @@ describe('TaskManager and SidechainTranscript (test_task_runtime_api.py)', () =>
     const root = tmp('emperor-sidechain-')
     const transcript = new SidechainTranscript(root, 'task_1')
     transcript.append({ role: 'user', content: 'a' })
-    writeFileSync(transcript.path, readFileSync(transcript.path, 'utf8') + '{bad json\n', 'utf8')
+    writeFileSync(
+      transcript.path,
+      readFileSync(transcript.path, 'utf8') + '{bad json\n',
+      'utf8',
+    )
     transcript.append({ role: 'assistant', content: 'b' })
     const payload = transcript.read({ offset: 0, limit: 10 })
     expect(payload.messages.map((m) => m.content)).toEqual(['a', 'b'])
@@ -138,28 +170,43 @@ describe('TaskManager and SidechainTranscript (test_task_runtime_api.py)', () =>
 
 describe('ProjectStore (test_project_store.py)', () => {
   it('resolves a project path and stores managed memory outside the user project', async () => {
-    const { ProjectStore, PROJECT_MEMORY_START, PROJECT_MEMORY_END } = await import('../projects/store')
+    const { ProjectStore, PROJECT_MEMORY_START, PROJECT_MEMORY_END } =
+      await import('../projects/store')
     const stateRoot = tmp('emperor-project-store-state-')
     const projectDir = tmp('emperor-project-store-workspace-')
     const store = new ProjectStore(stateRoot)
 
     const entry = store.resolve(projectDir)
 
-    const expectedId = createHash('sha256').update(resolve(projectDir), 'utf8').digest('hex').slice(0, 16)
+    const expectedId = createHash('sha256')
+      .update(resolve(projectDir), 'utf8')
+      .digest('hex')
+      .slice(0, 16)
     expect(entry.project_id).toBe(expectedId)
     expect(entry.project_path).toBe(resolve(projectDir))
     expect(entry.project_name).toBe(projectDir.split('/').at(-1))
     const agentsPath = join(projectDir, 'AGENTS.md')
     expect(existsSync(agentsPath)).toBe(false)
-    expect(entry.agents_path).toBe(join(stateRoot, 'projects', expectedId, 'AGENTS.local.md'))
-    expect(readFileSync(entry.agents_path, 'utf8')).toContain(PROJECT_MEMORY_START)
-    expect(readFileSync(entry.agents_path, 'utf8')).toContain(PROJECT_MEMORY_END)
+    expect(entry.agents_path).toBe(
+      join(stateRoot, 'projects', expectedId, 'AGENTS.local.md'),
+    )
+    expect(readFileSync(entry.agents_path, 'utf8')).toContain(
+      PROJECT_MEMORY_START,
+    )
+    expect(readFileSync(entry.agents_path, 'utf8')).toContain(
+      PROJECT_MEMORY_END,
+    )
 
-    const updated = store.updateMemory(entry.project_id, '## Architecture Notes\n\n- 使用 Vue + Python。\n- 最近在做 Build 模式。')
+    const updated = store.updateMemory(
+      entry.project_id,
+      '## Architecture Notes\n\n- 使用 Vue + Python。\n- 最近在做 Build 模式。',
+    )
     const text = readFileSync(entry.agents_path, 'utf8')
     expect(text).toContain('使用 Vue + Python')
     expect(updated.summary).toBe('使用 Vue + Python；最近在做 Build 模式')
-    expect(store.readManagedMemory(entry.project_id)).toContain('最近在做 Build 模式')
+    expect(store.readManagedMemory(entry.project_id)).toContain(
+      '最近在做 Build 模式',
+    )
     expect(store.summaryForChat()).toContain(entry.project_name)
     expect(existsSync(agentsPath)).toBe(false)
   })
@@ -177,23 +224,40 @@ describe('ProjectStore (test_project_store.py)', () => {
     const store = new ProjectStore(stateRoot, { versions })
     const entry = store.resolve(projectDir)
 
-    store.updateMemory(entry.project_id, '## Architecture Notes\n\n- keep this architecture note\n')
-    const updated = store.updateMemory(entry.project_id, '## Build Commands\n\n- npm test --workspace @emperor/core\n')
+    store.updateMemory(
+      entry.project_id,
+      '## Architecture Notes\n\n- keep this architecture note\n',
+    )
+    const updated = store.updateMemory(
+      entry.project_id,
+      '## Build Commands\n\n- npm test --workspace @emperor/core\n',
+    )
 
     const managed = store.readManagedMemory(entry.project_id)
-    expect(managed).toContain('## Architecture Notes\n- keep this architecture note')
+    expect(managed).toContain(
+      '## Architecture Notes\n- keep this architecture note',
+    )
     expect(managed).toContain('## Build Commands')
     expect(managed).toContain('npm test --workspace @emperor/core')
     expect(updated.summary).toContain('keep this architecture note')
-    expect(readFileSync(join(memoryDir, 'patch-ledger.jsonl'), 'utf8')).toContain('save_project_memory')
-    expect(versions.list({ target: 'project' }).length).toBeGreaterThanOrEqual(1)
+    expect(
+      readFileSync(join(memoryDir, 'patch-ledger.jsonl'), 'utf8'),
+    ).toContain('save_project_memory')
+    expect(versions.list({ target: 'project' }).length).toBeGreaterThanOrEqual(
+      1,
+    )
 
-    expect(() => store.updateMemory(entry.project_id, 'plain project memory')).toThrow('project memory update requires at least one ## section')
-    expect(store.readManagedMemory(entry.project_id)).toContain('npm test --workspace @emperor/core')
+    expect(() =>
+      store.updateMemory(entry.project_id, 'plain project memory'),
+    ).toThrow('project memory update requires at least one ## section')
+    expect(store.readManagedMemory(entry.project_id)).toContain(
+      'npm test --workspace @emperor/core',
+    )
   })
 
   it('imports a legacy managed AGENTS.md block without mutating the project file', async () => {
-    const { ProjectStore, PROJECT_MEMORY_START, PROJECT_MEMORY_END } = await import('../projects/store')
+    const { ProjectStore, PROJECT_MEMORY_START, PROJECT_MEMORY_END } =
+      await import('../projects/store')
     const stateRoot = tmp('emperor-project-store-state-')
     const projectDir = tmp('emperor-project-store-legacy-workspace-')
     const agentsPath = join(projectDir, 'AGENTS.md')
@@ -216,21 +280,38 @@ describe('ProjectStore (test_project_store.py)', () => {
 
     expect(readFileSync(agentsPath, 'utf8')).toBe(legacyText)
     expect(readFileSync(entry.agents_path, 'utf8')).toContain('从旧托管块迁移')
-    expect(store.readManagedMemory(entry.project_id)).toContain('从旧托管块迁移')
+    expect(store.readManagedMemory(entry.project_id)).toContain(
+      '从旧托管块迁移',
+    )
   })
 
   it('adds project-local collaboration files to build context without treating them as managed memory', async () => {
     const { ProjectStore } = await import('../projects/store')
     const stateRoot = tmp('emperor-project-store-state-')
     const projectDir = tmp('emperor-project-store-context-workspace-')
-    writeFileSync(join(projectDir, 'AGENTS.md'), '# Repo Instructions\n\n- Keep generated files under assets/generated.\n', 'utf8')
+    writeFileSync(
+      join(projectDir, 'AGENTS.md'),
+      '# Repo Instructions\n\n- Keep generated files under assets/generated.\n',
+      'utf8',
+    )
     mkdirSync(join(projectDir, '.emperor', 'rules'), { recursive: true })
-    writeFileSync(join(projectDir, '.emperor', 'settings.json'), JSON.stringify({ formatter: 'prettier' }), 'utf8')
-    writeFileSync(join(projectDir, '.emperor', 'rules', 'handoff.md'), '# Handoff\n\nMention residual risks.\n', 'utf8')
+    writeFileSync(
+      join(projectDir, '.emperor', 'settings.json'),
+      JSON.stringify({ formatter: 'prettier' }),
+      'utf8',
+    )
+    writeFileSync(
+      join(projectDir, '.emperor', 'rules', 'handoff.md'),
+      '# Handoff\n\nMention residual risks.\n',
+      'utf8',
+    )
     const store = new ProjectStore(stateRoot)
 
     const entry = store.resolve(projectDir)
-    store.updateMemory(entry.project_id, '## Architecture Notes\n\n- Managed project fact.')
+    store.updateMemory(
+      entry.project_id,
+      '## Architecture Notes\n\n- Managed project fact.',
+    )
 
     const agents = store.readAgents(entry.project_id)
 
@@ -240,7 +321,9 @@ describe('ProjectStore (test_project_store.py)', () => {
     expect(agents).toContain('# Workspace .emperor/settings.json')
     expect(agents).toContain('"formatter": "prettier"')
     expect(agents).toContain('# Workspace .emperor/rules/handoff.md')
-    expect(store.readManagedMemory(entry.project_id)).not.toContain('Keep generated files under assets/generated')
+    expect(store.readManagedMemory(entry.project_id)).not.toContain(
+      'Keep generated files under assets/generated',
+    )
     expect(existsSync(join(projectDir, '.emperor', 'sessions'))).toBe(false)
     expect(existsSync(join(projectDir, '.emperor', 'memory'))).toBe(false)
   })
@@ -249,6 +332,8 @@ describe('ProjectStore (test_project_store.py)', () => {
     const { ProjectStore } = await import('../projects/store')
     const root = tmp('emperor-project-missing-')
     const store = new ProjectStore(root)
-    expect(() => store.resolve(join(root, 'missing'))).toThrow(/project path must be an existing directory/)
+    expect(() => store.resolve(join(root, 'missing'))).toThrow(
+      /project path must be an existing directory/,
+    )
   })
 })

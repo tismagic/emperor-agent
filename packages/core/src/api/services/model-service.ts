@@ -11,10 +11,22 @@ import {
   type ProviderConfig,
   type WizardModelSettings,
 } from '../../config/model-config'
-import { buildProviderSnapshot, type ModelRole, type ModelRoute, type ProviderSnapshot } from '../../model/router'
-import { modelAvailability, type ModelAvailability } from '../../model/availability'
+import {
+  buildProviderSnapshot,
+  type ModelRole,
+  type ModelRoute,
+  type ProviderSnapshot,
+} from '../../model/router'
+import {
+  modelAvailability,
+  type ModelAvailability,
+} from '../../model/availability'
 import type { OpenAiMessage } from '../../providers/base'
-import { findByName, providerOptions, type ProviderSpec } from '../../providers/registry'
+import {
+  findByName,
+  providerOptions,
+  type ProviderSpec,
+} from '../../providers/registry'
 
 type Dict = Record<string, any>
 
@@ -23,7 +35,11 @@ const ANTHROPIC_MODELS_URL = 'https://api.anthropic.com/v1/models'
 const ANTHROPIC_VERSION = '2023-06-01'
 
 export interface CoreModelRouterLike {
-  route(useCase: string, agentType?: string | null, task?: string | null): ModelRoute
+  route(
+    useCase: string,
+    agentType?: string | null,
+    task?: string | null,
+  ): ModelRoute
   payload?(): Record<string, unknown>
 }
 
@@ -88,20 +104,27 @@ export class CoreModelService {
     const entry = activeEntry(config) ?? null
     const current = this.router().route('main_agent').snapshot
     const secondary = entry?.secondaryModelId
-      ? this.snapshotPayload(this.router().route('memory_compaction').snapshot, entry)
+      ? this.snapshotPayload(
+          this.router().route('memory_compaction').snapshot,
+          entry,
+        )
       : null
     return {
       current: this.snapshotPayload(current, entry),
       secondary,
       availability: modelAvailability(config),
-      routing: this.router().payload?.() ?? { secondaryEnabled: Boolean(entry?.secondaryModelId), fallbackToMain: true },
+      routing: this.router().payload?.() ?? {
+        secondaryEnabled: Boolean(entry?.secondaryModelId),
+        fallbackToMain: true,
+      },
       config: redactApiKeys(config.raw),
       providerOptions: providerOptions(),
     }
   }
 
   async saveConfig(input: unknown): Promise<ModelConfigPayload> {
-    const body = isRecord(input) && isRecord(input.config) ? input.config : input
+    const body =
+      isRecord(input) && isRecord(input.config) ? input.config : input
     if (!isRecord(body)) throw new Error('model config must be an object')
     const existing = (await loadModelConfig(this.root)).raw
     const next = structuredClone(body)
@@ -127,20 +150,41 @@ export class CoreModelService {
     if (!spec) throw new Error('custom provider missing from registry')
 
     const entryName = String(input.entryName ?? '').trim()
-    const entry = entryName ? (findEntry(config, entryName) ?? null) : (activeEntry(config) ?? null)
+    const entry = entryName
+      ? (findEntry(config, entryName) ?? null)
+      : (activeEntry(config) ?? null)
     const providerConfig = config.providers[spec.name] ?? null
     const apiBase = discoveryApiBase(input.apiBase, entry, providerConfig, spec)
     const apiKey = discoveryApiKey(input.apiKey, entry, providerConfig)
-    const extraHeaders = discoveryExtraHeaders(input.extraHeaders, entry, providerConfig)
+    const extraHeaders = discoveryExtraHeaders(
+      input.extraHeaders,
+      entry,
+      providerConfig,
+    )
 
     if (spec.modelDiscovery === 'unsupported') {
-      return discoveryUnavailable(spec, apiBase, 'unsupported_backend', `${spec.displayName} 当前不支持自动获取模型列表，请手动填写模型 ID。`)
+      return discoveryUnavailable(
+        spec,
+        apiBase,
+        'unsupported_backend',
+        `${spec.displayName} 当前不支持自动获取模型列表，请手动填写模型 ID。`,
+      )
     }
     if (!spec.isLocal && !spec.isOauth && !apiKey) {
-      return discoveryUnavailable(spec, apiBase, 'credential_required', `请先填写 ${spec.displayName} 的 API Key 后再获取模型列表。`)
+      return discoveryUnavailable(
+        spec,
+        apiBase,
+        'credential_required',
+        `请先填写 ${spec.displayName} 的 API Key 后再获取模型列表。`,
+      )
     }
     if (!apiBase && spec.modelDiscovery === 'openai_compat') {
-      return discoveryUnavailable(spec, apiBase, 'missing_api_base', `请先填写 ${spec.displayName} 的 API Base 后再获取模型列表。`)
+      return discoveryUnavailable(
+        spec,
+        apiBase,
+        'missing_api_base',
+        `请先填写 ${spec.displayName} 的 API Base 后再获取模型列表。`,
+      )
     }
 
     if (spec.modelDiscovery === 'anthropic') {
@@ -153,36 +197,55 @@ export class CoreModelService {
     const entryName = String(body.entryName ?? '').trim()
     const kind = String(body.kind ?? 'text').toLowerCase()
     let role = String(body.role ?? 'main').toLowerCase() as ModelRole
-    if (!['text', 'vision'].includes(kind)) return { ok: false, kind, error: "kind must be 'text' or 'vision'" }
+    if (!['text', 'vision'].includes(kind))
+      return { ok: false, kind, error: "kind must be 'text' or 'vision'" }
     if (!entryName) return { ok: false, kind, error: 'entryName required' }
-    if (!['main', 'secondary'].includes(role)) return { ok: false, kind, error: "role must be 'main' or 'secondary'" }
+    if (!['main', 'secondary'].includes(role))
+      return { ok: false, kind, error: "role must be 'main' or 'secondary'" }
     if (kind === 'vision') role = 'main'
 
     const config = await loadModelConfig(this.root)
     const entry = findEntry(config, entryName)
     if (role === 'secondary' && entry && !entry.secondaryModelId) {
-      return { ok: false, kind, error: 'secondaryModelId is required before testing the secondary model' }
+      return {
+        ok: false,
+        kind,
+        error:
+          'secondaryModelId is required before testing the secondary model',
+      }
     }
 
     let snapshot: ProviderSnapshot
     try {
       snapshot = this.snapshotForModelTest(config, entryName, role)
     } catch (error) {
-      return { ok: false, kind, error: `snapshot failed: ${error instanceof Error ? error.message : String(error)}` }
+      return {
+        ok: false,
+        kind,
+        error: `snapshot failed: ${error instanceof Error ? error.message : String(error)}`,
+      }
     }
 
     const started = Date.now()
     try {
       const response = await snapshot.provider.chat({
-        messages: kind === 'vision' ? visionProbeMessages() : [{ role: 'user', content: 'Reply with exactly one word: pong' }],
+        messages:
+          kind === 'vision'
+            ? visionProbeMessages()
+            : [{ role: 'user', content: 'Reply with exactly one word: pong' }],
         tools: null,
         model: snapshot.model,
         maxTokens: 64,
         temperature: 0,
         reasoningEffort: null,
       })
-      const sample = String(response.content || '').trim().slice(0, 200)
-      const ok = kind === 'vision' ? visionOk(sample) : Boolean(sample && sample.toLowerCase().includes('pong'))
+      const sample = String(response.content || '')
+        .trim()
+        .slice(0, 200)
+      const ok =
+        kind === 'vision'
+          ? visionOk(sample)
+          : Boolean(sample && sample.toLowerCase().includes('pong'))
       const payload: Dict = {
         ok,
         kind,
@@ -217,18 +280,28 @@ export class CoreModelService {
   }
 
   private router(): CoreModelRouterLike {
-    return typeof this.deps.router === 'function' ? this.deps.router() : this.deps.router
+    return typeof this.deps.router === 'function'
+      ? this.deps.router()
+      : this.deps.router
   }
 
-  private snapshotForModelTest(config: ModelConfig, entryName: string, role: ModelRole): ProviderSnapshot {
-    const routed = role === 'secondary'
-      ? this.router().route('memory_compaction').snapshot
-      : this.router().route('main_agent').snapshot
+  private snapshotForModelTest(
+    config: ModelConfig,
+    entryName: string,
+    role: ModelRole,
+  ): ProviderSnapshot {
+    const routed =
+      role === 'secondary'
+        ? this.router().route('memory_compaction').snapshot
+        : this.router().route('main_agent').snapshot
     if (routed.entryName === entryName) return routed
     return buildProviderSnapshot(config, { modelOverride: entryName, role })
   }
 
-  private snapshotPayload(snapshot: ProviderSnapshot, entry: ModelEntry | null): CurrentModelPayload {
+  private snapshotPayload(
+    snapshot: ProviderSnapshot,
+    entry: ModelEntry | null,
+  ): CurrentModelPayload {
     return {
       provider: snapshot.providerName,
       providerLabel: snapshot.providerLabel,
@@ -241,7 +314,9 @@ export class CoreModelService {
       entryName: entry?.name ?? snapshot.entryName,
       entryLabel: entry?.label || entry?.name || snapshot.entryLabel,
       supportsVision: Boolean(snapshot.supportsVision),
-      mainModelId: entry?.mainModelId ?? (snapshot.modelRole === 'main' ? snapshot.model : ''),
+      mainModelId:
+        entry?.mainModelId ??
+        (snapshot.modelRole === 'main' ? snapshot.model : ''),
       secondaryModelId: entry?.secondaryModelId ?? '',
       modelRole: snapshot.modelRole,
     }
@@ -251,31 +326,62 @@ export class CoreModelService {
 export function redactApiKeys(raw: Dict): Dict {
   const out = structuredClone(raw)
   for (const prov of Object.values(out.providers ?? {})) {
-    if (isRecord(prov) && typeof prov.apiKey === 'string' && prov.apiKey) prov.apiKey = maskKey(prov.apiKey)
+    if (isRecord(prov) && typeof prov.apiKey === 'string' && prov.apiKey)
+      prov.apiKey = maskKey(prov.apiKey)
   }
   for (const entry of out.models ?? []) {
-    if (isRecord(entry) && typeof entry.apiKey === 'string' && entry.apiKey) entry.apiKey = maskKey(entry.apiKey)
+    if (isRecord(entry) && typeof entry.apiKey === 'string' && entry.apiKey)
+      entry.apiKey = maskKey(entry.apiKey)
   }
   return out
 }
 
-function discoveryApiBase(input: unknown, entry: ModelEntry | null, provider: ProviderConfig | null, spec: ProviderSpec): string | null {
+function discoveryApiBase(
+  input: unknown,
+  entry: ModelEntry | null,
+  provider: ProviderConfig | null,
+  spec: ProviderSpec,
+): string | null {
   const direct = trimString(input)
   if (direct) return direct
-  return trimString(entry?.apiBase) || trimString(provider?.apiBase) || spec.defaultApiBase || null
+  return (
+    trimString(entry?.apiBase) ||
+    trimString(provider?.apiBase) ||
+    spec.defaultApiBase ||
+    null
+  )
 }
 
-function discoveryApiKey(input: unknown, entry: ModelEntry | null, provider: ProviderConfig | null): string {
+function discoveryApiKey(
+  input: unknown,
+  entry: ModelEntry | null,
+  provider: ProviderConfig | null,
+): string {
   const direct = trimString(input)
   if (direct && !direct.startsWith('***')) return direct
-  const candidates = [trimString(entry?.apiKey), trimString(provider?.apiKey)].filter(Boolean)
+  const candidates = [
+    trimString(entry?.apiKey),
+    trimString(provider?.apiKey),
+  ].filter(Boolean)
   if (!direct) return candidates[0] ?? ''
   const suffix = direct.replace(/^\*+/, '')
-  return candidates.find((candidate) => suffix && candidate.endsWith(suffix)) ?? candidates[0] ?? ''
+  return (
+    candidates.find((candidate) => suffix && candidate.endsWith(suffix)) ??
+    candidates[0] ??
+    ''
+  )
 }
 
-function discoveryExtraHeaders(input: unknown, entry: ModelEntry | null, provider: ProviderConfig | null): Record<string, string> {
-  const resolved = recordValue(input) || recordValue(entry?.extraHeaders) || recordValue(provider?.extraHeaders) || {}
+function discoveryExtraHeaders(
+  input: unknown,
+  entry: ModelEntry | null,
+  provider: ProviderConfig | null,
+): Record<string, string> {
+  const resolved =
+    recordValue(input) ||
+    recordValue(entry?.extraHeaders) ||
+    recordValue(provider?.extraHeaders) ||
+    {}
   const headers: Record<string, string> = {}
   for (const [key, value] of Object.entries(resolved)) {
     if (value === null || value === undefined) continue
@@ -295,10 +401,18 @@ async function discoverOpenAiCompatibleModels(
     try {
       const response = await fetchWithTimeout(url, {
         method: 'GET',
-        headers: discoveryHeaders(extraHeaders, apiKey ? { authorization: `Bearer ${apiKey}` } : {}),
+        headers: discoveryHeaders(
+          extraHeaders,
+          apiKey ? { authorization: `Bearer ${apiKey}` } : {},
+        ),
       })
       if (!response.ok) {
-        last = discoveryUnavailable(spec, apiBase, codeForHttpStatus(response.status), response.statusText || `HTTP ${response.status}`)
+        last = discoveryUnavailable(
+          spec,
+          apiBase,
+          codeForHttpStatus(response.status),
+          response.statusText || `HTTP ${response.status}`,
+        )
         continue
       }
       const body = await response.json()
@@ -310,10 +424,23 @@ async function discoverOpenAiCompatibleModels(
         models: parseDiscoveredModels(body),
       }
     } catch (error) {
-      last = discoveryUnavailable(spec, apiBase, codeForFetchError(error), fetchErrorMessage(error))
+      last = discoveryUnavailable(
+        spec,
+        apiBase,
+        codeForFetchError(error),
+        fetchErrorMessage(error),
+      )
     }
   }
-  return last ?? discoveryUnavailable(spec, apiBase, 'no_endpoint', '未找到可用的模型列表 endpoint。')
+  return (
+    last ??
+    discoveryUnavailable(
+      spec,
+      apiBase,
+      'no_endpoint',
+      '未找到可用的模型列表 endpoint。',
+    )
+  )
 }
 
 async function discoverAnthropicModels(
@@ -332,7 +459,12 @@ async function discoverAnthropicModels(
       }),
     })
     if (!response.ok) {
-      return discoveryUnavailable(spec, apiBase, codeForHttpStatus(response.status), response.statusText || `HTTP ${response.status}`)
+      return discoveryUnavailable(
+        spec,
+        apiBase,
+        codeForHttpStatus(response.status),
+        response.statusText || `HTTP ${response.status}`,
+      )
     }
     const body = await response.json()
     return {
@@ -343,11 +475,21 @@ async function discoverAnthropicModels(
       models: parseDiscoveredModels(body),
     }
   } catch (error) {
-    return discoveryUnavailable(spec, apiBase, codeForFetchError(error), fetchErrorMessage(error))
+    return discoveryUnavailable(
+      spec,
+      apiBase,
+      codeForFetchError(error),
+      fetchErrorMessage(error),
+    )
   }
 }
 
-function discoveryUnavailable(spec: ProviderSpec, apiBase: string | null, code: string, message: string): ModelDiscoveryPayload {
+function discoveryUnavailable(
+  spec: ProviderSpec,
+  apiBase: string | null,
+  code: string,
+  message: string,
+): ModelDiscoveryPayload {
   return {
     ok: false,
     provider: spec.name,
@@ -359,7 +501,10 @@ function discoveryUnavailable(spec: ProviderSpec, apiBase: string | null, code: 
   }
 }
 
-async function fetchWithTimeout(url: string, init: RequestInit): Promise<Response> {
+async function fetchWithTimeout(
+  url: string,
+  init: RequestInit,
+): Promise<Response> {
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), MODEL_DISCOVERY_TIMEOUT_MS)
   try {
@@ -369,9 +514,13 @@ async function fetchWithTimeout(url: string, init: RequestInit): Promise<Respons
   }
 }
 
-function discoveryHeaders(extraHeaders: Record<string, string>, defaults: Record<string, string>): Headers {
+function discoveryHeaders(
+  extraHeaders: Record<string, string>,
+  defaults: Record<string, string>,
+): Headers {
   const headers = new Headers({ accept: 'application/json', ...defaults })
-  for (const [key, value] of Object.entries(extraHeaders)) headers.set(key, value)
+  for (const [key, value] of Object.entries(extraHeaders))
+    headers.set(key, value)
   return headers
 }
 
@@ -379,7 +528,8 @@ function openAiModelEndpointCandidates(apiBase: string): string[] {
   const base = trimApiBase(apiBase)
   const candidates = new Set<string>()
   addModelEndpoint(candidates, base)
-  for (const normalized of normalizedOpenAiCompatBases(base)) addModelEndpoint(candidates, normalized)
+  for (const normalized of normalizedOpenAiCompatBases(base))
+    addModelEndpoint(candidates, normalized)
   return [...candidates]
 }
 
@@ -420,14 +570,19 @@ function parseDiscoveredModels(body: unknown): DiscoveredModel[] {
   for (const raw of data) {
     if (!raw || typeof raw !== 'object' || Array.isArray(raw)) continue
     const item = raw as Record<string, unknown>
-    const id = trimString(item.id) || trimString(item.name) || trimString(item.model)
+    const id =
+      trimString(item.id) || trimString(item.name) || trimString(item.model)
     if (!id || seen.has(id)) continue
     seen.add(id)
     const model: DiscoveredModel = { id }
-    const ownedBy = trimString(item.owned_by) || trimString(item.ownedBy) || trimString(item.owner)
+    const ownedBy =
+      trimString(item.owned_by) ||
+      trimString(item.ownedBy) ||
+      trimString(item.owner)
     const created = item.created ?? item.created_at ?? item.createdAt
     if (ownedBy) model.ownedBy = ownedBy
-    if (typeof created === 'number' || typeof created === 'string') model.created = created
+    if (typeof created === 'number' || typeof created === 'string')
+      model.created = created
     out.push(model)
   }
   return out.sort((a, b) => a.id.localeCompare(b.id))
@@ -455,15 +610,22 @@ function codeForFetchError(error: unknown): string {
 }
 
 function fetchErrorMessage(error: unknown): string {
-  if (error instanceof Error && error.name === 'AbortError') return '获取模型列表超时。'
+  if (error instanceof Error && error.name === 'AbortError')
+    return '获取模型列表超时。'
   return error instanceof Error ? error.message : String(error)
 }
 
 export function restoreMaskedKeys(config: Dict, existing: Dict): void {
   const incomingProviders = isRecord(config.providers) ? config.providers : {}
-  const existingProviders = isRecord(existing.providers) ? existing.providers : {}
+  const existingProviders = isRecord(existing.providers)
+    ? existing.providers
+    : {}
   for (const [name, prov] of Object.entries(incomingProviders)) {
-    if (isRecord(prov) && typeof prov.apiKey === 'string' && prov.apiKey.startsWith('***')) {
+    if (
+      isRecord(prov) &&
+      typeof prov.apiKey === 'string' &&
+      prov.apiKey.startsWith('***')
+    ) {
       const old = existingProviders[name]
       prov.apiKey = isRecord(old) ? String(old.apiKey ?? '') : ''
     }
@@ -474,7 +636,12 @@ export function restoreMaskedKeys(config: Dict, existing: Dict): void {
     if (isRecord(item) && item.name) existingModels.set(String(item.name), item)
   }
   for (const entry of Array.isArray(config.models) ? config.models : []) {
-    if (!isRecord(entry) || typeof entry.apiKey !== 'string' || !entry.apiKey.startsWith('***')) continue
+    if (
+      !isRecord(entry) ||
+      typeof entry.apiKey !== 'string' ||
+      !entry.apiKey.startsWith('***')
+    )
+      continue
     const old = existingModels.get(String(entry.name ?? ''))
     entry.apiKey = old ? String(old.apiKey ?? '') : ''
   }
@@ -513,23 +680,38 @@ function wizardSettings(input: unknown): WizardModelSettings {
     maxTokens: Number(input.maxTokens ?? 8192),
     temperature: Number(input.temperature ?? 0.1),
     contextWindowTokens: Number(input.contextWindowTokens ?? 128000),
-    reasoningEffort: input.reasoningEffort ? String(input.reasoningEffort) : null,
+    reasoningEffort: input.reasoningEffort
+      ? String(input.reasoningEffort)
+      : null,
   }
 }
 
 const PROBE_JPEG_BASE64 = '/9j/4AAQSkZJRgABAQAAAQABAAD/2w=='
 
 function visionProbeMessages(): OpenAiMessage[] {
-  return [{
-    role: 'user',
-    content: [
-      { type: 'text', text: 'Reply with ONE English word only: name a visible color in this image.' },
-      { type: 'image_url', image_url: { url: `data:image/jpeg;base64,${PROBE_JPEG_BASE64}` } },
-    ],
-  }]
+  return [
+    {
+      role: 'user',
+      content: [
+        {
+          type: 'text',
+          text: 'Reply with ONE English word only: name a visible color in this image.',
+        },
+        {
+          type: 'image_url',
+          image_url: { url: `data:image/jpeg;base64,${PROBE_JPEG_BASE64}` },
+        },
+      ],
+    },
+  ]
 }
 
 function visionOk(sample: string): boolean {
   const lower = sample.toLowerCase()
-  return Boolean(sample) && !['invalid', 'error', 'cannot', 'unable', 'sorry'].some((token) => lower.includes(token))
+  return (
+    Boolean(sample) &&
+    !['invalid', 'error', 'cannot', 'unable', 'sorry'].some((token) =>
+      lower.includes(token),
+    )
+  )
 }

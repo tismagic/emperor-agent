@@ -11,13 +11,17 @@ import {
 
 describe('packaged runtime paths', () => {
   it('places runtime state under the app userData directory', () => {
-    expect(packagedRuntimeRoot('/Users/me/Library/Application Support/Emperor Agent')).toBe(
-      '/Users/me/Library/Application Support/Emperor Agent/runtime',
-    )
+    expect(
+      packagedRuntimeRoot(
+        '/Users/me/Library/Application Support/Emperor Agent',
+      ),
+    ).toBe('/Users/me/Library/Application Support/Emperor Agent/runtime')
   })
 
   it('resolves bundled defaults from resources', () => {
-    expect(runtimeDefaultsRoot('/App/Contents/Resources')).toBe('/App/Contents/Resources/runtime-defaults')
+    expect(runtimeDefaultsRoot('/App/Contents/Resources')).toBe(
+      '/App/Contents/Resources/runtime-defaults',
+    )
   })
 })
 
@@ -28,21 +32,64 @@ describe('initializePackagedRuntime', () => {
     const runtime = path.join(tmp, 'runtime')
 
     fs.mkdirSync(path.join(defaults, 'templates'), { recursive: true })
-    fs.writeFileSync(path.join(defaults, 'templates', 'SOUL.md'), 'default soul', 'utf8')
+    fs.writeFileSync(
+      path.join(defaults, 'templates', 'SOUL.md'),
+      'default soul',
+      'utf8',
+    )
     fs.mkdirSync(path.join(defaults, 'skills', 'demo'), { recursive: true })
-    fs.writeFileSync(path.join(defaults, 'skills', 'demo', 'SKILL.md'), 'default skill', 'utf8')
-    fs.mkdirSync(path.join(defaults, 'assets', 'desktop-pet'), { recursive: true })
-    fs.writeFileSync(path.join(defaults, 'assets', 'desktop-pet', 'pet.svg'), '<svg />', 'utf8')
-    fs.writeFileSync(path.join(defaults, 'model_config.example.json'), '{}\n', 'utf8')
-    fs.writeFileSync(path.join(defaults, 'mcp_config.example.json'), '{}\n', 'utf8')
+    fs.writeFileSync(
+      path.join(defaults, 'skills', 'demo', 'SKILL.md'),
+      'default skill',
+      'utf8',
+    )
+    fs.mkdirSync(path.join(defaults, 'assets', 'desktop-pet'), {
+      recursive: true,
+    })
+    fs.writeFileSync(
+      path.join(defaults, 'assets', 'desktop-pet', 'pet.svg'),
+      '<svg />',
+      'utf8',
+    )
+    fs.writeFileSync(
+      path.join(defaults, 'model_config.example.json'),
+      '{}\n',
+      'utf8',
+    )
+    fs.writeFileSync(
+      path.join(defaults, 'mcp_config.example.json'),
+      '{}\n',
+      'utf8',
+    )
     fs.writeFileSync(path.join(defaults, '.env.example'), 'KEY=value\n', 'utf8')
 
-    const first = initializePackagedRuntime({ root: runtime, defaultsRoot: defaults })
-    fs.writeFileSync(path.join(runtime, 'templates', 'SOUL.md'), 'user soul', 'utf8')
-    const second = initializePackagedRuntime({ root: runtime, defaultsRoot: defaults })
+    const first = initializePackagedRuntime({
+      root: runtime,
+      defaultsRoot: defaults,
+    })
+    fs.writeFileSync(
+      path.join(runtime, 'templates', 'SOUL.md'),
+      'user soul',
+      'utf8',
+    )
+    const second = initializePackagedRuntime({
+      root: runtime,
+      defaultsRoot: defaults,
+    })
 
-    expect(first.sort()).toEqual(['.env.example', 'assets', 'mcp_config.example.json', 'model_config.example.json', 'skills', 'templates'].sort())
+    expect(first.sort()).toEqual(
+      [
+        '.env.example',
+        'assets',
+        'mcp_config.example.json',
+        'model_config.example.json',
+        'skills',
+        'templates',
+      ].sort(),
+    )
     expect(second).toEqual([])
-    expect(fs.readFileSync(path.join(runtime, 'templates', 'SOUL.md'), 'utf8')).toBe('user soul')
+    expect(
+      fs.readFileSync(path.join(runtime, 'templates', 'SOUL.md'), 'utf8'),
+    ).toBe('user soul')
   })
 })

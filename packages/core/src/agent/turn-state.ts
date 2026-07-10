@@ -29,11 +29,22 @@ export interface TurnPhaseEvent {
   toRuntimeEvent(): Record<string, unknown>
 }
 
-function makePhaseEvent(p: { phase: string; sequence: number; iteration: number; turnId: string | null; detail: Record<string, unknown> }): TurnPhaseEvent {
+function makePhaseEvent(p: {
+  phase: string
+  sequence: number
+  iteration: number
+  turnId: string | null
+  detail: Record<string, unknown>
+}): TurnPhaseEvent {
   return {
     ...p,
     toRuntimeEvent(): Record<string, unknown> {
-      const event: Record<string, unknown> = { event: 'turn_phase', phase: p.phase, sequence: p.sequence, iteration: p.iteration }
+      const event: Record<string, unknown> = {
+        event: 'turn_phase',
+        phase: p.phase,
+        sequence: p.sequence,
+        iteration: p.iteration,
+      }
       if (p.turnId) event.turn_id = p.turnId
       if (Object.keys(p.detail).length) event.detail = p.detail
       return event
@@ -56,7 +67,10 @@ export class TurnState {
     return this.iteration
   }
 
-  transition(phase: TurnPhase | string, opts?: { detail?: Record<string, unknown> | null }): TurnPhaseEvent {
+  transition(
+    phase: TurnPhase | string,
+    opts?: { detail?: Record<string, unknown> | null },
+  ): TurnPhaseEvent {
     const normalized = phase as TurnPhase
     this.phase = normalized
     this.sequence += 1

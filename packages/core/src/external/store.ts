@@ -1,5 +1,15 @@
 import { randomUUID } from 'node:crypto'
-import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, statSync, unlinkSync, writeFileSync } from 'node:fs'
+import {
+  copyFileSync,
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  renameSync,
+  statSync,
+  unlinkSync,
+  writeFileSync,
+} from 'node:fs'
 import { join } from 'node:path'
 import { nowTs } from '../util/time'
 import { ExternalInbound, seenKey, splitSeenKey } from './models'
@@ -32,7 +42,8 @@ export class ExternalBridgeStore {
     let raw: unknown
     try {
       raw = JSON.parse(readFileSync(this.stateFile, 'utf8') || '{}')
-      if (!raw || typeof raw !== 'object' || Array.isArray(raw)) throw new Error('external state root must be an object')
+      if (!raw || typeof raw !== 'object' || Array.isArray(raw))
+        throw new Error('external state root must be an object')
     } catch {
       this.preserveCorruptState()
       return emptyState()
@@ -40,10 +51,19 @@ export class ExternalBridgeStore {
     const obj = raw as Record<string, unknown>
     const seen = new Set<string>()
     for (const item of Array.isArray(obj.seen) ? obj.seen : []) {
-      if (Array.isArray(item) && item.length === 2 && item[0] && item[1]) seen.add(seenKey(String(item[0]), String(item[1])))
+      if (Array.isArray(item) && item.length === 2 && item[0] && item[1])
+        seen.add(seenKey(String(item[0]), String(item[1])))
     }
-    const inbox = trimRecent((Array.isArray(obj.inbox) ? obj.inbox : []).filter(isRecord), this.maxRecent)
-    const pending = trimRecent((Array.isArray(obj.pending) ? obj.pending : []).filter(isRecord).map((item) => ExternalInbound.fromDict(item)), this.maxRecent)
+    const inbox = trimRecent(
+      (Array.isArray(obj.inbox) ? obj.inbox : []).filter(isRecord),
+      this.maxRecent,
+    )
+    const pending = trimRecent(
+      (Array.isArray(obj.pending) ? obj.pending : [])
+        .filter(isRecord)
+        .map((item) => ExternalInbound.fromDict(item)),
+      this.maxRecent,
+    )
     const outbox = new Map<string, Record<string, unknown>>()
     for (const item of Array.isArray(obj.outbox) ? obj.outbox : []) {
       if (!isRecord(item)) continue
@@ -51,7 +71,12 @@ export class ExternalBridgeStore {
       const messageId = String(message.id ?? '')
       if (messageId) outbox.set(messageId, item)
     }
-    const recentErrors = trimRecent((Array.isArray(obj.recentErrors) ? obj.recentErrors : []).filter(isRecord), this.maxRecent)
+    const recentErrors = trimRecent(
+      (Array.isArray(obj.recentErrors) ? obj.recentErrors : []).filter(
+        isRecord,
+      ),
+      this.maxRecent,
+    )
     return { seen, inbox, pending, outbox, recentErrors }
   }
 
@@ -65,26 +90,40 @@ export class ExternalBridgeStore {
     const payload = {
       version: 1,
       updatedAt: nowTs(),
-      seen: [...state.seen].map(splitSeenKey).filter((item) => item[0] && item[1]).sort(),
+      seen: [...state.seen]
+        .map(splitSeenKey)
+        .filter((item) => item[0] && item[1])
+        .sort(),
       inbox: trimRecent(state.inbox, this.maxRecent),
-      pending: trimRecent(state.pending, this.maxRecent).map((message) => message.toDict()),
+      pending: trimRecent(state.pending, this.maxRecent).map((message) =>
+        message.toDict(),
+      ),
       outbox: trimRecent([...state.outbox.values()], this.maxRecent),
       recentErrors: trimRecent(state.recentErrors, this.maxRecent),
     }
     mkdirSync(this.externalDir, { recursive: true })
-    const tmp = join(this.externalDir, `.${randomUUID().replace(/-/g, '')}.state.json.tmp`)
+    const tmp = join(
+      this.externalDir,
+      `.${randomUUID().replace(/-/g, '')}.state.json.tmp`,
+    )
     try {
       writeFileSync(tmp, JSON.stringify(payload, null, 2) + '\n', 'utf8')
       renameSync(tmp, this.stateFile)
     } catch (error) {
-      try { unlinkSync(tmp) } catch {}
+      try {
+        unlinkSync(tmp)
+      } catch {}
       throw error
     }
   }
 
   diagnostics(): Record<string, unknown> {
     const backups = existsSync(this.externalDir)
-      ? readdirSync(this.externalDir).filter((name) => name.startsWith('state.json.corrupt-')).sort().reverse().slice(0, 10)
+      ? readdirSync(this.externalDir)
+          .filter((name) => name.startsWith('state.json.corrupt-'))
+          .sort()
+          .reverse()
+          .slice(0, 10)
       : []
     return {
       path: this.stateFile,
@@ -100,19 +139,34 @@ export class ExternalBridgeStore {
 
   private preserveCorruptState(): void {
     if (!existsSync(this.stateFile)) return
-    const backup = join(this.externalDir, `state.json.corrupt-${Math.floor(nowTs())}-${randomUUID().replace(/-/g, '').slice(0, 8)}`)
-    try { renameSync(this.stateFile, backup) } catch {}
+    const backup = join(
+      this.externalDir,
+      `state.json.corrupt-${Math.floor(nowTs())}-${randomUUID().replace(/-/g, '').slice(0, 8)}`,
+    )
+    try {
+      renameSync(this.stateFile, backup)
+    } catch {}
   }
 
   private copyLegacyStateIfNeeded(): void {
     const legacy = join(this.root, 'memory', 'external', 'state.json')
     if (existsSync(this.stateFile) || !existsSync(legacy)) return
-    try { copyFileSync(legacy, this.stateFile) } catch { /* non-destructive best effort */ }
+    try {
+      copyFileSync(legacy, this.stateFile)
+    } catch {
+      /* non-destructive best effort */
+    }
   }
 }
 
 function emptyState(): ExternalBridgeState {
-  return { seen: new Set(), inbox: [], pending: [], outbox: new Map(), recentErrors: [] }
+  return {
+    seen: new Set(),
+    inbox: [],
+    pending: [],
+    outbox: new Map(),
+    recentErrors: [],
+  }
 }
 
 function trimRecent<T>(items: T[], max: number): T[] {

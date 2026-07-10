@@ -8,14 +8,17 @@ import {
 
 describe('plan projection', () => {
   it('stores the latest plan entry decision contract', () => {
-    const projection = applyPlanEvent({ plans: [], entryDecisions: [] }, {
-      event: 'plan_entry_decision',
-      decision: 'recommended',
-      reason: 'Multi-step implementation would benefit from a plan.',
-      triggers: ['feature', 'multi_step'],
-      suggested_questions: ['Which tradeoff matters most?'],
-      recommended_readonly_scopes: ['Read related dashboard files.'],
-    })
+    const projection = applyPlanEvent(
+      { plans: [], entryDecisions: [] },
+      {
+        event: 'plan_entry_decision',
+        decision: 'recommended',
+        reason: 'Multi-step implementation would benefit from a plan.',
+        triggers: ['feature', 'multi_step'],
+        suggested_questions: ['Which tradeoff matters most?'],
+        recommended_readonly_scopes: ['Read related dashboard files.'],
+      },
+    )
 
     expect(projection.entryDecisions[0]).toEqual({
       decision: 'recommended',
@@ -45,7 +48,9 @@ describe('plan projection', () => {
     })
 
     expect(projection.plans[0]?.steps[0]?.status).toBe('active')
-    expect(projection.plans[0]?.steps[0]?.evidence?.[0]?.summary).toBe('2 passed')
+    expect(projection.plans[0]?.steps[0]?.evidence?.[0]?.summary).toBe(
+      '2 passed',
+    )
   })
 
   it('replays approved plans as runtime plan state', () => {
@@ -62,7 +67,9 @@ describe('plan projection', () => {
     })
 
     expect(projection.plans[0]?.id).toBe('plan_approved')
-    expect(planExecutionSummary(projection.plans[0])?.activeStep?.title).toBe('Active work')
+    expect(planExecutionSummary(projection.plans[0])?.activeStep?.title).toBe(
+      'Active work',
+    )
   })
 
   it('summarizes active step, failed verification, blocked reason and open questions', () => {
@@ -94,14 +101,18 @@ describe('plan projection', () => {
           id: 'step_4',
           title: 'Wait for user decision',
           status: 'blocked',
-          evidence: [{ blocked_reason: 'Waiting for user to approve reviewer waiver.' }],
+          evidence: [
+            { blocked_reason: 'Waiting for user to approve reviewer waiver.' },
+          ],
         },
       ],
     })
 
     expect(summary.activeStep?.id).toBe('step_2')
     expect(summary.failedVerificationSummary).toBe('planProjection test failed')
-    expect(summary.blockedReason).toBe('Waiting for user to approve reviewer waiver.')
+    expect(summary.blockedReason).toBe(
+      'Waiting for user to approve reviewer waiver.',
+    )
     expect(summary.openQuestionsCount).toBe(2)
   })
 
@@ -114,7 +125,11 @@ describe('plan projection', () => {
       metadata: {
         independent_verification_request: {
           risk_signals: ['changed_files>=3', 'runtime'],
-          changed_files: ['agent/runner.py', 'agent/control/manager.py', 'desktop/src/renderer/src/runtime/handlers/plans.ts'],
+          changed_files: [
+            'agent/runner.py',
+            'agent/control/manager.py',
+            'desktop/src/renderer/src/runtime/handlers/plans.ts',
+          ],
         },
       },
     })
@@ -123,54 +138,74 @@ describe('plan projection', () => {
       title: 'Failed review',
       status: 'completed',
       steps: [],
-      verification: [{
-        source: 'independent_verification',
-        reviewer: 'verification_reviewer',
-        passed: false,
-        summary: 'Reviewer found missing PlanCard coverage.',
-        commands: ['npm --prefix desktop run test -- planProjection'],
-      }],
+      verification: [
+        {
+          source: 'independent_verification',
+          reviewer: 'verification_reviewer',
+          passed: false,
+          summary: 'Reviewer found missing PlanCard coverage.',
+          commands: ['npm --prefix desktop run test -- planProjection'],
+        },
+      ],
     })
     const missingCommandEvidence = planExecutionSummary({
       id: 'plan_missing',
       title: 'Missing command evidence',
       status: 'completed',
       steps: [],
-      verification: [{ source: 'independent_verification', passed: true, summary: 'Looks good.' }],
+      verification: [
+        {
+          source: 'independent_verification',
+          passed: true,
+          summary: 'Looks good.',
+        },
+      ],
     })
     const passed = planExecutionSummary({
       id: 'plan_passed',
       title: 'Passed review',
       status: 'completed',
       steps: [],
-      verification: [{
-        source: 'independent_verification',
-        passed: true,
-        summary: 'Reviewed runtime replay.',
-        commands: ['npm --prefix desktop run test -- planProjection'],
-      }],
+      verification: [
+        {
+          source: 'independent_verification',
+          passed: true,
+          summary: 'Reviewed runtime replay.',
+          commands: ['npm --prefix desktop run test -- planProjection'],
+        },
+      ],
     })
     const waived = planExecutionSummary({
       id: 'plan_waived',
       title: 'Waived review',
       status: 'completed',
       steps: [],
-      verification: [{
-        source: 'independent_verification_waiver',
-        waived: true,
-        reason: 'User approved shipping without reviewer.',
-      }],
+      verification: [
+        {
+          source: 'independent_verification_waiver',
+          waived: true,
+          reason: 'User approved shipping without reviewer.',
+        },
+      ],
     })
 
     expect(required.independentVerificationStatus).toBe('required')
     expect(required.riskSignals).toEqual(['changed_files>=3', 'runtime'])
     expect(failed.independentVerificationStatus).toBe('failed')
-    expect(failed.independentVerificationSummary).toBe('Reviewer found missing PlanCard coverage.')
-    expect(failed.independentVerificationCommands).toEqual(['npm --prefix desktop run test -- planProjection'])
-    expect(missingCommandEvidence.independentVerificationStatus).toBe('missing_command_evidence')
+    expect(failed.independentVerificationSummary).toBe(
+      'Reviewer found missing PlanCard coverage.',
+    )
+    expect(failed.independentVerificationCommands).toEqual([
+      'npm --prefix desktop run test -- planProjection',
+    ])
+    expect(missingCommandEvidence.independentVerificationStatus).toBe(
+      'missing_command_evidence',
+    )
     expect(passed.independentVerificationStatus).toBe('passed')
     expect(waived.independentVerificationStatus).toBe('waived')
-    expect(waived.independentVerificationSummary).toBe('User approved shipping without reviewer.')
+    expect(waived.independentVerificationSummary).toBe(
+      'User approved shipping without reviewer.',
+    )
   })
 
   it('finds the runtime plan for a plan interaction', () => {
@@ -180,26 +215,32 @@ describe('plan projection', () => {
         id: 'plan_current',
         title: 'Current',
         status: 'executing',
-        steps: [{
-          id: 'step_1',
-          title: 'Fix failing verification',
-          status: 'failed',
-          evidence: [{
-            command: 'pytest',
-            passed: false,
-            summary: '1 failed',
-            stderr_tail: 'AssertionError',
-          }],
-        }],
+        steps: [
+          {
+            id: 'step_1',
+            title: 'Fix failing verification',
+            status: 'failed',
+            evidence: [
+              {
+                command: 'pytest',
+                passed: false,
+                summary: '1 failed',
+                stderr_tail: 'AssertionError',
+              },
+            ],
+          },
+        ],
       },
     ]
 
-    expect(latestPlanForInteraction(plans, {
-      id: 'interaction_1',
-      kind: 'plan',
-      status: 'approved',
-      meta: { plan_id: 'plan_current' },
-    })?.steps[0]?.evidence?.[0]?.summary).toBe('1 failed')
+    expect(
+      latestPlanForInteraction(plans, {
+        id: 'interaction_1',
+        kind: 'plan',
+        status: 'approved',
+        meta: { plan_id: 'plan_current' },
+      })?.steps[0]?.evidence?.[0]?.summary,
+    ).toBe('1 failed')
   })
 
   it('falls back to the newest plan when legacy interactions have no plan id', () => {
@@ -208,10 +249,12 @@ describe('plan projection', () => {
       { id: 'plan_2', title: 'Second', status: 'executing', steps: [] },
     ]
 
-    expect(latestPlanForInteraction(plans, {
-      id: 'interaction_legacy',
-      kind: 'plan',
-      status: 'approved',
-    })?.id).toBe('plan_2')
+    expect(
+      latestPlanForInteraction(plans, {
+        id: 'interaction_legacy',
+        kind: 'plan',
+        status: 'approved',
+      })?.id,
+    ).toBe('plan_2')
   })
 })

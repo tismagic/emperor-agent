@@ -51,6 +51,8 @@ function iconFor(item: CapabilityDisplayItem) {
         {{ badge.label }}
       </span>
     </div>
-    <div v-if="props.item.meta" class="capability-card-path">{{ props.item.meta }}</div>
+    <div v-if="props.item.meta" class="capability-card-path">
+      {{ props.item.meta }}
+    </div>
   </article>
 </template>

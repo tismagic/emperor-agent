@@ -16,17 +16,30 @@ describe('CoreDesktopPetService', () => {
 
     const enabled = await service.setEnabled(true)
 
-    expect(enabled).toMatchObject({ enabled: true, running: true, managedBy: 'Electron main process', available: true })
+    expect(enabled).toMatchObject({
+      enabled: true,
+      running: true,
+      managedBy: 'Electron main process',
+      available: true,
+    })
     expect(enabled.pid).toBeNull()
     expect(enabled.lastError).toBeNull()
     expect(enabled.installCommand).toBe('')
-    expect(readFileSync(join(stateRoot, 'emperor.local.json'), 'utf8')).toContain('"enabled": true')
+    expect(
+      readFileSync(join(stateRoot, 'emperor.local.json'), 'utf8'),
+    ).toContain('"enabled": true')
     expect((await service.get()).enabled).toBe(true)
 
     const disabled = await service.setEnabled(false)
 
-    expect(disabled).toMatchObject({ enabled: false, running: false, lastError: null })
-    expect(readFileSync(join(stateRoot, 'emperor.local.json'), 'utf8')).toContain('"enabled": false')
+    expect(disabled).toMatchObject({
+      enabled: false,
+      running: false,
+      lastError: null,
+    })
+    expect(
+      readFileSync(join(stateRoot, 'emperor.local.json'), 'utf8'),
+    ).toContain('"enabled": false')
   })
 
   it('marks stopped and error state', async () => {
@@ -50,9 +63,14 @@ describe('CoreDesktopPetService', () => {
   })
 
   it('runs mutation checks synchronously before toggling', () => {
-    const service = new CoreDesktopPetService(tmp('emperor-pet-service-guard-'), {
-      assertMutation: () => { throw new Error('blocked') },
-    })
+    const service = new CoreDesktopPetService(
+      tmp('emperor-pet-service-guard-'),
+      {
+        assertMutation: () => {
+          throw new Error('blocked')
+        },
+      },
+    )
 
     expect(() => service.setEnabled(true)).toThrow('blocked')
   })

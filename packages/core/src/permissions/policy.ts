@@ -10,8 +10,12 @@ import type { PermissionRuleInput } from './rules'
 export class PermissionPolicy {
   readonly pipeline: PermissionPipeline
 
-  constructor(pipeline?: PermissionPipeline, opts: { rules?: PermissionRuleInput[] | null } = {}) {
-    this.pipeline = pipeline ?? new PermissionPipeline({ rules: opts.rules ?? [] })
+  constructor(
+    pipeline?: PermissionPipeline,
+    opts: { rules?: PermissionRuleInput[] | null } = {},
+  ) {
+    this.pipeline =
+      pipeline ?? new PermissionPipeline({ rules: opts.rules ?? [] })
   }
 
   assess(
@@ -23,7 +27,11 @@ export class PermissionPolicy {
     return this.pipeline.assess(toolName, args, mode, opts)
   }
 
-  isToolExposed(toolName: string, mode: string, opts?: { registry?: ToolRegistry | null }): boolean {
+  isToolExposed(
+    toolName: string,
+    mode: string,
+    opts?: { registry?: ToolRegistry | null },
+  ): boolean {
     return this.pipeline.isToolExposed(toolName, mode, opts)
   }
 }

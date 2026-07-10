@@ -3,9 +3,19 @@
  * 文本渲染在 runtime/statusRender.ts（纯函数）；这里只做命令分发与副作用编排。
  */
 import type { Ref } from 'vue'
-import { parseSkillSlashCommand, parseSlashCommand, type SlashCommand } from '../commands'
+import {
+  parseSkillSlashCommand,
+  parseSlashCommand,
+  type SlashCommand,
+} from '../commands'
 import { core } from '../api/http'
-import type { BootstrapPayload, ChatSendPayload, CompactResult, ControlPayload, PendingState } from '../types'
+import type {
+  BootstrapPayload,
+  ChatSendPayload,
+  CompactResult,
+  ControlPayload,
+  PendingState,
+} from '../types'
 import {
   inlineCode,
   renderCommandHelp,
@@ -44,20 +54,24 @@ export function useSlashCommands(deps: SlashCommandDeps) {
   const { boot, busy, pending } = deps
 
   function submitFromComposer(payload: string | ChatSendPayload) {
-    const obj = typeof payload === 'string'
-      ? { content: payload, attachments: [] }
-      : {
-          content: payload.content,
-          attachments: payload.attachments || [],
-          requestedSkills: payload.requestedSkills || [],
-          displayContent: payload.displayContent,
-        }
+    const obj =
+      typeof payload === 'string'
+        ? { content: payload, attachments: [] }
+        : {
+            content: payload.content,
+            attachments: payload.attachments || [],
+            requestedSkills: payload.requestedSkills || [],
+            displayContent: payload.displayContent,
+          }
     const parsed = parseSlashCommand(obj.content)
     if (!obj.attachments.length && parsed?.command) {
       void executeSlashCommand(parsed.raw, parsed.name, parsed.command)
       return
     }
-    const skillRequest = parseSkillSlashCommand(obj.content, boot.value?.skills || [])
+    const skillRequest = parseSkillSlashCommand(
+      obj.content,
+      boot.value?.skills || [],
+    )
     if (skillRequest) {
       if (!skillRequest.task && !obj.attachments.length) {
         deps.addLocalCommand(
@@ -82,36 +96,61 @@ export function useSlashCommands(deps: SlashCommandDeps) {
     deps.sendMessage(obj)
   }
 
-  async function executeSlashCommand(raw: string, name: string, command: SlashCommand | undefined) {
+  async function executeSlashCommand(
+    raw: string,
+    name: string,
+    command: SlashCommand | undefined,
+  ) {
     busy.value = true
     try {
       if (!command) {
-        deps.addLocalCommand(raw, `未知命令：${inlineCode(name)}\n\n输入 ${inlineCode('/help')} 查看可用命令。`)
+        deps.addLocalCommand(
+          raw,
+          `未知命令：${inlineCode(name)}\n\n输入 ${inlineCode('/help')} 查看可用命令。`,
+        )
         return
       }
-      if (command.name === '/help') return deps.addLocalCommand(raw, renderCommandHelp())
+      if (command.name === '/help')
+        return deps.addLocalCommand(raw, renderCommandHelp())
       if (command.name === '/status') {
-        return deps.addLocalCommand(raw, renderStatus({
-          boot: boot.value,
-          busy: busy.value,
-          runtimeText: deps.runtimeText(),
-          eventTransportText: deps.eventTransportText(),
-          routeName: deps.routeName(),
-        }))
+        return deps.addLocalCommand(
+          raw,
+          renderStatus({
+            boot: boot.value,
+            busy: busy.value,
+            runtimeText: deps.runtimeText(),
+            eventTransportText: deps.eventTransportText(),
+            routeName: deps.routeName(),
+          }),
+        )
       }
-      if (command.name === '/model') return deps.addLocalCommand(raw, renderModelInfo(boot.value))
-      if (command.name === '/tokens') return deps.addLocalCommand(raw, renderTokenInfo(boot.value))
-      if (command.name === '/tools') return deps.addLocalCommand(raw, renderToolsInfo(boot.value))
-      if (command.name === '/skills') return deps.addLocalCommand(raw, renderSkillsInfo(boot.value))
-      if (command.name === '/config') return deps.addLocalCommand(raw, renderConfigInfo(deps.configContent.value))
-      if (command.name === '/memory') return deps.addLocalCommand(raw, renderMemoryInfo(boot.value))
-      if (command.name === '/memory-log') return deps.addLocalCommand(raw, renderMemoryVersions(boot.value))
-      if (command.name === '/memory-restore') return await handleMemoryRestoreCommand(raw)
+      if (command.name === '/model')
+        return deps.addLocalCommand(raw, renderModelInfo(boot.value))
+      if (command.name === '/tokens')
+        return deps.addLocalCommand(raw, renderTokenInfo(boot.value))
+      if (command.name === '/tools')
+        return deps.addLocalCommand(raw, renderToolsInfo(boot.value))
+      if (command.name === '/skills')
+        return deps.addLocalCommand(raw, renderSkillsInfo(boot.value))
+      if (command.name === '/config')
+        return deps.addLocalCommand(
+          raw,
+          renderConfigInfo(deps.configContent.value),
+        )
+      if (command.name === '/memory')
+        return deps.addLocalCommand(raw, renderMemoryInfo(boot.value))
+      if (command.name === '/memory-log')
+        return deps.addLocalCommand(raw, renderMemoryVersions(boot.value))
+      if (command.name === '/memory-restore')
+        return await handleMemoryRestoreCommand(raw)
       if (command.name === '/plan') return await handlePlanCommand(raw)
       if (command.name === '/mode') return await handleModeCommand(raw)
       if (command.name === '/stop') {
         const stopped = await deps.stopActive()
-        return deps.addLocalCommand(raw, stopped ? '已请求停止当前运行任务。' : '当前没有正在运行的任务。')
+        return deps.addLocalCommand(
+          raw,
+          stopped ? '已请求停止当前运行任务。' : '当前没有正在运行的任务。',
+        )
       }
       if (command.name === '/compact') {
         pending.label = '正在压缩未归档会话...'
@@ -120,7 +159,10 @@ export function useSlashCommands(deps: SlashCommandDeps) {
           const result = await deps.compactMemory()
           deps.addLocalCommand(raw, renderCompactResult(result))
         } catch (err) {
-          deps.addLocalCommand(raw, `压缩失败：${err instanceof Error ? err.message : String(err)}`)
+          deps.addLocalCommand(
+            raw,
+            `压缩失败：${err instanceof Error ? err.message : String(err)}`,
+          )
         }
         return
       }
@@ -141,12 +183,22 @@ export function useSlashCommands(deps: SlashCommandDeps) {
     const normalized = arg.toLowerCase()
     if (normalized === 'on' || normalized === 'plan') {
       const result = await setControlMode('plan')
-      deps.addLocalCommand(raw, result.ok ? 'Plan 模式已开启：只读探索、提问、计划预览；批准前不会执行写操作。' : `Plan 模式开启失败：${result.error}`)
+      deps.addLocalCommand(
+        raw,
+        result.ok
+          ? 'Plan 模式已开启：只读探索、提问、计划预览；批准前不会执行写操作。'
+          : `Plan 模式开启失败：${result.error}`,
+      )
       return
     }
     if (normalized === 'off' || normalized === 'normal') {
       const result = await setControlMode('ask_before_edit')
-      deps.addLocalCommand(raw, result.ok ? 'Plan 模式已关闭，已回到编辑前询问模式。' : `Plan 模式关闭失败：${result.error}`)
+      deps.addLocalCommand(
+        raw,
+        result.ok
+          ? 'Plan 模式已关闭，已回到编辑前询问模式。'
+          : `Plan 模式关闭失败：${result.error}`,
+      )
       return
     }
     deps.addLocalCommand(raw, renderPlanStatus(boot.value?.control))
@@ -157,32 +209,61 @@ export function useSlashCommands(deps: SlashCommandDeps) {
     const normalized = arg.toLowerCase()
     if (['ask', 'ask_before_edit', 'edit_before_ask'].includes(normalized)) {
       const result = await setControlMode('ask_before_edit')
-      deps.addLocalCommand(raw, result.ok ? '权限模式已切换为：编辑前询问。' : `权限模式切换失败：${result.error}`)
+      deps.addLocalCommand(
+        raw,
+        result.ok
+          ? '权限模式已切换为：编辑前询问。'
+          : `权限模式切换失败：${result.error}`,
+      )
       return
     }
     if (['accept_edits', 'accept-edits', 'edits'].includes(normalized)) {
       const result = await setControlMode('accept_edits')
-      deps.addLocalCommand(raw, result.ok ? '权限模式已切换为：接受编辑。' : `权限模式切换失败：${result.error}`)
+      deps.addLocalCommand(
+        raw,
+        result.ok
+          ? '权限模式已切换为：接受编辑。'
+          : `权限模式切换失败：${result.error}`,
+      )
       return
     }
     if (normalized === 'auto') {
       const result = await setControlMode('auto')
-      deps.addLocalCommand(raw, result.ok ? '权限模式已切换为：自动执行。' : `权限模式切换失败：${result.error}`)
+      deps.addLocalCommand(
+        raw,
+        result.ok
+          ? '权限模式已切换为：自动执行。'
+          : `权限模式切换失败：${result.error}`,
+      )
       return
     }
     if (normalized === 'plan') {
       const result = await setControlMode('plan')
-      deps.addLocalCommand(raw, result.ok ? '权限模式已切换为：计划模式。' : `权限模式切换失败：${result.error}`)
+      deps.addLocalCommand(
+        raw,
+        result.ok
+          ? '权限模式已切换为：计划模式。'
+          : `权限模式切换失败：${result.error}`,
+      )
       return
     }
     deps.addLocalCommand(raw, renderModeStatus(boot.value?.control))
   }
 
-  async function setControlMode(mode: 'ask_before_edit' | 'accept_edits' | 'auto' | 'plan'): Promise<{ ok: boolean; error?: string }> {
+  async function setControlMode(
+    mode: 'ask_before_edit' | 'accept_edits' | 'auto' | 'plan',
+  ): Promise<{ ok: boolean; error?: string }> {
     try {
       const data = await core<ControlPayload>('control.setMode', mode)
       if (boot.value) boot.value.control = data
-      const label = mode === 'plan' ? '计划模式' : mode === 'auto' ? '自动执行' : mode === 'accept_edits' ? '接受编辑' : '编辑前询问'
+      const label =
+        mode === 'plan'
+          ? '计划模式'
+          : mode === 'auto'
+            ? '自动执行'
+            : mode === 'accept_edits'
+              ? '接受编辑'
+              : '编辑前询问'
       deps.showToast(`已切换为${label}`)
       return { ok: true }
     } catch (err) {
@@ -195,14 +276,20 @@ export function useSlashCommands(deps: SlashCommandDeps) {
   async function handleMemoryRestoreCommand(raw: string) {
     const [, id = ''] = raw.trim().split(/\s+/, 2)
     if (!id) {
-      deps.addLocalCommand(raw, `请提供版本 id，例如：${inlineCode('/memory-restore memv_...')}`)
+      deps.addLocalCommand(
+        raw,
+        `请提供版本 id，例如：${inlineCode('/memory-restore memv_...')}`,
+      )
       return
     }
     try {
       const result = await deps.restoreMemoryVersion(id)
       deps.addLocalCommand(raw, `已恢复：${inlineCode(result.restored.path)}`)
     } catch (err) {
-      deps.addLocalCommand(raw, `恢复失败：${err instanceof Error ? err.message : String(err)}`)
+      deps.addLocalCommand(
+        raw,
+        `恢复失败：${err instanceof Error ? err.message : String(err)}`,
+      )
     }
   }
 
