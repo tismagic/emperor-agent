@@ -56,6 +56,7 @@ export interface CompactSessionOptions {
   memory: ScopedCompactionMemory
   model: ScopedCompactionModel
   tokenTracker?: TokenTracker | null
+  instructions?: string | null
 }
 
 export interface ScopedCompactionResult {
@@ -127,7 +128,7 @@ export async function compactSession(opts: CompactSessionOptions): Promise<Scope
   }
   const projected = new CompactionInputProjector({ mode: opts.mode }).project(rows)
   const projectedConversation = renderProjectedConversation(projected)
-  const prompt = buildCompactionPrompt({
+  const basePrompt = buildCompactionPrompt({
     sessionId: opts.sessionId,
     mode: opts.mode,
     projectId: opts.projectId ?? null,
@@ -136,6 +137,9 @@ export async function compactSession(opts: CompactSessionOptions): Promise<Scope
     snapshots,
     projectedConversation,
   })
+  const prompt = opts.instructions?.trim()
+    ? `${basePrompt}\n\n# Trusted Hook Instructions\n${opts.instructions.trim().slice(0, 4_000)}`
+    : basePrompt
 
   let draftText = ''
   try {

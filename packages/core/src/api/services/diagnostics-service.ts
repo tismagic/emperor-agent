@@ -93,7 +93,7 @@ export class CoreDiagnosticsService {
     return {
       nodeRuntime: typeof process.versions.node === 'string' && process.versions.node.length > 0,
       desktopRenderer: existsSync(join(this.root, 'desktop', 'out', 'renderer', 'index.html')),
-      desktopPetNodeModules: existsSync(join(this.root, 'desktop-pet', 'node_modules')),
+      desktopPetModules: existsSync(join(this.root, 'desktop', 'src', 'pet', 'preload.js')),
     }
   }
 

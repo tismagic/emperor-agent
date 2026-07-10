@@ -61,8 +61,8 @@ export class ModelRouter {
   route(useCase: string, agentType?: string | null, task?: string | null): ModelRoute {
     const key = String(useCase || 'main_agent')
     if (key === 'main_agent') return this.mainRoute('main_agent')
-    if (['memory_compaction', 'watchlist_check', 'session_title'].includes(key)) {
-      return this.secondaryRoute(key)
+    if (['memory_compaction', 'watchlist_check', 'session_title', 'hook_prompt', 'hook_agent'].includes(key)) {
+      return this.secondaryRoute(key, task)
     }
     if (['subagent', 'team'].includes(key)) {
       const normalizedAgent = String(agentType ?? '').trim()
@@ -76,6 +76,13 @@ export class ModelRouter {
       return this.mainRoute(`${key}:${normalizedAgent || 'unknown'}:default_main`, estimated ?? undefined)
     }
     return this.mainRoute(`${key}:default_main`)
+  }
+
+  routeForRole(useCase: string, role: ModelRole, task?: string | null): ModelRoute {
+    const key = String(useCase || 'main_agent')
+    const estimated = task ? roughTokenEstimate(task) : null
+    if (role === MAIN) return this.mainRoute(`${key}:explicit_main`, estimated ?? undefined)
+    return this.secondaryRoute(key, task)
   }
 
   private mainRoute(reason: string, estimatedTokens?: number): ModelRoute {

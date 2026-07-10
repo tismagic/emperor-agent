@@ -31,7 +31,7 @@ Frozen source inventory:
 | `tests/unit/test_context_scope.py` | `packages/core/src/agent/context-builder.test.ts`, `packages/core/src/agent/loop.test.ts` |
 | `tests/unit/test_control.py` | `packages/core/src/control/control.test.ts`, `packages/core/src/api/core-api.test.ts` |
 | `tests/unit/test_conversation_store.py` | `packages/core/src/sessions/sessions.test.ts`, `packages/core/src/memory/memory.test.ts` |
-| `tests/unit/test_desktop_pet.py` | `packages/core/src/api/services/desktop-pet-service.test.ts`, `desktop-pet/test/event-mapper.test.js`, `desktop-pet/test/idle-scenes.test.js` |
+| `tests/unit/test_desktop_pet.py` | `packages/core/src/api/services/desktop-pet-service.test.ts`, `desktop/src/pet/test/event-mapper.test.ts`, `desktop/src/pet/test/idle-scenes.test.ts` |
 | `tests/unit/test_desktop_pet_api.py` | `packages/core/src/api/services/desktop-pet-service.test.ts`, `desktop/src/renderer/src/api/http.test.ts` |
 | `tests/unit/test_external_bridge.py` | `packages/core/src/external/external.test.ts`, `packages/core/src/api/core-api.test.ts` |
 | `tests/unit/test_filesystem.py` | `packages/core/src/tools.test.ts`, `packages/core/src/tools-and-context.test.ts` |

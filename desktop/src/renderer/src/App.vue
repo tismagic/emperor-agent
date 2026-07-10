@@ -168,16 +168,20 @@ async function configureModelFromPrompt() {
   openOnboarding()
 }
 
-watch(() => [boot.value?.modelConfig?.availability?.usable, onboardingOpen.value] as const, () => {
-  if (!boot.value) return
-  const shouldPrompt = shouldShowOnboarding(boot.value)
-  if (!shouldPrompt) {
-    modelSetupPromptOpen.value = false
-    modelSetupDismissed.value = false
-    return
-  }
-  if (!modelSetupDismissed.value && !onboardingOpen.value) modelSetupPromptOpen.value = true
-})
+watch(
+  () => [boot.value?.modelConfig?.availability?.usable, onboardingOpen.value] as const,
+  () => {
+    if (!boot.value) return
+    const shouldPrompt = shouldShowOnboarding(boot.value)
+    if (!shouldPrompt) {
+      modelSetupPromptOpen.value = false
+      modelSetupDismissed.value = false
+      return
+    }
+    if (!modelSetupDismissed.value && !onboardingOpen.value) modelSetupPromptOpen.value = true
+  },
+  { immediate: true },
+)
 
 async function runSafely(task: () => Promise<void>) {
   try {

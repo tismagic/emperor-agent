@@ -13,7 +13,11 @@ export interface ObjectSchema {
   required?: string[]
   description: string
 }
-export type ParamSchema = StringSchema | IntegerSchema | NumberSchema | BooleanSchema | ArraySchema | ObjectSchema
+export interface ScalarUnionSchema {
+  type: Array<'string' | 'integer' | 'number' | 'boolean' | 'null'>
+  description: string
+}
+export type ParamSchema = StringSchema | IntegerSchema | NumberSchema | BooleanSchema | ArraySchema | ObjectSchema | ScalarUnionSchema
 
 export interface ToolParamsSchema {
   type: 'object'

@@ -342,7 +342,7 @@ export class UpdateTodos extends Tool {
     + '简单或纯问答任务不需要使用。任务真正完成后及时标记 completed；失败、阻塞或部分完成时保持 in_progress/blocked。该工具只维护清单，不验证实现正确性，也不裁决计划步骤。'
   )
   override parameters = toolParamsSchema(
-    { todos: { type: 'array', items: { type: 'object', properties: { id: S('任务ID'), content: S('任务内容'), status: S('pending|in_progress|completed|blocked'), activeForm: S('进行时标签'), planStepId: S('关联计划步骤') }, description: '任务项' }, description: '完整任务列表' } },
+    { todos: { type: 'array', items: { type: 'object', properties: { id: { type: ['string', 'number'], description: '任务ID' }, content: S('任务内容'), status: S('pending|in_progress|completed|blocked'), activeForm: S('进行时标签'), planStepId: S('关联计划步骤') }, description: '任务项' }, description: '完整任务列表' } },
     ['todos'],
   )
   override readOnly = false

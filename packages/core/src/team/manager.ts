@@ -4,6 +4,7 @@ import * as events from './events'
 import { LEAD_ACTOR, TeamMember, TeamMessage, TeamStatus, newTeamId, validateMemberName } from './models'
 import { TeamStore } from './store'
 import { TeamReadInboxTool, TeamSendMessageTool } from './tools'
+import type { HookAggregateDecision } from '../hooks/models'
 
 const ROLE_AGENT_TYPES: Record<string, string> = {
   coder: 'neiguan_yingzao',
@@ -27,8 +28,12 @@ export interface TeamRunner {
   step(history: Array<Record<string, unknown>>): string | Promise<string>
   stepStream?(history: Array<Record<string, unknown>>, emit: (event: Record<string, unknown>) => Promise<void>): Promise<string>
 }
-export type TeamRunnerFactory = (opts: { member: TeamMember; spec: TeamSubagentSpec; subRegistry: ToolRegistry }) => TeamRunner
+export type TeamRunnerFactory = (opts: { member: TeamMember; spec: TeamSubagentSpec; subRegistry: ToolRegistry; agentId: string }) => TeamRunner
 export type TeamEventSink = (event: Record<string, unknown>) => Promise<void> | void
+export interface TeamHookHost {
+  begin(opts: { agentId: string; agentType: string; teammateName: string }): Promise<HookAggregateDecision>
+  end(agentId: string): void
+}
 
 export class TeamManager {
   readonly projectId: string | null
@@ -38,6 +43,7 @@ export class TeamManager {
   readonly subagentRegistry: TeamSubagentRegistry
   readonly runnerFactory: TeamRunnerFactory | null
   readonly eventSink: TeamEventSink | null
+  readonly hooks: TeamHookHost | null
   private working = new Set<string>()
 
   constructor(opts: {
@@ -48,6 +54,7 @@ export class TeamManager {
     subagentRegistry: TeamSubagentRegistry
     runnerFactory?: TeamRunnerFactory | null
     eventSink?: TeamEventSink | null
+    hooks?: TeamHookHost | null
   }) {
     this.projectId = opts.projectId?.trim() || null
     this.store = new TeamStore(opts.root, { teamDir: opts.teamDir ?? null })
@@ -56,6 +63,7 @@ export class TeamManager {
     this.subagentRegistry = opts.subagentRegistry
     this.runnerFactory = opts.runnerFactory ?? null
     this.eventSink = opts.eventSink ?? null
+    this.hooks = opts.hooks ?? null
   }
 
   payload(): Record<string, unknown> {
@@ -176,10 +184,23 @@ export class TeamManager {
     this.store.writeCheckpoint(working.name, history, { pending_cursor_start: cursorStart, pending_cursor_end: cursorEnd, pending_message_ids: pendingIds })
     if (!this.runnerFactory) throw new Error('team runner factory is unavailable')
     const spec = this.requireSpec(working.agent_type)
-    const runner = this.runnerFactory({ member: working, spec, subRegistry: this.registryForMember(working, spec) })
     const leadBefore = new Set(this.bus.allMessages(LEAD_ACTOR).map((msg) => msg.id))
+    const agentId = newTeamId('agent')
+    let hookScopeStarted = false
 
     try {
+      if (this.hooks) {
+        const start = await this.hooks.begin({ agentId, agentType: working.agent_type, teammateName: working.name })
+        hookScopeStarted = true
+        if (start.additionalContext.trim()) {
+          history.splice(Math.max(0, history.length - 1), 0, {
+            role: 'system',
+            content: `[SubagentStart hook context]\n${start.additionalContext}`,
+            ui_hidden: true,
+          })
+        }
+      }
+      const runner = this.runnerFactory({ member: working, spec, subRegistry: this.registryForMember(working, spec), agentId })
       const final = runner.stepStream ? await runner.stepStream(history, async (evt) => { await this.emit(this.mapRunnerEvent(evt, working, opts.parent_call_id ?? null) ?? evt, opts.eventSink) }) : await runner.step(history)
       this.store.writeThread(working.name, history)
       this.store.clearCheckpoint(working.name)
@@ -200,6 +221,8 @@ export class TeamManager {
       await this.emit(events.memberUpdate(errored), opts.eventSink)
       await this.emit(events.runError({ parent_id: opts.parent_call_id ?? null, member: errored, message: text }), opts.eventSink)
       return `Error: teammate '${working.name}' raised: ${text}`
+    } finally {
+      if (hookScopeStarted) this.hooks?.end(agentId)
     }
   }
 

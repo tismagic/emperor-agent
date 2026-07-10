@@ -1,7 +1,11 @@
 <script setup lang="ts">
-import { actionIcons, brandIcon } from '../../icons'
+import { computed } from 'vue'
+import { actionIcons, navIcon } from '../../icons'
+import heroUrl from '../../../../../../assets/generated/model-setup-modal-hero-v2.png'
+import wordmarkUrl from '../../../../../../assets/generated/emperoragent-wordmark.png'
+import { buildModelSetupDialogContent } from './modelSetupDialogModel'
 
-defineProps<{
+const props = defineProps<{
   open: boolean
   message: string
 }>()
@@ -10,35 +14,56 @@ const emit = defineEmits<{
   close: []
   configure: []
 }>()
+
+const content = computed(() => buildModelSetupDialogContent(props.message))
+const modelIcon = navIcon('model')
+const closeIcon = actionIcons.close
 </script>
 
 <template>
-  <div v-if="open" class="onboarding-backdrop" role="presentation">
-    <section class="onboarding-shell" role="dialog" aria-modal="true" aria-labelledby="model-setup-title">
-      <header class="onboarding-head">
-        <div class="onboarding-brand">
-          <component :is="brandIcon" :size="22" :stroke-width="1.8" />
-        </div>
-        <div>
-          <h2 id="model-setup-title">需要配置模型</h2>
-          <p>model_config.json</p>
-        </div>
-      </header>
+  <div v-if="open" class="onboarding-backdrop model-setup-backdrop" role="presentation">
+    <section
+      class="model-setup-modal"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="model-setup-title"
+      aria-describedby="model-setup-description"
+    >
+      <button class="model-setup-close" type="button" title="关闭" aria-label="关闭" @click="emit('close')">
+        <component :is="closeIcon" :size="16" />
+      </button>
 
-      <div class="onboarding-note">
-        {{ message }}
+      <div class="model-setup-copy">
+        <header class="model-setup-head">
+          <img class="model-setup-wordmark" :src="wordmarkUrl" :alt="content.brandAlt" draggable="false" />
+        </header>
+
+        <div class="model-setup-intro">
+          <h2 id="model-setup-title">{{ content.title }}</h2>
+          <p id="model-setup-description">{{ content.subtitle }}</p>
+        </div>
+
+        <div class="model-setup-status" role="status">
+          <p>{{ content.status }}</p>
+        </div>
+
+        <footer class="model-setup-actions">
+          <p>{{ content.helperText }}</p>
+          <div class="model-setup-action-row">
+            <button class="tool-button" type="button" @click="emit('close')">
+              {{ content.secondaryAction }}
+            </button>
+            <button class="tool-button ink asset-button primary-action" type="button" @click="emit('configure')">
+              <component :is="modelIcon" class="action-icon" :size="16" />
+              <span>{{ content.primaryAction }}</span>
+            </button>
+          </div>
+        </footer>
       </div>
 
-      <footer class="onboarding-actions">
-        <span>配置完成后就可以开始对话。</span>
-        <button class="tool-button" type="button" @click="emit('close')">
-          稍后配置
-        </button>
-        <button class="tool-button ink asset-button primary-action" type="button" @click="emit('configure')">
-          <component :is="actionIcons.save" class="action-icon" :size="16" />
-          <span>去配置模型</span>
-        </button>
-      </footer>
+      <aside class="model-setup-visual" aria-label="Emperor Agent product preview">
+        <img :src="heroUrl" :alt="content.heroAlt" draggable="false" />
+      </aside>
     </section>
   </div>
 </template>

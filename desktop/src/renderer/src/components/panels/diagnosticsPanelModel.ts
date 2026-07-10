@@ -425,7 +425,7 @@ function dependencyRows(dependencies: DiagnosticsDependencyPayload | undefined):
   return [
     dependencyRow('node-runtime', 'Node.js Runtime', dependencies?.nodeRuntime, '可用', '不可用'),
     dependencyRow('desktop-renderer', '桌面 Renderer', dependencies?.desktopRenderer, '已构建', '缺少构建产物'),
-    dependencyRow('desktop-pet-modules', '桌宠依赖', dependencies?.desktopPetNodeModules, '已安装', '未安装'),
+    dependencyRow('desktop-pet-modules', '桌宠模块', dependencies?.desktopPetModules, '已安装', '缺少模块'),
   ]
 }
 

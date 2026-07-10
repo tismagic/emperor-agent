@@ -166,6 +166,17 @@ export class CoreMemoryService {
       }
     }
 
+    const hookScope = await this.loop.beginCompactionHooks('manual')
+    if (!hookScope.allowed) {
+      return {
+        status: 'skipped',
+        count,
+        message: `Compaction deferred by hook: ${hookScope.reason}`,
+        memory: this.getMemory(),
+        unarchivedHistory,
+      }
+    }
+
     const route = this.loop.modelRouter.route('memory_compaction')
     const snapshot = route.snapshot
     const sessionId = this.loop.activeSessionId || 'default'
@@ -200,8 +211,10 @@ export class CoreMemoryService {
           routeReason: snapshot.routeReason,
         },
         tokenTracker: this.loop.tokenTracker,
+        instructions: hookScope.instructions,
       })
     } catch (exc) {
+      await this.loop.finishCompactionHooks(hookScope, { status: 'failed', error: String(exc instanceof Error ? exc.message : exc) })
       return this.compactionFailed(count, unarchivedHistory, exc)
     }
     if (result.status === 'compacted' && result.compaction) {
@@ -211,9 +224,16 @@ export class CoreMemoryService {
         this.loop.activeMemoryStore.appendCompactMarker(activeHistory, cursorStore.archiveGate(sessionId))
         result.compaction.cursor = cursorStore.readOrInit(sessionId)
       } catch (exc) {
+        await this.loop.finishCompactionHooks(hookScope, { status: 'failed', error: String(exc instanceof Error ? exc.message : exc) })
         return this.compactionFailed(count, unarchivedHistory, exc)
       }
     }
+    await this.loop.finishCompactionHooks(hookScope, {
+      status: result.status,
+      message: result.message,
+      error: result.error ?? null,
+      compaction: result.compaction ?? null,
+    })
     const runtime = this.loop.runtimeStore.compact(this.loop.activeMemoryStore.loadUnarchivedTurnIds())
     this.refreshRuntimeContext?.()
     if (result.status !== 'compacted') {

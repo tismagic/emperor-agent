@@ -8,14 +8,19 @@ import {
   saveModelConfig,
   type ModelConfig,
   type ModelEntry,
+  type ProviderConfig,
   type WizardModelSettings,
 } from '../../config/model-config'
 import { buildProviderSnapshot, type ModelRole, type ModelRoute, type ProviderSnapshot } from '../../model/router'
 import { modelAvailability, type ModelAvailability } from '../../model/availability'
 import type { OpenAiMessage } from '../../providers/base'
-import { providerOptions } from '../../providers/registry'
+import { findByName, providerOptions, type ProviderSpec } from '../../providers/registry'
 
 type Dict = Record<string, any>
+
+const MODEL_DISCOVERY_TIMEOUT_MS = 15_000
+const ANTHROPIC_MODELS_URL = 'https://api.anthropic.com/v1/models'
+const ANTHROPIC_VERSION = '2023-06-01'
 
 export interface CoreModelRouterLike {
   route(useCase: string, agentType?: string | null, task?: string | null): ModelRoute
@@ -51,6 +56,22 @@ export interface ModelConfigPayload {
   routing: Record<string, unknown>
   config: Dict
   providerOptions: Array<Record<string, unknown>>
+}
+
+export interface DiscoveredModel {
+  id: string
+  ownedBy?: string
+  created?: number | string
+}
+
+export interface ModelDiscoveryPayload {
+  ok: boolean
+  provider: string
+  apiBase: string | null
+  source: string
+  models: DiscoveredModel[]
+  code?: string
+  message?: string
 }
 
 export class CoreModelService {
@@ -97,6 +118,35 @@ export class CoreModelService {
     await saveModelConfig(this.root, next, { validateComplete: true })
     await this.deps.refreshModelConfig?.()
     return this.getConfig()
+  }
+
+  async discoverModels(input: Dict): Promise<ModelDiscoveryPayload> {
+    const config = await loadModelConfig(this.root)
+    const providerName = String(input.provider ?? '').trim()
+    const spec = findByName(providerName) ?? findByName('custom')
+    if (!spec) throw new Error('custom provider missing from registry')
+
+    const entryName = String(input.entryName ?? '').trim()
+    const entry = entryName ? (findEntry(config, entryName) ?? null) : (activeEntry(config) ?? null)
+    const providerConfig = config.providers[spec.name] ?? null
+    const apiBase = discoveryApiBase(input.apiBase, entry, providerConfig, spec)
+    const apiKey = discoveryApiKey(input.apiKey, entry, providerConfig)
+    const extraHeaders = discoveryExtraHeaders(input.extraHeaders, entry, providerConfig)
+
+    if (spec.modelDiscovery === 'unsupported') {
+      return discoveryUnavailable(spec, apiBase, 'unsupported_backend', `${spec.displayName} 当前不支持自动获取模型列表，请手动填写模型 ID。`)
+    }
+    if (!spec.isLocal && !spec.isOauth && !apiKey) {
+      return discoveryUnavailable(spec, apiBase, 'credential_required', `请先填写 ${spec.displayName} 的 API Key 后再获取模型列表。`)
+    }
+    if (!apiBase && spec.modelDiscovery === 'openai_compat') {
+      return discoveryUnavailable(spec, apiBase, 'missing_api_base', `请先填写 ${spec.displayName} 的 API Base 后再获取模型列表。`)
+    }
+
+    if (spec.modelDiscovery === 'anthropic') {
+      return discoverAnthropicModels(spec, apiBase, apiKey, extraHeaders)
+    }
+    return discoverOpenAiCompatibleModels(spec, apiBase, apiKey, extraHeaders)
   }
 
   async test(body: Dict): Promise<Dict> {
@@ -209,6 +259,206 @@ export function redactApiKeys(raw: Dict): Dict {
   return out
 }
 
+function discoveryApiBase(input: unknown, entry: ModelEntry | null, provider: ProviderConfig | null, spec: ProviderSpec): string | null {
+  const direct = trimString(input)
+  if (direct) return direct
+  return trimString(entry?.apiBase) || trimString(provider?.apiBase) || spec.defaultApiBase || null
+}
+
+function discoveryApiKey(input: unknown, entry: ModelEntry | null, provider: ProviderConfig | null): string {
+  const direct = trimString(input)
+  if (direct && !direct.startsWith('***')) return direct
+  const candidates = [trimString(entry?.apiKey), trimString(provider?.apiKey)].filter(Boolean)
+  if (!direct) return candidates[0] ?? ''
+  const suffix = direct.replace(/^\*+/, '')
+  return candidates.find((candidate) => suffix && candidate.endsWith(suffix)) ?? candidates[0] ?? ''
+}
+
+function discoveryExtraHeaders(input: unknown, entry: ModelEntry | null, provider: ProviderConfig | null): Record<string, string> {
+  const resolved = recordValue(input) || recordValue(entry?.extraHeaders) || recordValue(provider?.extraHeaders) || {}
+  const headers: Record<string, string> = {}
+  for (const [key, value] of Object.entries(resolved)) {
+    if (value === null || value === undefined) continue
+    headers[key] = String(value)
+  }
+  return headers
+}
+
+async function discoverOpenAiCompatibleModels(
+  spec: ProviderSpec,
+  apiBase: string | null,
+  apiKey: string,
+  extraHeaders: Record<string, string>,
+): Promise<ModelDiscoveryPayload> {
+  let last: ModelDiscoveryPayload | null = null
+  for (const url of openAiModelEndpointCandidates(apiBase || '')) {
+    try {
+      const response = await fetchWithTimeout(url, {
+        method: 'GET',
+        headers: discoveryHeaders(extraHeaders, apiKey ? { authorization: `Bearer ${apiKey}` } : {}),
+      })
+      if (!response.ok) {
+        last = discoveryUnavailable(spec, apiBase, codeForHttpStatus(response.status), response.statusText || `HTTP ${response.status}`)
+        continue
+      }
+      const body = await response.json()
+      return {
+        ok: true,
+        provider: spec.name,
+        apiBase,
+        source: 'openai_compat',
+        models: parseDiscoveredModels(body),
+      }
+    } catch (error) {
+      last = discoveryUnavailable(spec, apiBase, codeForFetchError(error), fetchErrorMessage(error))
+    }
+  }
+  return last ?? discoveryUnavailable(spec, apiBase, 'no_endpoint', '未找到可用的模型列表 endpoint。')
+}
+
+async function discoverAnthropicModels(
+  spec: ProviderSpec,
+  apiBase: string | null,
+  apiKey: string,
+  extraHeaders: Record<string, string>,
+): Promise<ModelDiscoveryPayload> {
+  const url = anthropicModelsUrl(apiBase)
+  try {
+    const response = await fetchWithTimeout(url, {
+      method: 'GET',
+      headers: discoveryHeaders(extraHeaders, {
+        'x-api-key': apiKey,
+        'anthropic-version': ANTHROPIC_VERSION,
+      }),
+    })
+    if (!response.ok) {
+      return discoveryUnavailable(spec, apiBase, codeForHttpStatus(response.status), response.statusText || `HTTP ${response.status}`)
+    }
+    const body = await response.json()
+    return {
+      ok: true,
+      provider: spec.name,
+      apiBase,
+      source: 'anthropic',
+      models: parseDiscoveredModels(body),
+    }
+  } catch (error) {
+    return discoveryUnavailable(spec, apiBase, codeForFetchError(error), fetchErrorMessage(error))
+  }
+}
+
+function discoveryUnavailable(spec: ProviderSpec, apiBase: string | null, code: string, message: string): ModelDiscoveryPayload {
+  return {
+    ok: false,
+    provider: spec.name,
+    apiBase,
+    source: spec.modelDiscovery,
+    models: [],
+    code,
+    message,
+  }
+}
+
+async function fetchWithTimeout(url: string, init: RequestInit): Promise<Response> {
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), MODEL_DISCOVERY_TIMEOUT_MS)
+  try {
+    return await fetch(url, { ...init, signal: controller.signal })
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
+function discoveryHeaders(extraHeaders: Record<string, string>, defaults: Record<string, string>): Headers {
+  const headers = new Headers({ accept: 'application/json', ...defaults })
+  for (const [key, value] of Object.entries(extraHeaders)) headers.set(key, value)
+  return headers
+}
+
+function openAiModelEndpointCandidates(apiBase: string): string[] {
+  const base = trimApiBase(apiBase)
+  const candidates = new Set<string>()
+  addModelEndpoint(candidates, base)
+  for (const normalized of normalizedOpenAiCompatBases(base)) addModelEndpoint(candidates, normalized)
+  return [...candidates]
+}
+
+function addModelEndpoint(out: Set<string>, base: string): void {
+  if (!base) return
+  out.add(`${base}/models`)
+}
+
+function normalizedOpenAiCompatBases(base: string): string[] {
+  if (!base) return []
+  const suffixes = [
+    /\/api\/anthropic$/i,
+    /\/anthropic$/i,
+    /\/apps\/anthropic$/i,
+    /\/step_plan(?:\/v\d+)?$/i,
+    /\/api\/coding(?:\/v\d+)?$/i,
+    /\/coding(?:\/v\d+)?$/i,
+  ]
+  const out: string[] = []
+  for (const suffix of suffixes) {
+    const next = trimApiBase(base.replace(suffix, ''))
+    if (next && next !== base) out.push(next)
+  }
+  return out
+}
+
+function anthropicModelsUrl(apiBase: string | null): string {
+  const base = trimApiBase(apiBase || '')
+  if (!base) return ANTHROPIC_MODELS_URL
+  if (base.endsWith('/v1')) return `${base}/models`
+  return `${base}/v1/models`
+}
+
+function parseDiscoveredModels(body: unknown): DiscoveredModel[] {
+  const data = modelArray(body)
+  const seen = new Set<string>()
+  const out: DiscoveredModel[] = []
+  for (const raw of data) {
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) continue
+    const item = raw as Record<string, unknown>
+    const id = trimString(item.id) || trimString(item.name) || trimString(item.model)
+    if (!id || seen.has(id)) continue
+    seen.add(id)
+    const model: DiscoveredModel = { id }
+    const ownedBy = trimString(item.owned_by) || trimString(item.ownedBy) || trimString(item.owner)
+    const created = item.created ?? item.created_at ?? item.createdAt
+    if (ownedBy) model.ownedBy = ownedBy
+    if (typeof created === 'number' || typeof created === 'string') model.created = created
+    out.push(model)
+  }
+  return out.sort((a, b) => a.id.localeCompare(b.id))
+}
+
+function modelArray(body: unknown): unknown[] {
+  if (Array.isArray(body)) return body
+  if (!body || typeof body !== 'object' || Array.isArray(body)) return []
+  const record = body as Record<string, unknown>
+  if (Array.isArray(record.data)) return record.data
+  if (Array.isArray(record.models)) return record.models
+  return []
+}
+
+function codeForHttpStatus(status: number): string {
+  if (status === 401 || status === 403) return 'auth'
+  if (status === 429) return 'rate_limit'
+  if (status >= 500 || status === 408) return 'transient'
+  return 'request_failed'
+}
+
+function codeForFetchError(error: unknown): string {
+  if (error instanceof Error && error.name === 'AbortError') return 'timeout'
+  return 'network_error'
+}
+
+function fetchErrorMessage(error: unknown): string {
+  if (error instanceof Error && error.name === 'AbortError') return '获取模型列表超时。'
+  return error instanceof Error ? error.message : String(error)
+}
+
 export function restoreMaskedKeys(config: Dict, existing: Dict): void {
   const incomingProviders = isRecord(config.providers) ? config.providers : {}
   const existingProviders = isRecord(existing.providers) ? existing.providers : {}
@@ -232,6 +482,18 @@ export function restoreMaskedKeys(config: Dict, existing: Dict): void {
 
 function maskKey(key: string): string {
   return key.length > 4 ? `***${key.slice(-4)}` : '***'
+}
+
+function trimString(value: unknown): string {
+  return typeof value === 'string' ? value.trim() : ''
+}
+
+function trimApiBase(value: string): string {
+  return value.trim().replace(/\/+$/, '')
+}
+
+function recordValue(value: unknown): Record<string, unknown> | null {
+  return isRecord(value) ? value : null
 }
 
 function isRecord(value: unknown): value is Dict {

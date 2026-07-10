@@ -20,7 +20,6 @@ import { resolveMainPreloadPath } from './preload-path'
 
 const mainDir = moduleDirFromUrl(import.meta.url)
 const mainArgv = process.argv.slice(2)
-const petWindowMode = mainArgv.includes('--pet-window')
 let config = resolveConfig({ argv: mainArgv, env: process.env })
 const rendererRoot = path.join(mainDir, '..', 'renderer')
 const appIconPath = resolveAppIconPath({
@@ -33,6 +32,7 @@ let coreApi: { close(): Promise<void> } | null = null
 const coreEventBridge = new CoreEventBridge()
 let runtimeReady = false
 let mainWindow: BrowserWindow | null = null
+let petWindow: BrowserWindow | null = null
 let didLoadRetry = false
 
 protocol.registerSchemesAsPrivileged([
@@ -55,6 +55,28 @@ ipcMain.handle('emperor:open-path', async (_event, target: unknown) => {
   if (!pathValue) return { ok: false, error: 'path is required' }
   const error = await shell.openPath(pathValue)
   return error ? { ok: false, error } : { ok: true }
+})
+
+ipcMain.handle('emperor:pet:open', async () => {
+  if (petWindow && !petWindow.isDestroyed()) {
+    petWindow.showInactive()
+    return { open: true }
+  }
+  if (!runtimeReady) return { open: false, error: 'core not ready' }
+  createPetWindow()
+  return { open: true }
+})
+
+ipcMain.handle('emperor:pet:close', async () => {
+  if (petWindow && !petWindow.isDestroyed()) {
+    petWindow.close()
+  }
+  return { open: false }
+})
+
+ipcMain.handle('emperor:pet:status', async () => {
+  const open = petWindow !== null && !petWindow.isDestroyed()
+  return { open }
 })
 
 function errMessage(err: unknown): string {
@@ -173,7 +195,7 @@ function createWindow(): void {
 
 function petRendererRoot(): string {
   if (app.isPackaged) return path.join(process.resourcesPath, 'desktop-pet')
-  return path.resolve(mainDir, '..', '..', '..', 'desktop-pet')
+  return path.resolve(mainDir, '..', 'pet')
 }
 
 function petStateDir(root: string): string {
@@ -207,9 +229,6 @@ function savePetBounds(win: BrowserWindow, boundsPath: string): void {
 }
 
 function createPetWindow(): void {
-  // Runtime resources (assets) still resolve from --root/EMPEROR_AGENT_ROOT — the pet
-  // renderer only understands `--root` today. Private state (window bounds) resolves
-  // independently via EMPEROR_CONFIG_DIR/default, same priority as Core's stateRoot.
   const root =
     argValue(mainArgv, '--root') ||
     process.env.EMPEROR_AGENT_ROOT ||
@@ -248,6 +267,14 @@ function createPetWindow(): void {
   win.loadFile(path.join(rootDir, 'renderer.html'))
   win.once('ready-to-show', () => win.showInactive())
 
+  // Wire pet into core event bridge so it receives live runtime events.
+  coreEventBridge.attach(win.webContents)
+
+  win.on('closed', () => {
+    coreEventBridge.detach(win.webContents)
+    petWindow = null
+  })
+
   let saveTimer: NodeJS.Timeout | null = null
   const scheduleSave = () => {
     if (saveTimer) clearTimeout(saveTimer)
@@ -258,18 +285,14 @@ function createPetWindow(): void {
   }
   win.on('move', scheduleSave)
   win.on('close', () => savePetBounds(win, boundsPath))
+
+  petWindow = win
 }
 
 async function startup(): Promise<void> {
   app.setName('Emperor Agent')
   if (process.platform === 'darwin') app.dock?.setIcon(appIconPath)
   if (process.platform === 'win32') app.setAppUserModelId('com.emperor.agent.desktop')
-
-  if (petWindowMode) {
-    if (process.platform === 'darwin') app.dock?.hide()
-    createPetWindow()
-    return
-  }
 
   prepareMainRuntime()
   registerAppProtocol()
@@ -293,18 +316,10 @@ async function startup(): Promise<void> {
 app.whenReady().then(startup)
 
 app.on('activate', () => {
-  if (petWindowMode) {
-    if (BrowserWindow.getAllWindows().length === 0) createPetWindow()
-    return
-  }
   if (BrowserWindow.getAllWindows().length === 0 && runtimeReady) createWindow()
 })
 
 app.on('window-all-closed', () => {
-  if (petWindowMode) {
-    app.quit()
-    return
-  }
   closeCoreHost()
   app.quit()
 })

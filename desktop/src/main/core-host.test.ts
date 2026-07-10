@@ -12,6 +12,17 @@ describe('desktop CoreApi host (MIG-IPC-002)', () => {
     expect(ipc.channels()).toContain(channelForCoreOperation('bootstrap'))
     expect(ipc.channels()).toContain(channelForCoreOperation('control.answerInteraction'))
     expect(ipc.channels()).toHaveLength(coreOperationKeys().length)
+    expect(coreOperationKeys()).toEqual(expect.arrayContaining([
+      'hooks.getConfig',
+      'hooks.saveConfig',
+      'hooks.getAudit',
+      'hooks.testRun',
+      'hooks.getMetadata',
+      'hooks.validateConfig',
+      'hooks.setProjectTrust',
+      'hooks.testMatch',
+      'hooks.cancelRun',
+    ]))
   })
 })
 

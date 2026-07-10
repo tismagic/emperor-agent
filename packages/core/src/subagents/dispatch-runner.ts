@@ -1,5 +1,5 @@
 import { buildRoutedRunner } from '../agent/runner-factory'
-import type { CompactorLike, ControlManagerRunnerHost, MemoryStoreLike, TodoStoreLike, TokenTrackerLike } from '../agent/runner'
+import type { AgentRunnerHookHost, CompactorLike, ControlManagerRunnerHost, MemoryStoreLike, TodoStoreLike, TokenTrackerLike } from '../agent/runner'
 import type { ModelRouter } from '../model/router'
 import type { ToolRegistry } from '../tools/registry'
 import type { DispatchRunner, DispatchRunnerFactoryArgs } from '../tools/dispatch'
@@ -13,6 +13,7 @@ export interface RoutedDispatchRunnerFactoryOptions {
   controlManager?: ControlManagerRunnerHost | null
   maxTokensCap?: number | null
   maxContext?: number | null
+  hooks?: ((args: DispatchRunnerFactoryArgs) => AgentRunnerHookHost | null) | null
 }
 
 export function buildDispatchRunnerFactory(opts: RoutedDispatchRunnerFactoryOptions): (args: DispatchRunnerFactoryArgs) => DispatchRunner {
@@ -35,6 +36,8 @@ export function buildDispatchRunner(args: DispatchRunnerFactoryArgs, opts: Route
     maxContext: opts.maxContext ?? route.snapshot.contextWindowTokens ?? null,
     maxTurns: args.spec.maxTurns,
     workspaceRoot: args.workspaceRoot ?? null,
+    sessionId: args.sessionId,
+    hooks: opts.hooks?.(args) ?? null,
   })
   return {
     step: (history) => runner.stepAsync(history),

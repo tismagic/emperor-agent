@@ -8,6 +8,9 @@ contextBridge.exposeInMainWorld('emperor', {
   platform: process.platform,
   selectDirectory: () => ipcRenderer.invoke('emperor:select-directory'),
   openPath: (target: string) => ipcRenderer.invoke('emperor:open-path', target),
+  openPet: () => ipcRenderer.invoke('emperor:pet:open'),
+  closePet: () => ipcRenderer.invoke('emperor:pet:close'),
+  petStatus: () => ipcRenderer.invoke('emperor:pet:status'),
   ...createCoreBridge(ipcRenderer),
   ...createCoreEventBridge(ipcRenderer),
 })

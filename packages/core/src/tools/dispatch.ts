@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto'
 import { Tool, type ToolExecutionContext } from './base'
 import { S, toolParamsSchema, type ParamSchema } from './schema'
 import { ToolRegistry } from './registry'
@@ -5,6 +6,7 @@ import { TaskKind, TaskStatus, type TaskRecord } from '../tasks/models'
 import type { TaskManager } from '../tasks/manager'
 import type { SubagentRegistry } from '../subagents/registry'
 import type { SubagentSpec } from '../subagents/spec'
+import type { HookAggregateDecision } from '../hooks/models'
 
 const PLAN_CONTRACT_FIELDS = ['scope_limit', 'expected_output', 'evidence_required'] as const
 const EVIDENCE_FILE_RE = /(?<![\w/.-])([A-Za-z0-9_./-]+\.(?:py|pyi|ts|tsx|js|jsx|vue|md|rst|json|toml|yaml|yml|txt|css|scss|html)(?::\d+(?:-\d+)?)?)/g
@@ -18,6 +20,13 @@ export interface DispatchRunnerFactoryArgs {
   subRegistry: ToolRegistry
   task: string
   workspaceRoot?: string | null
+  agentId?: string
+  sessionId?: string | null
+}
+
+export interface DispatchSubagentHookHost {
+  begin(opts: { agentId: string; agentType: string; sessionId: string; cwd: string }): Promise<HookAggregateDecision>
+  end(agentId: string): void
 }
 
 export interface DispatchSubagentToolOptions {
@@ -26,6 +35,7 @@ export interface DispatchSubagentToolOptions {
   runnerFactory: (args: DispatchRunnerFactoryArgs) => DispatchRunner
   taskManager?: TaskManager | null
   controlManager?: { mode?: string; [key: string]: unknown } | null
+  hooks?: DispatchSubagentHookHost | null
 }
 
 export class DispatchSubagentTool extends Tool {
@@ -39,6 +49,7 @@ export class DispatchSubagentTool extends Tool {
   private readonly runnerFactory: (args: DispatchRunnerFactoryArgs) => DispatchRunner
   private readonly taskManager: TaskManager | null
   private readonly controlManager: { mode?: string; [key: string]: unknown } | null
+  private readonly hooks: DispatchSubagentHookHost | null
 
   constructor(opts: DispatchSubagentToolOptions) {
     super()
@@ -47,6 +58,7 @@ export class DispatchSubagentTool extends Tool {
     this.runnerFactory = opts.runnerFactory
     this.taskManager = opts.taskManager ?? null
     this.controlManager = opts.controlManager ?? null
+    this.hooks = opts.hooks ?? null
   }
 
   override get description(): string {
@@ -104,12 +116,36 @@ export class DispatchSubagentTool extends Tool {
       evidenceRequired: asOptional(args.evidence_required),
       scopeLimit: asOptional(args.scope_limit),
     })
-    const runner = this.runnerFactory({ spec, subRegistry, task: subagentTask, workspaceRoot: ctx?.workspaceRoot ?? ctx?.root ?? null })
-    const history = [{ role: 'user', content: subagentTask }]
+    const workspaceRoot = ctx?.workspaceRoot ?? ctx?.root ?? process.cwd()
+    const agentId = `subagent_${randomUUID().replace(/-/g, '').slice(0, 12)}`
+    const history: Array<Record<string, unknown>> = [{ role: 'user', content: subagentTask }]
     let taskRecord: TaskRecord | null = null
+    let hookScopeStarted = false
 
-    if (this.taskManager) {
-      taskRecord = this.taskManager.startTask({
+    try {
+      if (this.hooks) {
+        const start = await this.hooks.begin({
+          agentId,
+          agentType: spec.name,
+          sessionId: ctx?.sessionId ?? '',
+          cwd: workspaceRoot,
+        })
+        hookScopeStarted = true
+        if (start.additionalContext.trim()) {
+          history.unshift({ role: 'system', content: `[SubagentStart hook context]\n${start.additionalContext}`, ui_hidden: true })
+        }
+      }
+      const runner = this.runnerFactory({
+        spec,
+        subRegistry,
+        task: subagentTask,
+        workspaceRoot,
+        agentId,
+        sessionId: ctx?.sessionId ?? null,
+      })
+
+      if (this.taskManager) {
+        taskRecord = await this.taskManager.startTaskWithHooks({
         kind: TaskKind.SUBAGENT,
         title: asOptional(args.purpose) || task.slice(0, 80),
         source: 'dispatch_subagent',
@@ -124,16 +160,19 @@ export class DispatchSubagentTool extends Tool {
           evidence_required: asOptional(args.evidence_required) || '',
         },
       })
-      this.taskManager.appendSidechain(taskRecord.id, history[0]!)
-    }
+        if (!taskRecord) return `Error: subagent '${agentType}' task creation denied by hook`
+        this.taskManager.appendSidechain(taskRecord.id, history.at(-1)!)
+      }
 
-    try {
       const final = await runner.step(history)
       if (this.taskManager && taskRecord) {
         const terminal = terminalTaskResult(this.taskManager.store.get(taskRecord.id), agentType)
         if (terminal) return terminal
         this.taskManager.appendSidechain(taskRecord.id, { role: 'assistant', content: final })
-        this.taskManager.completeTask(taskRecord.id, { summary: final.slice(0, 500) })
+        const completion = await this.taskManager.completeTaskWithHooks(taskRecord.id, { summary: final.slice(0, 500) })
+        if (completion && !completion.committed) {
+          return `Error: subagent '${agentType}' completion denied by hook: ${completion.reason}`
+        }
       }
       return final
     } catch (error) {
@@ -143,6 +182,8 @@ export class DispatchSubagentTool extends Tool {
         this.taskManager.failTask(taskRecord.id, { error: String(error) })
       }
       return `Error: subagent '${agentType}' raised: ${error}`
+    } finally {
+      if (hookScopeStarted) this.hooks?.end(agentId)
     }
   }
 

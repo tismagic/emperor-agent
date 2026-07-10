@@ -31,11 +31,14 @@ export interface McpConfigPayload {
 }
 
 export interface HookSourcePayload {
-  kind?: 'global' | 'project' | 'test' | string
+  id?: string
+  kind?: 'global' | 'project' | 'project-local' | 'session' | 'test' | string
+  rank?: number
   path?: string
   readonly?: boolean
-  enabled?: boolean
-  diagnostics?: HookDiagnosticPayload[]
+  revision?: string
+  active?: boolean
+  blockedReason?: string | null
 }
 
 export interface HookDiagnosticPayload {
@@ -45,47 +48,106 @@ export interface HookDiagnosticPayload {
 }
 
 export interface HookHandlerPayload {
-  type?: 'command' | 'http' | string
+  id?: string
+  type?: 'command' | 'http' | 'prompt' | 'agent' | string
+  enabled?: boolean
   command?: string
   args?: string[]
   url?: string
+  prompt?: string
+  modelRole?: 'secondary' | 'main' | string
+  maxTurns?: number
   timeoutMs?: number
+  statusMessage?: string
+  once?: boolean
+  shell?: 'none' | 'bash' | 'powershell' | string
   headers?: Record<string, string>
   async?: boolean
+  asyncRewake?: boolean
   allowedEnv?: string[]
 }
 
-export interface HookDefinitionPayload {
+export interface HookGroupPayload {
   id?: string
-  eventName?: string
   enabled?: boolean
   matcher?: string
-  condition?: string
-  handler?: HookHandlerPayload
-  source?: HookSourcePayload | null
+  if?: string
+  failureMode?: 'open' | 'closed' | string
+  handlers?: HookHandlerPayload[]
 }
 
 export interface HooksConfigPayload {
   version?: number
   enabled?: boolean
   projectHooks?: { enabled?: boolean }
-  hooks?: Record<string, HookDefinitionPayload[]>
+  policy?: Record<string, unknown>
+  hooks?: Record<string, HookGroupPayload[]>
+}
+
+export interface EffectiveHookGroupPayload {
+  eventName?: string
+  group?: HookGroupPayload
+  source?: HookSourcePayload
+}
+
+export interface HookProjectTrustPayload {
+  canonicalRoot?: string
+  digest?: string
+  status?: 'trusted' | 'untrusted' | 'stale' | string
 }
 
 export interface HooksPayload {
+  revision?: string
   config?: HooksConfigPayload
   globalConfig?: HooksConfigPayload
+  effectiveGroups?: EffectiveHookGroupPayload[]
   diagnostics?: HookDiagnosticPayload[]
   sources?: HookSourcePayload[]
+  projectTrust?: HookProjectTrustPayload | null
   summary?: {
     total?: number
-    events?: Array<{ eventName?: string; count?: number }>
+    groups?: number
+    events?: Array<{ eventName?: string; groups?: number; count?: number }>
   }
 }
 
+export interface HookEventMetadataPayload {
+  eventName: string
+  matcherField: string | null
+  mode: 'observe' | 'block' | 'transform' | 'continue' | string
+  allowedHandlers: string[]
+}
+
+export interface HooksMetadataPayload {
+  version?: number
+  events?: HookEventMetadataPayload[]
+  handlers?: Record<string, Record<string, unknown>>
+  limits?: Record<string, unknown>
+}
+
+export interface HookAuditRecordPayload {
+  hookRunId?: string
+  eventName?: string
+  groupId?: string
+  handlerId?: string
+  handlerType?: string
+  source?: HookSourcePayload
+  snapshotRevision?: string
+  startedAt?: string
+  durationMs?: number
+  status?: string
+  outcome?: string
+  reason?: string
+  inputHash?: string
+  outputHash?: string | null
+}
+
 export interface HookAuditPayload {
-  records?: Array<Record<string, unknown>>
+  records?: HookAuditRecordPayload[]
   badLines?: Array<{ line?: number; raw?: string }>
+  cursor?: string
+  nextCursor?: string | null
+  total?: number
 }
 
 export interface SkillInfo {
@@ -1099,6 +1161,21 @@ export interface SchedulerPayload {
 
 export type WsEvent = CoreRuntimeEvent & ({ seq?: number; ts?: number; session_id?: string; turn_id?: string; client_message_id?: string; owner?: Record<string, unknown> } & WsEventVariants)
 
+interface HookRuntimeEventFields {
+  hook_id?: string
+  hook_run_id?: string
+  event_name?: string
+  group_id?: string
+  handler_id?: string
+  handler_type?: string
+  snapshot_revision?: string
+  hook_source?: Record<string, unknown> | null
+  status?: string
+  decision?: string
+  reason?: string
+  duration_ms?: number
+}
+
 type WsEventVariants = (
   | { event: 'ready'; model?: string; provider?: string; latest_seq?: number; replay_count?: number; resume_from?: number; busy?: boolean; control?: ControlPayload }
   | { event: 'user_message'; content?: string; attachments?: AttachmentRef[]; source?: string; scheduler?: SchedulerMessageMeta; ui_hidden?: boolean }
@@ -1123,11 +1200,11 @@ type WsEventVariants = (
   | { event: 'tool_run_completed'; id?: string; name: string; summary?: string; output?: string; output_truncated?: boolean; artifacts?: ToolArtifactRef[]; metadata?: Record<string, unknown> }
   | { event: 'tool_run_failed'; id?: string; name: string; message?: string; reason_kind?: 'safety_refusal' | 'error' | string }
   | { event: 'tool_run_cancelled'; id?: string; name: string; reason?: string }
-  | { event: 'hook_run_started'; hook_id?: string; event_name?: string; handler_type?: string; hook_source?: Record<string, unknown> | null }
-  | { event: 'hook_run_progress'; hook_id?: string; event_name?: string; status?: string; message?: string | null }
-  | { event: 'hook_run_completed'; hook_id?: string; event_name?: string; status?: string; decision?: string; reason?: string; duration_ms?: number }
-  | { event: 'hook_run_failed'; hook_id?: string; event_name?: string; status?: string; decision?: string; reason?: string; duration_ms?: number }
-  | { event: 'hook_decision_applied'; event_name?: string; decision?: string; reason?: string; hook_ids?: string[] }
+  | (HookRuntimeEventFields & { event: 'hook_run_started' })
+  | (HookRuntimeEventFields & { event: 'hook_run_progress'; message?: string | null })
+  | (HookRuntimeEventFields & { event: 'hook_run_completed' })
+  | (HookRuntimeEventFields & { event: 'hook_run_failed' })
+  | (HookRuntimeEventFields & { event: 'hook_decision_applied'; hook_ids?: string[]; hook_run_ids?: string[] })
   | { event: 'turn_phase'; phase?: string; sequence?: number; iteration?: number; detail?: Record<string, unknown> }
   | { event: 'turn_scope'; mode?: string; workspace_root?: string; state_root?: string; session_root?: string; project_id?: string | null; project_state_root?: string | null; active_memory_binding?: Record<string, unknown> }
   | { event: 'assistant_done'; content?: string }

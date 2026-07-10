@@ -113,7 +113,7 @@ describe('AgentLoop (MIG-CORE-011)', () => {
     expect(String(toolMessage?.content ?? '')).toContain('blocked read')
     expect(String(toolMessage?.content ?? '')).not.toContain('secret content')
     expect(events.map((event) => event.event)).toContain('hook_run_started')
-    expect(readFileSync(join(stateRoot, 'hooks', 'audit.jsonl'), 'utf8')).toContain('deny-read')
+    expect((await loop.hookService.audit.replayRuns()).records.some((record) => record.groupId === 'deny-read')).toBe(true)
   })
 
   it('rejects an unavailable model before recording user history', async () => {

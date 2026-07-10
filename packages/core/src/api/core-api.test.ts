@@ -1,4 +1,4 @@
-import { existsSync, mkdtempSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdtempSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
@@ -32,10 +32,15 @@ const EXPECTED_OPERATIONS = [
   'desktopPet.setEnabled',
   'diagnostics.get',
   'external.get',
+  'hooks.cancelRun',
   'hooks.getAudit',
   'hooks.getConfig',
+  'hooks.getMetadata',
   'hooks.saveConfig',
+  'hooks.setProjectTrust',
+  'hooks.testMatch',
   'hooks.testRun',
+  'hooks.validateConfig',
   'mcp.getConfig',
   'mcp.saveConfig',
   'memory.checkWatchlist',
@@ -167,34 +172,256 @@ describe('CoreApi (MIG-IPC-001)', () => {
     const root = tmp('emperor-core-api-hooks-')
     const api = await CoreApi.create({ root, stateRoot: join(root, '.emperor'), templatesDir: TEMPLATES_DIR, modelRouter: fakeRouter(new FakeProvider()) })
 
+    const before = await api.hooks.getConfig() as any
     const saved = await api.hooks.saveConfig({
-      hooks: {
-        PreToolUse: [{
-          id: 'api-deny',
-          matcher: 'write_file',
-          handler: {
-            type: 'command',
-            command: process.execPath,
-            args: ['-e', 'process.stdout.write(JSON.stringify({decision:"deny",reason:"api blocked"}))'],
-          },
-        }],
+      revision: before.revision,
+      config: {
+        version: 2,
+        hooks: {
+          PreToolUse: [{
+            id: 'api-deny',
+            matcher: 'write_file',
+            handlers: [{
+              id: 'api-deny-command',
+              type: 'command',
+              command: process.execPath,
+              args: ['-e', 'process.stdout.write(JSON.stringify({decision:"deny",reason:"api blocked"}))'],
+            }],
+          }],
+        },
       },
     }) as any
     const loaded = await api.hooks.getConfig() as any
-    const testRun = await api.hooks.testRun({
+    const match = await api.hooks.testMatch({
+      revision: loaded.revision,
       eventName: 'PreToolUse',
-      toolName: 'write_file',
-      toolInput: { path: 'x.txt' },
+      input: { tool_name: 'write_file', tool_input: { path: 'x.txt' }, tool_use_id: 'api-call' },
+    }) as any
+    const testRun = await api.hooks.testRun({
+      revision: loaded.revision,
+      eventName: 'PreToolUse',
+      groupId: 'api-deny',
+      handlerId: 'api-deny-command',
+      confirmExecution: true,
+      input: { tool_name: 'write_file', tool_input: { path: 'x.txt' }, tool_use_id: 'api-call' },
     }) as any
     const audit = await api.hooks.getAudit({ limit: 5 }) as any
     const boot = await api.bootstrap() as any
 
-    expect(saved.config.hooks.PreToolUse[0].id).toBe('api-deny')
-    expect(loaded.config.hooks.PreToolUse[0].source).toMatchObject({ kind: 'global', readonly: false })
+    expect(saved).toMatchObject({ saved: true, config: { version: 2 } })
+    expect(loaded.effectiveGroups[0]).toMatchObject({
+      eventName: 'PreToolUse',
+      group: { id: 'api-deny', handlers: [{ id: 'api-deny-command' }] },
+      source: { kind: 'global', readonly: false },
+    })
+    expect(match.items).toEqual([expect.objectContaining({ groupId: 'api-deny', handlerId: 'api-deny-command' })])
     expect(testRun.decision).toBe('deny')
     expect(testRun.reason).toBe('api blocked')
-    expect(audit.records.some((record: any) => record.hookId === 'api-deny')).toBe(true)
+    expect(audit.records.some((record: any) => record.groupId === 'api-deny' && record.handlerId === 'api-deny-command')).toBe(true)
     expect(boot.hooks.summary.total).toBe(1)
+
+    await api.close()
+  })
+
+  it('publishes hooks metadata, pure validation, matching, and optimistic revisions', async () => {
+    const root = tmp('emperor-core-api-hooks-contract-')
+    const api = await CoreApi.create({ root, stateRoot: join(root, '.emperor'), templatesDir: TEMPLATES_DIR, modelRouter: fakeRouter(new FakeProvider()) })
+    const initial = await api.hooks.getConfig() as any
+    const metadata = api.hooks.getMetadata() as any
+    const validated = api.hooks.validateConfig({
+      config: {
+        version: 2,
+        hooks: { Stop: [{ id: 'check', handlers: [{ id: 'prompt', type: 'prompt', prompt: 'Check completion.' }] }] },
+      },
+    }) as any
+    const invalid = api.hooks.validateConfig({
+      config: { version: 2, hooks: { Stop: [{ id: 'duplicate', handlers: [{ id: 'same', type: 'command', command: 'true' }, { id: 'same', type: 'command', command: 'true' }] }] } },
+    }) as any
+    const auditBefore = await api.hooks.getAudit() as any
+    const match = await api.hooks.testMatch({ revision: initial.revision, eventName: 'Stop', input: { reason: 'done' } }) as any
+    const auditAfter = await api.hooks.getAudit() as any
+
+    expect(metadata.events).toHaveLength(18)
+    expect(metadata.handlers).toEqual(expect.objectContaining({ command: expect.any(Object), http: expect.any(Object), prompt: expect.any(Object), agent: expect.any(Object) }))
+    expect(validated).toMatchObject({ valid: true, config: { version: 2 } })
+    expect(invalid.valid).toBe(false)
+    expect(invalid.diagnostics).toEqual(expect.arrayContaining([expect.objectContaining({ code: 'duplicate_handler_id' })]))
+    expect(match).toMatchObject({ revision: initial.revision, eventName: 'Stop', items: [] })
+    expect(auditAfter.records).toEqual(auditBefore.records)
+    await expect(api.hooks.saveConfig({ revision: 'stale-revision', config: validated.config })).rejects.toThrow(/stale hooks revision/i)
+    expect((await api.hooks.getConfig() as any).revision).toBe(initial.revision)
+
+    await api.close()
+  })
+
+  it('requires confirmation and exact matching selection for hook test execution', async () => {
+    const root = tmp('emperor-core-api-hook-test-run-')
+    const api = await CoreApi.create({ root, stateRoot: join(root, '.emperor'), templatesDir: TEMPLATES_DIR, modelRouter: fakeRouter(new FakeProvider()) })
+    const initial = await api.hooks.getConfig() as any
+    const saved = await api.hooks.saveConfig({
+      revision: initial.revision,
+      config: {
+        version: 2,
+        hooks: {
+          Stop: [{ id: 'stop-check', matcher: 'done', handlers: [{ id: 'stop-command', type: 'command', command: process.execPath, args: ['-e', 'process.stdout.write("{}")'] }] }],
+        },
+      },
+    }) as any
+    const request = {
+      revision: saved.revision,
+      eventName: 'Stop',
+      groupId: 'stop-check',
+      handlerId: 'stop-command',
+      input: { reason: 'done' },
+    }
+
+    await expect(api.hooks.testRun(request)).rejects.toThrow(/confirmExecution=true/)
+    await expect(api.hooks.testRun({ ...request, confirmExecution: true, handlerId: 'missing' })).rejects.toThrow(/does not match/)
+    await expect(api.hooks.testRun({ ...request, confirmExecution: true, input: { reason: 'different' } })).rejects.toThrow(/does not match/)
+
+    await api.close()
+  })
+
+  it('trusts only the active canonical project at its current hooks digest', async () => {
+    const root = tmp('emperor-core-api-hook-trust-')
+    const stateRoot = join(root, '.emperor-state')
+    const projectRoot = join(root, 'project')
+    mkdirSync(join(projectRoot, '.emperor'), { recursive: true })
+    writeFileSync(join(projectRoot, '.emperor', 'settings.json'), JSON.stringify({
+      version: 2,
+      hooks: {
+        Stop: [{ id: 'project-stop', handlers: [{ id: 'project-command', type: 'command', command: 'true' }] }],
+      },
+    }))
+    const api = await CoreApi.create({ root, stateRoot, templatesDir: TEMPLATES_DIR, modelRouter: fakeRouter(new FakeProvider()) })
+    const initial = await api.hooks.getConfig() as any
+    await api.hooks.saveConfig({ revision: initial.revision, config: { version: 2, projectHooks: { enabled: true }, hooks: {} } })
+    const build = api.sessions.create({ title: 'Hook Project', mode: 'build', project_path: projectRoot }) as any
+    api.sessions.activate(build.id)
+    const untrusted = await api.hooks.getConfig() as any
+
+    expect(untrusted.projectTrust).toMatchObject({ canonicalRoot: realpathSync(projectRoot), status: 'untrusted', digest: expect.any(String) })
+    expect(untrusted.sources.find((source: any) => source.id === 'project')).toMatchObject({ active: false, blockedReason: 'project_untrusted' })
+    await expect(api.hooks.setProjectTrust({ projectRoot: root, expectedDigest: untrusted.projectTrust.digest, trusted: true })).rejects.toThrow(/active project/)
+    await expect(api.hooks.setProjectTrust({ projectRoot, expectedDigest: 'stale-digest', trusted: true })).rejects.toThrow(/digest changed/)
+
+    const trusted = await api.hooks.setProjectTrust({ projectRoot, expectedDigest: untrusted.projectTrust.digest, trusted: true }) as any
+    const loaded = await api.hooks.getConfig() as any
+    expect(trusted.status).toBe('trusted')
+    expect(loaded.projectTrust.status).toBe('trusted')
+    expect(loaded.effectiveGroups).toEqual(expect.arrayContaining([
+      expect.objectContaining({ eventName: 'Stop', group: expect.objectContaining({ id: 'project-stop' }), source: expect.objectContaining({ kind: 'project', active: true }) }),
+    ]))
+
+    await api.close()
+  })
+
+  it('filters and pages hook audit records and reports missing cancellation targets', async () => {
+    const root = tmp('emperor-core-api-hook-audit-')
+    const api = await CoreApi.create({ root, stateRoot: join(root, '.emperor'), templatesDir: TEMPLATES_DIR, modelRouter: fakeRouter(new FakeProvider()) })
+    const initial = await api.hooks.getConfig() as any
+    const saved = await api.hooks.saveConfig({
+      revision: initial.revision,
+      config: {
+        version: 2,
+        hooks: {
+          Stop: [{ id: 'audit-stop', handlers: [{ id: 'audit-command', type: 'command', command: process.execPath, args: ['-e', 'process.stdout.write(JSON.stringify({continue:false}))'] }] }],
+        },
+      },
+    }) as any
+    const request = {
+      revision: saved.revision,
+      eventName: 'Stop',
+      groupId: 'audit-stop',
+      handlerId: 'audit-command',
+      confirmExecution: true,
+      input: { reason: 'completed' },
+    }
+    await api.hooks.testRun(request)
+    await api.hooks.testRun(request)
+
+    const first = await api.hooks.getAudit({ eventName: 'Stop', outcome: 'passthrough', sourceId: 'global', limit: 1 }) as any
+    const second = await api.hooks.getAudit({ eventName: 'Stop', outcome: 'passthrough', sourceId: 'global', limit: 1, cursor: first.nextCursor }) as any
+    const excluded = await api.hooks.getAudit({ eventName: 'PreToolUse', limit: 10 }) as any
+    expect(first).toMatchObject({ total: 2, cursor: '0', nextCursor: '1', records: [expect.objectContaining({ eventName: 'Stop', handlerId: 'audit-command' })] })
+    expect(second).toMatchObject({ total: 2, cursor: '1', nextCursor: null, records: [expect.objectContaining({ eventName: 'Stop' })] })
+    expect(excluded.records).toEqual([])
+    await expect(api.hooks.cancelRun({ runId: 'missing-run' })).resolves.toEqual({ runId: 'missing-run', cancelled: false })
+
+    await api.close()
+  })
+
+  it('returns an async hook run id that can be cancelled exactly once', async () => {
+    const root = tmp('emperor-core-api-hook-cancel-')
+    const api = await CoreApi.create({ root, stateRoot: join(root, '.emperor'), templatesDir: TEMPLATES_DIR, modelRouter: fakeRouter(new FakeProvider()) })
+    const initial = await api.hooks.getConfig() as any
+    const saved = await api.hooks.saveConfig({
+      revision: initial.revision,
+      config: {
+        version: 2,
+        hooks: {
+          Stop: [{
+            id: 'async-stop',
+            handlers: [{
+              id: 'async-command',
+              type: 'command',
+              command: process.execPath,
+              args: ['-e', 'setTimeout(() => process.stdout.write("{}"), 5000)'],
+              async: true,
+              asyncRewake: true,
+              timeoutMs: 10_000,
+            }],
+          }],
+        },
+      },
+    }) as any
+    const started = await api.hooks.testRun({
+      revision: saved.revision,
+      eventName: 'Stop',
+      groupId: 'async-stop',
+      handlerId: 'async-command',
+      confirmExecution: true,
+      input: { reason: 'completed' },
+    }) as any
+    const runId = started.results[0]?.hookRunId
+
+    expect(runId).toMatch(/^hook_run_/)
+    await expect(api.hooks.cancelRun({ runId })).resolves.toEqual({ runId, cancelled: true })
+    await expect(api.hooks.cancelRun({ runId })).resolves.toEqual({ runId, cancelled: false })
+
+    await api.close()
+  })
+
+  it('runs ConfigChange before config, MCP, and model writes', async () => {
+    const root = tmp('emperor-core-api-config-change-')
+    const stateRoot = join(root, '.emperor')
+    const api = await CoreApi.create({ root, stateRoot, templatesDir: TEMPLATES_DIR, modelRouter: fakeRouter(new FakeProvider()) })
+    const initialHooks = await api.hooks.getConfig() as any
+    await api.hooks.saveConfig({
+      revision: initialHooks.revision,
+      config: {
+        version: 2,
+        hooks: {
+          ConfigChange: [{
+            id: 'deny-config',
+            handlers: [{
+              id: 'deny-command',
+              type: 'command',
+              command: process.execPath,
+              args: ['-e', 'process.stdout.write(JSON.stringify({decision:"deny",reason:"locked"}))'],
+            }],
+          }],
+        },
+      },
+    })
+    const userBefore = api.config.get().content
+
+    await expect(Promise.resolve(api.config.save({ content: '## Stable Preferences\n\n- forbidden\n' }))).rejects.toThrow(/ConfigChange hook denied config\.save/)
+    await expect(api.mcp.saveConfig({ servers: {}, defaults: { read_only: false } })).rejects.toThrow(/ConfigChange hook denied mcp\.saveConfig/)
+    await expect(api.model.saveConfig({ config: validModelConfig('forbidden-model') })).rejects.toThrow(/ConfigChange hook denied model\.saveConfig/)
+    expect(api.config.get().content).toBe(userBefore)
+    expect(existsSync(join(stateRoot, 'mcp_config.json'))).toBe(false)
+    expect(existsSync(join(stateRoot, 'model_config.json'))).toBe(false)
 
     await api.close()
   })
@@ -543,7 +770,7 @@ describe('CoreApi (MIG-IPC-001)', () => {
     expect(readFileSync(join(root, '.emperor', 'memory', 'profile', 'USER.local.md'), 'utf8')).toBe((initial as any).content)
     expect(existsSync(join(root, 'emperor.local.json'))).toBe(false)
 
-    const saved = api.config.save({ content: '## Stable Preferences\n\n- 偏好更新\n' })
+    const saved = await api.config.save({ content: '## Stable Preferences\n\n- 偏好更新\n' })
 
     expect(saved).toMatchObject({ path: 'memory/profile/USER.local.md' })
     expect((saved as any).content).toContain('## Stable Preferences\n\n- 偏好更新')
@@ -958,7 +1185,7 @@ describe('CoreApi (MIG-IPC-001)', () => {
     expect(api.tasks.list({ sessionId: keepId }).map((t) => t.id)).toEqual([keepTask.id])
     expect(api.tasks.list().length).toBe(3)
 
-    const result = api.sessions.delete(doomedId)
+    const result = await api.sessions.delete(doomedId)
 
     expect(result).toMatchObject({ deleted: true, removedTasks: 1, removedPlans: 1 })
     expect(api.loop.taskManager.store.get(ownedTask.id)).toBeNull()

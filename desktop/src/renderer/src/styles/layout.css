@@ -19,6 +19,11 @@
     @apply block size-6 object-contain;
   }
 
+  .brand-mark {
+    @apply block object-contain;
+    image-rendering: auto;
+  }
+
   .rail-status {
     @apply mb-2 grid size-9 shrink-0 place-items-center rounded-md;
     color: rgb(var(--fg-subtle));

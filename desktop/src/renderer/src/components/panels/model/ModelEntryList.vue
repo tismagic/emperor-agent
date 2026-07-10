@@ -20,7 +20,7 @@ const emit = defineEmits<{
     <header class="entry-list-head">
       <div class="entry-list-title">
         <span>模型条目</span>
-        <small>{{ entries.length }} 条 · 圆点 = 当前激活</small>
+        <small>{{ entries.length }} 条</small>
       </div>
       <button class="tool-button compact" @click="emit('add')">+ 添加</button>
     </header>
@@ -55,7 +55,7 @@ const emit = defineEmits<{
           v-if="entry.name === defaultName"
           class="entry-active-badge"
           title="此条目当前为激活状态"
-        >✓ 激活中</span>
+        >激活</span>
         <button
           v-else
           class="entry-activate-btn"

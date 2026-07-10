@@ -183,11 +183,15 @@ export function useBootstrap(showToast: (message: string) => void) {
   async function setDesktopPetEnabled(enabled: boolean) {
     const payload = await core<DesktopPetPayload>('desktopPet.setEnabled', enabled)
     if (boot.value) boot.value.desktopPet = payload
-    if (payload.running) {
-      showToast('桌宠已启动')
-    } else if (payload.enabled && payload.lastError) {
-      showToast('桌宠未启动：请先安装 Electron 依赖')
+
+    // Open or close the companion pet window via main-process IPC.
+    if (enabled) {
+      const emperor = (window as any).emperor
+      await emperor?.openPet?.()
+      showToast(payload.lastError ? `桌宠未启动：${payload.lastError}` : '桌宠已启动')
     } else {
+      const emperor = (window as any).emperor
+      await emperor?.closePet?.()
       showToast('桌宠已关闭')
     }
     return payload

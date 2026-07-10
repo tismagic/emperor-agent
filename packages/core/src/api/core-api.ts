@@ -85,7 +85,12 @@ export const CORE_API_ROUTE_OPERATIONS: RouteOperation[] = [
   op('hooks.getConfig', 'GET', '/api/hooks'),
   op('hooks.saveConfig', 'POST', '/api/hooks'),
   op('hooks.getAudit', 'GET', '/api/hooks/audit'),
+  op('hooks.getMetadata', 'GET', '/api/hooks/metadata'),
+  op('hooks.validateConfig', 'POST', '/api/hooks/validate'),
+  op('hooks.setProjectTrust', 'POST', '/api/hooks/project-trust'),
+  op('hooks.testMatch', 'POST', '/api/hooks/test-match'),
   op('hooks.testRun', 'POST', '/api/hooks/test-run'),
+  op('hooks.cancelRun', 'POST', '/api/hooks/cancel-run'),
   op('tasks.list', 'GET', '/api/tasks'),
   op('tasks.get', 'GET', '/api/tasks/{task_id}'),
   op('tasks.transcript', 'GET', '/api/tasks/{task_id}/transcript'),
@@ -156,6 +161,7 @@ export class CoreApi {
       refreshModelConfig: () => this.loop.refreshModelConfig(),
     })
     this.hooksService = new CoreHooksService(this.paths.stateRoot, {
+      service: this.loop.hookService,
       activeSessionId: () => this.loop.activeSessionId,
       activeWorkspaceRoot: () => this.loop.workspacePolicyDiagnostics().workspaceRoot as string || this.root,
       activeProjectRoot: () => this.loop.activeSession?.mode === 'build' ? this.loop.activeSession.project_path ?? null : null,
@@ -324,11 +330,13 @@ export class CoreApi {
 
   readonly config = {
     get: (): UserConfigPayload => this.configService.getUserConfig(),
-    save: (body: { content?: unknown } | string = {}): UserConfigPayload => {
+    save: (body: { content?: unknown } | string = {}): Promise<UserConfigPayload> => {
       this.assertMutation('config', 'save')
-      const result = this.configService.saveUserConfig(typeof body === 'string' ? body : String(body.content ?? ''))
-      void this.hooksService.notifyConfigChange('config.save').catch(() => {})
-      return result
+      const content = typeof body === 'string' ? body : String(body.content ?? '')
+      return (async () => {
+        await this.hooksService.authorizeConfigChange('config.save', { content })
+        return this.configService.saveUserConfig(content)
+      })()
     },
   }
 
@@ -346,8 +354,8 @@ export class CoreApi {
       // mcp.saveConfig 落盘后会经 MCPClient 以 servers.*.command 起子进程（stdio transport）；
       // 未经审批就能被 renderer 一条 IPC 写任意 command/args 是一条进程执行 pivot（审计 P0-5）。
       this.assertMutation('mcp', 'saveConfig')
+      await this.hooksService.authorizeConfigChange('mcp.saveConfig', raw)
       const result = await this.configService.saveMcpConfig(raw) as unknown as Dict
-      await this.hooksService.notifyConfigChange('mcp.saveConfig')
       return result
     },
   }
@@ -355,22 +363,34 @@ export class CoreApi {
   readonly hooks = {
     getConfig: async (opts: Dict = {}): Promise<Dict> => this.hooksService.getConfig(opts),
     saveConfig: async (raw: unknown): Promise<Dict> => this.hooksService.saveConfig(raw),
-    getAudit: async (opts: { limit?: number | string | null } = {}): Promise<Dict> => this.hooksService.getAudit(opts),
+    getAudit: async (opts: {
+      cursor?: string | number | null
+      limit?: number | string | null
+      eventName?: string | null
+      outcome?: string | null
+      sourceId?: string | null
+      runId?: string | null
+    } = {}): Promise<Dict> => this.hooksService.getAudit(opts),
+    getMetadata: (): Dict => this.hooksService.getMetadata(),
+    validateConfig: (input: Dict): Dict => this.hooksService.validateConfig(input),
+    setProjectTrust: async (input: Dict): Promise<Dict> => this.hooksService.setProjectTrust(input),
+    testMatch: async (input: Dict): Promise<Dict> => this.hooksService.testMatch(input),
     testRun: async (input: Dict): Promise<Dict> => this.hooksService.testRun(input),
+    cancelRun: async (input: Dict): Promise<Dict> => this.hooksService.cancelRun(input),
   }
 
   readonly model = {
     getConfig: async (): Promise<Dict> => this.modelService.getConfig() as unknown as Dict,
     saveConfig: async (raw: Dict): Promise<Dict> => {
       this.assertMutation('model', 'saveConfig')
+      await this.hooksService.authorizeConfigChange('model.saveConfig', raw)
       const result = await this.modelService.saveConfig(raw) as unknown as Dict
-      await this.hooksService.notifyConfigChange('model.saveConfig')
       return result
     },
     saveOnboardingConfig: async (settings: Dict): Promise<Dict> => {
       this.assertMutation('model', 'saveOnboardingConfig')
+      await this.hooksService.authorizeConfigChange('model.saveOnboardingConfig', settings)
       const result = await this.modelService.saveOnboardingConfig(settings) as unknown as Dict
-      await this.hooksService.notifyConfigChange('model.saveOnboardingConfig')
       return result
     },
     discoverModels: async (body: Dict): Promise<Dict> => this.modelService.discoverModels(body) as unknown as Dict,
@@ -450,7 +470,8 @@ export class CoreApi {
       const entry = this.loop.sessionStore.get(sessionId)
       return (entry ?? {}) as unknown as Dict
     },
-    delete: (sessionId: string): Dict => {
+    delete: async (sessionId: string): Promise<Dict> => {
+      await this.loop.endSession(sessionId, 'deleted')
       if (!this.loop.sessionStore.delete(sessionId)) throw new Error('cannot delete session')
       const removedTasks = this.loop.taskManager.store.deleteBySession(sessionId)
       const removedPlans = this.loop.controlManager.planStore.deleteBySession(sessionId)

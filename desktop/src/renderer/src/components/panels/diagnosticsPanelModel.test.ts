@@ -74,7 +74,7 @@ describe('diagnostics panel model', () => {
       dependencies: {
         nodeRuntime: true,
         desktopRenderer: true,
-        desktopPetNodeModules: false,
+        desktopPetModules: false,
       },
     }
 
@@ -141,8 +141,8 @@ describe('diagnostics panel model', () => {
       tone: 'ok',
     })
     expect(rows.find((row) => row.id === 'desktop-pet-modules')).toMatchObject({
-      label: '桌宠依赖',
-      value: '未安装',
+      label: '桌宠模块',
+      value: '缺少模块',
       tone: 'warn',
     })
   })

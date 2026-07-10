@@ -49,7 +49,7 @@ describe('CoreDiagnosticsService (MIG-IPC-007 / MIG-APP-002)', () => {
     expect(payload.dependencies).toMatchObject({
       nodeRuntime: true,
       desktopRenderer: true,
-      desktopPetNodeModules: false,
+      desktopPetModules: false,
     })
   })
 

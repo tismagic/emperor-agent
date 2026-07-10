@@ -27,6 +27,11 @@ const scenarios = [
   { name: 'plugins-panel', path: '/plugins/skills', width: 1024, height: 768, selector: '.segmented-control' },
   { name: 'settings-panel', path: '/settings/general', width: 1024, height: 768, selector: '.settings-shell' },
   { name: 'settings-model', path: '/settings/model', width: 1024, height: 768, selector: '.model-panel-shell' },
+  { name: 'settings-model-mobile', path: '/settings/model', width: 390, height: 844, selector: '.model-panel-shell' },
+  { name: 'settings-hooks', path: '/settings/hooks', width: 1280, height: 820, selector: '.hooks-panel' },
+  { name: 'settings-hooks-mobile', path: '/settings/hooks', width: 390, height: 844, selector: '.hooks-panel' },
+  { name: 'settings-diagnostics', path: '/settings/diagnostics', width: 1280, height: 820, selector: '.diagnostics-list' },
+  { name: 'settings-diagnostics-mobile', path: '/settings/diagnostics', width: 390, height: 844, selector: '.diagnostics-list' },
   { name: 'settings-appearance', path: '/settings/appearance', width: 1024, height: 768, selector: '.settings-shell' },
 ] as const
 
@@ -41,8 +46,9 @@ for (const scenario of scenarios) {
       await expect(page.getByRole('button', { name: /Team/i })).toHaveCount(0)
     }
     if (scenario.path === '/settings/model') {
-      await expect(page.getByText('Context Window').first()).toBeVisible()
-      await expect(page.getByText('Max Tokens').first()).toBeVisible()
+      await expect(page.locator('.advanced-panel')).toBeVisible()
+      await expect(page.getByText('Context Window').first()).toBeAttached()
+      await expect(page.getByText('Max Tokens').first()).toBeAttached()
     }
     await expect(page.locator('body')).not.toContainText('Web UI 启动失败')
     await page.waitForTimeout(650)
@@ -52,6 +58,98 @@ for (const scenario of scenarios) {
     })
   })
 }
+
+test('model pickers select, reopen all candidates, and retain custom ids', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 820 })
+  await page.goto('/settings/model')
+  await page.getByRole('button', { name: '获取模型' }).click()
+  await expect(page.getByText('已获取 3 个模型')).toBeVisible()
+
+  const main = page.getByRole('combobox', { name: 'Main Model ID' })
+  await main.click()
+  await expect(page.getByRole('listbox', { name: 'Main Model ID候选模型' })).toBeVisible()
+  await expect(page.getByRole('option', { name: /visual-pro/ })).toBeVisible()
+  await page.getByRole('option', { name: /visual-pro/ }).click()
+  await expect(main).toHaveValue('visual-pro')
+
+  await main.click()
+  await expect(page.getByRole('option', { name: /visual-main/ })).toBeVisible()
+  await expect(page.getByRole('option', { name: /visual-secondary/ })).toBeVisible()
+  await expect(page.getByRole('option', { name: /visual-pro/ })).toBeVisible()
+  await main.press('Escape')
+
+  const secondary = page.getByRole('combobox', { name: 'Secondary Model ID' })
+  await secondary.click()
+  await secondary.press('ArrowDown')
+  await secondary.press('Enter')
+  await expect(secondary).toHaveValue('visual-main')
+  await expect(main).toHaveValue('visual-pro')
+
+  await secondary.fill('private-model-v2')
+  await secondary.press('Escape')
+  await expect(secondary).toHaveValue('private-model-v2')
+  await secondary.click()
+  await expect(page.getByRole('option', { name: /private-model-v2.*自定义/ })).toBeVisible()
+  await expect(page.getByRole('option', { name: /visual-main/ })).toBeVisible()
+})
+
+test('settings pages keep their scroll contract without horizontal overflow', async ({ page }) => {
+  const routes = ['general', 'model', 'memory', 'tokens', 'configs', 'hooks', 'diagnostics', 'appearance', 'archived']
+  for (const viewport of [{ width: 1280, height: 820 }, { width: 390, height: 844 }]) {
+    await page.setViewportSize(viewport)
+    for (const route of routes) {
+      await page.goto(`/settings/${route}`)
+      await expect(page.locator('.settings-shell')).toBeVisible()
+      await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth + 1)).toBe(true)
+
+      const scrollResult = await page.evaluate(() => {
+        const candidates = Array.from(document.querySelectorAll<HTMLElement>('.settings-content *'))
+        const scrollHost = candidates.find((element) => {
+          const style = window.getComputedStyle(element)
+          return /(auto|scroll)/.test(style.overflowY) && element.scrollHeight > element.clientHeight + 1
+        })
+        if (!scrollHost) return { found: false, scrolled: false }
+        scrollHost.scrollTop = Math.min(80, scrollHost.scrollHeight - scrollHost.clientHeight)
+        return { found: true, scrolled: scrollHost.scrollTop > 0 }
+      })
+
+      if (route === 'diagnostics' || (route === 'model' && viewport.width < 980)) expect(scrollResult.found).toBe(true)
+      if (scrollResult.found) expect(scrollResult.scrolled).toBe(true)
+    }
+  }
+})
+
+test('hooks workspace exposes effective, test, audit, and advanced views', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 820 })
+  await page.goto('/settings/hooks')
+  await expect(page.locator('.hooks-panel')).toBeVisible()
+  await expect(page.getByText('project_trust_stale')).toBeVisible()
+  await expect(page.getByText('guard-write').first()).toBeVisible()
+
+  page.once('dialog', (dialog) => dialog.accept())
+  await page.getByRole('button', { name: '信任' }).click()
+  await expect(page.getByText('已信任项目 Hooks')).toBeVisible()
+
+  await page.getByRole('tab', { name: '测试' }).click()
+  await expect(page.getByText('Dry Run')).toBeVisible()
+  await expect(page.locator('.test-form select')).toHaveValue('PreToolUse')
+  await page.getByRole('button', { name: '匹配' }).click()
+  await expect(page.getByText('无匹配 handler')).toBeVisible()
+
+  await page.getByRole('tab', { name: '审计' }).click()
+  await expect(page.getByText('audit-command')).toBeVisible()
+
+  await page.getByRole('tab', { name: 'Advanced' }).click()
+  await expect(page.getByText('Global hooks_config.json')).toBeVisible()
+  const editor = page.locator('.advanced-editor textarea')
+  await expect(editor).toHaveValue(/"version": 2/)
+  await page.getByRole('button', { name: '校验' }).click()
+  await expect(page.getByText('配置有效')).toBeVisible()
+  await editor.fill(`${await editor.inputValue()}\n`)
+  await page.getByRole('button', { name: '保存' }).click()
+  await expect(page.getByText(/stale hooks revision/)).toBeVisible()
+  await expect(page.getByRole('button', { name: '重新加载' })).toBeVisible()
+})
 
 test('captures sidebar search overlay', async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 })
@@ -246,7 +344,7 @@ async function installVisualCoreBridge(page: Page) {
         providers: { visual: { apiKey: '' } },
       },
       providerOptions: [
-        { name: 'visual', displayName: 'Visual Provider', backend: 'openai-compatible', region: 'local', isLocal: true },
+        { name: 'visual', displayName: 'Visual Provider', backend: 'openai-compatible', region: 'local', isLocal: true, modelDiscovery: 'supported' },
       ],
     }
     const memory = {
@@ -296,6 +394,63 @@ async function installVisualCoreBridge(page: Page) {
       leadUnread: 0,
       leadInbox: [],
       config: { version: 1, team_name: 'Visual Team', members: [] },
+    }
+    const hooksPayload = {
+      revision: 'visual-hooks-revision-20260710',
+      config: { version: 2, enabled: true, projectHooks: { enabled: true }, hooks: {} },
+      globalConfig: {
+        version: 2,
+        enabled: true,
+        projectHooks: { enabled: true },
+        hooks: {
+          PreToolUse: [{
+            id: 'guard-write', enabled: true, matcher: 'write_file', if: '', failureMode: 'closed',
+            handlers: [{ id: 'guard-command', type: 'command', enabled: true, command: 'node', args: ['guard.mjs'], timeoutMs: 10000 }],
+          }],
+        },
+      },
+      effectiveGroups: [
+        {
+          eventName: 'PreToolUse',
+          group: {
+            id: 'guard-write', enabled: true, matcher: 'write_file', if: '', failureMode: 'closed',
+            handlers: [{ id: 'guard-command', type: 'command', enabled: true, command: 'node', args: ['guard.mjs'], timeoutMs: 10000 }],
+          },
+          source: { id: 'global', kind: 'global', path: '/Users/visual/.emperor-agent/hooks_config.json', readonly: false, active: true },
+        },
+        {
+          eventName: 'Stop',
+          group: {
+            id: 'project-finish', enabled: true, matcher: '*', if: '', failureMode: 'open',
+            handlers: [{ id: 'finish-prompt', type: 'prompt', enabled: true, prompt: 'Check completion.', timeoutMs: 30000 }],
+          },
+          source: { id: 'project', kind: 'project', path: `${projectDir}/.emperor/settings.json`, readonly: true, active: false, blockedReason: 'project_trust_stale' },
+        },
+      ],
+      sources: [
+        { id: 'global', kind: 'global', path: '/Users/visual/.emperor-agent/hooks_config.json', readonly: false, active: true },
+        { id: 'project', kind: 'project', path: `${projectDir}/.emperor/settings.json`, readonly: true, active: false, blockedReason: 'project_trust_stale' },
+      ],
+      projectTrust: { canonicalRoot: projectDir, digest: 'visual-digest', status: 'stale' },
+      diagnostics: [{ code: 'candidate_rejected', path: `${projectDir}/.emperor/settings.json`, message: 'Project hook digest changed.' }],
+      summary: { total: 2, groups: 2, events: [{ eventName: 'PreToolUse', groups: 1, count: 1 }, { eventName: 'Stop', groups: 1, count: 1 }] },
+    }
+    const hooksMetadata = {
+      version: 2,
+      events: [
+        { eventName: 'PreToolUse', matcherField: 'tool_name', mode: 'transform', allowedHandlers: ['command', 'http', 'prompt'] },
+        { eventName: 'Stop', matcherField: null, mode: 'continue', allowedHandlers: ['command', 'http', 'prompt', 'agent'] },
+        { eventName: 'ConfigChange', matcherField: 'source', mode: 'block', allowedHandlers: ['command', 'http'] },
+      ],
+      handlers: { command: {}, http: {}, prompt: {}, agent: {} },
+    }
+    const hooksAudit = {
+      cursor: '0', nextCursor: null, total: 1, badLines: [],
+      records: [{
+        hookRunId: 'hook_run_visual', eventName: 'PreToolUse', groupId: 'guard-write', handlerId: 'audit-command', handlerType: 'command',
+        source: { id: 'global', kind: 'global' }, snapshotRevision: hooksPayload.revision, startedAt: now,
+        durationMs: 18, status: 'completed', outcome: 'deny', reason: 'visual fixture', inputHash: 'input-hash', outputHash: 'output-hash',
+      }],
     }
     const boot = {
       app: 'Emperor Agent',
@@ -389,6 +544,17 @@ async function installVisualCoreBridge(page: Page) {
             }
           case 'model.getConfig':
             return modelConfig
+          case 'model.discoverModels':
+            return {
+              ok: true,
+              provider: 'visual',
+              source: 'visual-fixture',
+              models: [
+                { id: 'visual-main', ownedBy: 'Visual Labs' },
+                { id: 'visual-secondary', ownedBy: 'Visual Labs' },
+                { id: 'visual-pro', ownedBy: 'Visual Research' },
+              ],
+            }
           case 'config.get':
             return { path: 'emperor.local.json', content: '{\\n  "webui": {}\\n}\\n' }
           case 'mcp.getConfig':
@@ -422,6 +588,25 @@ async function installVisualCoreBridge(page: Page) {
           case 'control.setMode':
             boot.control = { mode: String(args[0] || 'ask_before_edit'), pending: null }
             return boot.control
+          case 'hooks.getConfig':
+            return hooksPayload
+          case 'hooks.getMetadata':
+            return hooksMetadata
+          case 'hooks.getAudit':
+            return hooksAudit
+          case 'hooks.testMatch':
+            return { revision: hooksPayload.revision, eventName: 'PreToolUse', items: [], diagnostics: [] }
+          case 'hooks.validateConfig':
+            return { valid: true, config: args[0]?.config, diagnostics: [] }
+          case 'hooks.setProjectTrust':
+            hooksPayload.projectTrust.status = args[0]?.trusted ? 'trusted' : 'untrusted'
+            hooksPayload.sources[1].active = Boolean(args[0]?.trusted)
+            hooksPayload.sources[1].blockedReason = args[0]?.trusted ? null : 'project_untrusted'
+            hooksPayload.effectiveGroups[1].source.active = Boolean(args[0]?.trusted)
+            hooksPayload.effectiveGroups[1].source.blockedReason = args[0]?.trusted ? null : 'project_untrusted'
+            return hooksPayload.projectTrust
+          case 'hooks.saveConfig':
+            return { ok: false, error: { message: `stale hooks revision: expected ${args[0]?.revision}, current visual-new-revision` } }
           case 'chat.stopRuntime':
             return { cancelled: false }
           default:
@@ -478,7 +663,10 @@ async function assertComposerShellTrimmed(page: Page) {
 async function assertFloatingModeMenu(page: Page) {
   const menu = page.locator('.mode-menu')
   await expect(menu).toBeVisible()
-  await expect(page.locator('.mode-option')).toHaveCount(3)
+  await expect(page.locator('.mode-option')).toHaveCount(4)
+  for (const label of ['询问确认', '接受编辑', '自动执行', '计划预览']) {
+    await expect(menu.getByText(label, { exact: true })).toBeVisible()
+  }
 
   const position = await menu.evaluate((el) => window.getComputedStyle(el).position)
   expect(position).toBe('fixed')

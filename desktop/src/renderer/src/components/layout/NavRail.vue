@@ -5,7 +5,7 @@ import { useAppContext } from '../../composables/useAppContext'
 import { navOrder } from '../../router'
 import { actionIcons, navIcon as resolveNavIcon } from '../../icons'
 import { useTheme } from '../../composables/useTheme'
-import logoMarkUrl from '../../../../../../assets/generated/emperor-agent-logo-mark.png'
+import BrandMark from '../brand/BrandMark.vue'
 
 const ctx = useAppContext()
 const route = useRoute()
@@ -35,7 +35,7 @@ const modelLabel = computed(
 <template>
   <aside class="nav-rail" aria-label="Primary navigation">
     <div class="rail-brand" :title="modelLabel">
-      <img :src="logoMarkUrl" class="rail-brand-img" alt="" draggable="false" />
+      <BrandMark class="rail-brand-img" :size="24" />
     </div>
 
     <div class="rail-status" :title="ctx.runtimeText()">

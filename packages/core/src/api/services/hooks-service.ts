@@ -1,8 +1,25 @@
-import { HookAuditStore, HookConfigLoader, HookRuntime, isHookEventName, type HookEventName, type HookRuntimeRunOptions } from '../../hooks'
+import { realpath } from 'node:fs/promises'
+import { createHash } from 'node:crypto'
+import { resolve } from 'node:path'
+import {
+  HOOK_EVENT_NAMES,
+  HOOK_EVENT_SPECS,
+  HookService,
+  buildHookInput,
+  compileHookPlan,
+  defaultHooksConfigV2,
+  isHookEventName,
+  parseHooksConfigV2,
+  serializeHooksConfigV2,
+  type HookEventName,
+  type HookRuntimeRunOptions,
+  type HookSnapshot,
+} from '../../hooks'
 
 type Dict = Record<string, unknown>
 
 export interface CoreHooksServiceDeps {
+  service?: HookService | null
   activeSessionId?: () => string | null
   activeWorkspaceRoot?: () => string
   activeProjectRoot?: () => string | null
@@ -11,91 +28,272 @@ export interface CoreHooksServiceDeps {
 
 export class CoreHooksService {
   readonly stateRoot: string
-  readonly loader: HookConfigLoader
-  readonly audit: HookAuditStore
+  readonly service: HookService
+  readonly audit: HookService['audit']
   private readonly deps: CoreHooksServiceDeps
 
   constructor(stateRoot: string, deps: CoreHooksServiceDeps = {}) {
     this.stateRoot = stateRoot
-    this.loader = new HookConfigLoader({ stateRoot })
-    this.audit = new HookAuditStore(stateRoot)
+    this.service = deps.service ?? new HookService({ stateRoot })
+    this.audit = this.service.audit
     this.deps = deps
   }
 
   async getConfig(_opts: Dict = {}): Promise<Dict> {
-    const loaded = await this.loader.load({ projectRoot: this.deps.activeProjectRoot?.() ?? null })
-    const globalOnly = await this.loader.load({ projectRoot: null })
-    return {
-      ...loaded,
-      globalConfig: globalOnly.config,
-      summary: hooksSummary(loaded.config),
-    } as unknown as Dict
+    const scope = this.scope()
+    const snapshot = await this.service.snapshot(scope)
+    const global = await this.service.resolver.resolve({ projectRoot: null, sessionId: null })
+    return configPayload(snapshot, global.config)
   }
 
   async saveConfig(raw: unknown): Promise<Dict> {
     this.deps.assertMutation?.('hooks', 'saveConfig')
-    const result = await this.loader.saveGlobalConfig(raw)
-    if (result.diagnostics.length === 0) {
-      await this.runConfigChange('hooks.saveConfig')
-    }
+    const envelope = isRecord(raw) && 'config' in raw ? raw : null
+    const config = envelope?.config ?? raw
+    const expectedRevision = envelope && typeof envelope.revision === 'string' ? envelope.revision : null
+    const scope = this.scope()
+    const result = await this.service.saveGlobalConfig(config, {
+      expectedRevision,
+      sessionId: scope.sessionId,
+      cwd: this.deps.activeWorkspaceRoot?.() ?? process.cwd(),
+      projectRoot: scope.projectRoot,
+    })
     return {
-      ...result,
-      globalConfig: result.config,
-      summary: hooksSummary(result.config),
-    } as unknown as Dict
+      ...configPayload(result.snapshot, result.config),
+      saved: result.saved,
+      decision: result.decision,
+    }
   }
 
-  async notifyConfigChange(source: string): Promise<void> {
-    await this.runConfigChange(source)
+  async notifyConfigChange(source: string, candidate: unknown = source): Promise<void> {
+    await this.authorizeConfigChange(source, candidate)
   }
 
-  async getAudit(opts: { limit?: number | string | null } = {}): Promise<Dict> {
-    return await this.audit.replay({ limit: normalizeLimit(opts.limit) }) as unknown as Dict
+  async authorizeConfigChange(source: string, candidate: unknown): Promise<Dict> {
+    const scope = this.scope()
+    const revision = stableRevision(candidate)
+    const decision = await this.service.authorizeConfigChange({
+      source,
+      candidateRevision: revision,
+      sessionId: scope.sessionId,
+      cwd: this.deps.activeWorkspaceRoot?.() ?? process.cwd(),
+      projectRoot: scope.projectRoot,
+    })
+    if (decision.decision === 'deny' || decision.decision === 'ask') {
+      throw new Error(`ConfigChange hook denied ${source}: ${decision.reason}`)
+    }
+    return { revision, decision }
+  }
+
+  async getAudit(opts: {
+    cursor?: string | number | null
+    limit?: number | string | null
+    eventName?: string | null
+    outcome?: string | null
+    sourceId?: string | null
+    runId?: string | null
+  } = {}): Promise<Dict> {
+    const replay = await this.audit.replayRuns({ limit: 100_000 })
+    const filtered = replay.records.filter((record) => {
+      if (opts.eventName && record.eventName !== opts.eventName) return false
+      if (opts.outcome && record.outcome !== opts.outcome) return false
+      if (opts.sourceId && record.source.id !== opts.sourceId) return false
+      if (opts.runId && record.hookRunId !== opts.runId) return false
+      return true
+    }).reverse()
+    const offset = normalizeCursor(opts.cursor)
+    const limit = normalizeLimit(opts.limit, 100)
+    const records = filtered.slice(offset, offset + limit)
+    const nextOffset = offset + records.length
+    return {
+      records,
+      badLines: replay.badLines,
+      cursor: String(offset),
+      nextCursor: nextOffset < filtered.length ? String(nextOffset) : null,
+      total: filtered.length,
+    }
+  }
+
+  getMetadata(): Dict {
+    const defaults = defaultHooksConfigV2()
+    return {
+      version: 2,
+      events: HOOK_EVENT_NAMES.map((eventName) => ({ eventName, ...HOOK_EVENT_SPECS[eventName] })),
+      handlers: {
+        command: { shell: ['none', 'bash', 'powershell'], async: true, defaults: { timeoutMs: defaults.policy.command.defaultTimeoutMs } },
+        http: { defaults: { timeoutMs: defaults.policy.http.defaultTimeoutMs }, requiresUrlAllowlist: true },
+        prompt: { modelRole: ['secondary', 'main'], defaults: { timeoutMs: defaults.policy.prompt.defaultTimeoutMs } },
+        agent: { modelRole: ['secondary', 'main'], defaults: { timeoutMs: defaults.policy.agent.defaultTimeoutMs, maxTurns: defaults.policy.agent.maxTurns } },
+      },
+      limits: defaults.policy,
+    }
+  }
+
+  validateConfig(input: Dict): Dict {
+    const sourceKind = String(input.sourceKind ?? input.source_kind ?? 'global')
+    const parsed = parseHooksConfigV2(input.config, { sourceKind })
+    return {
+      valid: parsed.diagnostics.length === 0,
+      config: serializeHooksConfigV2(parsed.config),
+      diagnostics: parsed.diagnostics,
+    }
+  }
+
+  async setProjectTrust(input: Dict): Promise<Dict> {
+    this.deps.assertMutation?.('hooks', 'setProjectTrust')
+    const activeRoot = this.deps.activeProjectRoot?.() ?? null
+    const requestedRoot = String(input.projectRoot ?? input.project_root ?? '').trim()
+    if (!activeRoot || !requestedRoot) throw new Error('active project root is required')
+    const [activeCanonical, requestedCanonical] = await Promise.all([canonical(activeRoot), canonical(requestedRoot)])
+    if (activeCanonical !== requestedCanonical) throw new Error('project trust may only be changed for the active project')
+    const expectedDigest = String(input.expectedDigest ?? input.expected_digest ?? '')
+    if (!expectedDigest) throw new Error('expectedDigest is required')
+    return await this.service.resolver.trustStore.set({
+      projectRoot: requestedCanonical,
+      expectedDigest,
+      trusted: Boolean(input.trusted),
+    }) as unknown as Dict
+  }
+
+  async testMatch(input: Dict): Promise<Dict> {
+    const eventName = requiredEvent(input)
+    const snapshot = await this.currentRevision(input.revision)
+    const runOptions = this.runOptions(input)
+    const hookInput = buildHookInput(eventName, { ...runOptions, stateRoot: this.stateRoot })
+    const plan = compileHookPlan(snapshot, hookInput)
+    return {
+      revision: snapshot.revision,
+      eventName,
+      items: plan.items.map(planItemPayload),
+      diagnostics: plan.diagnostics,
+    }
   }
 
   async testRun(input: Dict): Promise<Dict> {
-    const eventName = String(input.eventName ?? input.event_name ?? '')
-    if (!isHookEventName(eventName)) throw new Error(`invalid hook event: ${eventName}`)
-    const runtime = new HookRuntime({ stateRoot: this.stateRoot })
-    const opts: HookRuntimeRunOptions = {
-      sessionId: String(input.sessionId ?? input.session_id ?? this.deps.activeSessionId?.() ?? ''),
-      cwd: String(input.cwd ?? this.deps.activeWorkspaceRoot?.() ?? process.cwd()),
-      projectRoot: null,
-      source: typeof input.source === 'string' ? input.source : 'test',
-      toolName: typeof input.toolName === 'string' ? input.toolName : typeof input.tool_name === 'string' ? input.tool_name : null,
-      toolInput: isRecord(input.toolInput) ? input.toolInput : isRecord(input.tool_input) ? input.tool_input : null,
-      prompt: typeof input.prompt === 'string' ? input.prompt : null,
+    if (input.confirmExecution !== true && input.confirm_execution !== true) throw new Error('confirmExecution=true is required')
+    const eventName = requiredEvent(input)
+    const snapshot = await this.currentRevision(input.revision)
+    const groupId = String(input.groupId ?? input.group_id ?? '')
+    const handlerId = String(input.handlerId ?? input.handler_id ?? '')
+    if (!groupId || !handlerId) throw new Error('groupId and handlerId are required')
+    const runOptions = this.runOptions(input)
+    const hookInput = buildHookInput(eventName, { ...runOptions, stateRoot: this.stateRoot })
+    const plan = compileHookPlan(snapshot, hookInput)
+    const selected = plan.items.find((item) => item.groupId === groupId && item.handlerId === handlerId)
+    if (!selected) throw new Error('selected hook handler does not match the event input')
+    if ((selected.source.kind === 'project' || selected.source.kind === 'project-local') && snapshot.projectTrust?.status !== 'trusted') {
+      throw new Error('untrusted project hooks cannot be executed')
     }
-    return await runtime.run(eventName, opts) as unknown as Dict
+    const selectedSnapshot: HookSnapshot = {
+      ...snapshot,
+      groups: [{
+        eventName: selected.eventName,
+        source: selected.source,
+        group: { ...selected.group, handlers: [selected.handler] },
+      }],
+    }
+    return await this.service.run(eventName, runOptions, { snapshot: selectedSnapshot }) as unknown as Dict
   }
 
-  private async runConfigChange(source: string): Promise<void> {
-    const runtime = new HookRuntime({ stateRoot: this.stateRoot })
-    await runtime.run('ConfigChange', {
+  async cancelRun(input: Dict): Promise<Dict> {
+    const runId = String(input.runId ?? input.run_id ?? '')
+    if (!runId) throw new Error('runId is required')
+    return { runId, cancelled: await this.service.background.cancel(runId) }
+  }
+
+  private scope(): { sessionId: string; projectRoot: string | null } {
+    return {
       sessionId: this.deps.activeSessionId?.() ?? '',
-      cwd: this.deps.activeWorkspaceRoot?.() ?? process.cwd(),
-      projectRoot: null,
-      source,
-    })
+      projectRoot: this.deps.activeProjectRoot?.() ?? null,
+    }
+  }
+
+  private async currentRevision(expected: unknown): Promise<HookSnapshot> {
+    const snapshot = await this.service.snapshot(this.scope())
+    const revision = String(expected ?? '')
+    if (!revision) throw new Error('revision is required')
+    if (revision !== snapshot.revision) throw new Error(`stale hooks revision: expected ${revision}, current ${snapshot.revision}`)
+    return snapshot
+  }
+
+  private runOptions(input: Dict): HookRuntimeRunOptions {
+    const raw = isRecord(input.input) ? input.input : input
+    return {
+      ...raw,
+      sessionId: String(raw.sessionId ?? raw.session_id ?? this.deps.activeSessionId?.() ?? ''),
+      cwd: String(raw.cwd ?? this.deps.activeWorkspaceRoot?.() ?? process.cwd()),
+      projectRoot: this.deps.activeProjectRoot?.() ?? null,
+      stateRoot: this.stateRoot,
+      source: typeof raw.source === 'string' ? raw.source : 'test',
+      toolName: typeof raw.toolName === 'string' ? raw.toolName : typeof raw.tool_name === 'string' ? raw.tool_name : null,
+      toolInput: isRecord(raw.toolInput) ? raw.toolInput : isRecord(raw.tool_input) ? raw.tool_input : null,
+      prompt: typeof raw.prompt === 'string' ? raw.prompt : null,
+    }
   }
 }
 
-function hooksSummary(config: { hooks: Partial<Record<HookEventName, unknown[]>> }): Dict {
-  const events = Object.entries(config.hooks).map(([eventName, hooks]) => ({
-    eventName,
-    count: Array.isArray(hooks) ? hooks.length : 0,
+function configPayload(snapshot: HookSnapshot, globalConfig: unknown): Dict {
+  const effectiveGroups = snapshot.groups.map((resolved) => ({
+    eventName: resolved.eventName,
+    group: resolved.group,
+    source: resolved.source,
   }))
   return {
-    total: events.reduce((sum, event) => sum + event.count, 0),
-    events,
+    revision: snapshot.revision,
+    config: snapshot.config,
+    globalConfig,
+    effectiveGroups,
+    sources: snapshot.sources,
+    projectTrust: snapshot.projectTrust,
+    diagnostics: snapshot.diagnostics,
+    summary: hooksSummary(snapshot),
   }
 }
 
-function normalizeLimit(value: unknown): number {
-  const parsed = Number.parseInt(String(value ?? 100), 10)
-  return Number.isFinite(parsed) && parsed > 0 ? parsed : 100
+function hooksSummary(snapshot: HookSnapshot): Dict {
+  const events = HOOK_EVENT_NAMES.map((eventName) => {
+    const groups = snapshot.groups.filter((group) => group.eventName === eventName)
+    return { eventName, groups: groups.length, count: groups.reduce((sum, group) => sum + group.group.handlers.length, 0) }
+  }).filter((event) => event.groups > 0)
+  return { total: events.reduce((sum, event) => sum + event.count, 0), groups: snapshot.groups.length, events }
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return Boolean(value && typeof value === 'object' && !Array.isArray(value))
+function requiredEvent(input: Dict): HookEventName {
+  const eventName = String(input.eventName ?? input.event_name ?? '')
+  if (!isHookEventName(eventName)) throw new Error(`invalid hook event: ${eventName}`)
+  return eventName
+}
+
+function planItemPayload(item: ReturnType<typeof compileHookPlan>['items'][number]): Dict {
+  return {
+    index: item.index,
+    eventName: item.eventName,
+    groupId: item.groupId,
+    handlerId: item.handlerId,
+    handlerType: item.handler.type,
+    source: item.source,
+    failureMode: item.group.failureMode,
+  }
+}
+
+function normalizeLimit(value: unknown, fallback: number): number {
+  const parsed = Number.parseInt(String(value ?? fallback), 10)
+  return Number.isFinite(parsed) ? Math.min(500, Math.max(1, parsed)) : fallback
+}
+
+function normalizeCursor(value: unknown): number {
+  const parsed = Number.parseInt(String(value ?? 0), 10)
+  return Number.isFinite(parsed) ? Math.max(0, parsed) : 0
+}
+
+async function canonical(path: string): Promise<string> {
+  try { return await realpath(resolve(path)) } catch { return resolve(path) }
+}
+
+function stableRevision(value: unknown): string {
+  return createHash('sha256').update(JSON.stringify(value)).digest('hex')
+}
+
+function isRecord(value: unknown): value is Dict {
+  return value !== null && typeof value === 'object' && !Array.isArray(value)
 }

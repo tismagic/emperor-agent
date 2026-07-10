@@ -15,6 +15,21 @@ export interface RuntimeEventEnvelope {
   project_state_root?: string | null
 }
 
+export interface HookRuntimeEventFields {
+  hook_id?: string
+  hook_run_id?: string
+  event_name?: string
+  group_id?: string
+  handler_id?: string
+  handler_type?: string
+  snapshot_revision?: string
+  hook_source?: RuntimeEventPayload | null
+  status?: string
+  decision?: string
+  reason?: string
+  duration_ms?: number
+}
+
 export type RuntimeEvent = RuntimeEventEnvelope & (
   | { event: 'ready'; model?: string; provider?: string; latest_seq?: number; replay_count?: number; resume_from?: number; busy?: boolean; control?: RuntimeEventPayload }
   | { event: 'user_message'; content?: string; attachments?: RuntimeEventPayload[]; source?: string; scheduler?: RuntimeEventPayload; ui_hidden?: boolean }
@@ -39,11 +54,11 @@ export type RuntimeEvent = RuntimeEventEnvelope & (
   | { event: 'tool_run_completed'; id?: string; name: string; summary?: string; output?: string; output_truncated?: boolean; artifacts?: RuntimeEventPayload[]; metadata?: RuntimeEventPayload }
   | { event: 'tool_run_failed'; id?: string; name: string; message?: string; reason_kind?: 'safety_refusal' | 'error' | string }
   | { event: 'tool_run_cancelled'; id?: string; name: string; reason?: string }
-  | { event: 'hook_run_started'; hook_id?: string; event_name?: string; handler_type?: string; hook_source?: RuntimeEventPayload | null }
-  | { event: 'hook_run_progress'; hook_id?: string; event_name?: string; status?: string; message?: string | null }
-  | { event: 'hook_run_completed'; hook_id?: string; event_name?: string; status?: string; decision?: string; reason?: string; duration_ms?: number }
-  | { event: 'hook_run_failed'; hook_id?: string; event_name?: string; status?: string; decision?: string; reason?: string; duration_ms?: number }
-  | { event: 'hook_decision_applied'; event_name?: string; decision?: string; reason?: string; hook_ids?: string[] }
+  | (HookRuntimeEventFields & { event: 'hook_run_started' })
+  | (HookRuntimeEventFields & { event: 'hook_run_progress'; message?: string | null })
+  | (HookRuntimeEventFields & { event: 'hook_run_completed' })
+  | (HookRuntimeEventFields & { event: 'hook_run_failed' })
+  | (HookRuntimeEventFields & { event: 'hook_decision_applied'; hook_ids?: string[]; hook_run_ids?: string[] })
   | { event: 'turn_phase'; phase?: string; sequence?: number; iteration?: number; detail?: RuntimeEventPayload }
   | { event: 'turn_scope'; mode?: string; workspace_root?: string; state_root?: string; session_root?: string; project_id?: string | null; project_state_root?: string | null; active_memory_binding?: RuntimeEventPayload }
   | { event: 'assistant_done'; content?: string }

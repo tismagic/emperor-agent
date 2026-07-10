@@ -1,4 +1,4 @@
-const { contextBridge } = require("electron");
+const { contextBridge, ipcRenderer } = require("electron");
 const fs = require("fs");
 const path = require("path");
 
@@ -10,6 +10,17 @@ function argValue(prefix) {
 const root = argValue("--emperor-root=") || process.env.EMPEROR_AGENT_ROOT || "";
 const assetBaseUrl = argValue("--emperor-asset-base-url=");
 const cursors = new Map();
+
+// IPC event queue for live events from the main process.
+const CORE_EVENT_CHANNEL = "emperor:core:event";
+const ipcEventQueue = [];
+const IPC_QUEUE_MAX = 500;
+
+ipcRenderer.on(CORE_EVENT_CHANNEL, (_event, payload) => {
+  if (ipcEventQueue.length < IPC_QUEUE_MAX) {
+    ipcEventQueue.push(payload);
+  }
+});
 
 function safeJson(raw, fallback = null) {
   try {
@@ -103,4 +114,12 @@ contextBridge.exposeInMainWorld("emperorPet", {
     };
   },
   readRuntimeEvents: async () => readNewEvents(),
+  readIpcEvents: async () => {
+    if (!ipcEventQueue.length) return [];
+    const batch = ipcEventQueue.splice(0);
+    return batch;
+  },
+  closePet: async () => {
+    try { ipcRenderer.invoke("emperor:pet:close"); } catch { /* best-effort */ }
+  },
 });

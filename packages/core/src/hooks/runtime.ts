@@ -20,6 +20,7 @@ export interface HookRuntimeRunOptions {
   toolResult?: unknown
   permission?: Record<string, unknown> | null
   prompt?: string | null
+  signal?: AbortSignal | null
   [key: string]: unknown
 }
 

@@ -46,14 +46,12 @@ import {
   Image as ImageIcon,
   FileType,
   User,
-  Hexagon,
+  X,
+  Cat,
 } from 'lucide-vue-next'
 import type { Component } from 'vue'
 
 export type IconComponent = Component
-
-// Neutral brand mark (replaces the pixel seal logo).
-export const brandIcon: IconComponent = Hexagon
 
 // ── Navigation ──────────────────────────────────────────────────────────────
 export const navIconMap: Record<string, IconComponent> = {
@@ -68,6 +66,7 @@ export const navIconMap: Record<string, IconComponent> = {
   configs: Settings,
   mcp: Plug,
   memory: Database,
+  pet: Cat,
 }
 
 export function navIcon(name: string): IconComponent {
@@ -83,6 +82,7 @@ export const actionIcons = {
   refresh: RotateCw,
   save: Save,
   send: ArrowUp,
+  close: X,
   caretDown: ChevronDown,
   modeAskBeforeEdit: ShieldQuestion,
   modeAcceptEdits: FilePen,

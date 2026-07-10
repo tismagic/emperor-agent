@@ -177,6 +177,16 @@ function startPolling() {
       showBubble("读取本地事件失败，等待重试。", 4000);
     }
   }, 1000);
+
+  // Faster IPC poll for live events from the main process.
+  setInterval(async () => {
+    try {
+      const ipcEvents = await cfg.readIpcEvents?.();
+      for (const event of ipcEvents || []) applyRuntimeEvent(event);
+    } catch {
+      // IPC events are best-effort; filesystem is the fallback.
+    }
+  }, 200);
 }
 
 setAnimation("disconnected");

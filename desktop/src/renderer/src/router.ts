@@ -59,6 +59,12 @@ export const routeRecords: RouteRecordRaw[] = [
     meta: { label: '配置文件', hint: '配置文件' },
   },
   {
+    path: '/pet',
+    name: 'pet',
+    component: () => import('./views/PetView.vue'),
+    meta: { label: '桌宠', hint: '桌宠' },
+  },
+  {
     path: '/mcp',
     redirect: '/plugins/mcp',
   },
@@ -90,5 +96,5 @@ export const router = createRouter({
   routes: routeRecords,
 })
 
-export const navOrder = ['chat', 'plugins', 'scheduler', 'settings'] as const
+export const navOrder = ['chat', 'plugins', 'scheduler', 'pet', 'settings'] as const
 export type NavRouteName = (typeof navOrder)[number]

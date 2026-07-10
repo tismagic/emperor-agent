@@ -7,7 +7,7 @@ import { randomUUID } from 'node:crypto'
 import { existsSync, mkdirSync, readFileSync, readdirSync, statSync } from 'node:fs'
 import { basename, join, resolve } from 'node:path'
 import { ContextBuilder, type SkillsLoaderLike } from './context-builder'
-import { AgentRunner, type CompactorLike } from './runner'
+import { AgentRunner, type AgentRunnerHookHost, type CompactorLike } from './runner'
 import { buildRoutedRunner } from './runner-factory'
 import { dispatchControlHost, permissionOnlyControlHost } from './control-hosts'
 import { loadLocalConfig, type PromptProfile } from '../config/local-config'
@@ -25,7 +25,7 @@ import { TokenTracker } from '../memory/token-tracker'
 import { todayUtc8 } from '../memory/time-utc8'
 import { type ModelRoute, ModelRouter } from '../model/router'
 import { assertModelAvailable, type ModelAvailability } from '../model/availability'
-import { HookRuntime, type HookAggregateDecision, type HookEventName, type HookRuntimeRunOptions } from '../hooks'
+import { HookService, type HookAggregateDecision, type HookEventName, type HookRuntimeRunOptions, type HookSnapshot } from '../hooks'
 import { WorkspacePolicy } from '../permissions/workspace-policy'
 import { ProjectStore } from '../projects/store'
 import { ActiveTaskRegistry, TurnBusyError } from '../runtime/active'
@@ -87,6 +87,7 @@ export interface TurnScope {
 
 export interface LoopModelRouter {
   route(useCase: string, agentType?: string | null, task?: string | null): ModelRoute
+  routeForRole?(useCase: string, role: 'main' | 'secondary', task?: string | null): ModelRoute
   payload?(): Record<string, unknown>
   availability?: ModelAvailability
 }
@@ -125,6 +126,18 @@ export interface RunUserTurnOptions {
   memoryExtra?: Record<string, unknown> | null
 }
 
+export interface CompactionHookScope {
+  trigger: 'manual' | 'auto' | 'emergency'
+  sessionId: string
+  cwd: string
+  projectRoot: string | null
+  snapshot: HookSnapshot
+  allowed: boolean
+  bypassed: boolean
+  reason: string
+  instructions: string
+}
+
 export class AgentLoop {
   readonly root: string
   readonly paths: RuntimePaths
@@ -133,6 +146,7 @@ export class AgentLoop {
   readonly sessionStore: SessionStore
   readonly sharedMemory: MemoryStore
   readonly tokenTracker: TokenTracker
+  readonly hookService: HookService
   readonly taskManager: TaskManager
   readonly projectStore: ProjectStore
   readonly controlManager: ControlManager
@@ -183,7 +197,27 @@ export class AgentLoop {
 
     this.sessionStore = new SessionStore(this.paths.stateRoot)
     this.tokenTracker = new TokenTracker(this.paths.tokensFile)
-    this.taskManager = new TaskManager(this.paths.stateRoot)
+    this.hookService = new HookService({
+      stateRoot: this.paths.stateRoot,
+      modelRouter: {
+        routeForRole: (useCase, role, task) => this.routeHookModel(useCase, role, task),
+      },
+      tokenTracker: this.tokenTracker,
+    })
+    this.taskManager = new TaskManager(this.paths.stateRoot, {
+      hooks: {
+        run: async (eventName, hookOpts) => {
+          const session = hookOpts.sessionId ? this.sessionStore.get(hookOpts.sessionId) : this.activeSession
+          return await this.hookService.run(eventName, {
+            sessionId: hookOpts.sessionId ?? session?.id ?? '',
+            cwd: this.workspaceRootForSession(session),
+            projectRoot: session?.mode === 'build' ? session.project_path ?? null : null,
+            taskKind: hookOpts.taskKind,
+            task: hookOpts.task,
+          })
+        },
+      },
+    })
     this.projectStore = new ProjectStore(this.paths.stateRoot, { versions: this.sharedMemory.versions })
     this.controlManager = new ControlManager(this.paths.stateRoot, { permissionRules: opts.permissionRules ?? [] })
     this.todoStore = new TodoStore()
@@ -323,6 +357,7 @@ export class AgentLoop {
     const abortController = new AbortController()
     const awaitable = this.runUserTurnInner(content, turnId, opts, abortController.signal)
       .finally(() => {
+        this.hookService.endTurn(turnId)
         if (!opts.restoreActiveSessionAfterTurn) return
         if (!previousSessionId || previousSessionId === this.activeSessionId) return
         if (targetSessionId && this.activeSessionId !== targetSessionId) return
@@ -350,7 +385,30 @@ export class AgentLoop {
 
   async close(): Promise<void> {
     this.schedulerService.stop()
+    const session = this.activeSession ?? (this.activeSessionId ? this.sessionStore.get(this.activeSessionId) : null)
+    if (session) {
+      await this.hookService.run('SessionEnd', {
+        sessionId: session.id,
+        cwd: this.workspaceRootForSession(session),
+        projectRoot: session.mode === 'build' ? session.project_path ?? null : null,
+        reason: 'shutdown',
+      }).catch(() => {})
+    }
+    await this.hookService.shutdown()
     await this.mcpClient.close()
+  }
+
+  async endSession(sessionId: string, reason: string): Promise<void> {
+    const session = this.sessionStore.get(sessionId)
+    if (!session) return
+    await this.hookService.run('SessionEnd', {
+      sessionId,
+      cwd: this.workspaceRootForSession(session),
+      projectRoot: session.mode === 'build' ? session.project_path ?? null : null,
+      reason,
+    }).catch(() => {})
+    this.sessionStartHooksRun.delete(sessionId)
+    this.hookService.clearSession(sessionId)
   }
 
   refreshRuntimeContext(): void {
@@ -385,6 +443,65 @@ export class AgentLoop {
     this.mcpClient.registerTools(this.registry)
   }
 
+  async beginCompactionHooks(
+    trigger: CompactionHookScope['trigger'],
+    opts: { session?: SessionEntry | null; emit?: StreamEmitter | null } = {},
+  ): Promise<CompactionHookScope> {
+    const session = opts.session ?? this.activeSession ?? (this.activeSessionId ? this.sessionStore.get(this.activeSessionId) : null)
+    if (!session) throw new Error('active session is required for compaction hooks')
+    const cwd = this.workspaceRootForSession(session)
+    const projectRoot = session.mode === 'build' ? session.project_path ?? null : null
+    const snapshot = this.hookService.activeSnapshot(session.id) ?? await this.hookService.snapshot({ sessionId: session.id, projectRoot })
+    const decision = await this.hookService.run('PreCompact', {
+      sessionId: session.id,
+      cwd,
+      projectRoot,
+      trigger,
+    }, {
+      snapshot,
+      emit: async (event) => { await this.emit(event, { emit: opts.emit ?? null }) },
+    })
+    const denied = decision.decision === 'deny' || decision.decision === 'ask'
+    const bypassed = trigger === 'emergency' && denied
+    if (bypassed) {
+      await this.emit({
+        event: 'hook_emergency_compaction_bypass',
+        event_name: 'PreCompact',
+        decision: decision.decision,
+        reason: decision.reason,
+        snapshot_revision: snapshot.revision,
+      }, { emit: opts.emit ?? null })
+    }
+    return {
+      trigger,
+      sessionId: session.id,
+      cwd,
+      projectRoot,
+      snapshot,
+      allowed: !denied || trigger === 'emergency',
+      bypassed,
+      reason: decision.reason,
+      instructions: decision.compactInstructions ?? '',
+    }
+  }
+
+  async finishCompactionHooks(
+    scope: CompactionHookScope,
+    result: Record<string, unknown>,
+    opts: { emit?: StreamEmitter | null } = {},
+  ): Promise<void> {
+    await this.hookService.run('PostCompact', {
+      sessionId: scope.sessionId,
+      cwd: scope.cwd,
+      projectRoot: scope.projectRoot,
+      trigger: scope.trigger,
+      result,
+    }, {
+      snapshot: scope.snapshot,
+      emit: async (event) => { await this.emit(event, { emit: opts.emit ?? null }) },
+    })
+  }
+
   private async runUserTurnInner(content: string, turnId: string, opts: RunUserTurnOptions, signal: AbortSignal | null): Promise<string> {
     if (!this.activeSessionId) this.activateSession(this.ensureActiveSession().id)
     const session = this.activeSession ?? this.sessionStore.get(this.activeSessionId!)
@@ -396,13 +513,19 @@ export class AgentLoop {
     if (!session || !runner || !runtimeStore) throw new Error('active session is not initialized')
     this.controlManager.setRuntimeScope(this.controlRuntimeScopeForSession(session))
     const scope = this.turnScope(session, turnId)
+    await this.hookService.beginTurn({
+      turnId,
+      sessionId,
+      projectRoot: session.mode === 'build' ? session.project_path ?? null : null,
+    })
     if (!this.sessionStartHooksRun.has(sessionId)) {
       this.sessionStartHooksRun.add(sessionId)
-      await this.runLoopHook('SessionStart', {
+      const startDecision = await this.runLoopHook('SessionStart', {
         sessionId,
         cwd: scope.workspaceRoot,
         source: session.mode,
       }, { turnId, emit: opts.emit ?? null, runtimeStore, scope })
+      this.appendLifecycleHookContext(history, memoryStore, startDecision.additionalContext, 'SessionStart', turnId)
     }
     const promptDecision = await this.runLoopHook('UserPromptSubmit', {
       sessionId,
@@ -414,16 +537,17 @@ export class AgentLoop {
     const updatedPrompt = promptDecision.updatedInput && typeof promptDecision.updatedInput.content === 'string'
       ? promptDecision.updatedInput.content
       : content
-    const displayContent = opts.displayContent ?? updatedPrompt
+    this.appendLifecycleHookContext(history, memoryStore, promptDecision.additionalContext, 'UserPromptSubmit', turnId)
+    const displayContent = opts.displayContent ?? content
     const userMessage: Msg = { role: 'user', content: updatedPrompt }
     if (turnId) userMessage.turn_id = turnId
-    if (displayContent !== content) userMessage.displayContent = displayContent
+    if (displayContent !== updatedPrompt) userMessage.displayContent = displayContent
     history.push(userMessage)
     memoryStore.appendHistory('user', updatedPrompt, {
       extra: {
         ...(opts.memoryExtra ?? {}),
         turn_id: turnId,
-        ...(displayContent !== content ? { displayContent } : {}),
+        ...(displayContent !== updatedPrompt ? { displayContent } : {}),
         ...(opts.source ? { source: opts.source } : {}),
       },
     })
@@ -448,6 +572,12 @@ export class AgentLoop {
       }, { turnId, signal })
     } catch (error) {
       if (!isBenignTurnInterruption(error)) {
+        await this.runLoopHook('StopFailure', {
+          sessionId,
+          cwd: scope.workspaceRoot,
+          errorKind: hookErrorKind(error),
+          error: error instanceof Error ? error.message : String(error),
+        }, { turnId, emit: opts.emit ?? null, runtimeStore, scope }).catch(() => {})
         const safe = safeRuntimeError(error)
         await this.emit(runtimeEvents.error(safe.message, {
           code: safe.code,
@@ -487,18 +617,23 @@ export class AgentLoop {
       streamingToolExecution: process.env.EMPEROR_STREAMING_TOOLS === '1',
       hooks: session ? {
         run: async (eventName, hookOpts, emit) => {
-          const runtime = new HookRuntime({
-            stateRoot: this.paths.stateRoot,
-            emit: emit ? async (event) => { await emit(event) } : null,
-          })
-          return runtime.run(eventName, {
+          return this.hookService.run(eventName, {
             ...hookOpts,
             sessionId: hookOpts.sessionId || session.id,
             cwd: hookOpts.cwd || this.workspaceRootForSession(session),
             projectRoot: session.mode === 'build' ? session.project_path ?? null : null,
             stateRoot: this.paths.stateRoot,
+          }, {
+            emit: emit ? async (event) => { await emit(event) } : null,
           })
         },
+        mayMatch: (eventName, hookOpts) => this.hookService.mayMatch(eventName, {
+          ...hookOpts,
+          sessionId: hookOpts.sessionId || session.id,
+          cwd: hookOpts.cwd || this.workspaceRootForSession(session),
+          projectRoot: session.mode === 'build' ? session.project_path ?? null : null,
+          stateRoot: this.paths.stateRoot,
+        }),
       } : null,
     })
   }
@@ -510,14 +645,13 @@ export class AgentLoop {
         const snapshot = route.snapshot
         const mode = session.mode === 'build' ? 'build' : 'chat'
         const projectId = mode === 'build' ? String(session.project_id || '') : null
-        await this.runBackgroundHook('PreCompact', {
-          sessionId: session.id,
-          cwd: this.workspaceRootForSession(session),
-          source: 'token_threshold',
-          currentTokens,
-          maxContext,
-        })
-        const result = await compactSession({
+        const hookScope = await this.beginCompactionHooks('auto', { session })
+        if (!hookScope.allowed) {
+          return { status: 'skipped', message: `Compaction deferred by hook: ${hookScope.reason}`, count: 0 }
+        }
+        let result: Awaited<ReturnType<typeof compactSession>>
+        try {
+          result = await compactSession({
           sessionId: session.id,
           mode,
           projectId,
@@ -544,27 +678,22 @@ export class AgentLoop {
             routeReason: snapshot.routeReason,
           },
           tokenTracker: this.tokenTracker,
-        })
+          instructions: hookScope.instructions,
+          })
+        } catch (error) {
+          await this.finishCompactionHooks(hookScope, { status: 'failed', error: error instanceof Error ? error.message : String(error) })
+          throw error
+        }
         if (result.status === 'compacted' && result.compaction) {
           const cursorStore = new CompactionCursorStore(this.paths.stateRoot)
           const retainedHistory = activeSessionHistoryAfterSeq(memoryStore, result.compaction.range.toSeq)
           memoryStore.appendCompactMarker(retainedHistory, cursorStore.archiveGate(session.id))
           result.compaction.cursor = cursorStore.readOrInit(session.id)
           this.refreshRuntimeContext()
-          await this.runBackgroundHook('PostCompact', {
-            sessionId: session.id,
-            cwd: this.workspaceRootForSession(session),
-            source: 'token_threshold',
-            result: { status: result.status, compaction: result.compaction },
-          })
+          await this.finishCompactionHooks(hookScope, { status: result.status, compaction: result.compaction })
           return { ...result, retainedHistory }
         }
-        await this.runBackgroundHook('PostCompact', {
-          sessionId: session.id,
-          cwd: this.workspaceRootForSession(session),
-          source: 'token_threshold',
-          result: { status: result.status, message: result.message, error: result.error ?? null },
-        })
+        await this.finishCompactionHooks(hookScope, { status: result.status, message: result.message, error: result.error ?? null })
         return result
       },
     }
@@ -597,9 +726,24 @@ export class AgentLoop {
         compactor: null,
         todoStore: null,
         controlManager: permissionOnlyControlHost(this.controlManager),
+        hooks: (args) => args.agentId ? this.scopedAgentRunnerHooks(args.agentId, 'SubagentStop') : null,
       }),
       taskManager: this.taskManager,
       controlManager: controlHost,
+      hooks: {
+        begin: async ({ agentId, agentType, sessionId, cwd }) => {
+          const session = this.sessionStore.get(sessionId) ?? this.activeSession
+          await this.hookService.beginAgentScope({
+            agentId,
+            agentType,
+            sessionId: sessionId || session?.id || '',
+            cwd,
+            projectRoot: session?.mode === 'build' ? session.project_path ?? null : null,
+          })
+          return await this.hookService.runAgent('SubagentStart', agentId, {})
+        },
+        end: (agentId) => { this.hookService.endAgentScope(agentId) },
+      },
     }))
     const activeTeamManager = () => this.teamManagerForActiveSession()
     this.registry.register(new TeamSpawnTool(activeTeamManager))
@@ -748,6 +892,38 @@ export class AgentLoop {
     return this.workspaceRootForSession(session)
   }
 
+  private routeHookModel(useCase: string, role: 'main' | 'secondary', task?: string | null): ModelRoute {
+    if (typeof this.modelRouter.routeForRole === 'function') {
+      return this.modelRouter.routeForRole(useCase, role, task)
+    }
+    if (role === 'secondary') return this.modelRouter.route(useCase, null, task)
+    const route = this.modelRouter.route('main_agent', null, task)
+    const reason = `${useCase}:explicit_main`
+    return {
+      ...route,
+      useCase,
+      reason,
+      fallback: null,
+      snapshot: { ...route.snapshot, routeReason: reason },
+    }
+  }
+
+  private appendLifecycleHookContext(
+    history: Msg[],
+    memoryStore: SessionMemoryStore,
+    context: string,
+    eventName: HookEventName,
+    turnId: string,
+  ): void {
+    const text = context.trim()
+    if (!text) return
+    const content = `[${eventName} hook context]\n${text}`
+    history.push({ role: 'system', content, turn_id: turnId, ui_hidden: true })
+    memoryStore.appendHistory('system', content, {
+      extra: { turn_id: turnId, ui_hidden: true, hook_event_name: eventName },
+    })
+  }
+
   private workspaceRootForSession(session: SessionEntry | null | undefined): string {
     if (session?.mode === 'build' && session.project_path) return resolve(session.project_path)
     return this.root
@@ -803,27 +979,24 @@ export class AgentLoop {
     ctx: { turnId?: string | null; emit?: StreamEmitter | null; runtimeStore?: RuntimeEventStore | null; scope?: TurnScope | null },
   ): Promise<HookAggregateDecision> {
     const session = this.activeSession ?? (this.activeSessionId ? this.sessionStore.get(this.activeSessionId) : null)
-    const runtime = new HookRuntime({
-      stateRoot: this.paths.stateRoot,
-      emit: async (event) => { await this.emit(event, ctx) },
-    })
-    return runtime.run(eventName, {
+    return this.hookService.run(eventName, {
       ...opts,
       sessionId: opts.sessionId || session?.id || '',
       cwd: opts.cwd || this.workspaceRootForSession(session),
       projectRoot: session?.mode === 'build' ? session.project_path ?? null : null,
       stateRoot: this.paths.stateRoot,
+      ...(ctx.turnId ? { turnId: ctx.turnId } : {}),
+    }, {
+      emit: async (event) => { await this.emit(event, ctx) },
     })
   }
 
   private async runBackgroundHook(eventName: HookEventName, opts: HookRuntimeRunOptions): Promise<HookAggregateDecision> {
-    const runtime = new HookRuntime({
-      stateRoot: this.paths.stateRoot,
-      emit: async (event) => { await this.emit(event) },
-    })
-    return runtime.run(eventName, {
+    return this.hookService.run(eventName, {
       ...opts,
       stateRoot: this.paths.stateRoot,
+    }, {
+      emit: async (event) => { await this.emit(event) },
     })
   }
 
@@ -893,7 +1066,21 @@ export class AgentLoop {
       parentRegistry: this.registry,
       subagentRegistry: this.teamSubagentRegistry(),
       eventSink: async (event) => { await this.emit(event) },
-      runnerFactory: ({ member, spec, subRegistry }) => {
+      hooks: {
+        begin: async ({ agentId, agentType }) => {
+          const session = this.activeSession
+          await this.hookService.beginAgentScope({
+            agentId,
+            agentType,
+            sessionId: session?.id ?? '',
+            cwd: cleanProjectId ? this.workspaceRootForProject(cleanProjectId) : this.workspaceRootForActiveSession(),
+            projectRoot: session?.mode === 'build' ? session.project_path ?? null : null,
+          })
+          return await this.hookService.runAgent('SubagentStart', agentId, {})
+        },
+        end: (agentId) => { this.hookService.endAgentScope(agentId) },
+      },
+      runnerFactory: ({ member, spec, subRegistry, agentId }) => {
         const route = this.modelRouter.route('team', member.agent_type, spec.name ?? '')
         const runner = buildRoutedRunner({
           route,
@@ -908,6 +1095,8 @@ export class AgentLoop {
           maxContext: route.snapshot.contextWindowTokens,
           maxTurns: 12,
           workspaceRoot: cleanProjectId ? this.workspaceRootForProject(cleanProjectId) : this.workspaceRootForActiveSession(),
+          sessionId: this.activeSessionId,
+          hooks: this.scopedAgentRunnerHooks(agentId, 'TeammateIdle', member.name),
         })
         return {
           step: (history) => runner.stepAsync(history),
@@ -919,6 +1108,29 @@ export class AgentLoop {
 
   private teamPrompt(spec: { systemPrompt?: string }): string {
     return String(spec.systemPrompt || '你是 Agent Team 队友。请处理收到的任务并简洁回禀。')
+  }
+
+  private scopedAgentRunnerHooks(
+    agentId: string,
+    stopEvent: 'SubagentStop' | 'TeammateIdle',
+    teammateName?: string,
+  ): AgentRunnerHookHost {
+    return {
+      run: async (eventName, opts, emit) => {
+        const mapped = eventName === 'Stop' ? stopEvent : eventName
+        return await this.hookService.runAgent(mapped, agentId, {
+          ...opts,
+          ...(mapped === 'TeammateIdle' ? { teammateName: teammateName ?? '' } : {}),
+        }, { emit: emit ?? null })
+      },
+      mayMatch: (eventName, opts) => {
+        const mapped = eventName === 'Stop' ? stopEvent : eventName
+        return this.hookService.mayMatchAgent(mapped, agentId, {
+          ...opts,
+          ...(mapped === 'TeammateIdle' ? { teammateName: teammateName ?? '' } : {}),
+        })
+      },
+    }
   }
 
   private teamSubagentRegistry(): TeamSubagentRegistry {
@@ -1056,6 +1268,11 @@ function existingPath(path: string): string | null {
 function isBenignTurnInterruption(error: unknown): boolean {
   const name = error && typeof error === 'object' && 'name' in error ? String((error as { name?: unknown }).name || '') : ''
   return name === 'TurnPaused' || name === 'CancelledTaskError' || name === 'TurnBusyError'
+}
+
+function hookErrorKind(error: unknown): string {
+  if (error instanceof Error && error.name) return error.name
+  return 'unknown_error'
 }
 
 function safeRuntimeError(error: unknown): { code: string; message: string; action?: string } {

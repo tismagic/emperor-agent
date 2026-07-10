@@ -52,7 +52,10 @@ export class ToolRegistry {
   prepareCall(name: string, args: Record<string, unknown>): Record<string, unknown> {
     const tool = this.#tools.get(name)
     if (!tool) throw new Error(`Unknown tool: ${name}`)
-    return castOne(args, tool.parameters as unknown as Record<string, unknown>) as Record<string, unknown>
+    const prepared = castOne(args, tool.parameters as unknown as Record<string, unknown>) as Record<string, unknown>
+    const error = validateValue(prepared, tool.parameters as unknown as Record<string, unknown>, 'arguments')
+    if (error) throw new Error(`Tool schema validation failed for ${name}: ${error}`)
+    return prepared
   }
 
   /** 执行工具 + map_result，返回封顶后的字符串。对齐 `execute`。 */
@@ -202,4 +205,53 @@ function castOne(value: unknown, schema: Record<string, unknown>): unknown {
   }
 
   return value
+}
+
+function validateValue(value: unknown, schema: Record<string, unknown>, path: string): string | null {
+  const type = schema.type
+  if (Array.isArray(type)) {
+    const matches = type.some((candidate) => candidate === 'null'
+      ? value === null
+      : candidate === 'string'
+        ? typeof value === 'string'
+        : candidate === 'boolean'
+          ? typeof value === 'boolean'
+          : candidate === 'integer'
+            ? typeof value === 'number' && Number.isInteger(value)
+            : candidate === 'number'
+              ? typeof value === 'number'
+              : false)
+    return matches ? null : `${path} must match one of: ${type.join(', ')}`
+  }
+  if (type === 'object') {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return `${path} must be an object`
+    const record = value as Record<string, unknown>
+    const required = Array.isArray(schema.required) ? schema.required.map(String) : []
+    for (const name of required) {
+      if (!(name in record) || record[name] === undefined || record[name] === null) return `${path}.${name} is required`
+    }
+    const properties = (schema.properties && typeof schema.properties === 'object' && !Array.isArray(schema.properties))
+      ? schema.properties as Record<string, Record<string, unknown>>
+      : {}
+    for (const [name, childSchema] of Object.entries(properties)) {
+      if (!(name in record) || record[name] === undefined || record[name] === null) continue
+      const childError = validateValue(record[name], childSchema, `${path}.${name}`)
+      if (childError) return childError
+    }
+    return null
+  }
+  if (type === 'array') {
+    if (!Array.isArray(value)) return `${path} must be an array`
+    const itemSchema = (schema.items && typeof schema.items === 'object') ? schema.items as Record<string, unknown> : {}
+    for (let index = 0; index < value.length; index++) {
+      const itemError = validateValue(value[index], itemSchema, `${path}[${index}]`)
+      if (itemError) return itemError
+    }
+    return null
+  }
+  if (type === 'string' && typeof value !== 'string') return `${path} must be a string`
+  if (type === 'boolean' && typeof value !== 'boolean') return `${path} must be a boolean`
+  if (type === 'number' && typeof value !== 'number') return `${path} must be a number`
+  if (type === 'integer' && (typeof value !== 'number' || !Number.isInteger(value))) return `${path} must be an integer`
+  return null
 }

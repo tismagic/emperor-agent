@@ -1,8 +1,9 @@
 <script setup lang="ts">
 import { computed, reactive, ref, watch } from 'vue'
 import { cloneJson } from '../../api/http'
-import { testModelEntry } from '../../api/model'
+import { discoverProviderModels, testModelEntry } from '../../api/model'
 import type {
+  DiscoveredModel,
   ModelConfigPayload,
   ModelConfigRaw,
   ModelEntry,
@@ -10,9 +11,12 @@ import type {
   ProviderOption,
   ProviderRegion,
 } from '../../types'
-import { actionIcons, brandIcon } from '../../icons'
+import { actionIcons } from '../../icons'
+import BrandMark from '../brand/BrandMark.vue'
 import ModelEntryList from './model/ModelEntryList.vue'
+import ModelPicker from './model/ModelPicker.vue'
 import ModelTestPanel from './model/ModelTestPanel.vue'
+import { applyModelSelection } from './model/modelPickerModel'
 
 const props = defineProps<{ payload: ModelConfigPayload | null }>()
 const emit = defineEmits<{
@@ -71,6 +75,29 @@ const editingProviderSpec = computed<ProviderOption | undefined>(() =>
 const editingHidesApiKey = computed(() =>
   !!(editingProviderSpec.value?.isOauth || editingProviderSpec.value?.isLocal)
 )
+
+const modelCandidates = ref<DiscoveredModel[]>([])
+const modelDiscovery = reactive({
+  loading: false,
+  ok: false,
+  code: '',
+  message: '',
+})
+
+const canDiscoverModels = computed(() =>
+  Boolean(editing.value && editingProviderSpec.value && editingProviderSpec.value.modelDiscovery !== 'unsupported')
+)
+const discoveryStatusMessage = computed(() => {
+  if (modelDiscovery.message) return modelDiscovery.message
+  const spec = editingProviderSpec.value
+  const entry = editing.value
+  if (!spec || !entry) return ''
+  if (spec.modelDiscovery === 'unsupported') return '当前厂商暂不支持自动获取'
+  const apiKey = String(entry.apiKey || '').trim()
+  if (!spec.isLocal && !spec.isOauth && !apiKey) return '缺少 API Key'
+  return ''
+})
+const discoveryStatusOk = computed(() => Boolean(modelDiscovery.message && modelDiscovery.ok))
 
 // ────────────────────────────────────────────────────────────
 // 从 payload 同步进本地 state
@@ -203,6 +230,7 @@ function onProviderChange() {
   if (spec.isOauth || spec.isLocal) {
     e.apiKey = ''
   }
+  resetModelDiscovery()
 }
 
 function onNameChange(newName: string) {
@@ -364,6 +392,61 @@ watch(() => props.payload, () => {
 
 const hasChanges = computed(() => serverSignature.value !== '' && serverSignature.value !== dirtySignature.value)
 
+watch(
+  () => [editingIndex.value, editing.value?.provider, editing.value?.apiBase, editing.value?.apiKey],
+  () => { resetModelDiscovery() },
+)
+
+function resetModelDiscovery() {
+  modelCandidates.value = []
+  modelDiscovery.loading = false
+  modelDiscovery.ok = false
+  modelDiscovery.code = ''
+  modelDiscovery.message = ''
+}
+
+async function discoverModels() {
+  const e = editing.value
+  if (!e) return
+  modelDiscovery.loading = true
+  modelDiscovery.ok = false
+  modelDiscovery.code = ''
+  modelDiscovery.message = ''
+  try {
+    const result = await discoverProviderModels({
+      provider: e.provider,
+      entryName: e.name,
+      apiBase: e.apiBase || editingProviderSpec.value?.defaultApiBase || '',
+      apiKey: e.apiKey || '',
+      extraHeaders: e.extraHeaders || null,
+      extraBody: e.extraBody || null,
+    })
+    modelDiscovery.ok = Boolean(result.ok)
+    modelDiscovery.code = result.code || ''
+    modelCandidates.value = result.ok ? result.models : []
+    modelDiscovery.message = discoveryMessage(result.ok, result.models?.length || 0, result.code, result.message)
+  } catch (err) {
+    modelCandidates.value = []
+    modelDiscovery.code = 'request_failed'
+    modelDiscovery.message = err instanceof Error ? err.message : String(err)
+  } finally {
+    modelDiscovery.loading = false
+  }
+}
+
+function discoveryMessage(ok: boolean, count: number, code?: string, message?: string): string {
+  if (ok) return count ? `已获取 ${count} 个模型` : '未返回模型，请手动填写'
+  if (code === 'credential_required') return '缺少 API Key'
+  if (code === 'unsupported_backend') return '当前厂商暂不支持自动获取'
+  if (code === 'missing_api_base') return '缺少 API Base'
+  return message || '获取模型列表失败'
+}
+
+function onModelSelection(role: 'main' | 'secondary', value: string) {
+  if (!editing.value) return
+  Object.assign(editing.value, applyModelSelection(editing.value, role, value))
+}
+
 // ────────────────────────────────────────────────────────────
 // 连通测试 + 视觉徽章
 // ────────────────────────────────────────────────────────────
@@ -407,12 +490,12 @@ async function runTest(kind: 'text' | 'vision', role: 'main' | 'secondary' = 'ma
 <template>
   <div class="panel-content model-panel-shell">
     <div v-if="!props.payload" class="empty-state illustrated-empty seal-empty">
-      <component :is="brandIcon" :size="48" :stroke-width="1" />
+      <BrandMark :size="72" />
       <span>暂无模型配置。</span>
     </div>
 
     <div v-else-if="entries.length === 0" class="empty-state illustrated-empty">
-      <component :is="brandIcon" :size="48" :stroke-width="1" />
+      <BrandMark :size="72" />
       <span>暂无模型条目。点击下方「+ 添加模型条目」开始配置第一条。</span>
     </div>
 
@@ -469,10 +552,97 @@ async function runTest(kind: 'text' | 'vision', role: 'main' | 'secondary' = 'ma
 
           <section class="model-form-section">
             <div class="model-form-section-head">
-              <h4>容量</h4>
-              <span>上下文窗口与单次输出长度在这里设置</span>
+              <h4>连接</h4>
+              <span>凭证只保存在本地</span>
             </div>
-            <div class="model-form-grid capacity-grid">
+            <div class="model-form-grid">
+              <label v-if="!editingHidesApiKey" class="form-row span-2">
+                <span class="form-label">API Key</span>
+                <input
+                  v-model="editing.apiKey"
+                  class="form-input"
+                  type="password"
+                  :placeholder="editingProviderSpec?.isLocal ? '(本地服务通常不需要)' : '保存为明文，仅本地，不回传明文'"
+                />
+              </label>
+              <div v-else class="empty-note compact span-2">
+                <span v-if="editingProviderSpec?.isOauth">该 provider 走 OAuth 授权流程，无需 API Key。</span>
+                <span v-else-if="editingProviderSpec?.isLocal">本地服务通常不需要 API Key（除非你单独开了认证）。</span>
+              </div>
+              <label class="form-row span-2">
+                <span class="form-label">API Base</span>
+                <input
+                  :value="editing.apiBase ?? ''"
+                  class="form-input"
+                  :placeholder="editingProviderSpec?.defaultApiBase || '由 SDK 决定'"
+                  @input="editing.apiBase = ($event.target as HTMLInputElement).value || null"
+                />
+              </label>
+            </div>
+          </section>
+
+          <section class="model-form-section">
+            <div class="model-form-section-head">
+              <h4>模型</h4>
+              <span>Main / Secondary</span>
+            </div>
+            <div class="model-form-grid">
+              <div class="form-row span-2">
+                <span class="form-label">Provider</span>
+                <div class="provider-control-row">
+                  <select v-model="editing.provider" class="form-select" @change="onProviderChange">
+                    <optgroup v-for="group in groupedOptions" :key="group.region" :label="group.label">
+                      <option v-for="opt in group.items" :key="opt.name" :value="opt.name">
+                        {{ opt.displayName || opt.name }}
+                      </option>
+                    </optgroup>
+                  </select>
+                  <button
+                    type="button"
+                    class="tool-button compact provider-fetch-button"
+                    :disabled="modelDiscovery.loading || !canDiscoverModels"
+                    :title="canDiscoverModels ? '从当前厂商获取可用模型列表' : '当前厂商暂不支持自动获取模型列表'"
+                    @click="discoverModels"
+                  >
+                    <span v-if="modelDiscovery.loading">获取中</span>
+                    <span v-else>获取模型</span>
+                  </button>
+                </div>
+                <div class="provider-meta-row">
+                  <a v-if="editingProviderSpec?.websiteUrl" :href="editingProviderSpec.websiteUrl" target="_blank" rel="noreferrer">官网</a>
+                  <a v-if="editingProviderSpec?.apiKeyUrl" :href="editingProviderSpec.apiKeyUrl" target="_blank" rel="noreferrer">API Key</a>
+                  <span
+                    v-if="discoveryStatusMessage"
+                    class="model-discovery-message"
+                    :class="{ ok: discoveryStatusOk, fail: !discoveryStatusOk }"
+                  >{{ discoveryStatusMessage }}</span>
+                </div>
+              </div>
+              <ModelPicker
+                :model-value="editing.mainModelId || editing.id || ''"
+                :options="modelCandidates"
+                :loading="modelDiscovery.loading"
+                label="Main Model ID"
+                placeholder="例：deepseek-chat / claude-sonnet / gpt-4o"
+                @update:model-value="onModelSelection('main', $event)"
+              />
+              <ModelPicker
+                :model-value="editing.secondaryModelId || ''"
+                :options="modelCandidates"
+                :loading="modelDiscovery.loading"
+                label="Secondary Model ID"
+                placeholder="例：deepseek-chat / gpt-4o-mini / qwen-plus"
+                @update:model-value="onModelSelection('secondary', $event)"
+              />
+            </div>
+          </section>
+
+          <details class="advanced-panel">
+            <summary class="advanced-toggle">
+              <span>高级</span>
+              <small>容量 / 推理 / 测试 / extras</small>
+            </summary>
+            <div class="advanced-grid">
               <label class="form-row">
                 <span class="form-label">Context Window</span>
                 <input
@@ -493,82 +663,6 @@ async function runTest(kind: 'text' | 'vision', role: 'main' | 'secondary' = 'ma
                   @input="editing.maxTokens = parseInt(($event.target as HTMLInputElement).value) || null"
                 />
               </label>
-            </div>
-          </section>
-
-          <section class="model-form-section">
-            <div class="model-form-section-head">
-              <h4>模型</h4>
-              <span>Main 处理主任务，Secondary 处理轻量任务</span>
-            </div>
-            <div class="model-form-grid">
-              <label class="form-row">
-                <span class="form-label">Provider</span>
-                <select v-model="editing.provider" class="form-select" @change="onProviderChange">
-                  <optgroup v-for="group in groupedOptions" :key="group.region" :label="group.label">
-                    <option v-for="opt in group.items" :key="opt.name" :value="opt.name">
-                      {{ opt.displayName || opt.name }}
-                    </option>
-                  </optgroup>
-                </select>
-              </label>
-              <label class="form-row">
-                <span class="form-label">Main Model ID</span>
-                <input
-                  :value="editing.mainModelId || editing.id || ''"
-                  class="form-input"
-                  placeholder="例：deepseek-chat / claude-opus-4-7 / gpt-5"
-                  @input="editing.mainModelId = ($event.target as HTMLInputElement).value; editing.id = editing.mainModelId"
-                />
-              </label>
-              <label class="form-row span-2">
-                <span class="form-label">Secondary Model ID</span>
-                <input
-                  v-model="editing.secondaryModelId"
-                  class="form-input"
-                  placeholder="例：deepseek-chat / gpt-5-mini / qwen-plus"
-                />
-              </label>
-            </div>
-          </section>
-
-          <section class="model-form-section">
-            <div class="model-form-section-head">
-              <h4>连接</h4>
-              <span>凭证只保存在本地配置文件</span>
-            </div>
-            <div class="model-form-grid">
-              <label v-if="!editingHidesApiKey" class="form-row">
-                <span class="form-label">API Key</span>
-                <input
-                  v-model="editing.apiKey"
-                  class="form-input"
-                  type="password"
-                  :placeholder="editingProviderSpec?.isLocal ? '(本地服务通常不需要)' : '保存为明文，仅本地，不回传明文'"
-                />
-              </label>
-              <div v-else class="empty-note compact">
-                <span v-if="editingProviderSpec?.isOauth">该 provider 走 OAuth 授权流程，无需 API Key。</span>
-                <span v-else-if="editingProviderSpec?.isLocal">本地服务通常不需要 API Key（除非你单独开了认证）。</span>
-              </div>
-              <label class="form-row">
-                <span class="form-label">API Base</span>
-                <input
-                  :value="editing.apiBase ?? ''"
-                  class="form-input"
-                  :placeholder="editingProviderSpec?.defaultApiBase || '由 SDK 决定'"
-                  @input="editing.apiBase = ($event.target as HTMLInputElement).value || null"
-                />
-              </label>
-            </div>
-          </section>
-
-          <details class="advanced-panel">
-            <summary class="advanced-toggle">
-              <span>高级</span>
-              <small>Temperature / 推理兼容 / extras</small>
-            </summary>
-            <div class="advanced-grid">
               <label class="form-row">
                 <span class="form-label">Temperature（覆写）</span>
                 <input
@@ -603,37 +697,21 @@ async function runTest(kind: 'text' | 'vision', role: 'main' | 'secondary' = 'ma
                 <textarea v-model="extraBodyText" rows="3" placeholder='{"enable_thinking": false}' />
               </label>
             </div>
+            <ModelTestPanel
+              :editing="editing"
+              :has-changes="hasChanges"
+              :testing="testing"
+              :last-result="lastResult"
+              @run-test="runTest"
+            />
           </details>
-
-          <ModelTestPanel
-            :editing="editing"
-            :has-changes="hasChanges"
-            :testing="testing"
-            :last-result="lastResult"
-            @run-test="runTest"
-          />
         </div>
       </section>
-    </div>
-
-    <div class="empty-note">
-      <component :is="brandIcon" class="note-mark" :size="20" />
-      一个条目共享同一套 provider / apiKey / apiBase，并必须配置 Main 与 Secondary 两个 Model ID。所有 apiKey 仅保存在全局私有数据目录的 model_config.json，前端展示时已脱敏。
     </div>
 
     <!-- 底部 sticky 操作栏 -->
     <div class="model-action-bar" :class="{ dirty: hasChanges }">
       <div class="action-bar-status">
-        <template v-if="current?.entryName">
-          <span class="status-pill">
-            <span class="dot" />
-            服务端激活: {{ current.entryLabel || current.entryName }}
-          </span>
-          <span v-if="current.provider && current.model" class="mini-code">
-            {{ current.provider }} / {{ current.model }}
-            <template v-if="current.secondaryModelId"> / secondary {{ current.secondaryModelId }}</template>
-          </span>
-        </template>
         <span v-if="hasChanges" class="dirty-badge">● 有未保存的更改</span>
         <span v-else-if="entries.length" class="saved-badge">✓ 已与服务端同步</span>
       </div>

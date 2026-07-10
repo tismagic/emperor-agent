@@ -30,9 +30,16 @@ describe('provider registry', () => {
     ])
   })
 
-  it('providerOptions exposes UI metadata for every spec', () => {
+  it('providerOptions exposes UI metadata only for selectable specs', () => {
     const opts = providerOptions()
-    expect(opts).toHaveLength(31)
+    expect(opts).toHaveLength(PROVIDERS.length - 2)
     expect(opts[0]).toMatchObject({ name: 'openai', displayName: 'OpenAI', backend: 'openai_compat' })
+    expect(opts.some((option) => option.name === 'openai_codex')).toBe(false)
+    expect(opts.some((option) => option.name === 'github_copilot')).toBe(false)
+    expect(opts.find((option) => option.name === 'deepseek')).toMatchObject({
+      apiKeyUrl: 'https://platform.deepseek.com/api_keys',
+      websiteUrl: 'https://platform.deepseek.com',
+      modelDiscovery: 'openai_compat',
+    })
   })
 })

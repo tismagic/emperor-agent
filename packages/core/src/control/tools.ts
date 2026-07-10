@@ -70,7 +70,7 @@ export class AskUserTool extends Tool {
             question: S('要问用户的问题，单句表达'),
             options: arr(
               '2-4 个互斥选项',
-              obj('可选答案', { label: S('用户可选的短标签，建议 1-5 个词'), description: S('选择该项的影响或取舍，单句说明') }, ['label', 'description']),
+              obj('可选答案', { label: S('用户可选的短标签，建议 1-5 个词'), description: S('选择该项的影响或取舍，单句说明') }, ['label']),
             ),
           },
           ['id', 'header', 'question', 'options'],

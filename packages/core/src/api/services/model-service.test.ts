@@ -1,7 +1,7 @@
 import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { loadModelConfig } from '../../config/model-config'
 import { ModelRouter, type ModelRoute, type ProviderSnapshot } from '../../model/router'
 import { LLMProvider, type ChatArgs, type LLMResponse } from '../../providers/base'
@@ -10,6 +10,10 @@ import { CoreModelService } from './model-service'
 function tmp(prefix: string): string {
   return mkdtempSync(join(tmpdir(), prefix))
 }
+
+afterEach(() => {
+  vi.restoreAllMocks()
+})
 
 describe('CoreModelService (MIG-IPC-007)', () => {
   it('returns WebUI model payloads with current/secondary snapshots, provider options, and redacted keys', async () => {
@@ -281,10 +285,140 @@ describe('CoreModelService (MIG-IPC-007)', () => {
     expect((await loadModelConfig(root)).models[0]?.supportsVision).toBe(true)
     expect(refreshes).toBe(1)
   })
+
+  it('discovers OpenAI-compatible models via normalized model endpoints and restores masked keys without writing config', async () => {
+    const root = tmp('emperor-model-service-discover-openai-')
+    writeModelConfig(root, {
+      agents: { defaults: { model: 'primary', provider: 'auto', maxTokens: 8192, temperature: 0.1, reasoningEffort: null, contextWindowTokens: 128000 } },
+      models: [{
+        name: 'primary',
+        mainModelId: 'deepseek-chat',
+        secondaryModelId: 'deepseek-chat',
+        provider: 'deepseek',
+        apiKey: 'sk-entry-secret-1234',
+        apiBase: 'https://api.deepseek.com/anthropic',
+      }],
+      providers: { deepseek: { apiKey: '', apiBase: 'https://api.deepseek.com/anthropic', extraHeaders: null, extraBody: null } },
+    })
+    const before = readFileSync(join(root, 'model_config.json'), 'utf8')
+    const calls: Array<{ url: string; auth: string }> = []
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input)
+      const headers = new Headers(init?.headers)
+      calls.push({ url, auth: headers.get('authorization') || '' })
+      if (url === 'https://api.deepseek.com/models') {
+        return jsonResponse({
+          data: [
+            { id: 'deepseek-chat', owned_by: 'deepseek' },
+            { id: 'deepseek-chat', owned_by: 'duplicate' },
+            { id: 'deepseek-reasoner', created: 123 },
+          ],
+        })
+      }
+      return jsonResponse({ error: 'not here' }, 404)
+    })
+    const service = new CoreModelService(root, {
+      router: new ModelRouter(root, await loadModelConfig(root)),
+    })
+
+    await expect((service as any).discoverModels({
+      provider: 'deepseek',
+      entryName: 'primary',
+      apiBase: 'https://api.deepseek.com/anthropic',
+      apiKey: '***1234',
+    })).resolves.toMatchObject({
+      ok: true,
+      provider: 'deepseek',
+      apiBase: 'https://api.deepseek.com/anthropic',
+      source: 'openai_compat',
+      models: [
+        { id: 'deepseek-chat', ownedBy: 'deepseek' },
+        { id: 'deepseek-reasoner', created: 123 },
+      ],
+    })
+    expect(calls.some((call) => call.url === 'https://api.deepseek.com/models')).toBe(true)
+    expect(calls.find((call) => call.url === 'https://api.deepseek.com/models')?.auth).toBe('Bearer sk-entry-secret-1234')
+    expect(readFileSync(join(root, 'model_config.json'), 'utf8')).toBe(before)
+  })
+
+  it('reports credential and unsupported backend states without throwing', async () => {
+    const root = tmp('emperor-model-service-discover-states-')
+    writeModelConfig(root, {
+      agents: { defaults: { model: 'remote', provider: 'auto', maxTokens: 8192, temperature: 0.1, reasoningEffort: null, contextWindowTokens: 128000 } },
+      models: [{
+        name: 'remote',
+        mainModelId: 'gpt-4o',
+        secondaryModelId: 'gpt-4o-mini',
+        provider: 'openai',
+        apiKey: '',
+      }],
+      providers: {
+        openai: { apiKey: '', apiBase: 'https://api.openai.com/v1', extraHeaders: null, extraBody: null },
+        ollama: { apiKey: '', apiBase: 'http://localhost:11434/v1', extraHeaders: null, extraBody: null },
+      },
+    })
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(jsonResponse({ data: [{ id: 'llama3' }] }))
+    const service = new CoreModelService(root, {
+      router: new ModelRouter(root, await loadModelConfig(root)),
+    })
+
+    await expect((service as any).discoverModels({ provider: 'openai', apiBase: 'https://api.openai.com/v1' })).resolves.toMatchObject({
+      ok: false,
+      code: 'credential_required',
+    })
+    await expect((service as any).discoverModels({ provider: 'ollama', apiBase: 'http://localhost:11434/v1' })).resolves.toMatchObject({
+      ok: true,
+      provider: 'ollama',
+      models: [{ id: 'llama3' }],
+    })
+    await expect((service as any).discoverModels({ provider: 'azure_openai', apiBase: 'https://example.openai.azure.com/openai' })).resolves.toMatchObject({
+      ok: false,
+      code: 'unsupported_backend',
+    })
+  })
+
+  it('discovers Anthropic models through the native models endpoint', async () => {
+    const root = tmp('emperor-model-service-discover-anthropic-')
+    writeModelConfig(root, {
+      agents: { defaults: { model: 'claude', provider: 'auto', maxTokens: 8192, temperature: 0.1, reasoningEffort: null, contextWindowTokens: 128000 } },
+      models: [{
+        name: 'claude',
+        mainModelId: 'claude-sonnet-4-5',
+        secondaryModelId: 'claude-haiku-4-5',
+        provider: 'anthropic',
+        apiKey: 'sk-ant-secret',
+      }],
+      providers: { anthropic: { apiKey: '', apiBase: '', extraHeaders: null, extraBody: null } },
+    })
+    let requestHeaders = new Headers()
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (_input: RequestInfo | URL, init?: RequestInit) => {
+      requestHeaders = new Headers(init?.headers)
+      return jsonResponse({ data: [{ id: 'claude-sonnet-4-5', created_at: '2026-01-01T00:00:00Z' }] })
+    })
+    const service = new CoreModelService(root, {
+      router: new ModelRouter(root, await loadModelConfig(root)),
+    })
+
+    await expect((service as any).discoverModels({ provider: 'anthropic', entryName: 'claude', apiKey: '***cret' })).resolves.toMatchObject({
+      ok: true,
+      provider: 'anthropic',
+      source: 'anthropic',
+      models: [{ id: 'claude-sonnet-4-5' }],
+    })
+    expect(requestHeaders.get('x-api-key')).toBe('sk-ant-secret')
+    expect(requestHeaders.get('anthropic-version')).toBeTruthy()
+  })
 })
 
 function writeModelConfig(root: string, raw: Record<string, unknown>): void {
   writeFileSync(join(root, 'model_config.json'), `${JSON.stringify(raw, null, 2)}\n`, 'utf8')
+}
+
+function jsonResponse(body: unknown, status = 200): Response {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { 'content-type': 'application/json' },
+  })
 }
 
 class FakeProvider extends LLMProvider {

@@ -1,7 +1,566 @@
 import { spawn } from 'node:child_process'
-import type { HookCommandHandler, HookDecision, HookDefinition, HookExecutionResult, HookHttpHandler, HookInput } from './models'
+import { lookup as dnsLookup } from 'node:dns/promises'
+import { existsSync } from 'node:fs'
+import { request as httpRequest } from 'node:http'
+import { request as httpsRequest } from 'node:https'
+import { isIP } from 'node:net'
+import type {
+  HookCommandHandler,
+  HookCommandHandlerV2,
+  HookDecision,
+  HookDefinition,
+  HookEventName,
+  HookExecutionResult,
+  HookHandlerType,
+  HookHandlerV2,
+  HookHttpHandler,
+  HookHttpHandlerV2,
+  HookInput,
+  HookPolicy,
+} from './models'
+import { parseHookOutput } from './schema'
 
 const MAX_OUTPUT_CHARS = 64_000
+
+export type HookExecutorOutcome = 'completed' | 'failed' | 'timeout' | 'cancelled'
+
+export interface HookExecutorContext {
+  eventName: HookEventName
+  cwd: string
+  policy: HookPolicy
+  signal?: AbortSignal | null
+}
+
+export interface HookExecutorResultV2 {
+  outcome: HookExecutorOutcome
+  output: Record<string, unknown> | null
+  reason: string
+  durationMs: number
+  stdout: string
+  stderr: string
+  stdoutBytes: number
+  stderrBytes: number
+  stdoutTruncated: boolean
+  stderrTruncated: boolean
+}
+
+export interface HookHandlerExecutor<T extends HookHandlerV2 = HookHandlerV2> {
+  readonly type: T['type']
+  execute(handler: T, input: Record<string, unknown>, context: HookExecutorContext): Promise<HookExecutorResultV2>
+}
+
+export class HookExecutorRegistry {
+  private readonly executors = new Map<HookHandlerType, HookHandlerExecutor>()
+
+  register(executor: HookHandlerExecutor): void {
+    if (this.executors.has(executor.type)) throw new Error(`Hook executor already registered: ${executor.type}`)
+    this.executors.set(executor.type, executor)
+  }
+
+  async execute(
+    handler: HookHandlerV2,
+    input: Record<string, unknown>,
+    context: HookExecutorContext,
+  ): Promise<HookExecutorResultV2> {
+    const executor = this.executors.get(handler.type)
+    if (!executor) return emptyExecutorResult('failed', `No hook executor registered for ${handler.type}`)
+    return executor.execute(handler, input, context)
+  }
+}
+
+export class CommandHookExecutor implements HookHandlerExecutor<HookCommandHandlerV2> {
+  readonly type = 'command' as const
+
+  async execute(
+    handler: HookCommandHandlerV2,
+    input: Record<string, unknown>,
+    context: HookExecutorContext,
+  ): Promise<HookExecutorResultV2> {
+    const started = Date.now()
+    if (context.signal?.aborted) return emptyExecutorResult('cancelled', 'Hook execution cancelled before start', started)
+    if (!existsSync(context.cwd)) return emptyExecutorResult('failed', `Hook cwd does not exist: ${context.cwd}`, started)
+    if (handler.shell !== 'none' && !context.policy.command.allowShell) {
+      return emptyExecutorResult('failed', `Hook shell execution is disabled by policy: ${handler.shell}`, started)
+    }
+    const invocation = commandInvocation(handler)
+    const maxOutputBytes = Math.max(1, Math.trunc(context.policy.command.maxOutputBytes))
+    const stdout = new ByteTailBuffer(maxOutputBytes)
+    const stderr = new ByteTailBuffer(maxOutputBytes)
+    const timeoutMs = Math.min(handler.timeoutMs, context.policy.command.maxTimeoutMs)
+
+    return await new Promise<HookExecutorResultV2>((resolveResult) => {
+      let settled = false
+      let timedOut = false
+      let cancelled = false
+      const child = spawn(invocation.command, invocation.args, {
+        cwd: context.cwd,
+        env: commandEnvironment(handler, context.policy),
+        stdio: ['pipe', 'pipe', 'pipe'],
+        detached: process.platform !== 'win32',
+        windowsHide: true,
+      })
+      const settle = (result: HookExecutorResultV2): void => {
+        if (settled) return
+        settled = true
+        clearTimeout(timer)
+        context.signal?.removeEventListener('abort', cancelFromCaller)
+        resolveResult(result)
+      }
+      const stop = (): void => killProcessTree(child.pid, child.kill.bind(child))
+      const cancelFromCaller = (): void => {
+        cancelled = true
+        stop()
+      }
+      const timer = setTimeout(() => {
+        timedOut = true
+        stop()
+      }, Math.max(1, timeoutMs))
+
+      context.signal?.addEventListener('abort', cancelFromCaller, { once: true })
+      child.stdout?.on('data', (chunk: Buffer | string) => stdout.append(chunk))
+      child.stderr?.on('data', (chunk: Buffer | string) => stderr.append(chunk))
+      child.on('error', (error) => settle(commandResult({ outcome: 'failed', reason: error.message, started, stdout, stderr })))
+      child.stdin?.on('error', (error: NodeJS.ErrnoException) => {
+        if (error.code !== 'EPIPE') settle(commandResult({ outcome: 'failed', reason: error.message, started, stdout, stderr }))
+      })
+      child.on('close', (code) => {
+        if (cancelled) {
+          settle(commandResult({ outcome: 'cancelled', reason: 'Hook execution cancelled', started, stdout, stderr }))
+          return
+        }
+        if (timedOut) {
+          settle(commandResult({ outcome: 'timeout', reason: `Hook timed out after ${timeoutMs}ms`, started, stdout, stderr }))
+          return
+        }
+        settle(resultFromCommandExit(context.eventName, code ?? 0, started, stdout, stderr))
+      })
+      child.stdin?.end(`${JSON.stringify(input)}\n`)
+    })
+  }
+}
+
+type HookDnsLookup = (hostname: string) => Promise<string[]>
+type HookHttpPolicy = HookPolicy['http']
+
+export class HttpHookExecutor implements HookHandlerExecutor<HookHttpHandlerV2> {
+  readonly type = 'http' as const
+  private readonly lookup: HookDnsLookup
+
+  constructor(opts: { lookup?: HookDnsLookup } = {}) {
+    this.lookup = opts.lookup ?? defaultHookDnsLookup
+  }
+
+  async execute(
+    handler: HookHttpHandlerV2,
+    input: Record<string, unknown>,
+    context: HookExecutorContext,
+  ): Promise<HookExecutorResultV2> {
+    const started = Date.now()
+    if (context.signal?.aborted) return emptyExecutorResult('cancelled', 'Hook execution cancelled before start', started)
+    const policy = context.policy.http
+    if (!policy.allowedUrlPatterns.length) return emptyExecutorResult('failed', 'HTTP hook URL allowlist is empty', started)
+    let url: URL
+    try {
+      url = new URL(handler.url)
+    } catch (error) {
+      return emptyExecutorResult('failed', `Invalid HTTP hook URL: ${error instanceof Error ? error.message : String(error)}`, started)
+    }
+    if (!['http:', 'https:'].includes(url.protocol)) return emptyExecutorResult('failed', `Unsupported HTTP hook protocol: ${url.protocol}`, started)
+    if (url.username || url.password) return emptyExecutorResult('failed', 'HTTP hook URLs may not contain userinfo', started)
+    if (!policy.allowedUrlPatterns.some((pattern) => wildcardUrlMatch(pattern, url.href))) {
+      return emptyExecutorResult('failed', `HTTP hook URL is not allowed: ${url.href}`, started)
+    }
+
+    let addresses: string[]
+    try {
+      addresses = isIP(url.hostname) ? [url.hostname] : await this.lookup(url.hostname)
+    } catch (error) {
+      return emptyExecutorResult('failed', `HTTP hook DNS lookup failed: ${error instanceof Error ? error.message : String(error)}`, started)
+    }
+    if (!addresses.length) return emptyExecutorResult('failed', `HTTP hook DNS lookup returned no addresses for ${url.hostname}`, started)
+    for (const address of addresses) {
+      const blocked = blockedAddressReason(address, policy)
+      if (blocked) return emptyExecutorResult('failed', blocked, started)
+    }
+
+    const body = Buffer.from(JSON.stringify(input))
+    const headers = hookHttpHeaders(handler, policy.allowedEnv)
+    headers['content-type'] = 'application/json'
+    headers['content-length'] = String(body.length)
+    headers.host = url.host
+    const address = addresses[0]!
+    const timeoutMs = Math.min(handler.timeoutMs, policy.maxTimeoutMs)
+    const responseBody = new ByteTailBuffer(Math.max(1, policy.maxResponseBytes))
+
+    return await new Promise<HookExecutorResultV2>((resolveResult) => {
+      let settled = false
+      let timedOut = false
+      let cancelled = false
+      const request = (url.protocol === 'https:' ? httpsRequest : httpRequest)({
+        protocol: url.protocol,
+        hostname: address,
+        family: isIP(address),
+        port: url.port || undefined,
+        path: `${url.pathname}${url.search}`,
+        method: 'POST',
+        headers,
+        ...(url.protocol === 'https:' ? { servername: url.hostname } : {}),
+      }, (response) => {
+        response.on('data', (chunk: Buffer | string) => {
+          responseBody.append(chunk)
+          if (responseBody.truncated && !settled) {
+            response.destroy()
+            settle(httpExecutorResult({
+              outcome: 'failed',
+              reason: `HTTP hook response exceeded ${policy.maxResponseBytes} bytes`,
+              started,
+              body: responseBody,
+            }))
+          }
+        })
+        response.on('end', () => {
+          if (settled) return
+          const status = response.statusCode ?? 0
+          if (status < 200 || status >= 300) {
+            settle(httpExecutorResult({ outcome: 'failed', reason: `HTTP ${status}`, started, body: responseBody }))
+            return
+          }
+          settle(resultFromHttpBody(context.eventName, started, responseBody))
+        })
+        response.on('error', (error) => {
+          if (!settled) settle(httpExecutorResult({ outcome: 'failed', reason: error.message, started, body: responseBody }))
+        })
+      })
+      const settle = (result: HookExecutorResultV2): void => {
+        if (settled) return
+        settled = true
+        clearTimeout(timer)
+        context.signal?.removeEventListener('abort', cancelFromCaller)
+        resolveResult(result)
+      }
+      const cancelFromCaller = (): void => {
+        cancelled = true
+        request.destroy(new Error('Hook execution cancelled'))
+      }
+      const timer = setTimeout(() => {
+        timedOut = true
+        request.destroy(new Error(`Hook timed out after ${timeoutMs}ms`))
+      }, Math.max(1, timeoutMs))
+
+      context.signal?.addEventListener('abort', cancelFromCaller, { once: true })
+      request.on('error', (error) => {
+        if (cancelled) {
+          settle(httpExecutorResult({ outcome: 'cancelled', reason: 'Hook execution cancelled', started, body: responseBody }))
+        } else if (timedOut) {
+          settle(httpExecutorResult({ outcome: 'timeout', reason: `Hook timed out after ${timeoutMs}ms`, started, body: responseBody }))
+        } else {
+          settle(httpExecutorResult({ outcome: 'failed', reason: error.message, started, body: responseBody }))
+        }
+      })
+      request.end(body)
+    })
+  }
+}
+
+async function defaultHookDnsLookup(hostname: string): Promise<string[]> {
+  const addresses = await dnsLookup(hostname, { all: true, verbatim: true })
+  return addresses.map((entry) => entry.address)
+}
+
+function wildcardUrlMatch(pattern: string, value: string): boolean {
+  const source = pattern
+    .split('*')
+    .map((part) => part.replace(/[|\\{}()[\]^$+?.]/g, '\\$&'))
+    .join('.*')
+  return new RegExp(`^${source}$`).test(value)
+}
+
+function blockedAddressReason(rawAddress: string, policy: HookHttpPolicy): string | null {
+  const address = rawAddress.startsWith('[') && rawAddress.endsWith(']')
+    ? rawAddress.slice(1, -1)
+    : rawAddress
+  const mapped = /^::ffff:(\d{1,3}(?:\.\d{1,3}){3})$/i.exec(address)?.[1]
+  if (mapped) return blockedAddressReason(mapped, policy)
+
+  const family = isIP(address)
+  if (family === 4) return blockedIpv4Reason(address, policy)
+  if (family === 6) return blockedIpv6Reason(address, policy)
+  return `HTTP hook DNS returned an invalid address: ${rawAddress}`
+}
+
+function blockedIpv4Reason(address: string, policy: HookHttpPolicy): string | null {
+  const octets = address.split('.').map(Number)
+  if (octets.length !== 4 || octets.some((part) => !Number.isInteger(part) || part < 0 || part > 255)) {
+    return `HTTP hook DNS returned an invalid address: ${address}`
+  }
+  const [a, b] = octets as [number, number, number, number]
+  if (a === 127) return policy.allowLoopback ? null : `HTTP hook loopback address is denied: ${address}`
+  const privateOrLocal = a === 0
+    || a === 10
+    || (a === 100 && b >= 64 && b <= 127)
+    || (a === 169 && b === 254)
+    || (a === 172 && b >= 16 && b <= 31)
+    || (a === 192 && b === 168)
+    || (a === 198 && (b === 18 || b === 19))
+    || a >= 224
+  if (privateOrLocal && !policy.allowPrivateNetworks) {
+    return `HTTP hook private or blocked address is denied: ${address}`
+  }
+  return null
+}
+
+function blockedIpv6Reason(address: string, policy: HookHttpPolicy): string | null {
+  const normalized = address.toLowerCase().split('%')[0]!
+  if (normalized === '::1') return policy.allowLoopback ? null : `HTTP hook loopback address is denied: ${address}`
+  const privateOrLocal = normalized === '::'
+    || /^f[cd][0-9a-f]{2}:/.test(normalized)
+    || /^fe[89ab][0-9a-f]:/.test(normalized)
+    || /^ff[0-9a-f]{2}:/.test(normalized)
+  if (privateOrLocal && !policy.allowPrivateNetworks) {
+    return `HTTP hook private or blocked address is denied: ${address}`
+  }
+  return null
+}
+
+function hookHttpHeaders(handler: HookHttpHandlerV2, policyAllowedEnv: string[]): Record<string, string> {
+  const headers: Record<string, string> = {}
+  const allowed = new Set(handler.allowedEnv.filter((name) => policyAllowedEnv.includes(name)))
+  for (const [name, template] of Object.entries(handler.headers)) {
+    if (!/^[!#$%&'*+.^_`|~0-9A-Za-z-]+$/.test(name)) continue
+    let unresolved = false
+    const value = template.replace(/\$\{([A-Za-z_][A-Za-z0-9_]*)\}/g, (_match, envName: string) => {
+      const resolved = allowed.has(envName) ? process.env[envName] : undefined
+      if (resolved === undefined) {
+        unresolved = true
+        return ''
+      }
+      return resolved
+    })
+    if (unresolved) continue
+    headers[name.toLowerCase()] = value.replace(/[\r\n\0]/g, '')
+  }
+  return headers
+}
+
+function resultFromHttpBody(
+  eventName: HookEventName,
+  started: number,
+  body: ByteTailBuffer,
+): HookExecutorResultV2 {
+  const raw = body.text().trim()
+  let value: unknown = {}
+  if (raw) {
+    try {
+      value = JSON.parse(raw)
+    } catch (error) {
+      return httpExecutorResult({
+        outcome: 'failed',
+        reason: `Invalid hook JSON response: ${error instanceof Error ? error.message : String(error)}`,
+        started,
+        body,
+      })
+    }
+  }
+  const parsed = parseHookOutput(eventName, value)
+  if (!parsed.output) {
+    return httpExecutorResult({
+      outcome: 'failed',
+      reason: parsed.diagnostics.map((item) => item.message).join('; ') || 'Invalid hook output',
+      started,
+      body,
+    })
+  }
+  return httpExecutorResult({
+    outcome: 'completed',
+    output: parsed.output,
+    reason: typeof parsed.output.reason === 'string' ? parsed.output.reason : 'ok',
+    started,
+    body,
+  })
+}
+
+function httpExecutorResult(opts: {
+  outcome: HookExecutorOutcome
+  output?: Record<string, unknown> | null
+  reason: string
+  started: number
+  body: ByteTailBuffer
+}): HookExecutorResultV2 {
+  return {
+    outcome: opts.outcome,
+    output: opts.output ?? null,
+    reason: opts.reason,
+    durationMs: Date.now() - opts.started,
+    stdout: opts.body.text(),
+    stderr: '',
+    stdoutBytes: opts.body.bytes,
+    stderrBytes: 0,
+    stdoutTruncated: opts.body.truncated,
+    stderrTruncated: false,
+  }
+}
+
+class ByteTailBuffer {
+  private buffer: Buffer<ArrayBufferLike> = Buffer.alloc(0)
+  readonly limit: number
+  bytes = 0
+
+  constructor(limit: number) {
+    this.limit = limit
+  }
+
+  append(value: Buffer | string): void {
+    const chunk = Buffer.isBuffer(value) ? value : Buffer.from(value)
+    this.bytes += chunk.length
+    const combined = this.buffer.length ? Buffer.concat([this.buffer, chunk]) : chunk
+    this.buffer = combined.length > this.limit ? combined.subarray(combined.length - this.limit) : Buffer.from(combined)
+  }
+
+  text(): string {
+    return this.buffer.toString('utf8')
+  }
+
+  get truncated(): boolean {
+    return this.bytes > this.limit
+  }
+}
+
+function commandInvocation(handler: HookCommandHandlerV2): { command: string; args: string[] } {
+  if (handler.shell === 'bash') return { command: process.platform === 'win32' ? 'bash.exe' : '/bin/bash', args: ['-lc', handler.command] }
+  if (handler.shell === 'powershell') return { command: 'pwsh', args: ['-NoProfile', '-NonInteractive', '-Command', handler.command] }
+  return { command: handler.command, args: [...handler.args] }
+}
+
+function commandEnvironment(handler: HookCommandHandlerV2, policy: HookPolicy): NodeJS.ProcessEnv {
+  const env: NodeJS.ProcessEnv = {}
+  const platformBasics = process.platform === 'win32'
+    ? ['PATH', 'SystemRoot', 'ComSpec', 'PATHEXT', 'TEMP', 'TMP']
+    : ['PATH', 'HOME', 'TMPDIR', 'LANG', 'LC_ALL']
+  for (const name of platformBasics) {
+    const value = process.env[name]
+    if (value !== undefined) env[name] = value
+  }
+  const policyAllowed = new Set(policy.command.allowedEnv)
+  for (const name of handler.allowedEnv) {
+    if (!policyAllowed.has(name)) continue
+    const value = process.env[name]
+    if (value !== undefined) env[name] = value
+  }
+  return env
+}
+
+function resultFromCommandExit(
+  eventName: HookEventName,
+  code: number,
+  started: number,
+  stdout: ByteTailBuffer,
+  stderr: ByteTailBuffer,
+): HookExecutorResultV2 {
+  if (code === 2) {
+    const reason = stderr.text().trim() || 'Hook denied'
+    const parsed = parseHookOutput(eventName, { decision: 'deny', reason })
+    if (parsed.output) return commandResult({ outcome: 'completed', output: parsed.output, reason, started, stdout, stderr })
+    return commandResult({ outcome: 'failed', reason: parsed.diagnostics.map((item) => item.message).join('; '), started, stdout, stderr })
+  }
+  if (code !== 0) {
+    return commandResult({
+      outcome: 'failed',
+      reason: stderr.text().trim() || `Hook exited with code ${code}`,
+      started,
+      stdout,
+      stderr,
+    })
+  }
+  const raw = stdout.text().trim()
+  let value: unknown = {}
+  if (raw.startsWith('{')) {
+    try {
+      value = JSON.parse(raw)
+    } catch (error) {
+      return commandResult({
+        outcome: 'failed',
+        reason: `Invalid hook JSON output: ${error instanceof Error ? error.message : String(error)}`,
+        started,
+        stdout,
+        stderr,
+      })
+    }
+  } else if (raw) {
+    value = { systemMessage: raw }
+  }
+  const parsed = parseHookOutput(eventName, value)
+  if (!parsed.output) {
+    return commandResult({
+      outcome: 'failed',
+      reason: parsed.diagnostics.map((item) => item.message).join('; ') || 'Invalid hook output',
+      started,
+      stdout,
+      stderr,
+    })
+  }
+  return commandResult({
+    outcome: 'completed',
+    output: parsed.output,
+    reason: typeof parsed.output.reason === 'string' ? parsed.output.reason : 'ok',
+    started,
+    stdout,
+    stderr,
+  })
+}
+
+function commandResult(opts: {
+  outcome: HookExecutorOutcome
+  output?: Record<string, unknown> | null
+  reason: string
+  started: number
+  stdout: ByteTailBuffer
+  stderr: ByteTailBuffer
+}): HookExecutorResultV2 {
+  return {
+    outcome: opts.outcome,
+    output: opts.output ?? null,
+    reason: opts.reason,
+    durationMs: Date.now() - opts.started,
+    stdout: opts.stdout.text(),
+    stderr: opts.stderr.text(),
+    stdoutBytes: opts.stdout.bytes,
+    stderrBytes: opts.stderr.bytes,
+    stdoutTruncated: opts.stdout.truncated,
+    stderrTruncated: opts.stderr.truncated,
+  }
+}
+
+function emptyExecutorResult(outcome: HookExecutorOutcome, reason: string, started = Date.now()): HookExecutorResultV2 {
+  return {
+    outcome,
+    output: null,
+    reason,
+    durationMs: Date.now() - started,
+    stdout: '',
+    stderr: '',
+    stdoutBytes: 0,
+    stderrBytes: 0,
+    stdoutTruncated: false,
+    stderrTruncated: false,
+  }
+}
+
+function killProcessTree(pid: number | undefined, fallback: () => boolean): void {
+  if (!pid) {
+    fallback()
+    return
+  }
+  if (process.platform === 'win32') {
+    const killer = spawn('taskkill', ['/pid', String(pid), '/t', '/f'], { windowsHide: true, stdio: 'ignore' })
+    killer.on('error', () => { fallback() })
+    return
+  }
+  try {
+    process.kill(-pid, 'SIGKILL')
+  } catch {
+    fallback()
+  }
+}
 
 export async function executeHook(hook: HookDefinition, input: HookInput): Promise<HookExecutionResult> {
   const started = Date.now()
@@ -55,6 +614,20 @@ async function executeCommandHook(hookId: string, handler: HookCommandHandler, i
     child.stderr?.on('data', (chunk) => { stderr = capOutput(stderr + String(chunk)) })
     child.on('error', (error) => {
       if (settled) return
+      settled = true
+      clearTimeout(timer)
+      resolve({
+        hookId,
+        status: 'failed',
+        decision: 'passthrough',
+        reason: error.message,
+        durationMs: Date.now() - started,
+        stdout,
+        stderr,
+      })
+    })
+    child.stdin?.on('error', (error: NodeJS.ErrnoException) => {
+      if (settled || error.code === 'EPIPE') return
       settled = true
       clearTimeout(timer)
       resolve({

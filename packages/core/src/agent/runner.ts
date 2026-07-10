@@ -114,7 +114,16 @@ export interface ControlManagerRunnerHost {
   planStore?: PlanStore
   systemPrompt(): string
   toolDefinitions(registry: ToolRegistry): ToolDefinition[]
-  assessPermission(name: string, args: Record<string, unknown>, registry: ToolRegistry | null): { allowed: boolean; requiresApproval: boolean; reason: string }
+  assessPermission(name: string, args: Record<string, unknown>, registry: ToolRegistry | null): {
+    allowed: boolean
+    requiresApproval: boolean
+    reason: string
+    risk?: string
+    rule?: string
+    trace?: Array<{ rule: string; outcome: string; detail: string }>
+    arguments?: Record<string, unknown> | null
+    toolName?: string
+  }
   permissionApprovalResult(decision: unknown, opts?: { parentCallId?: string | null }): string
   assessClarification(history: Msg[]): { required: boolean; reason: string; questions: Array<Record<string, unknown>>; categories: string[] }
   assessPlanDecision?(userMessage: string): unknown
@@ -182,6 +191,7 @@ export interface AgentRunnerOptions {
 
 export interface AgentRunnerHookHost {
   run(eventName: HookEventName, opts: HookRuntimeRunOptions, emit?: StreamEmitter | null): Promise<HookAggregateDecision> | HookAggregateDecision
+  mayMatch?(eventName: HookEventName, opts: HookRuntimeRunOptions): boolean
 }
 
 export class AgentRunner implements RunnerModelHost {
@@ -334,7 +344,7 @@ export class AgentRunner implements RunnerModelHost {
       turnState.startIteration()
 
       await this.emitTurnPhase(turnState, TurnPhase.MODEL_REQUEST, emit)
-      const streamingTools = this.streamingToolExecution ? this.beginStreamingTools(emit, clarification, signal) : null
+      const streamingTools = this.streamingToolExecution ? this.beginStreamingTools(emit, clarification, signal, entryPlanDecision) : null
       const response = await this.askModel(history, emit, clarification, signal, turnId, turnStartLength, streamingTools?.onToolCallComplete ?? null)
       throwIfAborted(signal)
       await this.emitTurnPhase(turnState, TurnPhase.MODEL_RESPONSE, emit, {
@@ -547,12 +557,16 @@ export class AgentRunner implements RunnerModelHost {
       const stopDecision = await this.runHookEvent('Stop', {
         sessionId: this.sessionId ?? '',
         cwd: this.workspaceRoot ?? process.cwd(),
-        source: 'assistant_final',
-        finalReply,
+        lastAssistantMessage: finalReply,
+        stopHookActive: stopHookNudged,
       }, emit)
-      if ((stopDecision.decision === 'deny' || stopDecision.decision === 'ask') && !stopHookNudged) {
+      if ((stopDecision.continue === true || stopDecision.decision === 'deny' || stopDecision.decision === 'ask') && !stopHookNudged) {
         stopHookNudged = true
-        history.push({ role: 'user', content: `[Stop hook] ${stopDecision.reason || 'Continue until the stop hook passes.'}` })
+        const continuation = `[Stop hook] ${stopDecision.stopReason || stopDecision.reason || 'Continue until the stop hook passes.'}`
+        history.push({ role: 'user', content: continuation, ui_hidden: true, ...(turnId ? { turn_id: turnId } : {}) })
+        this.memoryStore?.appendHistory('user', continuation, {
+          extra: { ...(turnId ? { turn_id: turnId } : {}), ui_hidden: true, hook_event_name: 'Stop' },
+        })
         await this.emitTurnPhase(turnState, TurnPhase.PLAN_FOLLOWUP, emit, { hook: 'Stop', decision: stopDecision.decision })
         continue
       }
@@ -587,10 +601,36 @@ export class AgentRunner implements RunnerModelHost {
           taskId: turnId ?? undefined,
         })
       }
+      const emergencyHook = await this.runHookEvent('PreCompact', {
+        sessionId: this.sessionId ?? '',
+        cwd: this.workspaceRoot ?? process.cwd(),
+        trigger: 'emergency',
+      }, emit)
+      if (emit && (emergencyHook.decision === 'deny' || emergencyHook.decision === 'ask')) {
+        await emit({
+          event: 'hook_emergency_compaction_bypass',
+          event_name: 'PreCompact',
+          decision: emergencyHook.decision,
+          reason: emergencyHook.reason,
+        })
+      }
       try {
         // 紧急收缩重试：优先保证挤进上下文窗口，不冻结边界（放弃本次缓存换正确性）
-        return await this.callModelWithProjection(history, emit, clarification, signal, turnId, true, undefined, onToolCallComplete)
+        const response = await this.callModelWithProjection(history, emit, clarification, signal, turnId, true, undefined, onToolCallComplete)
+        await this.runHookEvent('PostCompact', {
+          sessionId: this.sessionId ?? '',
+          cwd: this.workspaceRoot ?? process.cwd(),
+          trigger: 'emergency',
+          result: { status: 'completed', strategy: 'emergency_context_shrink' },
+        }, emit)
+        return response
       } catch (retryExc) {
+        await this.runHookEvent('PostCompact', {
+          sessionId: this.sessionId ?? '',
+          cwd: this.workspaceRoot ?? process.cwd(),
+          trigger: 'emergency',
+          result: { status: 'failed', error: retryExc instanceof Error ? retryExc.message : String(retryExc) },
+        }, emit)
         if (!isContextOverflowProviderError(retryExc)) throw retryExc
         const options = retryExc instanceof Error ? { cause: retryExc } : undefined
         throw new ContextOverflowError(
@@ -738,7 +778,7 @@ export class AgentRunner implements RunnerModelHost {
       if (verificationTarget !== null && emit) {
         await emit(runtimeEvents.planVerificationStart({ planId: verificationTarget.plan_id!, stepId: verificationTarget.step_id!, command: verificationTarget.command! }))
       }
-      const result = await this.runToolResult(call, emit, clarification, ctx.planDecisionRef.current, signal)
+      const result = await this.executeToolWithHooks(call, emit, clarification, ctx.planDecisionRef.current, signal)
       throwIfAborted(signal)
       applyRepeatedRefusalNudge(this.denyRefusalCounts, result)
       recordPlanDiscovery(this.controlManager, call, result)
@@ -763,30 +803,43 @@ export class AgentRunner implements RunnerModelHost {
   }
 
   /** 某工具能否在流式期间提前起跑：只读 + 并发安全 + 不会触发 Ask/Plan Guard 或权限审批。 */
-  private canStartToolEarly(call: ToolCallRequest, clarification: Clarification | null): boolean {
+  private canStartToolEarly(call: ToolCallRequest, clarification: Clarification | null, planDecision: unknown): boolean {
     const tool = this.registry.get(call.name)
     if (!tool || !tool.readOnly || !tool.isConcurrencySafe(call.arguments)) return false
+    let prepared: ToolCallRequest
+    try {
+      prepared = { ...call, arguments: this.registry.prepareCall(call.name, call.arguments) }
+    } catch {
+      return false
+    }
     if (clarification && clarification.required && this.askGuardBlocksTool(call.name)) return false
-    if (this.controlManager !== null) {
-      const decision = this.controlManager.assessPermission(call.name, call.arguments, this.registry)
-      if (decision.requiresApproval || !decision.allowed) return false
+    if (this.planGuardBlocksTool(prepared, planDecision)) return false
+    if (this.controlManager !== null) return false
+    if (this.hooks !== null) {
+      if (!this.hooks.mayMatch) return false
+      if (this.hooks.mayMatch('PreToolUse', this.toolHookInput(prepared))) return false
     }
     return true
   }
 
   /** 流式工具执行会话（Wave5）：onToolCallComplete 边到边入队，finish 对账。 */
-  private beginStreamingTools(emit: StreamEmitter | null, clarification: Clarification | null, signal: AbortSignal | null): {
+  private beginStreamingTools(
+    emit: StreamEmitter | null,
+    clarification: Clarification | null,
+    signal: AbortSignal | null,
+    entryPlanDecision: unknown,
+  ): {
     onToolCallComplete: (call: ToolCallRequest) => void
     finish: (toolCalls: ToolCallRequest[], planDecision: unknown) => Promise<Msg[]>
   } {
     const toolCallsRef: { current: ToolCallRequest[] } = { current: [] }
-    const planDecisionRef: { current: unknown } = { current: null }
+    const planDecisionRef: { current: unknown } = { current: entryPlanDecision }
     const { runOne, resultsById, planFollowups } = this.buildToolRunOne({ toolCallsRef, planDecisionRef, emit, clarification, signal })
     const run = this.toolExecutionEngine.createStreamingRun({
       emit,
       runOne,
       signal,
-      canStartEarly: (call) => this.canStartToolEarly(call, clarification),
+      canStartEarly: (call) => this.canStartToolEarly(call, clarification, planDecisionRef.current),
     })
     return {
       onToolCallComplete: (call) => run.enqueue(call),
@@ -819,39 +872,90 @@ export class AgentRunner implements RunnerModelHost {
     return [...toolMessages, ...planFollowups]
   }
 
-  private async runToolResult(call: ToolCallRequest, emit: StreamEmitter | null, clarification: Clarification | null, planDecision: unknown, signal: AbortSignal | null): Promise<ToolResultObj> {
+  private async executeToolWithHooks(
+    call: ToolCallRequest,
+    emit: StreamEmitter | null,
+    clarification: Clarification | null,
+    planDecision: unknown,
+    signal: AbortSignal | null,
+  ): Promise<ToolResultObj> {
     throwIfAborted(signal)
-    if (clarification && clarification.required && this.askGuardBlocksTool(call.name)) {
-      return ToolResultObj.fromText(ASK_GUARD_BLOCK, { isError: true })
+    let effectiveCall: ToolCallRequest
+    try {
+      effectiveCall = { ...call, arguments: this.registry.prepareCall(call.name, call.arguments) }
+    } catch (error) {
+      return toolPreparationError(error)
     }
-    if (this.planGuardBlocksTool(call, planDecision)) {
-      return ToolResultObj.fromText(planGuardMessage(call, planDecision as never), { isError: true })
-    }
-    const preTool = await this.runHookEvent('PreToolUse', this.toolHookInput(call), emit)
+    const initialGuard = this.toolGuardResult(effectiveCall, clarification, planDecision)
+    if (initialGuard) return initialGuard
+
+    let transformCount = 0
+    const preTool = await this.runHookEvent('PreToolUse', this.toolHookInput(effectiveCall, signal), emit)
+    throwIfAborted(signal)
     if (preTool.decision === 'deny') {
       return ToolResultObj.fromText(`Error: hook denied ${call.name}: ${preTool.reason}`, { isError: true, meta: { hook_decision: preTool.decision } })
     }
-    const effectiveCall = preTool.updatedInput ? { ...call, arguments: preTool.updatedInput } : call
+    if (preTool.updatedInput) {
+      transformCount += 1
+      try {
+        effectiveCall = { ...effectiveCall, arguments: this.registry.prepareCall(effectiveCall.name, preTool.updatedInput) }
+      } catch (error) {
+        return toolPreparationError(error)
+      }
+      const transformedGuard = this.toolGuardResult(effectiveCall, clarification, planDecision)
+      if (transformedGuard) return transformedGuard
+    }
+
     if (this.controlManager !== null) {
-      const decision = this.controlManager.assessPermission(effectiveCall.name, effectiveCall.arguments, this.registry)
-      if (decision.requiresApproval) {
-        const hookDecision = await this.runHookEvent('PermissionRequest', {
-          ...this.toolHookInput(effectiveCall),
-          permission: { allowed: decision.allowed, requiresApproval: decision.requiresApproval, reason: decision.reason },
+      let permission = this.controlManager.assessPermission(effectiveCall.name, effectiveCall.arguments, this.registry)
+      if (!permission.allowed && !permission.requiresApproval) {
+        await this.runHookEvent('PermissionDenied', {
+          ...this.toolHookInput(effectiveCall, signal),
+          permission: permissionHookPayload(permission),
         }, emit)
+        return ToolResultObj.fromText(`Error: permission denied for ${effectiveCall.name}: ${permission.reason}`, { isError: true })
+      }
+      if (permission.requiresApproval) {
+        const hookDecision = await this.runHookEvent('PermissionRequest', {
+          ...this.toolHookInput(effectiveCall, signal),
+          permission: permissionHookPayload(permission),
+        }, emit)
+        throwIfAborted(signal)
         if (hookDecision.decision === 'deny') {
           return ToolResultObj.fromText(`Error: hook denied permission for ${effectiveCall.name}: ${hookDecision.reason}`, { isError: true, meta: { hook_decision: hookDecision.decision } })
         }
-        if (hookDecision.decision !== 'allow') {
-          return ToolResultObj.fromText(this.controlManager.permissionApprovalResult(decision, { parentCallId: call.id }))
+        if (hookDecision.updatedInput) {
+          transformCount += 1
+          if (transformCount > 2) {
+            return ToolResultObj.fromText('Error: hook input transform limit exceeded', { isError: true })
+          }
+          try {
+            effectiveCall = { ...effectiveCall, arguments: this.registry.prepareCall(effectiveCall.name, hookDecision.updatedInput) }
+          } catch (error) {
+            return toolPreparationError(error)
+          }
+          const transformedGuard = this.toolGuardResult(effectiveCall, clarification, planDecision)
+          if (transformedGuard) return transformedGuard
+          const replayPre = await this.runHookEvent('PreToolUse', this.toolHookInput(effectiveCall, signal), emit)
+          throwIfAborted(signal)
+          if (replayPre.decision === 'deny') {
+            return ToolResultObj.fromText(`Error: hook denied transformed ${effectiveCall.name}: ${replayPre.reason}`, { isError: true })
+          }
+          if (replayPre.updatedInput) {
+            return ToolResultObj.fromText('Error: hook input transform limit exceeded during permission recheck', { isError: true })
+          }
+          permission = this.controlManager.assessPermission(effectiveCall.name, effectiveCall.arguments, this.registry)
+          if (!permission.allowed && !permission.requiresApproval) {
+            await this.runHookEvent('PermissionDenied', {
+              ...this.toolHookInput(effectiveCall, signal),
+              permission: permissionHookPayload(permission),
+            }, emit)
+            return ToolResultObj.fromText(`Error: permission denied for ${effectiveCall.name}: ${permission.reason}`, { isError: true })
+          }
         }
-      }
-      if (!decision.allowed) {
-        await this.runHookEvent('PermissionDenied', {
-          ...this.toolHookInput(effectiveCall),
-          permission: { allowed: decision.allowed, requiresApproval: decision.requiresApproval, reason: decision.reason },
-        }, emit)
-        return ToolResultObj.fromText(`Error: permission denied for ${effectiveCall.name}: ${decision.reason}`, { isError: true })
+        if (permission.requiresApproval && hookDecision.decision !== 'allow') {
+          return ToolResultObj.fromText(this.controlManager.permissionApprovalResult(permission, { parentCallId: call.id }))
+        }
       }
     }
     const tool = this.registry.get(effectiveCall.name)
@@ -862,26 +966,45 @@ export class AgentRunner implements RunnerModelHost {
       sessionId: this.sessionId,
       signal,
     }
-    const result = await this.registry.executeResult(effectiveCall.name, effectiveCall.arguments, ctx)
-    const postDecision = await this.runHookEvent(result.isError ? 'PostToolUseFailure' : 'PostToolUse', {
-      ...this.toolHookInput(effectiveCall),
-      toolResult: {
-        summary: result.summary,
-        content: result.modelContent,
-        isError: result.isError,
-        metadata: result.metadata,
-      },
-    }, emit)
+    let result = await this.registry.executeResult(effectiveCall.name, effectiveCall.arguments, ctx)
+    const postInput: HookRuntimeRunOptions = result.isError
+      ? { ...this.toolHookInput(effectiveCall, signal), error: result.modelContent }
+      : {
+          ...this.toolHookInput(effectiveCall, signal),
+          toolResult: {
+            summary: result.summary,
+            content: result.modelContent,
+            isError: false,
+            metadata: result.metadata,
+          },
+        }
+    const postDecision = await this.runHookEvent(result.isError ? 'PostToolUseFailure' : 'PostToolUse', postInput, emit)
+    throwIfAborted(signal)
+    if (!result.isError && effectiveCall.name.startsWith('mcp_') && postDecision.updatedToolOutput !== undefined) {
+      result = replaceHookToolOutput(result, postDecision.updatedToolOutput)
+    }
     return postDecision.additionalContext ? appendHookContext(result, postDecision.additionalContext) : result
   }
 
-  private toolHookInput(call: ToolCallRequest): HookRuntimeRunOptions {
+  private toolGuardResult(call: ToolCallRequest, clarification: Clarification | null, planDecision: unknown): ToolResultObj | null {
+    if (clarification && clarification.required && this.askGuardBlocksTool(call.name)) {
+      return ToolResultObj.fromText(ASK_GUARD_BLOCK, { isError: true })
+    }
+    if (this.planGuardBlocksTool(call, planDecision)) {
+      return ToolResultObj.fromText(planGuardMessage(call, planDecision as never), { isError: true })
+    }
+    return null
+  }
+
+  private toolHookInput(call: ToolCallRequest, signal: AbortSignal | null = null): HookRuntimeRunOptions {
     return {
       sessionId: this.sessionId ?? '',
       cwd: this.workspaceRoot ?? process.cwd(),
       projectRoot: this.workspaceRoot ?? null,
       toolName: call.name,
       toolInput: call.arguments,
+      toolUseId: call.id,
+      ...(signal ? { signal } : {}),
     }
   }
 
@@ -1147,5 +1270,35 @@ function appendHookContext(result: ToolResultObj, context: string): ToolResultOb
     artifacts: result.artifacts,
     metadata: { ...result.metadata, hook_additional_context: true },
     isError: result.isError,
+  })
+}
+
+function toolPreparationError(error: unknown): ToolResultObj {
+  const reason = error instanceof Error ? error.message : String(error)
+  return ToolResultObj.fromText(`Error: ${reason}`, { isError: true, meta: { reason_kind: 'schema_validation' } })
+}
+
+function permissionHookPayload(permission: ReturnType<ControlManagerRunnerHost['assessPermission']>): Record<string, unknown> {
+  return {
+    allowed: permission.allowed,
+    requiresApproval: permission.requiresApproval,
+    risk: permission.risk ?? '',
+    reason: permission.reason,
+    rule: permission.rule ?? '',
+    trace: Array.isArray(permission.trace) ? permission.trace.map((entry) => ({ ...entry })) : [],
+    arguments: permission.arguments ?? null,
+    toolName: permission.toolName ?? '',
+  }
+}
+
+function replaceHookToolOutput(result: ToolResultObj, replacement: unknown): ToolResultObj {
+  const content = typeof replacement === 'string' ? replacement : JSON.stringify(replacement)
+  return new ToolResultObj({
+    modelContent: content,
+    displaySummary: content.slice(0, 120),
+    rawContent: content,
+    artifacts: result.artifacts,
+    metadata: { ...result.metadata, hook_output_replaced: true },
+    isError: false,
   })
 }

@@ -1,0 +1,41 @@
+{
+  "plan_id": "PLAN-EA-MODEL-002",
+  "plan_file": "docs/superpowers/plans/2026-07-07-model-provider-role-defaults-ui-upgrade.md",
+  "total_tasks": 8,
+  "completed": 0,
+  "rounds": 0,
+  "tasks": {
+    "MODEL-PRESET-001": {
+      "status": "pending",
+      "title": "扩展 ProviderSpec 与厂商默认预设"
+    },
+    "MODEL-CONFIG-002": {
+      "status": "pending",
+      "title": "增加 roleModels schema 与兼容解析"
+    },
+    "MODEL-ROUTE-003": {
+      "status": "pending",
+      "title": "实现 Emperor 角色路由与干净 provider payload"
+    },
+    "MODEL-DISC-004": {
+      "status": "pending",
+      "title": "增强模型发现与候选数据"
+    },
+    "MODEL-LINK-005": {
+      "status": "pending",
+      "title": "新增安全外链 IPC 并使用默认浏览器"
+    },
+    "MODEL-UI-006": {
+      "status": "pending",
+      "title": "新增模型选择器与 ProviderLogo 组件"
+    },
+    "MODEL-UI-007": {
+      "status": "pending",
+      "title": "简化模型配置页并接入角色默认"
+    },
+    "MODEL-QA-008": {
+      "status": "pending",
+      "title": "完成端到端验收与防回归门禁"
+    }
+  }
+}

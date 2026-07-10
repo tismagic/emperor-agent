@@ -20,7 +20,7 @@ function openConfigWizard() {
 </script>
 
 <template>
-  <section class="main-view view-readable">
+  <section class="main-view view-readable model-settings-view">
     <header class="view-head">
       <div class="min-w-0">
         <h1>模型与厂家</h1>

@@ -23,6 +23,20 @@ export default tseslint.config(
     },
   },
   {
+    files: ['src/pet/**/*.js'],
+    languageOptions: {
+      sourceType: 'commonjs',
+      globals: {
+        module: 'readonly',
+        require: 'readonly',
+        process: 'readonly',
+      },
+    },
+    rules: {
+      '@typescript-eslint/no-require-imports': 'off',
+    },
+  },
+  {
     rules: {
       '@typescript-eslint/no-unused-vars': ['warn', { argsIgnorePattern: '^_', varsIgnorePattern: '^_' }],
       '@typescript-eslint/no-explicit-any': 'off',
