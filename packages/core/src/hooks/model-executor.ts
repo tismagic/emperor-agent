@@ -7,7 +7,7 @@ import {
   type ToolCallRequest,
   toOpenAiToolCall,
 } from '../providers/base'
-import { GlobTool, GrepTool } from '../tools/builtin'
+import { GlobTool, GrepTool } from '../tools/search'
 import { ReadFileTool } from '../tools/filesystem'
 import {
   Tool,

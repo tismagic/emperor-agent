@@ -1,8 +1,8 @@
 /**
- * 搜索工具 (MIG-TOOL-008/009) + WebFetch (MIG-TOOL-010) + RunCommand scaffold (MIG-TOOL-011) + skills (MIG-TOOL-012)。
+ * WebFetch (MIG-TOOL-010) + RunCommand scaffold (MIG-TOOL-011) + skills (MIG-TOOL-012)。
  */
-import { exec, execSync, type ExecOptions } from 'node:child_process'
-import { join, relative } from 'node:path'
+import { exec, type ExecOptions } from 'node:child_process'
+import { join } from 'node:path'
 import {
   applyMemoryPatchToFile,
   memoryContentHash,
@@ -17,117 +17,10 @@ import { Tool, type ToolResult, type ToolExecutionContext } from './base'
 import { B, S, toolParamsSchema } from './schema'
 import { isReadonlyCommand } from './resolvers'
 
+export { GlobTool, GrepTool } from './search'
+
 /** 安全策略拒绝文案前缀：execution 引擎据此给 tool_run_failed 打 reason_kind（B4.3）。 */
 export const SAFETY_REFUSAL_PREFIX = 'Error: command refused by safety policy'
-
-// ── GlobTool ──
-
-export class GlobTool extends Tool {
-  override name = 'glob'
-  override description =
-    '按 glob 模式查找文件或目录，结果按修改时间从新到旧排序；默认跳过 .git、node_modules、__pycache__ 等噪声目录。' +
-    '查找文件名或目录结构时优先使用它，不要用 run_command/find/ls 代替；开放式多轮探索可考虑 dispatch_subagent。'
-  override parameters = toolParamsSchema(
-    { pattern: S('glob 模式（如 **/*.ts）') },
-    ['pattern'],
-  )
-  override readOnly = true
-  override maxResultChars = 8000
-
-  private readonly workspace: string
-
-  constructor(root: string) {
-    super()
-    this.workspace = root
-  }
-
-  async execute(
-    args: Record<string, unknown>,
-    ctx?: ToolExecutionContext,
-  ): Promise<string> {
-    const pattern = String(args.pattern ?? '')
-    const workspace = ctx?.workspaceRoot ?? ctx?.root ?? this.workspace
-    if (isEscapingGlobPattern(pattern)) {
-      const decision = workspacePolicyForTool(ctx, this.workspace).resolvePath(
-        pattern.replace(/[*?{[\]]/g, '_'),
-        'read',
-      )
-      return formatWorkspacePolicyError(decision)
-    }
-    // Try native glob; fallback to find
-    try {
-      const cmd = `cd "${workspace}" && ls -t ${pattern} 2>/dev/null || find . -path "./${pattern}" -not -path '*/node_modules/*' -not -path '*/.git/*' -not -path '*/__pycache__/*' -printf '%T@ %p\n' 2>/dev/null | sort -rn | head -200 | cut -d' ' -f2-`
-      const out = execSync(cmd, {
-        encoding: 'utf8',
-        timeout: 10_000,
-        cwd: workspace,
-      })
-      return out.trim() || '(no matches)'
-    } catch {
-      return '(glob error)'
-    }
-  }
-}
-
-// ── GrepTool ──
-
-export class GrepTool extends Tool {
-  override name = 'grep'
-  override description =
-    '在文件内容中搜索正则或纯文本模式。默认只返回匹配文件路径；需要查看命中行时使用 content 模式；会跳过二进制文件和超过 2MB 的文件。' +
-    '内容搜索专用工具优先，不要用 run_command/grep/rg 代替；结果过宽时收窄 glob、type 或 pattern。'
-  override parameters = toolParamsSchema(
-    {
-      pattern: S('正则或纯文本搜索模式'),
-      path: S('搜索目录（默认 workspace）'),
-      output_mode: S('content | files_with_matches | count'),
-      glob: S('文件过滤 glob'),
-      context_before: { type: 'integer', description: '前置上下文行数' },
-      context_after: { type: 'integer', description: '后置上下文行数' },
-    },
-    ['pattern'],
-  )
-  override readOnly = true
-  override maxResultChars = 20_000
-
-  private readonly workspace: string
-
-  constructor(root: string) {
-    super()
-    this.workspace = root
-  }
-
-  async execute(
-    args: Record<string, unknown>,
-    ctx?: ToolExecutionContext,
-  ): Promise<string> {
-    const pattern = String(args.pattern ?? '')
-    const path = String(args.path ?? '.')
-    const mode = String(args.output_mode ?? 'files_with_matches')
-    const ctxBefore = Number(args.context_before) || 0
-    const ctxAfter = Number(args.context_after) || 0
-    const globStr = args.glob ? `--glob "${args.glob}"` : ''
-    const ctxFlag = ctxBefore || ctxAfter ? `-B${ctxBefore} -A${ctxAfter}` : ''
-    const modeFlag = mode === 'count' ? '-c' : mode === 'content' ? '' : '-l'
-    const workspace = ctx?.workspaceRoot ?? ctx?.root ?? this.workspace
-    const policy = workspacePolicyForTool(ctx, this.workspace)
-    const pathDecision = policy.resolvePath(path || '.', 'read')
-    if (!pathDecision.allowed) return formatWorkspacePolicyError(pathDecision)
-    const searchPath = relative(workspace, pathDecision.resolvedPath) || '.'
-    try {
-      const cmd = `cd "${workspace}" && rg --no-heading ${modeFlag} ${ctxFlag} ${globStr} --max-filesize 2M -e "${pattern.replace(/"/g, '\\"')}" "${searchPath.replace(/"/g, '\\"')}" 2>/dev/null | head -200`
-      const out = execSync(cmd, {
-        encoding: 'utf8',
-        timeout: 15_000,
-        cwd: workspace,
-      })
-      return out.trim() || '(no matches)'
-    } catch {
-      // Fallback to basic node search
-      return '(grep error — riprepg may not be installed)'
-    }
-  }
-}
 
 // ── WebFetch ──
 
@@ -582,13 +475,6 @@ export class RunCommand extends Tool {
       isError: isErr,
     }
   }
-}
-
-function isEscapingGlobPattern(pattern: string): boolean {
-  const text = String(pattern || '').trim()
-  if (!text) return false
-  if (text.startsWith('/') || text.startsWith('~/')) return true
-  return text.split(/[\\/]+/).some((part) => part === '..')
 }
 
 function execCommand(

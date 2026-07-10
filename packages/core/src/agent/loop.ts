@@ -103,8 +103,6 @@ import {
 import { TeamManager } from '../team/manager'
 import type { TeamSubagentRegistry } from '../team/manager'
 import {
-  GlobTool,
-  GrepTool,
   LoadSkill,
   RunCommand,
   SaveUserProfileTool,
@@ -113,6 +111,7 @@ import {
   WebFetch,
   type SkillsLoader as ToolSkillsLoader,
 } from '../tools/builtin'
+import { GlobTool, GrepTool } from '../tools/search'
 import { DispatchSubagentTool } from '../tools/dispatch'
 import { EditFileTool, ReadFileTool, WriteFileTool } from '../tools/filesystem'
 import { ToolRegistry } from '../tools/registry'
