@@ -5,12 +5,12 @@
   "plan_file": "docs/superpowers/plans/2026-07-10-cross-platform-environment-release-implementation.md",
   "design_file": "docs/superpowers/specs/2026-07-10-cross-platform-environment-release-design.md",
   "created_at": "2026-07-11T21:03:55+08:00",
-  "updated_at": "2026-07-11T21:15:00+08:00",
+  "updated_at": "2026-07-11T21:33:00+08:00",
   "started_at": "2026-07-10T16:02:16+08:00",
   "completed_at": null,
   "total_tasks": 22,
   "completed": 17,
-  "rounds": 19,
+  "rounds": 20,
   "planning_receipt": {
     "status": "executing",
     "implementation_started": true,
@@ -227,20 +227,20 @@
       "attempts": 1,
       "started_at": "2026-07-11T21:07:00+08:00",
       "completed_at": null,
-      "commit": null,
+      "commit": "e70faa95",
       "receipt": null,
       "notes": "Windows release config, isolated smoke environment, windows-2022 candidate workflow and Authenticode install/smoke/uninstall verifier are implemented. Focused 12/12 tests, schema inspection, packaged smoke and make check passed. Final receipt remains blocked on Azure Artifact Signing credentials and a Windows runner; the task cannot be marked done until installer and installed binaries have the exact expected publisher."
     },
     "REL-LNX-020": {
-      "status": "pending",
+      "status": "blocked",
       "title": "Ubuntu DEB/AppImage 与双版本 smoke",
       "depends_on": ["PKG-017"],
-      "attempts": 0,
-      "started_at": null,
+      "attempts": 1,
+      "started_at": "2026-07-11T21:22:00+08:00",
       "completed_at": null,
       "commit": null,
       "receipt": null,
-      "notes": ""
+      "notes": "Trusted Linux config, Ubuntu 22.04 build job, Ubuntu 22.04/24.04 smoke matrix and fail-closed DEB/AppImage verifier are implemented. A real macOS cross-build produced valid x86-64 ELF AppImage and Debian package after RED exposed missing homepage metadata and inconsistent architecture names. Focused 15/15 tests, bash syntax and make check passed. Final completion remains blocked until both Ubuntu runners upload AppImage and DEB install/smoke/remove receipts."
     },
     "REL-AGG-021": {
       "status": "pending",

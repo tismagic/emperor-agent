@@ -143,3 +143,77 @@ jobs:
             desktop/dist/packaged-smoke/win32-x64.json
           if-no-files-found: error
           retention-days: 7
+
+  linux-build:
+    name: Linux candidate build (x64)
+    runs-on: ubuntu-22.04
+    env:
+      EMPEROR_RELEASE_TARGET: linux
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            desktop/package-lock.json
+      - name: Install dependencies
+        run: |
+          npm ci
+          npm --prefix desktop ci
+      - name: Quality gate
+        run: make check
+      - name: Build AppImage and DEB candidates
+        run: |
+          npm --prefix desktop run build
+          cd desktop
+          npx electron-builder --config electron-builder.release.cjs --linux AppImage deb --x64 --publish never
+      - name: Verify package metadata and create checksums
+        run: scripts/verify-linux-release.sh prepare
+      - name: Upload Linux candidate
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-x64-candidate
+          path: |
+            desktop/dist/*.AppImage
+            desktop/dist/*.deb
+            desktop/dist/SHA256SUMS-linux-x64.txt
+          if-no-files-found: error
+          retention-days: 7
+
+  linux-smoke:
+    name: Linux smoke (${{ matrix.version }})
+    needs: linux-build
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-22.04
+            version: '22.04'
+          - runner: ubuntu-24.04
+            version: '24.04'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Download Linux candidate
+        uses: actions/download-artifact@v4
+        with:
+          name: linux-x64-candidate
+          path: desktop/dist
+      - name: Install, smoke and remove AppImage and DEB
+        run: scripts/verify-linux-release.sh smoke
+      - name: Upload Linux smoke receipts
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-${{ matrix.version }}-receipts
+          path: desktop/dist/linux-receipts/*.json
+          if-no-files-found: error
+          retention-days: 7

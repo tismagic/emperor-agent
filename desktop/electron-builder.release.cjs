@@ -1,8 +1,8 @@
 function releaseTarget() {
   const target = String(process.env.EMPEROR_RELEASE_TARGET || '').trim()
-  if (!['mac', 'win'].includes(target))
+  if (!['mac', 'win', 'linux'].includes(target))
     throw new Error(
-      'EMPEROR_RELEASE_TARGET must be mac or win for trusted releases',
+      'EMPEROR_RELEASE_TARGET must be mac, win or linux for trusted releases',
     )
   return target
 }
@@ -25,6 +25,18 @@ module.exports = function trustedReleaseConfig() {
         notarize: true,
         entitlements: 'build/entitlements.mac.plist',
         entitlementsInherit: 'build/entitlements.mac.inherit.plist',
+      },
+    }
+  }
+
+  if (target === 'linux') {
+    return {
+      extends: './electron-builder.yml',
+      linux: {
+        target: ['AppImage', 'deb'],
+        artifactName: 'Emperor-Agent-${version}-linux-x64.${ext}',
+        maintainer: 'Emperor Agent maintainers',
+        vendor: 'Emperor Agent',
       },
     }
   }

@@ -167,4 +167,68 @@ describe('trusted release configuration', () => {
     expect(verifier).toContain('Uninstall Emperor Agent.exe')
     expect(verifier).toContain('Get-FileHash')
   })
+
+  it('builds both AppImage and DEB from the trusted Linux configuration', () => {
+    process.env.EMPEROR_RELEASE_TARGET = 'linux'
+    const configFactory = require(
+      path.join(desktopRoot, 'electron-builder.release.cjs'),
+    ) as () => Record<string, unknown>
+    const config = configFactory() as {
+      linux?: Record<string, unknown>
+    }
+
+    expect(config.linux).toMatchObject({
+      target: ['AppImage', 'deb'],
+      artifactName: 'Emperor-Agent-${version}-linux-x64.${ext}',
+      maintainer: 'Emperor Agent maintainers',
+      vendor: 'Emperor Agent',
+    })
+  })
+
+  it('provides the package metadata required by DEB', () => {
+    const metadata = JSON.parse(
+      fs.readFileSync(path.join(desktopRoot, 'package.json'), 'utf8'),
+    ) as { author?: string; homepage?: string }
+
+    expect(metadata.author).toBe('Emperor Agent maintainers')
+    expect(metadata.homepage).toBe('https://github.com/TheSyart/emperor-agent')
+  })
+
+  it('builds once on Ubuntu 22.04 and smokes on Ubuntu 22.04 and 24.04', () => {
+    const workflow = fs.readFileSync(
+      path.join(repoRoot, '.github', 'workflows', 'release.yml'),
+      'utf8',
+    )
+
+    expect(workflow).toContain('linux-build:')
+    expect(workflow).toContain('linux-smoke:')
+    expect(workflow).toContain('ubuntu-22.04')
+    expect(workflow).toContain('ubuntu-24.04')
+    expect(workflow).toContain('EMPEROR_RELEASE_TARGET: linux')
+    expect(workflow).toContain('--linux AppImage deb --x64')
+    expect(workflow).toContain('verify-linux-release.sh prepare')
+    expect(workflow).toContain('verify-linux-release.sh smoke')
+    expect(workflow).not.toContain('softprops/action-gh-release')
+  })
+
+  it('verifies Linux metadata, checksums, AppImage and DEB lifecycle receipts', () => {
+    const verifier = fs.readFileSync(
+      path.join(repoRoot, 'scripts', 'verify-linux-release.sh'),
+      'utf8',
+    )
+    const runner = fs.readFileSync(
+      path.join(desktopRoot, 'scripts', 'run-packaged-smoke.cjs'),
+      'utf8',
+    )
+
+    expect(verifier).toContain('dpkg-deb --info')
+    expect(verifier).toContain('sha256sum --check')
+    expect(verifier).toContain('APPIMAGE_EXTRACT_AND_RUN=1')
+    expect(verifier).toContain('run-packaged-smoke.cjs')
+    expect(verifier).toContain('sudo dpkg --install')
+    expect(verifier).toContain('sudo dpkg --remove')
+    expect(verifier).toContain('AppImage wrapper/FUSE failure')
+    expect(verifier).toContain('Chromium sandbox failure')
+    expect(runner).toContain("APPIMAGE_EXTRACT_AND_RUN: '1'")
+  })
 })

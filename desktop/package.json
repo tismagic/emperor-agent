@@ -4,6 +4,8 @@
   "private": true,
   "type": "module",
   "description": "Emperor Agent desktop application (Electron + Vue) that hosts CoreApi in process.",
+  "author": "Emperor Agent maintainers",
+  "homepage": "https://github.com/TheSyart/emperor-agent",
   "main": "out/main/index.js",
   "scripts": {
     "dev": "electron-vite dev",

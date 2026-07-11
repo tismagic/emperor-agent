@@ -124,6 +124,9 @@ function smokeEnvironment() {
     TEMP: tempRoot,
     TMP: tempRoot,
     TMPDIR: tempRoot,
+    ...(process.env.APPIMAGE_EXTRACT_AND_RUN === '1'
+      ? { APPIMAGE_EXTRACT_AND_RUN: '1' }
+      : {}),
     PATH: emptyBin,
     LANG: 'C.UTF-8',
     LC_ALL: 'C.UTF-8',
