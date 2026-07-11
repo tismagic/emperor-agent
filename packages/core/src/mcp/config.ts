@@ -29,10 +29,12 @@ export const DEFAULT_MCP_CONFIG = {
 export const MCP_CONFIG_FILE = 'mcp_config.json'
 
 const ENV_RE = /\$\{([A-Za-z_][A-Za-z0-9_]*)\}/g
+export type EnvironmentValueSource =
+  Record<string, string | undefined> | ((name: string) => string | undefined)
 
 export function loadMcpConfig(
   root: string,
-  env: Record<string, string | undefined> = process.env,
+  env: EnvironmentValueSource = process.env,
 ): MCPConfig {
   const path = join(root, MCP_CONFIG_FILE)
   const raw = structuredClone(DEFAULT_MCP_CONFIG) as Record<string, unknown>
@@ -72,10 +74,13 @@ export function saveMcpConfig(
 
 export function expandEnv(
   value: unknown,
-  env: Record<string, string | undefined> = process.env,
+  env: EnvironmentValueSource = process.env,
 ): unknown {
   if (typeof value === 'string') {
-    return value.replace(ENV_RE, (match, name: string) => env[name] ?? match)
+    return value.replace(
+      ENV_RE,
+      (match, name: string) => environmentValue(env, name) ?? match,
+    )
   }
   if (Array.isArray(value)) return value.map((item) => expandEnv(item, env))
   if (value && typeof value === 'object') {
@@ -85,6 +90,13 @@ export function expandEnv(
     return out
   }
   return value
+}
+
+function environmentValue(
+  env: EnvironmentValueSource,
+  name: string,
+): string | undefined {
+  return typeof env === 'function' ? env(name) : env[name]
 }
 
 export function deepMerge(

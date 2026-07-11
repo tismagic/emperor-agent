@@ -94,6 +94,7 @@ import {
   recordPlanVerification,
   unverifiedPlanHonestyFollowup,
 } from './runner-plan-recording'
+import type { ExecutionEnvironment } from '../environment/snapshot'
 
 type StreamEmitter = (event: Record<string, unknown>) => void | Promise<void>
 type Msg = Record<string, unknown>
@@ -357,12 +358,17 @@ export class AgentRunner implements RunnerModelHost {
   async stepStream(
     history: Msg[],
     emit: StreamEmitter,
-    opts?: { turnId?: string | null; signal?: AbortSignal | null },
+    opts?: {
+      turnId?: string | null
+      signal?: AbortSignal | null
+      executionEnvironment?: ExecutionEnvironment | null
+    },
   ): Promise<string> {
     const reply = await this.stepAsync(history, {
       emit,
       turnId: opts?.turnId ?? null,
       signal: opts?.signal ?? null,
+      executionEnvironment: opts?.executionEnvironment ?? null,
     })
     throwIfAborted(opts?.signal ?? null)
     await emit({ event: 'assistant_done', content: reply })
@@ -375,11 +381,13 @@ export class AgentRunner implements RunnerModelHost {
       emit?: StreamEmitter | null
       turnId?: string | null
       signal?: AbortSignal | null
+      executionEnvironment?: ExecutionEnvironment | null
     },
   ): Promise<string> {
     const emit = opts?.emit ?? null
     const turnId = opts?.turnId ?? null
     const signal = opts?.signal ?? null
+    const executionEnvironment = opts?.executionEnvironment ?? null
     throwIfAborted(signal)
     this.denyRefusalCounts.clear()
     // B3（2026-07-05）：turn 内每次投影都冻结在此边界，防止压缩/裁剪回头改写本 turn 已发给模型过的字节
@@ -456,6 +464,7 @@ export class AgentRunner implements RunnerModelHost {
             clarification,
             signal,
             entryPlanDecision,
+            executionEnvironment,
           )
         : null
       const response = await this.askModel(
@@ -599,6 +608,7 @@ export class AgentRunner implements RunnerModelHost {
                 clarification,
                 planDecision,
                 signal,
+                executionEnvironment,
               )
           throwIfAborted(signal)
         } catch (pause) {
@@ -1105,12 +1115,13 @@ export class AgentRunner implements RunnerModelHost {
     emit: StreamEmitter | null
     clarification: Clarification | null
     signal: AbortSignal | null
+    executionEnvironment: ExecutionEnvironment | null
   }): {
     runOne: (call: ToolCallRequest) => Promise<ToolResultObj>
     resultsById: Map<string, ToolResultObj>
     planFollowups: Msg[]
   } {
-    const { emit, clarification, signal } = ctx
+    const { emit, clarification, signal, executionEnvironment } = ctx
     const resultsById = new Map<string, ToolResultObj>()
     const planFollowups: Msg[] = []
 
@@ -1136,6 +1147,7 @@ export class AgentRunner implements RunnerModelHost {
         clarification,
         ctx.planDecisionRef.current,
         signal,
+        executionEnvironment,
       )
       throwIfAborted(signal)
       applyRepeatedRefusalNudge(this.denyRefusalCounts, result)
@@ -1211,6 +1223,7 @@ export class AgentRunner implements RunnerModelHost {
     clarification: Clarification | null,
     signal: AbortSignal | null,
     entryPlanDecision: unknown,
+    executionEnvironment: ExecutionEnvironment | null,
   ): {
     onToolCallComplete: (call: ToolCallRequest) => void
     finish: (
@@ -1226,6 +1239,7 @@ export class AgentRunner implements RunnerModelHost {
       emit,
       clarification,
       signal,
+      executionEnvironment,
     })
     const run = this.toolExecutionEngine.createStreamingRun({
       emit,
@@ -1254,6 +1268,7 @@ export class AgentRunner implements RunnerModelHost {
     clarification: Clarification | null,
     planDecision: unknown,
     signal: AbortSignal | null,
+    executionEnvironment: ExecutionEnvironment | null,
   ): Promise<Msg[]> {
     const toolCallsRef = { current: toolCalls }
     const planDecisionRef = { current: planDecision }
@@ -1263,6 +1278,7 @@ export class AgentRunner implements RunnerModelHost {
       emit,
       clarification,
       signal,
+      executionEnvironment,
     })
     const toolMessages = await this.toolExecutionEngine.runBatch(toolCalls, {
       emit,
@@ -1281,6 +1297,7 @@ export class AgentRunner implements RunnerModelHost {
     clarification: Clarification | null,
     planDecision: unknown,
     signal: AbortSignal | null,
+    executionEnvironment: ExecutionEnvironment | null,
   ): Promise<ToolResultObj> {
     throwIfAborted(signal)
     let effectiveCall: ToolCallRequest
@@ -1448,6 +1465,7 @@ export class AgentRunner implements RunnerModelHost {
       parentCallId: effectiveCall.id,
       sessionId: this.sessionId,
       signal,
+      executionEnvironment,
     }
     let result = await this.registry.executeResult(
       effectiveCall.name,

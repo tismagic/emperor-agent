@@ -241,6 +241,7 @@ export class AgentHookExecutor implements HookHandlerExecutor<HookAgentHandlerV2
               workspaceRoot: context.cwd,
               parentCallId: call.id,
               signal: scope.signal,
+              executionEnvironment: context.executionEnvironment ?? null,
             },
           )
           messages.push({

@@ -32,13 +32,21 @@ import type { HookRuntimeRunOptions } from './runtime'
 import type { TokenTrackerLike } from '../agent/runner'
 import { writeJsonAtomic } from '../store/atomic-json'
 import { parseHooksConfigV2, serializeHooksConfigV2 } from './schema'
+import type { ExecutionEnvironment } from '../environment/snapshot'
 
 interface ActiveTurnSnapshot {
   turnId: string
   sessionId: string
   projectRoot: string | null
   snapshot: HookSnapshot
+  executionEnvironment: ExecutionEnvironment | null
 }
+
+export type HookExecutionEnvironmentProvider = (opts: {
+  sessionId: string
+  projectRoot: string | null
+  cwd: string
+}) => Promise<ExecutionEnvironment>
 
 export interface HookAgentScope {
   agentId: string
@@ -47,6 +55,7 @@ export interface HookAgentScope {
   cwd: string
   projectRoot: string | null
   snapshot: HookSnapshot
+  executionEnvironment: ExecutionEnvironment | null
 }
 
 export class HookService {
@@ -60,12 +69,14 @@ export class HookService {
   private readonly turns = new Map<string, ActiveTurnSnapshot>()
   private readonly activeTurnBySession = new Map<string, string>()
   private readonly agentScopes = new Map<string, HookAgentScope>()
+  private readonly executionEnvironmentProvider: HookExecutionEnvironmentProvider | null
 
   constructor(opts: {
     stateRoot: string
     executors?: HookExecutorRegistry
     modelRouter?: HookModelRouter | null
     tokenTracker?: Pick<TokenTrackerLike, 'record'> | null
+    executionEnvironment?: HookExecutionEnvironmentProvider | null
   }) {
     this.stateRoot = opts.stateRoot
     this.resolver = new HookSourceResolver({ stateRoot: opts.stateRoot })
@@ -78,22 +89,33 @@ export class HookService {
     this.executors =
       opts.executors ??
       defaultExecutors(opts.modelRouter ?? null, opts.tokenTracker ?? null)
+    this.executionEnvironmentProvider = opts.executionEnvironment ?? null
   }
 
   async beginTurn(opts: {
     turnId: string
     sessionId: string
     projectRoot?: string | null
+    executionEnvironment?: ExecutionEnvironment | null
   }): Promise<HookSnapshot> {
     const snapshot = await this.snapshots.get({
       projectRoot: opts.projectRoot ?? null,
       sessionId: opts.sessionId,
     })
+    const projectRoot = opts.projectRoot ?? null
+    const executionEnvironment =
+      opts.executionEnvironment ??
+      (await this.resolveExecutionEnvironment({
+        sessionId: opts.sessionId,
+        projectRoot,
+        cwd: projectRoot ?? process.cwd(),
+      }))
     const active = {
       turnId: opts.turnId,
       sessionId: opts.sessionId,
-      projectRoot: opts.projectRoot ?? null,
+      projectRoot,
       snapshot,
+      executionEnvironment,
     }
     this.turns.set(opts.turnId, active)
     this.activeTurnBySession.set(opts.sessionId, opts.turnId)
@@ -128,6 +150,13 @@ export class HookService {
         sessionId: opts.sessionId,
         projectRoot: opts.projectRoot ?? null,
       }))
+    const executionEnvironment =
+      this.activeTurnForSession(opts.sessionId)?.executionEnvironment ??
+      (await this.resolveExecutionEnvironment({
+        sessionId: opts.sessionId,
+        projectRoot: opts.projectRoot ?? null,
+        cwd: opts.cwd,
+      }))
     const scope: HookAgentScope = {
       agentId: opts.agentId,
       agentType: opts.agentType,
@@ -135,6 +164,7 @@ export class HookService {
       cwd: opts.cwd,
       projectRoot: opts.projectRoot ?? null,
       snapshot,
+      executionEnvironment,
     }
     this.agentScopes.set(opts.agentId, scope)
     return scope
@@ -171,7 +201,11 @@ export class HookService {
         agentId: scope.agentId,
         agentType: scope.agentType,
       },
-      { snapshot: scope.snapshot, emit: runOpts.emit ?? null },
+      {
+        snapshot: scope.snapshot,
+        executionEnvironment: scope.executionEnvironment,
+        emit: runOpts.emit ?? null,
+      },
     )
   }
 
@@ -308,6 +342,7 @@ export class HookService {
     opts: HookRuntimeRunOptions,
     runOpts: {
       snapshot?: HookSnapshot | null
+      executionEnvironment?: ExecutionEnvironment | null
       emit?: HookOrchestratorEmitter | null
     } = {},
   ): Promise<HookAggregateDecision> {
@@ -320,6 +355,16 @@ export class HookService {
       }))
     const input = this.input(eventName, opts)
     const plan = compileHookPlan(snapshot, input)
+    const executionEnvironment =
+      runOpts.executionEnvironment ??
+      this.executionEnvironmentFromActiveTurn(opts) ??
+      (plan.items.length
+        ? await this.resolveExecutionEnvironment({
+            sessionId: opts.sessionId,
+            projectRoot: opts.projectRoot ?? null,
+            cwd: opts.cwd || process.cwd(),
+          })
+        : null)
     const orchestrator = new HookOrchestrator({
       executor: this.executors,
       audit: this.audit,
@@ -332,6 +377,7 @@ export class HookService {
       cwd: opts.cwd || process.cwd(),
       policy: snapshot.config.policy,
       signal: opts.signal ?? null,
+      executionEnvironment,
     })
     return legacyAggregate(result)
   }
@@ -362,6 +408,33 @@ export class HookService {
         ? opts.turnId
         : this.activeTurnBySession.get(opts.sessionId)
     return turnId ? (this.turns.get(turnId)?.snapshot ?? null) : null
+  }
+
+  private activeTurnForSession(sessionId: string): ActiveTurnSnapshot | null {
+    const turnId = this.activeTurnBySession.get(sessionId)
+    return turnId ? (this.turns.get(turnId) ?? null) : null
+  }
+
+  private executionEnvironmentFromActiveTurn(
+    opts: HookRuntimeRunOptions,
+  ): ExecutionEnvironment | null {
+    const turnId =
+      typeof opts.turnId === 'string'
+        ? opts.turnId
+        : this.activeTurnBySession.get(opts.sessionId)
+    return turnId
+      ? (this.turns.get(turnId)?.executionEnvironment ?? null)
+      : null
+  }
+
+  private async resolveExecutionEnvironment(opts: {
+    sessionId: string
+    projectRoot: string | null
+    cwd: string
+  }): Promise<ExecutionEnvironment | null> {
+    return this.executionEnvironmentProvider
+      ? await this.executionEnvironmentProvider(opts)
+      : null
   }
 
   private input(

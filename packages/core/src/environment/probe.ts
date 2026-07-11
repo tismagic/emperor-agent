@@ -172,6 +172,7 @@ export interface EnvironmentProbeRequest {
   skillRequirements?: SkillEnvironmentRequirement[]
   forceRefresh?: boolean
   signal?: AbortSignal
+  envOverride?: Readonly<Record<string, string | undefined>>
 }
 
 export type EnvironmentExecutableResolver = (
@@ -230,7 +231,9 @@ export class EnvironmentProbe {
   ): Promise<EnvironmentProbeStatus> {
     if (request.signal?.aborted) throw new EnvironmentError('cancelled')
     const loaded = this.catalogProvider()
-    const env = this.envProvider()
+    const env = request.envOverride
+      ? { ...request.envOverride }
+      : this.envProvider()
     const homeDir =
       this.configuredHomeDir ?? env.HOME ?? env.USERPROFILE ?? homedir()
     const detector = new ProjectEnvironmentDetector({

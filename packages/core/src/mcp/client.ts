@@ -2,8 +2,12 @@ import type { ToolRegistry } from '../tools/registry'
 import { MCPToolAdapter } from './adapter'
 import { loadMcpConfig, type MCPConfig, type ServerConfig } from './config'
 import { MCPConnection, SSEConnection, StdioConnection } from './connection'
+import type { ExecutionEnvironment } from '../environment/snapshot'
 
-export type MCPConnectionFactory = (cfg: ServerConfig) => MCPConnection
+export type MCPConnectionFactory = (
+  cfg: ServerConfig,
+  executionEnvironment?: ExecutionEnvironment | null,
+) => MCPConnection
 
 export class MCPClient {
   readonly root: string
@@ -18,17 +22,26 @@ export class MCPClient {
     opts: { connectionFactory?: MCPConnectionFactory } = {},
   ) {
     this.root = root
-    this.connectionFactory = opts.connectionFactory ?? createConnection
+    this.connectionFactory =
+      opts.connectionFactory ??
+      ((config, executionEnvironment) =>
+        createConnection(config, executionEnvironment, (snapshot) =>
+          this.configForSnapshot(config.name, snapshot),
+        ))
   }
 
-  async initialize(): Promise<void> {
+  async initialize(
+    executionEnvironment: ExecutionEnvironment | null = null,
+  ): Promise<void> {
     if (this.initialized) return
-    this.config = loadMcpConfig(this.root)
+    this.config = executionEnvironment
+      ? loadMcpConfigForEnvironment(this.root, executionEnvironment)
+      : loadMcpConfig(this.root)
     const defaults = this.config.defaults
 
     for (const server of Object.values(this.config.servers)) {
       if (!server.enabled) continue
-      const conn = this.connectionFactory(server)
+      const conn = this.connectionFactory(server, executionEnvironment)
       this.connections.set(server.name, conn)
       const ok = await conn.connect()
       if (!ok) continue
@@ -86,12 +99,40 @@ export class MCPClient {
     this.tools.length = 0
     this.initialized = false
   }
+
+  private configForSnapshot(
+    serverName: string,
+    snapshot: ExecutionEnvironment,
+  ): ServerConfig | null {
+    const config = loadMcpConfigForEnvironment(this.root, snapshot).servers[
+      serverName
+    ]
+    return config?.enabled && config.transport !== 'sse' ? config : null
+  }
 }
 
-function createConnection(cfg: ServerConfig): MCPConnection {
+function createConnection(
+  cfg: ServerConfig,
+  executionEnvironment: ExecutionEnvironment | null = null,
+  configResolver:
+    ((snapshot: ExecutionEnvironment) => ServerConfig | null) | null = null,
+): MCPConnection {
   return cfg.transport === 'sse'
     ? new SSEConnection(cfg.name, cfg)
-    : new StdioConnection(cfg.name, cfg)
+    : new StdioConnection(cfg.name, cfg, {
+        executionEnvironment,
+        configResolver,
+      })
+}
+
+function loadMcpConfigForEnvironment(
+  root: string,
+  executionEnvironment: ExecutionEnvironment,
+): MCPConfig {
+  return loadMcpConfig(
+    root,
+    (name) => executionEnvironment.selectEnv([name])[name],
+  )
 }
 
 function booleanOption(

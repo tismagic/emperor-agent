@@ -19,7 +19,7 @@ import {
   type LLMResponse,
   type ToolCallRequest,
 } from '../providers/base'
-import { Tool } from '../tools/base'
+import { Tool, type ToolExecutionContext } from '../tools/base'
 import { okResult, type ToolResult } from '../tools/base'
 import { toolParamsSchema, S } from '../tools/schema'
 import { ToolRegistry } from '../tools/registry'
@@ -27,6 +27,7 @@ import { ControlManager } from '../control/manager'
 import { AskUserTool, ProposePlanTool } from '../control/tools'
 import { TodoStore, UpdateTodos } from '../tools/builtin'
 import { MemoryStore } from '../memory/store'
+import { ExecutionEnvironment } from '../environment/snapshot'
 
 type Msg = Record<string, unknown>
 
@@ -217,6 +218,23 @@ class SafeEchoTool extends Tool {
   }
 }
 
+class SnapshotContextTool extends Tool {
+  override name = 'snapshot_context'
+  override description = 'Return the execution environment revision.'
+  override parameters = toolParamsSchema({}, [])
+  override readOnly = true
+  override concurrencySafe = true
+  readonly revisions: string[] = []
+  execute(
+    _args: Record<string, unknown>,
+    context?: ToolExecutionContext,
+  ): string {
+    const revision = context?.executionEnvironment?.revision ?? 'missing'
+    this.revisions.push(revision)
+    return revision
+  }
+}
+
 class LatchEchoTool extends Tool {
   override name = 'latch_echo'
   override description = 'Read-only echo that signals when it starts.'
@@ -393,6 +411,50 @@ describe('AgentRunner turn phases (test_runner_state.py)', () => {
     ])
     expect(phases.map((e) => e.sequence)).toEqual([1, 2, 3, 4, 5])
     expect(phases.every((e) => e.turn_id === 'turn_1')).toBe(true)
+  })
+
+  it('propagates one immutable execution snapshot through a turn tool batch', async () => {
+    const provider = new FakeProvider([
+      makeResponse({
+        content: '',
+        finishReason: 'tool_calls',
+        toolCalls: [toolCall('call_snapshot', 'snapshot_context', {})],
+      }),
+      makeResponse({ content: 'done' }),
+    ])
+    const registry = new ToolRegistry()
+    registry.register(new SnapshotContextTool())
+    const snapshot = new ExecutionEnvironment(
+      {
+        revision: 'd'.repeat(64),
+        catalogRevision: 'e'.repeat(64),
+        projectFingerprint: 'f'.repeat(64),
+        createdAt: '2026-07-11T02:00:00.000Z',
+        platform: 'darwin',
+        pathEntries: ['/snapshot/bin'],
+        env: { PATH: '/snapshot/bin' },
+        toolPaths: {},
+      },
+      {},
+    )
+    const runner = new AgentRunner({
+      provider,
+      model: 'fake',
+      registry,
+      systemPrompt: 'system',
+    })
+
+    await runner.stepAsync([{ role: 'user', content: 'run' }], {
+      turnId: 'turn_snapshot',
+      executionEnvironment: snapshot,
+    })
+
+    expect(JSON.stringify(provider.seenMessages.at(-1))).toContain(
+      'd'.repeat(64),
+    )
+    expect(JSON.stringify(provider.seenMessages.at(-1))).not.toContain(
+      'missing',
+    )
   })
 
   it('does not run automatic memory compaction unless explicitly enabled', async () => {
@@ -1140,6 +1202,42 @@ describe('AgentRunner turn phases (test_runner_state.py)', () => {
     expect(started).toBe(true)
     resolveModel!()
     await turn
+  })
+
+  it('propagates the turn snapshot through streaming tool execution', async () => {
+    const registry = new ToolRegistry()
+    const tool = new SnapshotContextTool()
+    registry.register(tool)
+    const provider = new EarlyToolProvider(
+      [toolCall('call_snapshot', 'snapshot_context', {})],
+      Promise.resolve(),
+    )
+    const runner = new AgentRunner({
+      provider,
+      model: 'fake',
+      registry,
+      systemPrompt: 'system',
+      streamingToolExecution: true,
+    })
+    const snapshot = new ExecutionEnvironment(
+      {
+        revision: '9'.repeat(64),
+        catalogRevision: '8'.repeat(64),
+        projectFingerprint: '7'.repeat(64),
+        createdAt: '2026-07-11T02:00:00.000Z',
+        platform: 'darwin',
+        pathEntries: ['/snapshot/bin'],
+        env: { PATH: '/snapshot/bin' },
+        toolPaths: {},
+      },
+      {},
+    )
+
+    await runner.stepAsync([{ role: 'user', content: 'run' }], {
+      executionEnvironment: snapshot,
+    })
+
+    expect(tool.revisions).toEqual(['9'.repeat(64)])
   })
 
   it('emits tool batch phases', async () => {

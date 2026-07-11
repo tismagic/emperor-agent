@@ -2,6 +2,7 @@ import type { ServerConfig } from './config'
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js'
 import { SSEClientTransport } from '@modelcontextprotocol/sdk/client/sse.js'
+import type { ExecutionEnvironment } from '../environment/snapshot'
 
 export interface MCPToolDefinition {
   name: string
@@ -24,11 +25,22 @@ export const SAFE_ENV_KEYS = new Set([
   'TMPDIR',
   'TERM',
   'PWD',
+  'USERPROFILE',
+  'USERNAME',
+  'SystemRoot',
+  'ComSpec',
+  'PATHEXT',
+  'TEMP',
+  'TMP',
 ])
 
 export abstract class MCPConnection {
   readonly serverName: string
   connected = false
+  private activeCalls = 0
+  private environmentRevision: string | null = null
+  private environmentQueue: Promise<void> = Promise.resolve()
+  private readonly idleWaiters = new Set<() => void>()
 
   constructor(serverName: string) {
     this.serverName = serverName
@@ -41,6 +53,51 @@ export abstract class MCPConnection {
     toolName: string,
     args: Record<string, unknown>,
   ): Promise<MCPCallToolResult>
+
+  get executionEnvironmentRevision(): string | null {
+    return this.environmentRevision
+  }
+
+  async callToolWithEnvironment(
+    toolName: string,
+    args: Record<string, unknown>,
+    snapshot: ExecutionEnvironment,
+  ): Promise<MCPCallToolResult> {
+    await this.prepareExecutionEnvironment(snapshot)
+    this.activeCalls += 1
+    try {
+      return await this.callTool(toolName, args)
+    } finally {
+      this.activeCalls -= 1
+      if (this.activeCalls === 0) {
+        for (const resolve of this.idleWaiters) resolve()
+        this.idleWaiters.clear()
+      }
+    }
+  }
+
+  protected async applyExecutionEnvironment(
+    _snapshot: ExecutionEnvironment,
+  ): Promise<void> {}
+
+  protected adoptExecutionEnvironment(snapshot: ExecutionEnvironment): void {
+    this.environmentRevision = snapshot.revision
+  }
+
+  private async prepareExecutionEnvironment(
+    snapshot: ExecutionEnvironment,
+  ): Promise<void> {
+    const operation = this.environmentQueue.then(async () => {
+      if (this.environmentRevision === snapshot.revision) return
+      if (this.activeCalls > 0)
+        await new Promise<void>((resolve) => this.idleWaiters.add(resolve))
+      if (this.environmentRevision === snapshot.revision) return
+      await this.applyExecutionEnvironment(snapshot)
+      this.environmentRevision = snapshot.revision
+    })
+    this.environmentQueue = operation.catch(() => {})
+    await operation
+  }
 }
 
 export function buildStdioEnv(
@@ -56,12 +113,27 @@ export function buildStdioEnv(
 }
 
 export class StdioConnection extends MCPConnection {
-  readonly config: ServerConfig
+  config: ServerConfig
   private client: Client | null = null
+  private executionEnvironment: ExecutionEnvironment | null
+  private readonly configResolver:
+    ((snapshot: ExecutionEnvironment) => ServerConfig | null) | null
 
-  constructor(serverName: string, config: ServerConfig) {
+  constructor(
+    serverName: string,
+    config: ServerConfig,
+    opts: {
+      executionEnvironment?: ExecutionEnvironment | null
+      configResolver?:
+        ((snapshot: ExecutionEnvironment) => ServerConfig | null) | null
+    } = {},
+  ) {
     super(serverName)
     this.config = config
+    this.executionEnvironment = opts.executionEnvironment ?? null
+    this.configResolver = opts.configResolver ?? null
+    if (this.executionEnvironment)
+      this.adoptExecutionEnvironment(this.executionEnvironment)
   }
 
   stdioParams(env: Record<string, string | undefined> = process.env): {
@@ -80,7 +152,7 @@ export class StdioConnection extends MCPConnection {
   async connect(): Promise<boolean> {
     try {
       const transport = new StdioClientTransport({
-        ...this.stdioParams(),
+        ...this.stdioParams(this.executionEnvironment?.env ?? process.env),
         stderr: 'inherit',
       })
       const client = new Client({ name: 'emperor-agent', version: '0.0.0' })
@@ -119,11 +191,29 @@ export class StdioConnection extends MCPConnection {
     toolName: string,
     args: Record<string, unknown>,
   ): Promise<MCPCallToolResult> {
-    if (!this.client || !this.connected)
+    if ((!this.client || !this.connected) && !(await this.connect()))
+      throw new Error(`MCP server '${this.serverName}' not connected`)
+    const client = this.client
+    if (!client)
       throw new Error(`MCP server '${this.serverName}' not connected`)
     return normalizeCallToolResult(
-      await this.client.callTool({ name: toolName, arguments: args }),
+      await client.callTool({ name: toolName, arguments: args }),
     )
+  }
+
+  protected override async applyExecutionEnvironment(
+    snapshot: ExecutionEnvironment,
+  ): Promise<void> {
+    const resolvedConfig = this.configResolver?.(snapshot)
+    if (this.configResolver && !resolvedConfig)
+      throw new Error(`MCP server '${this.serverName}' is no longer configured`)
+    if (resolvedConfig) this.config = resolvedConfig
+    const reconnect = this.connected
+    this.executionEnvironment = snapshot
+    if (!reconnect) return
+    await this.disconnect()
+    if (!(await this.connect()))
+      throw new Error(`MCP server '${this.serverName}' failed to reconnect`)
   }
 }
 

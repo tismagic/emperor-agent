@@ -7,6 +7,7 @@ import type { TaskManager } from '../tasks/manager'
 import type { SubagentRegistry } from '../subagents/registry'
 import type { SubagentSpec } from '../subagents/spec'
 import type { HookAggregateDecision } from '../hooks/models'
+import type { ExecutionEnvironment } from '../environment/snapshot'
 
 const PLAN_CONTRACT_FIELDS = [
   'scope_limit',
@@ -27,6 +28,7 @@ export interface DispatchRunnerFactoryArgs {
   workspaceRoot?: string | null
   agentId?: string
   sessionId?: string | null
+  executionEnvironment?: ExecutionEnvironment | null
 }
 
 export interface DispatchSubagentHookHost {
@@ -181,6 +183,7 @@ export class DispatchSubagentTool extends Tool {
         workspaceRoot,
         agentId,
         sessionId: ctx?.sessionId ?? null,
+        executionEnvironment: ctx?.executionEnvironment ?? null,
       })
 
       if (this.taskManager) {

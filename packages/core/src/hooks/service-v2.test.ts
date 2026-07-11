@@ -5,14 +5,22 @@ import { describe, expect, it } from 'vitest'
 import type { HookCommandHandlerV2 } from './models'
 import {
   HookExecutorRegistry,
+  type HookExecutorContext,
   type HookExecutorResultV2,
   type HookHandlerExecutor,
 } from './executor'
 import { HookService } from './service'
+import { ExecutionEnvironment } from '../environment/snapshot'
 
 class FakeCommandExecutor implements HookHandlerExecutor<HookCommandHandlerV2> {
   readonly type = 'command' as const
-  async execute(handler: HookCommandHandlerV2): Promise<HookExecutorResultV2> {
+  readonly contexts: HookExecutorContext[] = []
+  async execute(
+    handler: HookCommandHandlerV2,
+    _input: Record<string, unknown>,
+    context: HookExecutorContext,
+  ): Promise<HookExecutorResultV2> {
+    this.contexts.push(context)
     const [decision, reason] = handler.args
     return {
       outcome: 'completed',
@@ -27,6 +35,22 @@ class FakeCommandExecutor implements HookHandlerExecutor<HookCommandHandlerV2> {
       stderrTruncated: false,
     }
   }
+}
+
+function executionEnvironment(revisionCharacter: string): ExecutionEnvironment {
+  return new ExecutionEnvironment(
+    {
+      revision: revisionCharacter.repeat(64),
+      catalogRevision: 'a'.repeat(64),
+      projectFingerprint: 'b'.repeat(64),
+      createdAt: '2026-07-11T02:00:00.000Z',
+      platform: 'darwin',
+      pathEntries: [`/${revisionCharacter}/bin`],
+      env: { PATH: `/${revisionCharacter}/bin` },
+      toolPaths: {},
+    },
+    {},
+  )
 }
 
 function config(decision: 'deny' | 'allow', reason: string): Dict {
@@ -65,6 +89,75 @@ function config(decision: 'deny' | 'allow', reason: string): Dict {
 type Dict = Record<string, unknown>
 
 describe('HookService turn snapshots', () => {
+  it('pins one execution environment for a turn and agent scopes', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'hook-service-environment-'))
+    try {
+      await writeFile(
+        join(root, 'hooks_config.json'),
+        JSON.stringify(config('allow', 'environment')),
+        'utf8',
+      )
+      const executor = new FakeCommandExecutor()
+      const executors = new HookExecutorRegistry()
+      executors.register(executor)
+      let current = executionEnvironment('c')
+      const service = new HookService({
+        stateRoot: root,
+        executors,
+        executionEnvironment: async () => current,
+      })
+      await service.beginTurn({
+        turnId: 'turn-environment',
+        sessionId: 's1',
+        projectRoot: null,
+      })
+      current = executionEnvironment('d')
+      await service.beginAgentScope({
+        agentId: 'agent-1',
+        agentType: 'reader',
+        sessionId: 's1',
+        cwd: '/repo',
+      })
+      await service.run('PreToolUse', {
+        sessionId: 's1',
+        turnId: 'turn-environment',
+        cwd: '/repo',
+        toolName: 'write_file',
+        toolInput: { path: 'README.md' },
+      })
+      await service.runAgent('PreToolUse', 'agent-1', {
+        toolName: 'write_file',
+        toolInput: { path: 'README.md' },
+      })
+
+      expect(
+        executor.contexts.map((entry) => entry.executionEnvironment?.revision),
+      ).toEqual(['c'.repeat(64), 'c'.repeat(64)])
+      expect(
+        service.agentScope('agent-1')?.executionEnvironment?.revision,
+      ).toBe('c'.repeat(64))
+      service.endTurn('turn-environment')
+      await service.beginTurn({
+        turnId: 'turn-next',
+        sessionId: 's1',
+        projectRoot: null,
+      })
+      await service.run('PreToolUse', {
+        sessionId: 's1',
+        turnId: 'turn-next',
+        cwd: '/repo',
+        toolName: 'write_file',
+        toolInput: { path: 'README.md' },
+      })
+      expect(executor.contexts.at(-1)?.executionEnvironment?.revision).toBe(
+        'd'.repeat(64),
+      )
+      await service.shutdown()
+    } finally {
+      await rm(root, { recursive: true, force: true })
+    }
+  })
+
   it('keeps one immutable revision for a turn and adopts changes next turn', async () => {
     const root = await mkdtemp(join(tmpdir(), 'hook-service-'))
     try {

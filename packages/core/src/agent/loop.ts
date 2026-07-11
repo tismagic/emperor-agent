@@ -71,7 +71,14 @@ import {
   loadBundledToolCatalog,
   type LoadedToolCatalog,
 } from '../environment/catalog'
-import { EnvironmentProbe } from '../environment/probe'
+import {
+  EnvironmentProbe,
+  collectSkillEnvironmentRequirements,
+} from '../environment/probe'
+import {
+  ExecutionEnvironmentService,
+  type ExecutionEnvironment,
+} from '../environment/snapshot'
 import {
   migrateLegacyStateRoot,
   type LegacyStateMigrationResult,
@@ -228,6 +235,7 @@ export class AgentLoop {
   readonly hookService: HookService
   readonly environmentCatalog: LoadedToolCatalog
   readonly environmentProbe: EnvironmentProbe
+  readonly executionEnvironmentService: ExecutionEnvironmentService
   readonly taskManager: TaskManager
   readonly projectStore: ProjectStore
   readonly controlManager: ControlManager
@@ -291,6 +299,10 @@ export class AgentLoop {
       catalog: () => this.environmentCatalog,
       env: () => process.env,
     })
+    this.executionEnvironmentService = new ExecutionEnvironmentService({
+      probe: this.environmentProbe,
+      env: () => process.env,
+    })
     this.hookService = new HookService({
       stateRoot: this.paths.stateRoot,
       modelRouter: {
@@ -298,6 +310,8 @@ export class AgentLoop {
           this.routeHookModel(useCase, role, task),
       },
       tokenTracker: this.tokenTracker,
+      executionEnvironment: async ({ projectRoot, cwd }) =>
+        await this.createExecutionEnvironment(projectRoot ?? cwd),
     })
     this.taskManager = new TaskManager(this.paths.stateRoot, {
       hooks: {
@@ -428,11 +442,14 @@ export class AgentLoop {
       sharedMemory,
       legacyStateMigration,
     )
+    const session = loop.ensureActiveSession()
     if (opts.initializeMcp !== false) {
-      await loop.mcpClient.initialize()
+      const executionEnvironment = await loop.createExecutionEnvironment(
+        loop.workspaceRootForSession(session),
+      )
+      await loop.mcpClient.initialize(executionEnvironment)
       loop.mcpClient.registerTools(loop.registry)
     }
-    const session = loop.ensureActiveSession()
     loop.activateSession(session.id)
     if (
       opts.enableFirstRunOnboarding &&
@@ -655,7 +672,10 @@ export class AgentLoop {
   async reloadMcp(): Promise<void> {
     await this.mcpClient.close()
     this.registry.unregisterWhere((name) => name.startsWith('mcp_'))
-    await this.mcpClient.initialize()
+    const executionEnvironment = await this.createExecutionEnvironment(
+      this.workspaceRootForActiveSession(),
+    )
+    await this.mcpClient.initialize(executionEnvironment)
     this.mcpClient.registerTools(this.registry)
   }
 
@@ -763,11 +783,16 @@ export class AgentLoop {
       this.controlRuntimeScopeForSession(session),
     )
     const scope = this.turnScope(session, turnId)
+    const executionEnvironment = await this.createExecutionEnvironment(
+      scope.workspaceRoot,
+      signal,
+    )
     await this.hookService.beginTurn({
       turnId,
       sessionId,
       projectRoot:
         session.mode === 'build' ? (session.project_path ?? null) : null,
+      executionEnvironment,
     })
     if (!this.sessionStartHooksRun.has(sessionId)) {
       this.sessionStartHooksRun.add(sessionId)
@@ -916,7 +941,7 @@ export class AgentLoop {
             scope,
           })
         },
-        { turnId, signal },
+        { turnId, signal, executionEnvironment },
       )
     } catch (error) {
       if (!isBenignTurnInterruption(error)) {
@@ -1019,6 +1044,27 @@ export class AgentLoop {
           }
         : null,
     })
+  }
+
+  private async createExecutionEnvironment(
+    projectRoot: string,
+    signal: AbortSignal | null = null,
+  ): Promise<ExecutionEnvironment> {
+    const probeRoot = this.environmentProbeRoot(projectRoot)
+    return await this.executionEnvironmentService.create({
+      projectRoot: probeRoot,
+      skillRequirements: collectSkillEnvironmentRequirements(this.skillManager),
+      ...(signal ? { signal } : {}),
+    })
+  }
+
+  private environmentProbeRoot(projectRoot: string): string {
+    try {
+      const canonical = realpathSync(projectRoot)
+      return lstatSync(canonical).isDirectory() ? canonical : this.root
+    } catch {
+      return this.root
+    }
   }
 
   private autoMemoryCompactor(
@@ -1672,9 +1718,13 @@ export class AgentLoop {
             member.name,
           ),
         })
+        const executionEnvironment =
+          this.hookService.agentScope(agentId)?.executionEnvironment ?? null
         return {
-          step: (history) => runner.stepAsync(history),
-          stepStream: (history, emit) => runner.stepStream(history, emit),
+          step: (history) =>
+            runner.stepAsync(history, { executionEnvironment }),
+          stepStream: (history, emit) =>
+            runner.stepStream(history, emit, { executionEnvironment }),
         }
       },
     })

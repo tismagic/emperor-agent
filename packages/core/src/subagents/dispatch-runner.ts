@@ -56,6 +56,9 @@ export function buildDispatchRunner(
     hooks: opts.hooks?.(args) ?? null,
   })
   return {
-    step: (history) => runner.stepAsync(history),
+    step: (history) =>
+      runner.stepAsync(history, {
+        executionEnvironment: args.executionEnvironment ?? null,
+      }),
   }
 }

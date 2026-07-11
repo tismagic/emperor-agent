@@ -423,17 +423,24 @@ export class RunCommand extends Tool {
       }
     }
     try {
+      const snapshotEnv = ctx?.executionEnvironment?.env
       const { stdout } = await execCommand(command, {
         encoding: 'utf8',
         timeout: 120_000,
         cwd: workspace || process.cwd(),
-        env: {
-          HOME: process.env.HOME ?? '',
-          PATH: process.env.PATH ?? '/usr/bin:/bin',
-          LANG: 'C.UTF-8',
-          TERM: 'dumb',
-          USER: process.env.USER ?? '',
-        },
+        env: snapshotEnv
+          ? {
+              ...snapshotEnv,
+              LANG: snapshotEnv.LANG ?? 'C.UTF-8',
+              TERM: snapshotEnv.TERM ?? 'dumb',
+            }
+          : {
+              HOME: process.env.HOME ?? '',
+              PATH: process.env.PATH ?? '/usr/bin:/bin',
+              LANG: 'C.UTF-8',
+              TERM: 'dumb',
+              USER: process.env.USER ?? '',
+            },
         signal: ctx?.signal ?? undefined,
       })
       return stdout.trim() || '(command completed with no output)'

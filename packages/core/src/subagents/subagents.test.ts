@@ -8,7 +8,7 @@ import { SidechainTranscript } from '../tasks/sidechain'
 import { TokenTracker } from '../memory/token-tracker'
 import type { ModelRouter, ProviderSnapshot } from '../model/router'
 import type { LLMResponse } from '../providers/base'
-import { Tool } from '../tools/base'
+import { Tool, type ToolExecutionContext } from '../tools/base'
 import { toolParamsSchema } from '../tools/schema'
 import { ToolRegistry } from '../tools/registry'
 import {
@@ -19,6 +19,7 @@ import {
 } from '../tools/dispatch'
 import { buildDispatchRunnerFactory } from './dispatch-runner'
 import { SubagentRegistry } from './registry'
+import { ExecutionEnvironment } from '../environment/snapshot'
 
 const TEMPLATES = join(
   __dirname,
@@ -129,6 +130,19 @@ describe('DispatchSubagentTool (W04-014/W08)', () => {
     const fakeRunner = new FakeRunner(
       '结论: done\n证据: agent/runner.py:10\n风险: none\n建议下一步: none',
     )
+    const executionEnvironment = new ExecutionEnvironment(
+      {
+        revision: 'a'.repeat(64),
+        catalogRevision: 'b'.repeat(64),
+        projectFingerprint: 'c'.repeat(64),
+        createdAt: '2026-07-11T02:00:00.000Z',
+        platform: 'darwin',
+        pathEntries: ['/snapshot/bin'],
+        env: { PATH: '/snapshot/bin' },
+        toolPaths: {},
+      },
+      {},
+    )
 
     const tool = new DispatchSubagentTool({
       parentRegistry: parent,
@@ -138,6 +152,7 @@ describe('DispatchSubagentTool (W04-014/W08)', () => {
         captured.tools = args.subRegistry
           .getDefinitions()
           .map((def) => def.name)
+        captured.executionEnvironment = args.executionEnvironment
         return fakeRunner
       },
       taskManager: manager,
@@ -157,12 +172,14 @@ describe('DispatchSubagentTool (W04-014/W08)', () => {
         arguments: {},
         parentCallId: 'call_1',
         sessionId: 'sess_d',
+        executionEnvironment,
       },
     )
 
     expect(result).toContain('结论: done')
     expect(captured.task).toContain('期望产物: 结论/证据')
     expect(captured.tools).toEqual(['read_file'])
+    expect(captured.executionEnvironment).toBe(executionEnvironment)
     const [record] = manager.store.list()
     expect(record!.kind).toBe(TaskKind.SUBAGENT)
     expect(record!.status).toBe(TaskStatus.COMPLETED)
@@ -290,6 +307,81 @@ describe('DispatchSubagentTool (W04-014/W08)', () => {
     expect(requireTokenLedger(tracker.logFile)).toContain(
       '"usage_type":"subagent:sili_suitang"',
     )
+  })
+
+  it('inherits the parent execution snapshot in the routed subagent runner', async () => {
+    let calls = 0
+    const seen: string[] = []
+    const environment = new ExecutionEnvironment(
+      {
+        revision: 'd'.repeat(64),
+        catalogRevision: 'e'.repeat(64),
+        projectFingerprint: 'f'.repeat(64),
+        createdAt: '2026-07-11T02:00:00.000Z',
+        platform: 'darwin',
+        pathEntries: ['/snapshot/bin'],
+        env: { PATH: '/snapshot/bin' },
+        toolPaths: {},
+      },
+      {},
+    )
+    const registry = new ToolRegistry()
+    registry.register(
+      new (class extends Tool {
+        override name = 'inspect_environment'
+        override description = 'inspect environment'
+        override parameters = toolParamsSchema({}, [])
+        execute(
+          _args: Record<string, unknown>,
+          context?: ToolExecutionContext,
+        ): string {
+          const revision = context?.executionEnvironment?.revision ?? 'missing'
+          seen.push(revision)
+          return revision
+        }
+      })(),
+    )
+    const provider = {
+      chat: async (): Promise<LLMResponse> => {
+        calls += 1
+        return calls === 1
+          ? {
+              ...response(''),
+              content: null,
+              finishReason: 'tool_calls',
+              toolCalls: [
+                {
+                  id: 'call-environment',
+                  name: 'inspect_environment',
+                  arguments: {},
+                },
+              ],
+            }
+          : response('done')
+      },
+    }
+    const modelRouter = {
+      route: () => ({
+        snapshot: {
+          ...snapshot('secondary-model', 'secondary'),
+          provider,
+        },
+        fallback: null,
+        useCase: 'subagent',
+        reason: 'snapshot inheritance',
+        estimatedTokens: null,
+      }),
+    } as unknown as ModelRouter
+    const runner = buildDispatchRunnerFactory({ modelRouter })({
+      spec: new SubagentRegistry(TEMPLATES).get('sili_suitang')!,
+      subRegistry: registry,
+      task: 'inspect environment',
+      executionEnvironment: environment,
+    })
+
+    await runner.step([{ role: 'user', content: 'inspect' }])
+
+    expect(seen).toEqual(['d'.repeat(64)])
   })
 
   it('routed dispatch runner adopts the route context window for compaction checks', async () => {

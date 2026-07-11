@@ -104,6 +104,7 @@ export class ToolRegistry {
       emit: ctx?.emit ?? null,
       loop: ctx?.loop ?? null,
       signal: ctx?.signal ?? null,
+      executionEnvironment: ctx?.executionEnvironment ?? null,
     }
     const raw = await tool.execute(casted, execCtx)
     let mapped: ToolResult

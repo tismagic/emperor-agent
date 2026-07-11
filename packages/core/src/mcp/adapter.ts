@@ -1,4 +1,4 @@
-import { Tool, type ToolResult } from '../tools/base'
+import { Tool, type ToolExecutionContext, type ToolResult } from '../tools/base'
 import type { ToolParamsSchema } from '../tools/schema'
 import type { MCPConnection } from './connection'
 
@@ -36,8 +36,17 @@ export class MCPToolAdapter extends Tool {
       this.maxResultChars = opts.maxResultChars
   }
 
-  override async execute(args: Record<string, unknown>): Promise<ToolResult> {
-    const result = await this.connection.callTool(this.toolName, args)
+  override async execute(
+    args: Record<string, unknown>,
+    context?: ToolExecutionContext,
+  ): Promise<ToolResult> {
+    const result = context?.executionEnvironment
+      ? await this.connection.callToolWithEnvironment(
+          this.toolName,
+          args,
+          context.executionEnvironment,
+        )
+      : await this.connection.callTool(this.toolName, args)
     const modelContent = `${MCP_UNTRUSTED_NOTICE}\n\n${result.content}`
     return {
       modelContent,

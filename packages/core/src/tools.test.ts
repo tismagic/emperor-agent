@@ -14,6 +14,7 @@ import { RunCommand, TodoStore, UpdateTodos } from './tools/builtin'
 import { Tool } from './tools/base'
 import { toolParamsSchema } from './tools/schema'
 import { ToolRegistry } from './tools/registry'
+import { ExecutionEnvironment } from './environment/snapshot'
 
 let dir: string
 beforeEach(() => {
@@ -192,6 +193,44 @@ describe('RunCommand cancellation', () => {
 
     expect(out).toContain('command cancelled')
     expect(out).not.toContain('should-not-finish')
+  })
+})
+
+describe('RunCommand execution environment snapshot', () => {
+  it('uses the turn snapshot PATH and excludes ambient secrets', async () => {
+    const previous = process.env.PROCESS_ONLY_SECRET
+    process.env.PROCESS_ONLY_SECRET = 'must-not-leak'
+    const executionEnvironment = new ExecutionEnvironment(
+      {
+        revision: 'a'.repeat(64),
+        catalogRevision: 'b'.repeat(64),
+        projectFingerprint: 'c'.repeat(64),
+        createdAt: '2026-07-11T02:00:00.000Z',
+        platform: 'darwin',
+        pathEntries: ['/snapshot/bin'],
+        env: { HOME: '/snapshot/home', PATH: '/snapshot/bin' },
+        toolPaths: {},
+      },
+      { PROCESS_ONLY_SECRET: 'captured-but-not-whitelisted' },
+    )
+    try {
+      const output = await new RunCommand(dir).execute(
+        {
+          command: 'printf "%s|%s|%s" "$PATH" "$HOME" "$PROCESS_ONLY_SECRET"',
+        },
+        {
+          root: dir,
+          arguments: {},
+          executionEnvironment,
+        },
+      )
+      expect(output).toBe('/snapshot/bin|/snapshot/home|')
+      expect(output).not.toContain('must-not-leak')
+      expect(output).not.toContain('captured-but-not-whitelisted')
+    } finally {
+      if (previous === undefined) delete process.env.PROCESS_ONLY_SECRET
+      else process.env.PROCESS_ONLY_SECRET = previous
+    }
   })
 })
 

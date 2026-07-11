@@ -19,6 +19,7 @@ import type {
   HookPolicy,
 } from './models'
 import { parseHookOutput } from './schema'
+import type { ExecutionEnvironment } from '../environment/snapshot'
 
 const MAX_OUTPUT_CHARS = 64_000
 
@@ -30,6 +31,7 @@ export interface HookExecutorContext {
   cwd: string
   policy: HookPolicy
   signal?: AbortSignal | null
+  executionEnvironment?: ExecutionEnvironment | null
 }
 
 export interface HookExecutorResultV2 {
@@ -124,7 +126,11 @@ export class CommandHookExecutor implements HookHandlerExecutor<HookCommandHandl
       let cancelled = false
       const child = spawn(invocation.command, invocation.args, {
         cwd: context.cwd,
-        env: commandEnvironment(handler, context.policy),
+        env: commandEnvironment(
+          handler,
+          context.policy,
+          context.executionEnvironment ?? null,
+        ),
         stdio: ['pipe', 'pipe', 'pipe'],
         detached: process.platform !== 'win32',
         windowsHide: true,
@@ -306,7 +312,11 @@ export class HttpHookExecutor implements HookHandlerExecutor<HookHttpHandlerV2> 
     }
 
     const body = Buffer.from(JSON.stringify(input))
-    const headers = hookHttpHeaders(handler, policy.allowedEnv)
+    const headers = hookHttpHeaders(
+      handler,
+      policy.allowedEnv,
+      context.executionEnvironment ?? null,
+    )
     headers['content-type'] = 'application/json'
     headers['content-length'] = String(body.length)
     headers.host = url.host
@@ -516,6 +526,7 @@ function blockedIpv6Reason(
 function hookHttpHeaders(
   handler: HookHttpHandlerV2,
   policyAllowedEnv: string[],
+  executionEnvironment: ExecutionEnvironment | null,
 ): Record<string, string> {
   const headers: Record<string, string> = {}
   const allowed = new Set(
@@ -527,7 +538,11 @@ function hookHttpHeaders(
     const value = template.replace(
       /\$\{([A-Za-z_][A-Za-z0-9_]*)\}/g,
       (_match, envName: string) => {
-        const resolved = allowed.has(envName) ? process.env[envName] : undefined
+        const resolved = !allowed.has(envName)
+          ? undefined
+          : executionEnvironment
+            ? executionEnvironment.selectEnv([envName])[envName]
+            : process.env[envName]
         if (resolved === undefined) {
           unresolved = true
           return ''
@@ -652,21 +667,32 @@ function commandInvocation(handler: HookCommandHandlerV2): {
 function commandEnvironment(
   handler: HookCommandHandlerV2,
   policy: HookPolicy,
+  executionEnvironment: ExecutionEnvironment | null,
 ): NodeJS.ProcessEnv {
-  const env: NodeJS.ProcessEnv = {}
-  const platformBasics =
-    process.platform === 'win32'
-      ? ['PATH', 'SystemRoot', 'ComSpec', 'PATHEXT', 'TEMP', 'TMP']
-      : ['PATH', 'HOME', 'TMPDIR', 'LANG', 'LC_ALL']
-  for (const name of platformBasics) {
-    const value = process.env[name]
-    if (value !== undefined) env[name] = value
+  const env: NodeJS.ProcessEnv = executionEnvironment
+    ? { ...executionEnvironment.env }
+    : {}
+  if (!executionEnvironment) {
+    const platformBasics =
+      process.platform === 'win32'
+        ? ['PATH', 'SystemRoot', 'ComSpec', 'PATHEXT', 'TEMP', 'TMP']
+        : ['PATH', 'HOME', 'TMPDIR', 'LANG', 'LC_ALL']
+    for (const name of platformBasics) {
+      const value = process.env[name]
+      if (value !== undefined) env[name] = value
+    }
   }
   const policyAllowed = new Set(policy.command.allowedEnv)
-  for (const name of handler.allowedEnv) {
-    if (!policyAllowed.has(name)) continue
-    const value = process.env[name]
-    if (value !== undefined) env[name] = value
+  const allowedNames = handler.allowedEnv.filter((name) =>
+    policyAllowed.has(name),
+  )
+  if (executionEnvironment) {
+    Object.assign(env, executionEnvironment.selectEnv(allowedNames))
+  } else {
+    for (const name of allowedNames) {
+      const value = process.env[name]
+      if (value !== undefined) env[name] = value
+    }
   }
   return env
 }

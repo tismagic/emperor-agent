@@ -3,6 +3,7 @@
  * 对齐 Python `agent/tools/base.py` + `results.py` + `protocol.py`。
  */
 import type { ToolParamsSchema } from './schema'
+import type { ExecutionEnvironment } from '../environment/snapshot'
 
 // ── results ──
 
@@ -118,6 +119,7 @@ export interface ToolExecutionContext {
   turnId?: string | null
   parentCallId?: string | null
   sessionId?: string | null
+  executionEnvironment?: ExecutionEnvironment | null
   /** 运行时事件发射器（流式事件 dict）。对齐 runner/control 的 StreamEmitter。 */
   emit?: ((event: Record<string, unknown>) => void | Promise<void>) | null
   loop?: unknown | null

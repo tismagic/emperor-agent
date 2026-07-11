@@ -17,6 +17,12 @@ import { AgentLoop } from './loop'
 import { CancelledTaskError } from '../runtime/active'
 import { CompactionCursorStore } from '../memory/compaction-ledger'
 import { EnvironmentProbe } from '../environment/probe'
+import { ExecutionEnvironmentService } from '../environment/snapshot'
+import {
+  SchedulerJob,
+  SchedulerPayload,
+  SchedulerSchedule,
+} from '../scheduler/models'
 
 const TEMPLATES_DIR = join(__dirname, '..', '..', '..', '..', 'templates')
 
@@ -102,6 +108,9 @@ describe('AgentLoop (MIG-CORE-011)', () => {
     )
     expect(Object.isFrozen(loop.environmentCatalog.catalog)).toBe(true)
     expect(loop.environmentProbe).toBeInstanceOf(EnvironmentProbe)
+    expect(loop.executionEnvironmentService).toBeInstanceOf(
+      ExecutionEnvironmentService,
+    )
     expect(loop.activeSessionId).toBeTruthy()
     expect(provider.calls).toHaveLength(2)
     expect(JSON.stringify(provider.calls[1]!.messages)).toContain(
@@ -126,6 +135,76 @@ describe('AgentLoop (MIG-CORE-011)', () => {
         ),
       ),
     ).toBe(true)
+  })
+
+  it('creates a fresh execution snapshot per turn while keeping each turn fixed', async () => {
+    const root = tmp('emperor-agent-loop-environment-')
+    const provider = new QueueProvider([response('first'), response('second')])
+    const loop = await AgentLoop.create({
+      root,
+      stateRoot: join(root, '.emperor'),
+      templatesDir: TEMPLATES_DIR,
+      modelRouter: fakeRouter(provider),
+      initializeMcp: false,
+    })
+    const create = vi.spyOn(loop.executionEnvironmentService, 'create')
+    const previous = process.env.EMPEROR_SNAPSHOT_TEST
+    try {
+      process.env.EMPEROR_SNAPSHOT_TEST = 'one'
+      await loop.runUserTurn('first', { turnId: 'turn_environment_1' })
+      process.env.EMPEROR_SNAPSHOT_TEST = 'two'
+      await loop.runUserTurn('second', { turnId: 'turn_environment_2' })
+
+      expect(create).toHaveBeenCalledTimes(2)
+      const snapshots = await Promise.all(
+        create.mock.results.map((result) => result.value),
+      )
+      expect(snapshots[0]!.revision).not.toBe(snapshots[1]!.revision)
+      expect(snapshots[0]!.selectEnv(['EMPEROR_SNAPSHOT_TEST'])).toEqual({
+        EMPEROR_SNAPSHOT_TEST: 'one',
+      })
+      expect(snapshots[1]!.selectEnv(['EMPEROR_SNAPSHOT_TEST'])).toEqual({
+        EMPEROR_SNAPSHOT_TEST: 'two',
+      })
+    } finally {
+      if (previous === undefined) delete process.env.EMPEROR_SNAPSHOT_TEST
+      else process.env.EMPEROR_SNAPSHOT_TEST = previous
+      await loop.close()
+    }
+  })
+
+  it('creates a fresh snapshot for a scheduler-triggered agent run', async () => {
+    const root = tmp('emperor-agent-loop-scheduler-environment-')
+    const provider = new QueueProvider([response('scheduled')])
+    const loop = await AgentLoop.create({
+      root,
+      stateRoot: join(root, '.emperor'),
+      templatesDir: TEMPLATES_DIR,
+      modelRouter: fakeRouter(provider),
+      initializeMcp: false,
+    })
+    const create = vi.spyOn(loop.executionEnvironmentService, 'create')
+    const job = SchedulerJob.create({
+      jobId: 'snapshot-scheduler-job',
+      name: 'snapshot scheduler job',
+      schedule: new SchedulerSchedule({ kind: 'every', every_ms: 60_000 }),
+      payload: new SchedulerPayload({
+        kind: 'agent_turn',
+        message: 'inspect environment',
+        deliver: false,
+      }),
+      now: 1_700_000_000_000,
+    })
+
+    await loop.schedulerService.onJob!(job)
+
+    expect(create).toHaveBeenCalledTimes(1)
+    const snapshot = await create.mock.results[0]!.value
+    expect(snapshot.projectFingerprint).toMatch(/^[a-f0-9]{64}$/)
+    expect(provider.calls[0]!.messages.at(-1)?.content).toContain(
+      '[SCHEDULER_TRIGGER]',
+    )
+    await loop.close()
   })
 
   it('applies configured PreToolUse hooks through the real loop runtime', async () => {

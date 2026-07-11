@@ -99,11 +99,16 @@ export type EnvironmentToolState = z.infer<typeof environmentToolStateSchema>
 export const executionEnvironmentSnapshotSchema = z
   .object({
     revision: sha256Schema,
+    catalogRevision: sha256Schema,
     projectFingerprint: sha256Schema,
     createdAt: isoTimestampSchema,
+    platform: environmentPlatformSchema,
     pathEntries: z.array(z.string().min(1).max(4_096)).max(256),
-    env: z.record(z.string(), z.string().max(32_768)),
-    toolPaths: z.record(environmentToolIdSchema, z.string().max(4_096)),
+    env: z.record(z.string(), z.string().max(64 * 1024)),
+    toolPaths: z.partialRecord(
+      environmentToolIdSchema,
+      z.string().min(1).max(4_096),
+    ),
   })
   .strict()
 

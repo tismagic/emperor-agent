@@ -8,10 +8,12 @@ import { loadMcpConfig, saveMcpConfig } from './config'
 import {
   buildStdioEnv,
   MCPConnection,
+  StdioConnection,
   type MCPCallToolResult,
   type MCPToolDefinition,
 } from './connection'
 import { MCPClient } from './client'
+import { ExecutionEnvironment } from '../environment/snapshot'
 
 function tmp(prefix: string): string {
   return mkdtempSync(join(tmpdir(), prefix))
@@ -59,6 +61,61 @@ class FakeConnection extends MCPConnection {
       ...this.output,
       content: `${this.output.content}:${toolName}:${JSON.stringify(args)}`,
     }
+  }
+}
+
+function executionEnvironment(
+  character: string,
+  privateEnv: Record<string, string> = {},
+): ExecutionEnvironment {
+  return new ExecutionEnvironment(
+    {
+      revision: character.repeat(64),
+      catalogRevision: 'a'.repeat(64),
+      projectFingerprint: 'b'.repeat(64),
+      createdAt: '2026-07-11T02:00:00.000Z',
+      platform: 'darwin',
+      pathEntries: [`/${character}/bin`],
+      env: { PATH: `/${character}/bin`, HOME: '/tmp' },
+      toolPaths: {},
+    },
+    privateEnv,
+  )
+}
+
+class ReconfigurableConnection extends FakeConnection {
+  readonly applied: string[] = []
+  private releaseFirst: (() => void) | null = null
+  private firstStarted: (() => void) | null = null
+  readonly started = new Promise<void>((resolve) => {
+    this.firstStarted = resolve
+  })
+
+  constructor() {
+    super('reconfigurable', [])
+  }
+
+  protected override async applyExecutionEnvironment(
+    snapshot: ExecutionEnvironment,
+  ): Promise<void> {
+    this.applied.push(snapshot.revision)
+  }
+
+  override async callTool(
+    toolName: string,
+    args: Record<string, unknown>,
+  ): Promise<MCPCallToolResult> {
+    if (toolName === 'first') {
+      this.firstStarted?.()
+      await new Promise<void>((resolve) => {
+        this.releaseFirst = resolve
+      })
+    }
+    return await super.callTool(toolName, args)
+  }
+
+  release(): void {
+    this.releaseFirst?.()
   }
 }
 
@@ -127,9 +184,97 @@ describe('MCP connection env', () => {
       SECRET_TOKEN: 'allowed-by-config',
     })
   })
+
+  it('primes stdio connections with the supplied snapshot PATH', () => {
+    const snapshot = executionEnvironment('f')
+    const connection = new StdioConnection(
+      'alpha',
+      {
+        name: 'alpha',
+        transport: 'stdio',
+        enabled: true,
+        command: '/usr/bin/example',
+        args: [],
+        env: {},
+        url: null,
+        headers: {},
+        tool_overrides: {},
+      },
+      { executionEnvironment: snapshot },
+    )
+
+    expect(connection.stdioParams(snapshot.env).env).toMatchObject({
+      PATH: '/f/bin',
+      HOME: '/tmp',
+    })
+    expect(connection.executionEnvironmentRevision).toBe(snapshot.revision)
+  })
+
+  it('re-resolves stdio command and env templates before switching revisions', async () => {
+    const initial = executionEnvironment('6', { MCP_BIN: '/old/server' })
+    const next = executionEnvironment('7', { MCP_BIN: '/new/server' })
+    const baseConfig = {
+      name: 'alpha',
+      transport: 'stdio',
+      enabled: true,
+      command: '/old/server',
+      args: [],
+      env: { MCP_BIN: '/old/server' },
+      url: null,
+      headers: {},
+      tool_overrides: {},
+    }
+    const connection = new (class extends StdioConnection {
+      override async callTool(): Promise<MCPCallToolResult> {
+        return {
+          content: `${this.config.command}:${this.config.env.MCP_BIN}`,
+          isError: false,
+        }
+      }
+    })('alpha', baseConfig, {
+      executionEnvironment: initial,
+      configResolver: (snapshot) => {
+        const value = snapshot.selectEnv(['MCP_BIN']).MCP_BIN
+        return value
+          ? { ...baseConfig, command: value, env: { MCP_BIN: value } }
+          : null
+      },
+    })
+
+    const result = await connection.callToolWithEnvironment('inspect', {}, next)
+
+    expect(result.content).toBe('/new/server:/new/server')
+    expect(connection.executionEnvironmentRevision).toBe(next.revision)
+  })
 })
 
 describe('MCP adapter/client', () => {
+  it('reconnects lazily for a new snapshot without interrupting an active call', async () => {
+    const connection = new ReconfigurableConnection()
+    await connection.connect()
+    const firstEnvironment = executionEnvironment('c')
+    const secondEnvironment = executionEnvironment('d')
+
+    const first = connection.callToolWithEnvironment(
+      'first',
+      {},
+      firstEnvironment,
+    )
+    await connection.started
+    const second = connection.callToolWithEnvironment(
+      'second',
+      {},
+      secondEnvironment,
+    )
+    await new Promise((resolve) => setTimeout(resolve, 10))
+    expect(connection.applied).toEqual(['c'.repeat(64)])
+
+    connection.release()
+    await Promise.all([first, second])
+    expect(connection.applied).toEqual(['c'.repeat(64), 'd'.repeat(64)])
+    expect(connection.executionEnvironmentRevision).toBe('d'.repeat(64))
+  })
+
   it('wraps tools as emperor Tool instances', async () => {
     const conn = new FakeConnection('alpha', [])
     await conn.connect()
@@ -201,6 +346,7 @@ describe('MCP adapter/client', () => {
           alpha: {
             enabled: true,
             transport: 'stdio',
+            command: '${EMPEROR_MCP_SNAPSHOT_ONLY_6E4D}',
             tool_overrides: {
               search: {
                 read_only: false,
@@ -242,17 +388,32 @@ describe('MCP adapter/client', () => {
         },
       ]),
     }
+    const initialEnvironment = executionEnvironment('e', {
+      EMPEROR_MCP_SNAPSHOT_ONLY_6E4D: '/snapshot/mcp-server',
+    })
+    const factoryEnvironments: Array<ExecutionEnvironment | null | undefined> =
+      []
+    const factoryCommands: Array<string | null> = []
     const client = new MCPClient(root, {
-      connectionFactory: (cfg) => conns[cfg.name]!,
+      connectionFactory: (cfg, environment) => {
+        factoryEnvironments.push(environment)
+        factoryCommands.push(cfg.command)
+        return conns[cfg.name]!
+      },
     })
 
-    await client.initialize()
+    await client.initialize(initialEnvironment)
     const tools = client.getTools()
     expect(tools.map((tool) => tool.name)).toEqual(['mcp_alpha_search'])
     expect(tools[0]!.readOnly).toBe(false)
     expect(tools[0]!.exclusive).toBe(true)
     expect(tools[0]!.maxResultChars).toBe(456)
     expect(client.getConnection('beta')?.connected).toBe(false)
+    expect(factoryEnvironments).toEqual([
+      initialEnvironment,
+      initialEnvironment,
+    ])
+    expect(factoryCommands).toEqual(['/snapshot/mcp-server', null])
 
     const registry = new ToolRegistry()
     client.registerTools(registry)

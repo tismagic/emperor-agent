@@ -5,6 +5,7 @@ import {
 } from 'node:http'
 import { describe, expect, it } from 'vitest'
 import { defaultHooksConfigV2 } from './schema'
+import { ExecutionEnvironment } from '../environment/snapshot'
 
 type Dict = Record<string, unknown>
 type Result = {
@@ -214,7 +215,20 @@ describe('hooks v2 HTTP executor', () => {
 
   it('intersects header environment allowlists and strips control characters', async () => {
     const previous = process.env.HOOK_HTTP_SECRET
-    process.env.HOOK_HTTP_SECRET = 'visible'
+    const executionEnvironment = new ExecutionEnvironment(
+      {
+        revision: 'a'.repeat(64),
+        catalogRevision: 'b'.repeat(64),
+        projectFingerprint: 'c'.repeat(64),
+        createdAt: '2026-07-11T02:00:00.000Z',
+        platform: 'darwin',
+        pathEntries: ['/usr/bin'],
+        env: { PATH: '/usr/bin' },
+        toolPaths: {},
+      },
+      { HOOK_HTTP_SECRET: 'captured' },
+    )
+    process.env.HOOK_HTTP_SECRET = 'changed-after-snapshot'
     const local = await server((req, res) => {
       res.writeHead(200, { 'content-type': 'application/json' })
       res.end(
@@ -238,10 +252,12 @@ describe('hooks v2 HTTP executor', () => {
           },
         }),
         input(),
-        context({ policy }),
+        context({ policy, executionEnvironment }),
       )
 
-      expect(result.output?.reason).toBe('visiblex-injected: bad:missing:clean')
+      expect(result.output?.reason).toBe(
+        'capturedx-injected: bad:missing:clean',
+      )
     } finally {
       if (previous === undefined) delete process.env.HOOK_HTTP_SECRET
       else process.env.HOOK_HTTP_SECRET = previous

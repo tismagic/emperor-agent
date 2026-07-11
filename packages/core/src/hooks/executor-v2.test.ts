@@ -4,6 +4,7 @@ import { join } from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
 import { describe, expect, it } from 'vitest'
 import { defaultHooksConfigV2 } from './schema'
+import { ExecutionEnvironment } from '../environment/snapshot'
 
 type Dict = Record<string, unknown>
 type Result = {
@@ -120,7 +121,20 @@ describe('hooks v2 command executor', () => {
 
   it('exposes only the intersection of handler and policy environment allowlists', async () => {
     const previous = process.env.HOOK_EXECUTOR_SECRET
-    process.env.HOOK_EXECUTOR_SECRET = 'visible'
+    const executionEnvironment = new ExecutionEnvironment(
+      {
+        revision: 'a'.repeat(64),
+        catalogRevision: 'b'.repeat(64),
+        projectFingerprint: 'c'.repeat(64),
+        createdAt: '2026-07-11T02:00:00.000Z',
+        platform: 'darwin',
+        pathEntries: ['/usr/bin', '/bin'],
+        env: { PATH: '/usr/bin:/bin', HOME: '/tmp' },
+        toolPaths: {},
+      },
+      { HOOK_EXECUTOR_SECRET: 'captured' },
+    )
+    process.env.HOOK_EXECUTOR_SECRET = 'changed-after-snapshot'
     try {
       const run = await registry()
       const policy = defaultHooksConfigV2().policy
@@ -134,7 +148,7 @@ describe('hooks v2 command executor', () => {
           ],
         }),
         input(),
-        context({ policy }),
+        context({ policy, executionEnvironment }),
       )
       const hidden = await run.execute(
         command({
@@ -145,10 +159,10 @@ describe('hooks v2 command executor', () => {
           ],
         }),
         input(),
-        context({ policy }),
+        context({ policy, executionEnvironment }),
       )
 
-      expect(visible.output).toMatchObject({ reason: 'visible' })
+      expect(visible.output).toMatchObject({ reason: 'captured' })
       expect(hidden.output).toMatchObject({ reason: 'missing' })
     } finally {
       if (previous === undefined) delete process.env.HOOK_EXECUTOR_SECRET
