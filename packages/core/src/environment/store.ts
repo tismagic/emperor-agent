@@ -6,7 +6,14 @@ import {
   realpathSync,
   renameSync,
 } from 'node:fs'
-import { appendFile, readFile, rename, rm, writeFile } from 'node:fs/promises'
+import {
+  appendFile,
+  readFile,
+  readdir,
+  rename,
+  rm,
+  writeFile,
+} from 'node:fs/promises'
 import { homedir, userInfo } from 'node:os'
 import { isAbsolute, join, relative, resolve, sep } from 'node:path'
 import type { z } from 'zod'
@@ -24,11 +31,13 @@ import {
 
 const MAX_LOG_MESSAGE_CHARS = 8_000
 const MAX_LOG_DETAILS_CHARS = 6_000
+const DEFAULT_MAX_LOG_BYTES = 5 * 1024 * 1024
 
 export interface EnvironmentStoreOptions {
   now?: () => string
   homeDir?: string
   username?: string
+  maxLogBytes?: number
 }
 
 export interface EnvironmentStorePaths {
@@ -62,6 +71,7 @@ export class EnvironmentStore {
   private readonly now: () => string
   private readonly homeDir: string
   private readonly username: string
+  private readonly maxLogBytes: number
   private readonly diagnosticRecords: EnvironmentStoreDiagnostic[] = []
   private readonly pathOperations = new Map<string, Promise<unknown>>()
 
@@ -79,6 +89,14 @@ export class EnvironmentStore {
     this.now = opts.now ?? (() => new Date().toISOString())
     this.homeDir = opts.homeDir ?? homedir()
     this.username = opts.username ?? safeUsername()
+    this.maxLogBytes = Math.max(
+      1_024,
+      Math.min(100 * 1024 * 1024, opts.maxLogBytes ?? DEFAULT_MAX_LOG_BYTES),
+    )
+  }
+
+  initialize(): void {
+    this.ensureLayout()
   }
 
   jobPath(jobId: string): string {
@@ -116,6 +134,26 @@ export class EnvironmentStore {
         'corrupt_job',
         jobId,
       ),
+    )
+  }
+
+  async listJobs(): Promise<EnvironmentJobRecord[]> {
+    this.ensureLayout()
+    const entries = await readdir(this.paths.jobs, { withFileTypes: true })
+    const jobs: EnvironmentJobRecord[] = []
+    for (const entry of entries.sort((left, right) =>
+      left.name.localeCompare(right.name),
+    )) {
+      if (entry.isDirectory() || !entry.name.endsWith('.json')) continue
+      const jobId = entry.name.slice(0, -'.json'.length)
+      if (!environmentIdSchema.safeParse(jobId).success) continue
+      const job = await this.getJob(jobId)
+      if (job) jobs.push(job)
+    }
+    return jobs.sort((left, right) =>
+      left.createdAt === right.createdAt
+        ? left.jobId.localeCompare(right.jobId)
+        : left.createdAt.localeCompare(right.createdAt),
     )
   }
 
@@ -160,7 +198,11 @@ export class EnvironmentStore {
     const path = this.logPath(safeJobId)
     await this.serializePath(path, async () => {
       assertSafeLogTarget(path)
-      await appendFile(path, `${JSON.stringify(record)}\n`, {
+      const line = `${JSON.stringify(record)}\n`
+      const currentBytes = existsSync(path) ? lstatSync(path).size : 0
+      const remaining = Math.max(0, this.maxLogBytes - currentBytes)
+      if (Buffer.byteLength(line) > remaining) return
+      await appendFile(path, line, {
         encoding: 'utf8',
         flag: 'a',
       })

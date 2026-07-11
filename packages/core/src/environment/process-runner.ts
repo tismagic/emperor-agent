@@ -69,6 +69,7 @@ export class NodeEnvironmentProcessRunner implements EnvironmentProcessRunner {
         cwd: request.cwd,
         env: { ...request.env },
         shell: false,
+        detached: process.platform !== 'win32',
         windowsHide: true,
         stdio: ['ignore', 'pipe', 'pipe'],
       }
@@ -80,9 +81,37 @@ export class NodeEnvironmentProcessRunner implements EnvironmentProcessRunner {
       let terminalStatus: EnvironmentProcessStatus | null = null
       let spawnError: string | null = null
       let settled = false
+      let terminating = false
 
       const terminate = (status: EnvironmentProcessStatus): void => {
         if (!terminalStatus) terminalStatus = status
+        if (terminating) return
+        terminating = true
+        if (process.platform !== 'win32' && child.pid) {
+          try {
+            process.kill(-child.pid, 'SIGKILL')
+            return
+          } catch {
+            // Fall back to the direct child below.
+          }
+        }
+        if (process.platform === 'win32' && child.pid) {
+          try {
+            const killer = spawn(
+              'taskkill.exe',
+              ['/pid', String(child.pid), '/t', '/f'],
+              {
+                shell: false,
+                windowsHide: true,
+                stdio: 'ignore',
+              },
+            )
+            killer.once('error', () => child.kill('SIGKILL'))
+            return
+          } catch {
+            // Fall back to the direct child below.
+          }
+        }
         try {
           child.kill('SIGKILL')
         } catch {

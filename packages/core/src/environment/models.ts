@@ -156,6 +156,7 @@ export const environmentJobRecordSchema = z
     planId: environmentIdSchema,
     catalogRevision: sha256Schema,
     projectFingerprint: sha256Schema,
+    projectRoot: z.string().min(1).max(4_096),
     status: environmentJobStatusSchema,
     createdAt: isoTimestampSchema,
     updatedAt: isoTimestampSchema,

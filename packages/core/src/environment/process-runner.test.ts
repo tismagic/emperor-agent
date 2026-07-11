@@ -1,3 +1,7 @@
+import { existsSync, mkdtempSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { setTimeout as delay } from 'node:timers/promises'
 import { describe, expect, it } from 'vitest'
 import { NodeEnvironmentProcessRunner } from './process-runner'
 
@@ -65,5 +69,31 @@ describe('NodeEnvironmentProcessRunner', () => {
         env: {},
       }),
     ).resolves.toMatchObject({ status: 'spawn_error', exitCode: null })
+  })
+
+  it('terminates the spawned process tree on cancellation', async () => {
+    const marker = join(
+      mkdtempSync(join(tmpdir(), 'emperor-process-tree-')),
+      'grandchild-ran',
+    )
+    const runner = new NodeEnvironmentProcessRunner()
+    const controller = new AbortController()
+    const childScript = [
+      'const {spawn}=require("node:child_process")',
+      `spawn(process.execPath,["-e",${JSON.stringify(`setTimeout(()=>require('node:fs').writeFileSync(${JSON.stringify(marker)},'ran'),400)`)}])`,
+      'setTimeout(()=>{},5000)',
+    ].join(';')
+    const running = runner.run({
+      executable: process.execPath,
+      args: ['-e', childScript],
+      env: { PATH: process.env.PATH ?? '' },
+      signal: controller.signal,
+    })
+    await delay(100)
+    controller.abort()
+
+    await expect(running).resolves.toMatchObject({ status: 'cancelled' })
+    await delay(600)
+    expect(existsSync(marker)).toBe(false)
   })
 })

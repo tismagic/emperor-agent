@@ -3,11 +3,11 @@
   "plan_version": "2.0",
   "plan_file": "docs/superpowers/plans/2026-07-10-cross-platform-environment-release-implementation.md",
   "created_at": "2026-07-10",
-  "updated_at": "2026-07-11T11:40:31+08:00",
+  "updated_at": "2026-07-11T12:04:20+08:00",
   "started_at": "2026-07-10T16:02:16+08:00",
   "total_tasks": 22,
-  "completed": 9,
-  "rounds": 9,
+  "completed": 10,
+  "rounds": 10,
   "tasks": {
     "BASE-001": {
       "status": "done",
@@ -73,11 +73,11 @@
       "notes": "Round 9 completed from clean commit bc94dd00 with TDD and two self-review passes. Core now creates one immutable revisioned ExecutionEnvironment per turn from a single atomic probe/env capture; public snapshots contain only effective PATH, platform basics and ready tool paths, while explicitly selected private values remain non-serializable and bounded. AgentRunner propagates the same snapshot through batch and streaming tools; RunCommand, command/http Hooks, hook agents, Subagents and Team runners inherit it; Scheduler turns create fresh snapshots. stdio MCP starts with the snapshot, re-resolves config templates on revision changes and waits for active calls before reconnecting lazily on the next call. Review fixes covered atomic env capture, draft sessions with nonexistent project paths, MCP template re-resolution and active-call-safe switching. Focused verification passed 9 files / 142 tests; final make check passed Core 98 files / 806 tests and Desktop 62 files / 280 tests, plus Core/Desktop typechecks, Desktop test typecheck, zero-warning ESLint, Prettier, git diff check, migration parity and production build. Legacy standalone tool/hook fallbacks remain for compatibility, while all product Agent execution paths use the snapshot. Environment install jobs remain deferred to ENV-JOB-010."
     },
     "ENV-JOB-010": {
-      "status": "pending",
+      "status": "done",
       "title": "安装计划、job 和中断恢复",
       "depends_on": ["ENV-SNAP-009"],
-      "attempts": 0,
-      "notes": ""
+      "attempts": 1,
+      "notes": "Round 10 completed from clean commit dccdcf67 with strict TDD and repeated security review. Core now provides a strict plan registry and EnvironmentInstallOrchestrator: dependency-first plans bind catalog revision, canonical project root/fingerprint, platform/arch and the complete tool-state hash; expire at ten minutes; expose only plan/tool/strategy/license/confirmation IDs; and force-refresh the original project before execution, after execution and during recovery. Jobs persist atomically, hold a tokenized heartbeat cross-process lock, reject concurrent install/recovery, reclaim identity-checked abandoned locks, continue only unrelated dependency branches, support awaiting_user/cancel/partial/failed/completed/interrupted states, and generate receipts from fresh probe results. Review RED/GREEN fixes added exact-deadline expiry, live-job recovery exclusion, post-probe failure convergence, actual step/receipt outcomes, malformed stale-lock recovery, symlinked root/job isolation, 5 MiB bounded redacted JSONL, and POSIX/Windows process-tree termination without shell. Final focused environment verification passed 7 files / 54 tests; full make check passed Core 99 files / 821 tests and Desktop 62 files / 280 tests, plus Core/Desktop typechecks, Desktop test typecheck, zero-warning ESLint, Prettier, migration parity, git diff check and production build. Platform command/download/signature adapters remain intentionally deferred to ENV-MAC/WIN/LNX-011/012/013."
     },
     "ENV-MAC-011": {
       "status": "pending",

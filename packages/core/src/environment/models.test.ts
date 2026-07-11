@@ -65,6 +65,7 @@ describe('Environment domain schemas', () => {
       planId: 'plan_01',
       catalogRevision: 'a'.repeat(64),
       projectFingerprint: 'b'.repeat(64),
+      projectRoot: '/workspace',
       status: 'planned',
       createdAt: '2026-07-11T00:00:00.000Z',
       updatedAt: '2026-07-11T00:00:00.000Z',

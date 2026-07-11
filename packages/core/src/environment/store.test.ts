@@ -25,6 +25,7 @@ function job(): EnvironmentJobRecord {
     planId: 'plan_01',
     catalogRevision: 'a'.repeat(64),
     projectFingerprint: 'b'.repeat(64),
+    projectRoot: '/workspace',
     status: 'planned',
     createdAt: '2026-07-11T00:00:00.000Z',
     updatedAt: '2026-07-11T00:00:00.000Z',
@@ -191,6 +192,27 @@ describe('EnvironmentStore', () => {
     expect(new Set(page.records.map((record) => record.message)).size).toBe(30)
   })
 
+  it('caps each job log without writing partial JSONL records', async () => {
+    const store = new EnvironmentStore(root(), { maxLogBytes: 1_500 })
+    await Promise.all(
+      Array.from({ length: 50 }, (_, index) =>
+        store.appendLog('job_01', {
+          level: 'info',
+          kind: 'installer_output',
+          message: `${index}:${'x'.repeat(500)}`,
+          details: {},
+        }),
+      ),
+    )
+
+    expect(
+      readFileSync(store.logPath('job_01')).byteLength,
+    ).toBeLessThanOrEqual(1_500)
+    const page = await store.readLog('job_01', { limit: 100 })
+    expect(page.records.length).toBeGreaterThan(0)
+    expect(page.badLines).toEqual([])
+  })
+
   it('never follows a symlinked installation log', async () => {
     const stateRoot = root()
     const store = new EnvironmentStore(stateRoot)
@@ -235,6 +257,21 @@ describe('EnvironmentStore', () => {
 
     await expect(store.getJob('job_01')).rejects.toThrow(/unsafe|symbolic/i)
     expect(readFileSync(outsideJob, 'utf8')).toBe('{broken')
+  })
+
+  it('isolates symlinked job entries discovered during recovery scans', async () => {
+    const stateRoot = root()
+    const store = new EnvironmentStore(stateRoot)
+    store.initialize()
+    const outsideJob = join(stateRoot, 'outside-job.json')
+    writeFileSync(outsideJob, JSON.stringify(job()), 'utf8')
+    symlinkSync(outsideJob, store.jobPath('job_link'))
+
+    await expect(store.listJobs()).resolves.toEqual([])
+    expect(readFileSync(outsideJob, 'utf8')).toBe(JSON.stringify(job()))
+    expect(store.diagnostics()).toEqual([
+      expect.objectContaining({ kind: 'corrupt_job', jobId: 'job_link' }),
+    ])
   })
 
   it('recovers an interrupted Windows-style replacement backup on read', async () => {
