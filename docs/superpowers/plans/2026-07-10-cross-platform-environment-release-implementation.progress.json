@@ -3,11 +3,11 @@
   "plan_version": "2.0",
   "plan_file": "docs/superpowers/plans/2026-07-10-cross-platform-environment-release-implementation.md",
   "created_at": "2026-07-10",
-  "updated_at": "2026-07-11T08:28:21+08:00",
+  "updated_at": "2026-07-11T09:31:13+08:00",
   "started_at": "2026-07-10T16:02:16+08:00",
   "total_tasks": 22,
-  "completed": 6,
-  "rounds": 6,
+  "completed": 7,
+  "rounds": 7,
   "tasks": {
     "BASE-001": {
       "status": "done",
@@ -52,11 +52,11 @@
       "notes": "Round 6 completed from clean commit 4f12b911 with strict TDD and three independent review passes. Only skill-creator remains active; nine prior built-ins moved to non-scanned/non-packaged skills-catalog, all catalog developer-machine paths now use {{skill_dir}}, and Creator's three Python helpers were removed. Core now provides YAML-backed source/status/requirements metadata, create/validate/reproducible package operations, manage_skill, canonical runtime placeholder expansion, user-over-builtin precedence, invalid/blocked fail-closed loading, and explicit flat .md compatibility. Packaging enforces canonical state containment, no-follow descriptor reads, identity-stable snapshots, symlink rejection, bounded depth/entries/files/bytes, deterministic ZIP metadata, recoverable Windows replacement, and CoreApi mutation guards. Initial review found two Critical, four Important and one Minor issue; all seven were fixed. Final review found Critical 0 / Important 0 and Ready Yes. Final make check passed Core 88 files / 742 tests and Desktop 62 files / 280 tests, plus both typechecks, Desktop test typecheck, zero-warning ESLint, Prettier, diff checks and production build. Final macOS arm64 package:dir passed; the 47-file runtime manifest contains only skill-creator (revision f464dfbe4148746cf93f4b79e5b3a9f584d845f3ec8b313155c8a83103073564), with no Python or skills-catalog resources. Signing remains intentionally deferred to REL-MAC-018 because no valid Developer ID credential is available."
     },
     "ENV-FND-007": {
-      "status": "pending",
+      "status": "done",
       "title": "建立 Environment schemas、catalog 与 store",
       "depends_on": ["SKILL-006"],
-      "attempts": 0,
-      "notes": ""
+      "attempts": 1,
+      "notes": "Round 7 completed from clean commit caa85302 with strict TDD and four review passes. Core now exposes strict Zod environment tool/state/plan/job/receipt/log schemas, 20 stable Chinese error descriptors with bound recovery actions, fixed internal-error redaction, and a packaged immutable 12-tool ToolCatalog that validates before AgentLoop state writes. Catalog validation fails closed on schema drift, unsupported targets, duplicate/cyclic/platform-incompatible dependencies, uncovered targets, unsafe/public-network inputs, missing digest/publisher, nonconcrete or unsatisfied versions, and any probe/install command outside exact static allowlists. Official metadata locked Git 2.55.0, ripgrep 15.1.0, Volta 2.0.2, Node 24.18.0, npm 12.0.1, uv 0.11.28, Python 3.12.13, Go 1.26.5, Rust/Cargo 1.97.0, rustup 1.29.0 and MSVC 17.14.37411.7; golden revision is dc95b1f423e1b8ccde50c66c06fa172f9226b95be7f15e10799ac2a4fefc7ffe. EnvironmentStore provides strict atomic JSON, Windows backup recovery, same-path read/write serialization, corruption isolation, symlinked-directory rejection, paged JSONL and conservative HOME/user/header/cookie/token/CLI credential redaction. Final independent review found Critical 0 / Important 0 and Ready Yes. Final make check passed Core 92 files / 765 tests and Desktop 62 files / 280 tests, plus both typechecks, Desktop test typecheck, zero-warning ESLint, Prettier, diff checks and migration parity; final Electron production build passed. Probe execution remains intentionally deferred to ENV-PROBE-008."
     },
     "ENV-PROBE-008": {
       "status": "pending",

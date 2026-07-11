@@ -31,11 +31,11 @@ describe('errors', () => {
     })
     expect(toSafeError(new Error('raw'))).toEqual({
       code: 'internal_error',
-      message: 'raw',
+      message: '发生内部错误，请查看日志。',
     })
     expect(toSafeError('weird')).toEqual({
       code: 'internal_error',
-      message: 'weird',
+      message: '发生内部错误，请查看日志。',
     })
   })
 })

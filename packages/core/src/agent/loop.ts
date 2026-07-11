@@ -68,6 +68,10 @@ import { WorkspacePolicy } from '../permissions/workspace-policy'
 import { ProjectStore } from '../projects/store'
 import { ActiveTaskRegistry, TurnBusyError } from '../runtime/active'
 import {
+  loadBundledToolCatalog,
+  type LoadedToolCatalog,
+} from '../environment/catalog'
+import {
   migrateLegacyStateRoot,
   type LegacyStateMigrationResult,
 } from '../runtime/migrate-state-root'
@@ -221,6 +225,7 @@ export class AgentLoop {
   readonly sharedMemory: MemoryStore
   readonly tokenTracker: TokenTracker
   readonly hookService: HookService
+  readonly environmentCatalog: LoadedToolCatalog
   readonly taskManager: TaskManager
   readonly projectStore: ProjectStore
   readonly controlManager: ControlManager
@@ -279,6 +284,7 @@ export class AgentLoop {
 
     this.sessionStore = new SessionStore(this.paths.stateRoot)
     this.tokenTracker = new TokenTracker(this.paths.tokensFile)
+    this.environmentCatalog = loadBundledToolCatalog()
     this.hookService = new HookService({
       stateRoot: this.paths.stateRoot,
       modelRouter: {
@@ -358,6 +364,8 @@ export class AgentLoop {
   }
 
   static async create(opts: AgentLoopCreateOptions): Promise<AgentLoop> {
+    // Signed static data must validate before startup creates or migrates state.
+    loadBundledToolCatalog()
     const paths = resolveRuntimePaths(opts.root, {
       stateRoot: opts.stateRoot ?? null,
       templatesDir: opts.templatesDir ?? null,

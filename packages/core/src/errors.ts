@@ -104,11 +104,9 @@ export class ContextOverflowError extends EmperorError {
 }
 
 /** 把任意 throwable 归一成安全错误（IPC 出口用）。 */
-export function toSafeError(err: unknown): { code: string; message: string } {
+export function toSafeError(err: unknown): SafeErrorPayload {
   if (err instanceof EmperorError) return err.toSafe()
-  if (err instanceof Error)
-    return { code: 'internal_error', message: err.message }
-  return { code: 'internal_error', message: String(err) }
+  return { code: 'internal_error', message: '发生内部错误，请查看日志。' }
 }
 
 function providerErrorAction(kind: ModelProviderErrorKind): string | null {

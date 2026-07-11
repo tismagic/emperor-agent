@@ -96,6 +96,10 @@ describe('AgentLoop (MIG-CORE-011)', () => {
     expect(loop.registry.has('dispatch_subagent')).toBe(true)
     expect(loop.registry.has('scheduler')).toBe(true)
     expect(loop.registry.has('spawn_teammate')).toBe(true)
+    expect(loop.environmentCatalog.catalog.catalogId).toBe(
+      'emperor-environment-tools',
+    )
+    expect(Object.isFrozen(loop.environmentCatalog.catalog)).toBe(true)
     expect(loop.activeSessionId).toBeTruthy()
     expect(provider.calls).toHaveLength(2)
     expect(JSON.stringify(provider.calls[1]!.messages)).toContain(
