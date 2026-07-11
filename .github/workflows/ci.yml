@@ -56,4 +56,4 @@ jobs:
         run: npm run build
       - name: Package dry run
         working-directory: desktop
-        run: npm run package:dir
+        run: npm run package:verify

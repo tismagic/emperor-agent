@@ -3,6 +3,7 @@ import * as fs from 'node:fs'
 import * as os from 'node:os'
 import * as path from 'node:path'
 import { createRequire } from 'node:module'
+import { createPackage } from '@electron/asar'
 import { validateRuntimeManifest } from '@emperor/core'
 
 const desktopRoot = path.resolve(__dirname, '..', '..')
@@ -31,6 +32,19 @@ type AfterPackHook = (context: {
   }
 }) => Promise<void>
 
+interface PackagedResourceHook {
+  validatePackagedAppResources(resourcesRoot: string): void
+}
+
+const petResourceFiles = [
+  'event-mapper.js',
+  'idle-scenes.js',
+  'preload.js',
+  'renderer.css',
+  'renderer.html',
+  'renderer.js',
+]
+
 describe('desktop release packaging (MIG-REL-001)', () => {
   it('does not bundle the legacy Python backend by default', () => {
     const config = fs.readFileSync(
@@ -44,12 +58,39 @@ describe('desktop release packaging (MIG-REL-001)', () => {
     expect(config).toContain('beforePack: scripts/before-pack.cjs')
     expect(config).toContain('afterPack: scripts/after-pack.cjs')
     expect(config).toContain('runtime-defaults-manifest.json')
+    expect(config).toContain('!node_modules{,/**/*}')
+    expect(config).toContain('from: ../assets/desktop-pet')
+    expect(config).not.toMatch(/from:\s+\.\.\/assets\s*$/m)
     expect(
       fs.existsSync(path.join(desktopRoot, 'scripts', 'before-pack.cjs')),
     ).toBe(true)
     expect(
       fs.existsSync(path.join(desktopRoot, 'scripts', 'after-pack.cjs')),
     ).toBe(true)
+  })
+
+  it('defines a packaged smoke command instead of treating package:dir as proof', () => {
+    const pkg = JSON.parse(
+      fs.readFileSync(path.join(desktopRoot, 'package.json'), 'utf8'),
+    ) as { scripts?: Record<string, string> }
+
+    expect(pkg.scripts?.['package:smoke']).toBe(
+      'node scripts/run-packaged-smoke.cjs',
+    )
+    expect(pkg.scripts?.['package:verify']).toContain('package:dir')
+    expect(pkg.scripts?.['package:verify']).toContain('package:smoke')
+  })
+
+  it('runs the packaged binary headlessly with a minimal non-shell environment', () => {
+    const runner = fs.readFileSync(
+      path.join(desktopRoot, 'scripts', 'run-packaged-smoke.cjs'),
+      'utf8',
+    )
+
+    expect(runner).toContain("args.unshift('--headless'")
+    expect(runner).toContain('shell: false')
+    expect(runner).not.toMatch(/env:\s*\{\s*\.\.\.process\.env/)
+    expect(runner).toContain('PATH: emptyBin')
   })
 
   it('build_desktop_release does not require the Python backend bundle', () => {
@@ -75,6 +116,7 @@ describe('desktop release packaging (MIG-REL-001)', () => {
     const appOutDir = path.join(temp, 'app-out')
     const runtimeRoot = path.join(appOutDir, 'resources', 'runtime-defaults')
     const manifestPath = path.join(runtimeRoot, 'runtime-manifest.json')
+    const appStage = path.join(temp, 'app-stage')
 
     for (const mapping of hook.SOURCE_MAPPINGS) {
       const source = path.join(repoRoot, mapping.source)
@@ -92,7 +134,7 @@ describe('desktop release packaging (MIG-REL-001)', () => {
     })
 
     expect(validated).toEqual(generated)
-    expect(generated.files.length).toBeGreaterThan(40)
+    expect(generated.files.length).toBeGreaterThan(30)
     expect(generated.builtInSkills).toEqual(['skill-creator'])
     expect(
       generated.files
@@ -112,9 +154,34 @@ describe('desktop release packaging (MIG-REL-001)', () => {
     )
     expect(fs.readFileSync(manifestPath, 'utf8')).not.toContain(repoRoot)
 
+    fs.mkdirSync(path.join(appStage, 'out', 'main'), { recursive: true })
+    fs.mkdirSync(path.join(appStage, 'out', 'preload'), { recursive: true })
+    fs.mkdirSync(path.join(appStage, 'out', 'renderer'), { recursive: true })
+    fs.writeFileSync(path.join(appStage, 'out', 'main', 'index.js'), 'void 0\n')
+    fs.writeFileSync(
+      path.join(appStage, 'out', 'preload', 'index.mjs'),
+      'void 0\n',
+    )
+    fs.writeFileSync(
+      path.join(appStage, 'out', 'renderer', 'index.html'),
+      '<!doctype html>\n',
+    )
+    fs.writeFileSync(
+      path.join(appStage, 'package.json'),
+      JSON.stringify({
+        name: 'emperor-agent-desktop',
+        main: 'out/main/index.js',
+      }),
+    )
+    await createPackage(appStage, path.join(appOutDir, 'resources', 'app.asar'))
+    const petRoot = path.join(appOutDir, 'resources', 'desktop-pet')
+    fs.mkdirSync(petRoot, { recursive: true })
+    for (const file of petResourceFiles)
+      fs.writeFileSync(path.join(petRoot, file), 'fixture\n')
+
     const afterPack = require(
       path.join(desktopRoot, 'scripts', 'after-pack.cjs'),
-    ) as AfterPackHook
+    ) as AfterPackHook & PackagedResourceHook
     await expect(
       afterPack({
         appOutDir,
@@ -123,6 +190,16 @@ describe('desktop release packaging (MIG-REL-001)', () => {
         },
       }),
     ).resolves.toBeUndefined()
+
+    expect(() =>
+      afterPack.validatePackagedAppResources(path.join(appOutDir, 'resources')),
+    ).not.toThrow()
+    fs.writeFileSync(path.join(petRoot, 'package.json'), '{}')
+    expect(() =>
+      afterPack.validatePackagedAppResources(path.join(appOutDir, 'resources')),
+    ).toThrow(/desktop-pet/i)
+    fs.rmSync(path.join(petRoot, 'package.json'))
+
     fs.writeFileSync(path.join(runtimeRoot, 'unexpected-after-pack.txt'), 'x')
     await expect(
       afterPack({

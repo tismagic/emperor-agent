@@ -21,7 +21,7 @@ const {
 const SOURCE_MAPPINGS = [
   { source: 'templates', target: 'templates' },
   { source: 'skills', target: 'skills' },
-  { source: 'assets', target: 'assets' },
+  { source: 'assets/desktop-pet', target: 'assets/desktop-pet' },
   {
     source: 'model_config.example.json',
     target: 'model_config.example.json',

@@ -13,6 +13,7 @@ import * as fs from 'node:fs'
 import * as path from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { defaultStateRoot } from '@emperor/core'
+import type { CoreApi } from '@emperor/core'
 
 import { resolveConfig } from './config'
 import { resolveAppIconPath } from './icon'
@@ -27,9 +28,11 @@ import { createCoreHost } from './core-host'
 import { CoreEventBridge } from './event-bridge'
 import { moduleDirFromUrl } from './esm-path'
 import { resolveMainPreloadPath } from './preload-path'
+import { parsePackagedSmokeArgs, runPackagedSmoke } from './packaged-smoke'
 
 const mainDir = moduleDirFromUrl(import.meta.url)
 const mainArgv = process.argv.slice(2)
+const packagedSmoke = parsePackagedSmokeArgs(process.argv)
 let config = resolveConfig({ argv: mainArgv, env: process.env })
 let legacyRuntimeRoot = config.runtimeRoot
 let packagedRuntimeRevision = ''
@@ -40,7 +43,7 @@ const appIconPath = resolveAppIconPath({
   resourcesPath: process.resourcesPath,
 })
 
-let coreApi: { close(): Promise<void> } | null = null
+let coreApi: CoreApi | null = null
 const coreEventBridge = new CoreEventBridge()
 let runtimeReady = false
 let mainWindow: BrowserWindow | null = null
@@ -338,8 +341,9 @@ async function startup(): Promise<void> {
     app.setAppUserModelId('com.emperor.agent.desktop')
 
   try {
+    if (packagedSmoke && !app.isPackaged)
+      throw new Error('packaged smoke mode requires a packaged application')
     prepareMainRuntime()
-    registerAppProtocol()
     coreApi = await createCoreHost({
       root: config.runtimeRoot,
       ipcMain,
@@ -354,7 +358,32 @@ async function startup(): Promise<void> {
         legacyRuntimeSkillsHandled: app.isPackaged,
       },
     })
+    if (packagedSmoke) {
+      await runPackagedSmoke({
+        core: coreApi,
+        runtimeRoot: config.runtimeRoot,
+        stateRoot: config.stateRoot,
+        receiptPath: packagedSmoke.receiptPath,
+        appVersion: app.getVersion(),
+        runtimeRevision: packagedRuntimeRevision,
+        commit: process.env.EMPEROR_BUILD_COMMIT || 'local',
+        platform: process.platform,
+        arch: process.arch,
+      })
+      await coreApi.close()
+      coreApi = null
+      app.exit(0)
+      return
+    }
+    registerAppProtocol()
   } catch (err) {
+    if (packagedSmoke) {
+      console.error(`packaged smoke failed: ${errMessage(err)}`)
+      if (coreApi) await coreApi.close().catch(() => {})
+      coreApi = null
+      app.exit(1)
+      return
+    }
     fail('CoreApi 初始化失败', errMessage(err))
     return
   }

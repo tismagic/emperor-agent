@@ -10,6 +10,7 @@ afterPack: scripts/after-pack.cjs
 files:
   - out/**/*
   - package.json
+  - '!node_modules{,/**/*}'
 
 extraResources:
   - from: build/icon.png
@@ -18,8 +19,8 @@ extraResources:
     to: runtime-defaults/templates
   - from: ../skills
     to: runtime-defaults/skills
-  - from: ../assets
-    to: runtime-defaults/assets
+  - from: ../assets/desktop-pet
+    to: runtime-defaults/assets/desktop-pet
   - from: ../model_config.example.json
     to: runtime-defaults/model_config.example.json
   - from: ../mcp_config.example.json

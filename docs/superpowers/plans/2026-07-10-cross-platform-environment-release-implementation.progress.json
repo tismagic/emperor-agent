@@ -3,11 +3,11 @@
   "plan_version": "2.0",
   "plan_file": "docs/superpowers/plans/2026-07-10-cross-platform-environment-release-implementation.md",
   "created_at": "2026-07-10",
-  "updated_at": "2026-07-11T20:18:58+08:00",
+  "updated_at": "2026-07-11T20:45:51+08:00",
   "started_at": "2026-07-10T16:02:16+08:00",
   "total_tasks": 22,
-  "completed": 16,
-  "rounds": 16,
+  "completed": 17,
+  "rounds": 17,
   "tasks": {
     "BASE-001": {
       "status": "done",
@@ -127,11 +127,11 @@
       "notes": "Round 16 completed from clean commit 4ab0f198 with typed UI modeling, focused unit tests and Playwright acceptance. Diagnostics now provides a compact development-environment section grouped by platform/base/project/Skill/large prerequisites, one-click or per-tool planning, immutable catalog source/version/license/size/elevation review, explicit license and separate-step confirmation, live bounded progress, cancellation, partial/interrupted recovery, recent receipts and paged redacted logs. Runtime events refresh status without overwriting terminal progress decisions. SkillsPanel replaced the legacy archive-import path with local webUtils and public HTTPS/GitHub preview/confirm flows that expose digest, files, scripts, external commands, missing requirements and blocked installation state before explicit confirmation; blocked Skills are also visible in capability projection. Core status exposes only safe signed catalog presentation metadata and no command argv or environment data. Desktop and 390x844 layouts passed real scroll, horizontal-overflow and modal-boundary assertions; desktop/mobile environment and Skill confirmation screenshots were visually inspected. Playwright passed 33/33 including install, cancel, partial, interrupted, Skill confirmation, four Hooks views and all settings scroll contracts. Final make check passed Core 107 files / 900 tests and Desktop 63 files / 285 tests, plus Core/Desktop typechecks, Desktop test typecheck, zero-warning ESLint, Prettier, migration parity, git diff check and production build."
     },
     "PKG-017": {
-      "status": "pending",
+      "status": "done",
       "title": "最小资源打包与 packaged smoke",
       "depends_on": ["ENV-UI-016"],
-      "attempts": 0,
-      "notes": ""
+      "attempts": 1,
+      "notes": "Round 17 completed from clean commit 3b04bf20 with strict TDD and real unpacked-app verification. RED first proved the packaged-smoke module, package scripts, ASAR/resource validator and node_modules exclusion were absent; the first real package:verify then correctly failed because electron-builder still auto-included production dependencies despite the files exclusion. GREEN moves fully bundled Desktop/Core libraries to build-time dependencies, leaves the ASAR with only out/ and a minimal package.json, and validates required main/preload/renderer entries, forbidden node_modules/source/tests/fixtures/Python/catalog paths, development-machine absolute paths and the exact six-file embedded desktop-pet allowlist during afterPack. Runtime defaults now package only templates, skill-creator, config examples and desktop-pet assets; generated README artwork is no longer duplicated. A fixed --emperor-packaged-smoke main-process mode creates no BrowserWindow or dialog, initializes the signed CoreApi, requires exactly skill-creator, runs bootstrap/diagnostics/environment plus Node-native Glob/Grep in a temporary workspace, verifies install job count remains zero, closes Core cleanly and atomically writes a bounded receipt without HOME, username or PATH. The cross-platform runner uses an absolute packaged executable, shell:false, a minimal environment and empty PATH; Linux adds explicit Chromium/Ozone headless flags, and CI now runs package:verify on macOS/Windows/Ubuntu. The actual unsigned macOS arm64 unpacked app passed repeatedly with app.asar reduced from about 99 MiB to 8.4 MiB and runtime-defaults from about 13 MiB to 208 KiB; its receipt records runtime revision 649627454f7efd78edda25da76e8a6539b3b092ed35e0e09fab5ec998474353b, manifest hash fb4fa52b83927f083a72df20ba07acfc866eec4e42d4484085f76328897792ba, all five operations green, zero install jobs and exit code 0. Final make check passed Core 107 files / 900 tests and Desktop 64 files / 290 tests, plus Core/Desktop typechecks, Desktop test typecheck, zero-warning ESLint, Prettier, migration parity, git diff check and production build. macOS signing remains intentionally deferred to REL-MAC-018 because no valid Developer ID identity is available."
     },
     "REL-MAC-018": {
       "status": "pending",
