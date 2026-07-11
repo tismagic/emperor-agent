@@ -8,6 +8,7 @@ if (!adapter || !arch || !output)
     'usage: node scripts/write-environment-adapter-receipt.mjs <adapter> <arch> <output>',
   )
 const adapterChecks = {
+  linux: 'environment/linux-adapter.test.ts',
   macos: 'environment/macos-adapter.test.ts',
   windows: 'environment/windows-adapter.test.ts',
 }
@@ -36,6 +37,7 @@ const receipt = {
     'environment/download.test.ts',
     'environment/process-runner.test.ts',
     ...(adapter === 'windows' ? ['environment/zip.test.ts'] : []),
+    ...(adapter === 'linux' ? ['environment/tar.test.ts'] : []),
     'core:typecheck',
     'core:lint',
   ],

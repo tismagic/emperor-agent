@@ -278,17 +278,40 @@ describe('signed ToolCatalog', () => {
     }
     expect(() => parseToolCatalog(direct)).toThrow(/sha-?256|digest/i)
 
+    const directBinary = fixture()
+    const binaryStrategy = (
+      (directBinary.tools as Array<Record<string, unknown>>)[0]!
+        .strategies as Array<Record<string, unknown>>
+    )[0]!
+    binaryStrategy.kind = 'direct_binary'
+    binaryStrategy.source = {
+      url: 'https://example.com/git',
+      publisher: 'Example Publisher',
+    }
+    expect(() => parseToolCatalog(directBinary)).toThrow(/sha-?256|digest/i)
+
     ;(strategy.source as Record<string, unknown>).sha256 = 'a'.repeat(64)
     strategy.kind = 'windows_installer'
     strategy.targets = [{ platform: 'win32', arch: 'x64' }]
     delete (strategy.source as Record<string, unknown>).publisher
     expect(() => parseToolCatalog(direct)).toThrow(/publisher/i)
+
+    const mismatchedKind = fixture()
+    const mismatchedStrategy = (
+      (mismatchedKind.tools as Array<Record<string, unknown>>)[0]!
+        .strategies as Array<Record<string, unknown>>
+    )[0]!
+    mismatchedStrategy.kind = 'windows_installer'
+    ;(mismatchedStrategy.source as Record<string, unknown>).sha256 = 'b'.repeat(
+      64,
+    )
+    expect(() => parseToolCatalog(mismatchedKind)).toThrow(/target|platform/i)
   })
 
   it('ships an immutable catalog covering every planned tool id', () => {
     const bundled = loadBundledToolCatalog()
     expect(bundled.revision).toBe(
-      '4a8fbd5ce9de1636727ad3a353ce07f272f849e5587b9a158ae698564b4ddd09',
+      '3e12b926a9e9e32d3de284dbb6ec2f101ea9912a4f744deda856c0a78048d2d5',
     )
     expect(bundled.catalog.tools.map((tool) => tool.id)).toEqual([
       'cargo',
@@ -351,5 +374,52 @@ describe('signed ToolCatalog', () => {
           strategy.args.includes('--disable-interactivity'),
       ),
     ).toBe(true)
+    expect(
+      Object.fromEntries(
+        bundled.catalog.tools
+          .filter((tool) => ['go', 'rustup', 'uv', 'volta'].includes(tool.id))
+          .map((tool) => {
+            const strategy = tool.strategies.find((candidate) =>
+              candidate.targets.some(
+                (target) =>
+                  target.platform === 'linux' && target.arch === 'x64',
+              ),
+            )
+            return [
+              tool.id,
+              {
+                id: strategy?.id,
+                kind: strategy?.kind,
+                sha256: strategy?.source.sha256,
+              },
+            ]
+          }),
+      ),
+    ).toEqual({
+      go: {
+        id: 'official-archive',
+        kind: 'direct_archive',
+        sha256:
+          '5c2c3b16caefa1d968a94c1daca04a7ca301a496d9b086e17ad77bb81393f053',
+      },
+      rustup: {
+        id: 'official-binary',
+        kind: 'direct_binary',
+        sha256:
+          '4acc9acc76d5079515b46346a485974457b5a79893cfb01112423c89aeb5aa10',
+      },
+      uv: {
+        id: 'official-archive',
+        kind: 'direct_archive',
+        sha256:
+          'e490a6464492183c5d4534a5527fb4440f7f2bb2f228162ad7e4afe076dc0224',
+      },
+      volta: {
+        id: 'official-archive',
+        kind: 'direct_archive',
+        sha256:
+          '6cec054c911fb925b629a09455775af6e95dc0f5694a4c28b63979ab9ef18037',
+      },
+    })
   })
 })

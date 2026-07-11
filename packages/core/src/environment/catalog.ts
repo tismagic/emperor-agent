@@ -102,6 +102,7 @@ export const toolCatalogStrategySchema = z
     kind: z.enum([
       'package_manager',
       'version_manager',
+      'direct_binary',
       'direct_archive',
       'windows_installer',
       'macos_installer',
@@ -129,7 +130,8 @@ export const toolCatalogStrategySchema = z
         message: 'command: install command is not in the static allowlist',
       })
     if (
-      (strategy.kind === 'direct_archive' ||
+      (strategy.kind === 'direct_binary' ||
+        strategy.kind === 'direct_archive' ||
         strategy.kind === 'macos_installer' ||
         strategy.kind === 'windows_installer') &&
       !strategy.source.sha256
@@ -147,6 +149,24 @@ export const toolCatalogStrategySchema = z
         code: 'custom',
         path: ['source', 'publisher'],
         message: 'publisher: Windows installers require a publisher',
+      })
+    if (
+      strategy.kind === 'windows_installer' &&
+      strategy.targets.some((target) => target.platform !== 'win32')
+    )
+      ctx.addIssue({
+        code: 'custom',
+        path: ['targets'],
+        message: 'target: Windows installers require Windows targets',
+      })
+    if (
+      strategy.kind === 'macos_installer' &&
+      strategy.targets.some((target) => target.platform !== 'darwin')
+    )
+      ctx.addIssue({
+        code: 'custom',
+        path: ['targets'],
+        message: 'target: macOS installers require macOS targets',
       })
   })
 
@@ -513,6 +533,14 @@ const ALLOWED_STRATEGY_COMMANDS = new Set([
     'minimal',
   ]),
   commandKey('rustup', ['--version']),
+  commandKey('rustup-init', [
+    '-y',
+    '--no-modify-path',
+    '--profile',
+    'minimal',
+    '--default-toolchain',
+    '1.97.0',
+  ]),
   commandKey('uv', ['--version']),
   commandKey('volta', ['--version']),
 ])

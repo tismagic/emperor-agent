@@ -195,6 +195,21 @@
       },
       "strategies": [
         {
+          "id": "official-archive",
+          "kind": "direct_archive",
+          "targets": [{ "platform": "linux", "arch": "x64" }],
+          "executable": "go",
+          "args": ["version"],
+          "source": {
+            "url": "https://go.dev/dl/go1.26.5.linux-amd64.tar.gz",
+            "publisher": "The Go Authors",
+            "sha256": "5c2c3b16caefa1d968a94c1daca04a7ca301a496d9b086e17ad77bb81393f053"
+          },
+          "estimatedBytes": 66879095,
+          "requiresElevation": false,
+          "requiresSeparateConfirmation": false
+        },
+        {
           "id": "official-guided",
           "kind": "system_prompt",
           "targets": [
@@ -517,6 +532,28 @@
       },
       "strategies": [
         {
+          "id": "official-binary",
+          "kind": "direct_binary",
+          "targets": [{ "platform": "linux", "arch": "x64" }],
+          "executable": "rustup-init",
+          "args": [
+            "-y",
+            "--no-modify-path",
+            "--profile",
+            "minimal",
+            "--default-toolchain",
+            "1.97.0"
+          ],
+          "source": {
+            "url": "https://static.rust-lang.org/rustup/archive/1.29.0/x86_64-unknown-linux-gnu/rustup-init",
+            "publisher": "The Rust Project Developers",
+            "sha256": "4acc9acc76d5079515b46346a485974457b5a79893cfb01112423c89aeb5aa10"
+          },
+          "estimatedBytes": 20838840,
+          "requiresElevation": false,
+          "requiresSeparateConfirmation": false
+        },
+        {
           "id": "official-guided",
           "kind": "system_prompt",
           "targets": [
@@ -557,6 +594,21 @@
       },
       "strategies": [
         {
+          "id": "official-archive",
+          "kind": "direct_archive",
+          "targets": [{ "platform": "linux", "arch": "x64" }],
+          "executable": "uv",
+          "args": ["--version"],
+          "source": {
+            "url": "https://github.com/astral-sh/uv/releases/download/0.11.28/uv-x86_64-unknown-linux-gnu.tar.gz",
+            "publisher": "Astral Software Inc.",
+            "sha256": "e490a6464492183c5d4534a5527fb4440f7f2bb2f228162ad7e4afe076dc0224"
+          },
+          "estimatedBytes": 26411870,
+          "requiresElevation": false,
+          "requiresSeparateConfirmation": false
+        },
+        {
           "id": "official-guided",
           "kind": "system_prompt",
           "targets": [
@@ -596,6 +648,21 @@
         "versionPattern": "^([0-9]+(?:\\.[0-9]+)+)"
       },
       "strategies": [
+        {
+          "id": "official-archive",
+          "kind": "direct_archive",
+          "targets": [{ "platform": "linux", "arch": "x64" }],
+          "executable": "volta",
+          "args": ["--version"],
+          "source": {
+            "url": "https://github.com/volta-cli/volta/releases/download/v2.0.2/volta-2.0.2-linux.tar.gz",
+            "publisher": "Volta Contributors",
+            "sha256": "6cec054c911fb925b629a09455775af6e95dc0f5694a4c28b63979ab9ef18037"
+          },
+          "estimatedBytes": 9783242,
+          "requiresElevation": false,
+          "requiresSeparateConfirmation": false
+        },
         {
           "id": "official-guided",
           "kind": "system_prompt",
