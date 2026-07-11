@@ -13,6 +13,7 @@ import { openPath } from '../../api/backend'
 import { useAppContext } from '../../composables/useAppContext'
 import type { DiagnosticsPayload } from '../../types'
 import { diagnosticRows, type DiagnosticTone } from './diagnosticsPanelModel'
+import EnvironmentDiagnosticsSection from './EnvironmentDiagnosticsSection.vue'
 
 const ctx = useAppContext()
 const diagnostics = ref<DiagnosticsPayload | null>(
@@ -20,6 +21,9 @@ const diagnostics = ref<DiagnosticsPayload | null>(
 )
 const loading = ref(false)
 const error = ref('')
+const environmentSection = ref<InstanceType<
+  typeof EnvironmentDiagnosticsSection
+> | null>(null)
 
 const groups = computed(() =>
   diagnosticRows(diagnostics.value || ctx.boot.value?.diagnostics || null),
@@ -60,6 +64,7 @@ async function refresh() {
       ...nextDiagnostics,
       ...(contextExplanation ? { contextExplanation } : {}),
     }
+    await environmentSection.value?.refresh(true)
   } catch (err) {
     error.value = err instanceof Error ? err.message : String(err)
   } finally {
@@ -135,6 +140,8 @@ async function revealPath(target: string) {
           </div>
           <code>error</code>
         </div>
+
+        <EnvironmentDiagnosticsSection ref="environmentSection" />
 
         <section
           v-for="group in groups"

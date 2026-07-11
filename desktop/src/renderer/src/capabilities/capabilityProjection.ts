@@ -149,6 +149,11 @@ function skillBadges(skill: SkillInfo): CapabilityBadge[] {
     .slice(0, 4)
     .map((label) => ({ label, tone: tagTone(label) }))
   if (skill.always) badges.unshift({ label: 'always', tone: 'gold' })
+  if (skill.status && skill.status !== 'active')
+    badges.unshift({
+      label: skill.status,
+      tone: skill.status === 'blocked' ? 'red' : 'gold',
+    })
   return badges.slice(0, 5)
 }
 

@@ -37,6 +37,16 @@ describe('CoreEnvironmentService', () => {
       },
       catalog: { revision: catalog.revision },
     })
+    expect(payload.catalog.tools[0]).toEqual(
+      expect.objectContaining({
+        id: expect.any(String),
+        pinnedVersion: expect.any(String),
+        strategies: expect.any(Array),
+      }),
+    )
+    expect(JSON.stringify(payload.catalog.tools)).not.toMatch(
+      /"(?:executable|args|command)"/,
+    )
     expect(payload.recentJobs).toEqual([])
     expect(first.records).toHaveLength(1)
     expect(first.nextCursor).toBe(1)

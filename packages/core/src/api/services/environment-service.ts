@@ -64,6 +64,22 @@ export interface CoreEnvironmentStatusPayload {
       spdx: string
       url: string
     }>
+    tools: Array<{
+      id: EnvironmentToolId
+      displayName: string
+      pinnedVersion: string
+      licenseId: string
+      strategies: Array<{
+        id: string
+        kind: string
+        sourceUrl: string
+        publisher: string
+        estimatedBytes: number
+        requiresElevation: boolean
+        requiresSeparateConfirmation: boolean
+        cancellable: boolean
+      }>
+    }>
   }
   activeJob: EnvironmentJobRecord | null
   recentJobs: EnvironmentJobRecord[]
@@ -171,6 +187,26 @@ export class CoreEnvironmentService {
           name: license.name,
           spdx: license.spdx,
           url: license.url,
+        })),
+        tools: this.catalog.catalog.tools.map((tool) => ({
+          id: tool.id,
+          displayName: tool.displayName,
+          pinnedVersion: tool.version.pinned,
+          licenseId: tool.licenseId,
+          strategies: tool.strategies.map((strategy) => ({
+            id: strategy.id,
+            kind: strategy.kind,
+            sourceUrl: strategy.source.url,
+            publisher: strategy.source.publisher,
+            estimatedBytes: strategy.estimatedBytes,
+            requiresElevation: strategy.requiresElevation,
+            requiresSeparateConfirmation: strategy.requiresSeparateConfirmation,
+            cancellable: ![
+              'windows_installer',
+              'macos_installer',
+              'system_prompt',
+            ].includes(strategy.kind),
+          })),
         })),
       },
       activeJob:

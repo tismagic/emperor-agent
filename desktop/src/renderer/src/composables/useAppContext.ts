@@ -48,7 +48,6 @@ export interface AppContext {
   startNewSkill: (name: string) => void
   saveSkill: (content: string) => Promise<void>
   deleteSkill: (name: string) => Promise<void>
-  importSkill: (formData: FormData) => Promise<string>
   loadConfig: () => Promise<void>
   saveConfig: (content: string) => Promise<void>
   mcpContent: Ref<string>

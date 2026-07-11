@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test'
-import type { Page } from '@playwright/test'
+import type { Locator, Page } from '@playwright/test'
 import { mkdirSync, writeFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 
@@ -17,6 +17,7 @@ type VisualBridge = {
   version: string
   platform: string
   selectDirectory: () => Promise<string>
+  getPathForFile: (file: File) => string
   onCoreEvent: (listener: VisualCoreListener) => () => void
   invokeCore: (operationKey: string, ...args: unknown[]) => Promise<unknown>
 }
@@ -294,6 +295,154 @@ test('settings pages keep their scroll contract without horizontal overflow', as
   }
 })
 
+test('diagnostics environment flow reviews licenses, installs, and exposes logs', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1280, height: 820 })
+  await page.goto('/settings/diagnostics')
+  const section = page.getByTestId('environment-section')
+  await expect(section).toBeVisible()
+  await expect(page.getByTestId('environment-tool-node')).toContainText(
+    '版本不匹配',
+  )
+  await expect(
+    section.getByText('blocked-visual', { exact: true }),
+  ).toBeVisible()
+
+  await page.getByTestId('install-required').click()
+  const dialog = page.getByRole('dialog', { name: '确认环境安装' })
+  await expect(dialog).toBeVisible()
+  await expect(dialog.getByText('OpenJS Foundation')).toBeVisible()
+  await expect(
+    dialog.getByText('Python Software Foundation', { exact: true }),
+  ).toBeVisible()
+  await page.screenshot({
+    path: resolve(screenshotDir, 'settings-environment-confirm.png'),
+    fullPage: false,
+  })
+  const confirm = page.getByTestId('confirm-environment-install')
+  await expect(confirm).toBeDisabled()
+  for (const checkbox of await dialog.getByRole('checkbox').all())
+    await checkbox.check()
+  await expect(confirm).toBeEnabled()
+  await confirm.click()
+
+  await expect(page.getByTestId('environment-progress')).toContainText('已完成')
+  await expect(page.getByTestId('environment-tool-node')).toContainText(
+    '已就绪',
+  )
+  await expect(section.getByText('脱敏安装日志')).toBeVisible()
+})
+
+test('Skill installation shows source, scripts, digest, and explicit confirmation', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1280, height: 820 })
+  await page.goto('/plugins/skills')
+  const input = page.locator('input[type="file"][accept=".zip,.skill"]')
+  await input.setInputFiles({
+    name: 'visual-skill.zip',
+    mimeType: 'application/zip',
+    buffer: Buffer.from('visual fixture'),
+  })
+
+  const dialog = page.getByRole('dialog', { name: '检查 Skill 安装内容' })
+  await expect(dialog).toBeVisible()
+  await expect(dialog).toContainText('scripts/run.mjs')
+  await expect(dialog).toContainText('command · node')
+  await expect(dialog).toContainText('bbbbbbbbbbbbbbbb')
+  await page.screenshot({
+    path: resolve(screenshotDir, 'skill-install-preview.png'),
+    fullPage: false,
+  })
+  await page.getByTestId('confirm-skill-install').click()
+  await expect(dialog).toBeHidden()
+  await expect(
+    page.getByRole('heading', { name: 'visual-import' }),
+  ).toBeVisible()
+})
+
+test('environment and Skill confirmation dialogs fit the narrow viewport', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 })
+  await page.goto('/settings/diagnostics')
+  await page.getByTestId('install-required').click()
+
+  const environmentDialog = page.getByRole('dialog', {
+    name: '确认环境安装',
+  })
+  await expect(environmentDialog).toBeVisible()
+  await expectDialogWithinViewport(page, environmentDialog)
+  await page.screenshot({
+    path: resolve(screenshotDir, 'settings-environment-confirm-mobile.png'),
+    fullPage: false,
+  })
+  await environmentDialog.getByRole('button', { name: '关闭' }).click()
+
+  await page.goto('/plugins/skills')
+  await page.locator('input[type="file"][accept=".zip,.skill"]').setInputFiles({
+    name: 'visual-skill.zip',
+    mimeType: 'application/zip',
+    buffer: Buffer.from('visual fixture'),
+  })
+
+  const skillDialog = page.getByRole('dialog', {
+    name: '检查 Skill 安装内容',
+  })
+  await expect(skillDialog).toBeVisible()
+  await expectDialogWithinViewport(page, skillDialog)
+  await page.screenshot({
+    path: resolve(screenshotDir, 'skill-install-preview-mobile.png'),
+    fullPage: false,
+  })
+})
+
+test('environment installation can be cancelled while running', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1280, height: 820 })
+  await page.goto('/settings/diagnostics')
+  await page.getByTestId('install-required').click()
+  const dialog = page.getByRole('dialog', { name: '确认环境安装' })
+  for (const checkbox of await dialog.getByRole('checkbox').all())
+    await checkbox.check()
+  await page.getByTestId('confirm-environment-install').click()
+
+  const progress = page.getByTestId('environment-progress')
+  await progress.getByRole('button', { name: '取消' }).click()
+  await expect(progress).toContainText('已取消')
+  await expect(page.getByText('安装记录')).toBeVisible()
+})
+
+test('diagnostics exposes partial and interrupted recovery states', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1280, height: 820 })
+  await page.goto('/settings/diagnostics')
+  await page.evaluate(() =>
+    localStorage.setItem('visual-environment-outcome', 'partial'),
+  )
+  await page.getByTestId('install-required').click()
+  const dialog = page.getByRole('dialog', { name: '确认环境安装' })
+  for (const checkbox of await dialog.getByRole('checkbox').all())
+    await checkbox.check()
+  await page.getByTestId('confirm-environment-install').click()
+  await expect(page.getByTestId('environment-progress')).toContainText(
+    '部分完成',
+  )
+  await expect(page.getByText('安装后仍未检测到所需版本')).toBeVisible()
+
+  await page.evaluate(() =>
+    localStorage.setItem('visual-environment-outcome', 'interrupted'),
+  )
+  await page.reload()
+  await expect(page.getByText('已中断')).toBeVisible()
+  await expect(
+    page.getByRole('button', { name: '重新检测环境' }).first(),
+  ).toBeVisible()
+})
+
 test('hooks workspace exposes effective, test, audit, and advanced views', async ({
   page,
 }) => {
@@ -459,6 +608,24 @@ test('captures composer model menu on mobile', async ({ page }) => {
     fullPage: false,
   })
 })
+
+async function expectDialogWithinViewport(page: Page, dialog: Locator) {
+  const bounds = await dialog.boundingBox()
+  expect(bounds).not.toBeNull()
+  expect(bounds!.x).toBeGreaterThanOrEqual(0)
+  expect(bounds!.y).toBeGreaterThanOrEqual(0)
+  expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(390)
+  expect(bounds!.y + bounds!.height).toBeLessThanOrEqual(844)
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () =>
+          document.documentElement.scrollWidth <=
+          document.documentElement.clientWidth + 1,
+      ),
+    )
+    .toBe(true)
+}
 
 async function installVisualCoreBridge(page: Page) {
   await page.addInitScript(
@@ -792,6 +959,171 @@ async function installVisualCoreBridge(page: Page) {
           },
         ],
       }
+      const environmentListeners = new Set<VisualCoreListener>()
+      const environmentTools = [
+        {
+          id: 'git',
+          category: 'base',
+          required: true,
+          reason: '基础文件能力与 GitHub Skill 来源需要 Git',
+          declarationSource: null,
+          status: 'ready',
+          detectedVersion: '2.55.0',
+          versionSummary: 'git 2.55.0',
+          requiredVersion: '>=2.40.0',
+          executablePath: '/usr/bin/git',
+          installStrategy: 'git-system',
+          sourceUrl: 'https://git-scm.com',
+          requiresElevation: false,
+          requiresSeparateConfirmation: false,
+        },
+        {
+          id: 'node',
+          category: 'project',
+          required: true,
+          reason: 'package.json 声明 Node 24',
+          declarationSource: 'package.json#engines.node',
+          status: 'version_mismatch',
+          detectedVersion: '22.16.0',
+          versionSummary: 'node 22.16.0',
+          requiredVersion: '>=24.0.0',
+          executablePath: '/usr/local/bin/node',
+          installStrategy: 'node-volta',
+          sourceUrl: 'https://nodejs.org',
+          requiresElevation: false,
+          requiresSeparateConfirmation: false,
+        },
+        {
+          id: 'python',
+          category: 'skill',
+          required: true,
+          reason: 'blocked-visual Skill 需要 Python',
+          declarationSource: 'skills/blocked-visual/SKILL.md',
+          status: 'missing',
+          detectedVersion: null,
+          versionSummary: null,
+          requiredVersion: '>=3.12.0',
+          executablePath: null,
+          installStrategy: 'python-uv',
+          sourceUrl: 'https://www.python.org',
+          requiresElevation: false,
+          requiresSeparateConfirmation: false,
+        },
+        {
+          id: 'msvc-build-tools',
+          category: 'large-prerequisite',
+          required: false,
+          reason: '当前平台不需要此大型依赖',
+          declarationSource: null,
+          status: 'unsupported',
+          detectedVersion: null,
+          versionSummary: null,
+          requiredVersion: null,
+          executablePath: null,
+          installStrategy: null,
+          sourceUrl: null,
+          requiresElevation: true,
+          requiresSeparateConfirmation: true,
+        },
+      ]
+      const environmentPayload = {
+        status: {
+          cacheKey: 'd'.repeat(64),
+          catalogRevision: 'a'.repeat(64),
+          projectFingerprint: 'b'.repeat(64),
+          project: {
+            projectRoot: projectDir,
+            fingerprint: 'b'.repeat(64),
+            declarations: {},
+            files: ['package.json'],
+            diagnostics: [],
+          },
+          platform: 'darwin',
+          arch: 'arm64',
+          pathEntries: ['/usr/bin', '/usr/local/bin'],
+          tools: environmentTools,
+          skills: [
+            {
+              skillName: 'blocked-visual',
+              status: 'blocked',
+              requiredTools: ['python'],
+              missing: ['python'],
+              unsupported: [],
+            },
+          ],
+          diagnostics: [],
+        },
+        catalog: {
+          revision: 'a'.repeat(64),
+          release: '2026.07',
+          licenses: [
+            {
+              id: 'mit',
+              name: 'MIT License',
+              spdx: 'MIT',
+              url: 'https://opensource.org/license/mit',
+            },
+            {
+              id: 'python-psf-2',
+              name: 'Python Software Foundation License 2.0',
+              spdx: 'PSF-2.0',
+              url: 'https://docs.python.org/3/license.html',
+            },
+          ],
+          tools: [
+            {
+              id: 'node',
+              displayName: 'Node.js',
+              pinnedVersion: '24.18.0',
+              licenseId: 'mit',
+              strategies: [
+                {
+                  id: 'node-volta',
+                  kind: 'version_manager',
+                  sourceUrl: 'https://nodejs.org',
+                  publisher: 'OpenJS Foundation',
+                  estimatedBytes: 48000000,
+                  requiresElevation: false,
+                  requiresSeparateConfirmation: false,
+                  cancellable: true,
+                },
+              ],
+            },
+            {
+              id: 'python',
+              displayName: 'Python',
+              pinnedVersion: '3.12.11',
+              licenseId: 'python-psf-2',
+              strategies: [
+                {
+                  id: 'python-uv',
+                  kind: 'version_manager',
+                  sourceUrl: 'https://www.python.org',
+                  publisher: 'Python Software Foundation',
+                  estimatedBytes: 34000000,
+                  requiresElevation: false,
+                  requiresSeparateConfirmation: false,
+                  cancellable: true,
+                },
+              ],
+            },
+          ],
+        },
+        activeJob: null as Record<string, unknown> | null,
+        recentJobs: [] as Array<Record<string, unknown>>,
+      }
+      let environmentCancelled = false
+      const environmentLogs = [
+        {
+          schemaVersion: 1,
+          timestamp: now,
+          jobId: 'job_visual',
+          level: 'info',
+          kind: 'job_started',
+          message: 'Environment installation started.',
+          details: {},
+        },
+      ]
       const boot = {
         app: 'Emperor Agent',
         model: 'visual-main',
@@ -816,8 +1148,35 @@ async function installVisualCoreBridge(page: Page) {
             name: 'visual-fixture',
             description: 'Fixture skill',
             path: 'skills/visual-fixture/SKILL.md',
+            tags: '',
+            always: false,
+            source: 'user',
+            status: 'active',
+            readOnly: false,
+            requirements: { bins: [], runtimes: [], env: [] },
           },
-        ],
+          {
+            name: 'blocked-visual',
+            description: '等待 Python 依赖后启用',
+            path: 'skills/blocked-visual/SKILL.md',
+            tags: '',
+            always: false,
+            source: 'user',
+            status: 'blocked',
+            readOnly: false,
+            requirements: { bins: [], runtimes: ['python'], env: [] },
+          },
+        ] as Array<{
+          name: string
+          description: string
+          path: string
+          tags: string
+          always: boolean
+          source: string
+          status: string
+          readOnly: boolean
+          requirements: { bins: string[]; runtimes: string[]; env: string[] }
+        }>,
         memory,
         modelConfig,
         scheduler,
@@ -842,6 +1201,19 @@ async function installVisualCoreBridge(page: Page) {
             installCommand: 'npm install',
           },
           dependencies: { nodeRuntime: true, desktopRenderer: true },
+          environment: {
+            catalogRevision: 'a'.repeat(64),
+            platform: 'darwin',
+            arch: 'arm64',
+            projectRoot: projectDir,
+            required: 3,
+            ready: 1,
+            missing: 1,
+            versionMismatch: 1,
+            blockedSkills: 1,
+            diagnostics: [],
+            activeJob: null,
+          },
         },
         projects: [project],
         runtime: { latestSeq: 1, scope: 'unarchived', events: [] },
@@ -877,7 +1249,9 @@ async function installVisualCoreBridge(page: Page) {
         version: '0.1.0-visual',
         platform: 'visual',
         selectDirectory: async () => projectDir,
+        getPathForFile: () => `${projectDir}/visual-skill.zip`,
         onCoreEvent: (listener: VisualCoreListener) => {
+          environmentListeners.add(listener)
           queueMicrotask(() =>
             listener({
               event: 'ready',
@@ -888,7 +1262,7 @@ async function installVisualCoreBridge(page: Page) {
               control: boot.control,
             }),
           )
-          return () => {}
+          return () => environmentListeners.delete(listener)
         },
         invokeCore: async (operationKey: string, ...args: unknown[]) => {
           switch (operationKey) {
@@ -990,8 +1364,281 @@ async function installVisualCoreBridge(page: Page) {
               return boot.desktopPet
             case 'diagnostics.get':
               return boot.diagnostics
+            case 'environment.getStatus':
+              if (
+                localStorage.getItem('visual-environment-outcome') ===
+                  'interrupted' &&
+                !environmentPayload.recentJobs.length
+              )
+                environmentPayload.recentJobs = [
+                  {
+                    schemaVersion: 1,
+                    jobId: 'job_interrupted',
+                    planId: 'plan_interrupted',
+                    catalogRevision: environmentPayload.catalog.revision,
+                    projectFingerprint:
+                      environmentPayload.status.projectFingerprint,
+                    projectRoot: projectDir,
+                    status: 'interrupted',
+                    createdAt: now,
+                    updatedAt: now,
+                    currentStepId: null,
+                    steps: [
+                      {
+                        stepId: 'step_node',
+                        toolId: 'node',
+                        strategyId: 'node-volta',
+                        dependsOn: [],
+                        status: 'cancelled',
+                        requiresElevation: false,
+                        requiresSeparateConfirmation: false,
+                      },
+                    ],
+                    error: {
+                      code: 'interrupted',
+                      message: '上次环境安装被应用退出中断，请重新检测环境。',
+                      action: 'refresh_environment',
+                    },
+                  },
+                ]
+              return environmentPayload
+            case 'environment.createInstallPlan': {
+              const requested = (
+                (args[0] as { toolIds?: string[] } | undefined)?.toolIds || []
+              ).filter((id) => id === 'node' || id === 'python')
+              return {
+                planId: 'plan_visual',
+                catalogRevision: environmentPayload.catalog.revision,
+                projectFingerprint:
+                  environmentPayload.status.projectFingerprint,
+                toolStateHash: 'c'.repeat(64),
+                expiresAt: '2026-07-11T12:10:00.000Z',
+                requiredLicenseIds: requested.map((id) =>
+                  id === 'python' ? 'python-psf-2' : 'mit',
+                ),
+                warnings: ['安装期间请保持 Emperor Agent 运行'],
+                steps: requested.map((id, index) => ({
+                  stepId: `step_${id}`,
+                  toolId: id,
+                  strategyId: id === 'python' ? 'python-uv' : 'node-volta',
+                  dependsOn: index ? [`step_${requested[index - 1]}`] : [],
+                  status: 'planned',
+                  requiresElevation: false,
+                  requiresSeparateConfirmation: false,
+                })),
+              }
+            }
+            case 'environment.install': {
+              environmentCancelled = false
+              const planInput = (args[0] || {}) as { planId?: string }
+              const startedAt = new Date().toISOString()
+              const job = {
+                schemaVersion: 1,
+                jobId: 'job_visual',
+                planId: planInput.planId || 'plan_visual',
+                catalogRevision: environmentPayload.catalog.revision,
+                projectFingerprint:
+                  environmentPayload.status.projectFingerprint,
+                projectRoot: projectDir,
+                status: 'running',
+                createdAt: startedAt,
+                updatedAt: startedAt,
+                currentStepId: 'step_node',
+                steps: [
+                  {
+                    stepId: 'step_node',
+                    toolId: 'node',
+                    strategyId: 'node-volta',
+                    dependsOn: [],
+                    status: 'running',
+                    requiresElevation: false,
+                    requiresSeparateConfirmation: false,
+                  },
+                  {
+                    stepId: 'step_python',
+                    toolId: 'python',
+                    strategyId: 'python-uv',
+                    dependsOn: ['step_node'],
+                    status: 'planned',
+                    requiresElevation: false,
+                    requiresSeparateConfirmation: false,
+                  },
+                ],
+                error: null as null | {
+                  code: string
+                  message: string
+                  action: string
+                },
+              }
+              environmentPayload.activeJob = job
+              for (const listener of environmentListeners)
+                listener({
+                  event: 'environment_install_started',
+                  job_id: job.jobId,
+                  status: 'running',
+                  completed_steps: 0,
+                  total_steps: 2,
+                })
+              await new Promise((resolve) => setTimeout(resolve, 80))
+              const outcome = environmentCancelled
+                ? 'cancelled'
+                : localStorage.getItem('visual-environment-outcome')
+              job.status =
+                outcome === 'partial'
+                  ? 'partial'
+                  : outcome === 'cancelled'
+                    ? 'cancelled'
+                    : 'completed'
+              job.currentStepId = ''
+              job.updatedAt = new Date().toISOString()
+              job.steps[0].status =
+                outcome === 'cancelled' ? 'cancelled' : 'completed'
+              job.steps[1].status =
+                outcome === 'partial'
+                  ? 'failed'
+                  : outcome === 'cancelled'
+                    ? 'cancelled'
+                    : 'completed'
+              job.error =
+                outcome === 'partial'
+                  ? {
+                      code: 'post_install_probe_failed',
+                      message: '安装后仍未检测到所需版本，请刷新环境状态。',
+                      action: 'refresh_environment',
+                    }
+                  : outcome === 'cancelled'
+                    ? {
+                        code: 'cancelled',
+                        message: '环境安装已由用户取消。',
+                        action: 'refresh_environment',
+                      }
+                    : null
+              if (outcome !== 'cancelled') {
+                environmentTools[1].status = 'ready'
+                environmentTools[1].detectedVersion = '24.18.0'
+                environmentTools[1].versionSummary = 'node 24.18.0'
+              }
+              if (outcome !== 'partial' && outcome !== 'cancelled') {
+                environmentTools[2].status = 'ready'
+                environmentTools[2].detectedVersion = '3.12.11'
+                environmentTools[2].versionSummary = 'python 3.12.11'
+                environmentPayload.status.skills[0].status = 'ready'
+                environmentPayload.status.skills[0].missing = []
+              }
+              environmentPayload.activeJob = null
+              environmentPayload.recentJobs = [job]
+              for (const listener of environmentListeners) {
+                listener({
+                  event: 'environment_install_completed',
+                  job_id: job.jobId,
+                  status: job.status,
+                  completed_steps:
+                    outcome === 'partial' ? 1 : outcome === 'cancelled' ? 0 : 2,
+                  total_steps: 2,
+                  error_code: job.error?.code,
+                })
+                listener({
+                  event: 'environment_changed',
+                  job_id: job.jobId,
+                  status: 'completed',
+                })
+              }
+              return job
+            }
+            case 'environment.cancelInstall': {
+              environmentCancelled = true
+              const job = environmentPayload.activeJob
+              if (job) job.status = 'cancelling'
+              for (const listener of environmentListeners)
+                listener({
+                  event: 'environment_install_progress',
+                  job_id: job?.jobId || 'job_visual',
+                  status: 'cancelling',
+                  completed_steps: 0,
+                  total_steps: 2,
+                })
+              return { cancelled: true, job }
+            }
+            case 'environment.getInstallLog':
+              return {
+                records: environmentLogs,
+                badLines: [],
+                cursor: 0,
+                nextCursor: null,
+                total: environmentLogs.length,
+              }
+            case 'skills.previewInstall':
+              return {
+                previewId: `preview_${'a'.repeat(24)}`,
+                createdAt: now,
+                expiresAt: '2026-07-11T12:10:00.000Z',
+                source: {
+                  kind: 'local',
+                  path: `${projectDir}/visual-skill.zip`,
+                  resolvedUrl: null,
+                  repository: null,
+                  ref: null,
+                  requestedPath: null,
+                },
+                digest: 'b'.repeat(64),
+                archiveBytes: 2048,
+                unpackedBytes: 4096,
+                fileCount: 2,
+                candidates: [
+                  {
+                    candidateId: `candidate_${'c'.repeat(20)}`,
+                    name: 'visual-import',
+                    relativeRoot: 'visual-import',
+                    valid: true,
+                    errors: [],
+                    warnings: [],
+                    fileCount: 2,
+                    files: ['SKILL.md', 'scripts/run.mjs'],
+                    totalBytes: 4096,
+                    digest: 'd'.repeat(64),
+                    scripts: [{ path: 'scripts/run.mjs', type: 'javascript' }],
+                    externalCommands: ['node'],
+                    environmentVariables: [],
+                    requirements: { bins: ['node'], runtimes: [], env: [] },
+                    missing: { bins: [], runtimes: [], env: [] },
+                  },
+                ],
+              }
+            case 'skills.confirmInstall':
+              if (!boot.skills.some((skill) => skill.name === 'visual-import'))
+                boot.skills.push({
+                  name: 'visual-import',
+                  description: 'Imported visual fixture',
+                  path: 'skills/visual-import/SKILL.md',
+                  tags: '',
+                  always: false,
+                  source: 'user',
+                  status: 'active',
+                  readOnly: false,
+                  requirements: { bins: ['node'], runtimes: [], env: [] },
+                })
+              return {
+                name: 'visual-import',
+                status: 'active',
+                digest: 'b'.repeat(64),
+                source: {
+                  kind: 'local',
+                  path: `${projectDir}/visual-skill.zip`,
+                },
+                missing: { bins: [], runtimes: [], env: [] },
+                installedAt: now,
+              }
             case 'skills.list':
               return boot.skills
+            case 'skills.get': {
+              const name = String(args[0] || 'visual-fixture')
+              const skill = boot.skills.find((item) => item.name === name)
+              return {
+                ...skill,
+                name,
+                content: `---\nname: ${name}\ndescription: Visual fixture\n---\n`,
+              }
+            }
             case 'skills.tools':
               return boot.tools
             case 'control.get':

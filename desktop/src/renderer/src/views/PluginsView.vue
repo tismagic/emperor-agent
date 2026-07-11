@@ -71,8 +71,9 @@ function onDelete(name: string) {
   void ctx.runSafely(() => ctx.deleteSkill(name))
 }
 
-async function onImport(formData: FormData) {
-  await ctx.importSkill(formData)
+async function onInstalled(name: string) {
+  await ctx.refreshAll()
+  onLoad(name)
 }
 </script>
 
@@ -124,7 +125,7 @@ async function onImport(formData: FormData) {
         @new="onNew"
         @save="onSave"
         @delete="onDelete"
-        @import="onImport"
+        @installed="onInstalled"
       />
       <ToolsPanel
         v-else-if="activeTab === 'tools'"

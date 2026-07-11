@@ -9,6 +9,25 @@ import {
 } from './capabilityProjection'
 
 describe('capability projection', () => {
+  it('surfaces blocked Skill state as a first-class badge', () => {
+    const skill: SkillInfo = {
+      name: 'blocked-skill',
+      description: 'Needs Python',
+      path: 'skills/blocked-skill/SKILL.md',
+      tags: '',
+      always: false,
+      source: 'user',
+      status: 'blocked',
+      readOnly: false,
+      requirements: { bins: [], runtimes: ['python'], env: [] },
+    }
+
+    expect(skillCapability(skill).badges[0]).toEqual({
+      label: 'blocked',
+      tone: 'red',
+    })
+  })
+
   it('projects attachments into compact composer capability rows', () => {
     const attachment: AttachmentRef = {
       id: 'att_pdf',
