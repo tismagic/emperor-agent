@@ -236,6 +236,45 @@ describe('EnvironmentInstallOrchestrator plans', () => {
       } as never),
     ).rejects.toThrow()
   })
+
+  it('requires MSVC Build Tools to use an independent plan', async () => {
+    let current = probeStatus()
+    current = {
+      ...current,
+      platform: 'win32',
+      arch: 'x64',
+      tools: current.tools.map((tool) => {
+        const catalogTool = CATALOG.catalog.tools.find(
+          (entry) => entry.id === tool.id,
+        )!
+        const strategy = catalogTool.strategies.find((entry) =>
+          entry.targets.some((target) => target.platform === 'win32'),
+        )
+        return {
+          ...tool,
+          installStrategy: strategy?.id ?? null,
+          requiresElevation: strategy?.requiresElevation ?? false,
+          requiresSeparateConfirmation:
+            strategy?.requiresSeparateConfirmation ?? false,
+        }
+      }),
+    }
+    const service = orchestrator({ status: async () => current })
+
+    await expect(
+      service.createPlan({ toolIds: ['git', 'msvc-build-tools'] }),
+    ).rejects.toMatchObject({ environmentCode: 'confirmation_required' })
+    await expect(
+      service.createPlan({ toolIds: ['msvc-build-tools'] }),
+    ).resolves.toMatchObject({
+      steps: [
+        expect.objectContaining({
+          toolId: 'msvc-build-tools',
+          requiresSeparateConfirmation: true,
+        }),
+      ],
+    })
+  })
 })
 
 describe('EnvironmentInstallOrchestrator jobs', () => {

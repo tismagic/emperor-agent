@@ -49,3 +49,39 @@ jobs:
           name: macos-adapter-receipt-${{ matrix.arch }}
           path: receipts/macos-${{ matrix.arch }}.json
           if-no-files-found: error
+
+  windows-adapter:
+    name: Windows adapter (x64)
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: package-lock.json
+      - name: Install dependencies
+        run: npm ci
+      - name: Verify Windows adapter
+        run: >-
+          npm test --workspace @emperor/core --
+          src/environment/windows-adapter.test.ts
+          src/environment/zip.test.ts
+          src/environment/download.test.ts
+          src/environment/process-runner.test.ts
+      - name: Core typecheck
+        run: npm run typecheck --workspace @emperor/core
+      - name: Core lint
+        run: npm run lint --workspace @emperor/core
+      - name: Write adapter receipt
+        run: >-
+          node scripts/write-environment-adapter-receipt.mjs
+          windows
+          x64
+          receipts/windows-x64.json
+      - name: Upload adapter receipt
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-adapter-receipt-x64
+          path: receipts/windows-x64.json
+          if-no-files-found: error

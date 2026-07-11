@@ -140,7 +140,17 @@
           "kind": "package_manager",
           "targets": [{ "platform": "win32", "arch": "x64" }],
           "executable": "winget.exe",
-          "args": ["install", "--exact", "--id", "Git.Git"],
+          "args": [
+            "install",
+            "--exact",
+            "--id",
+            "Git.Git",
+            "--source",
+            "winget",
+            "--accept-package-agreements",
+            "--accept-source-agreements",
+            "--disable-interactivity"
+          ],
           "source": {
             "url": "https://github.com/git-for-windows/git",
             "publisher": "The Git Development Community"
@@ -234,7 +244,12 @@
             "install",
             "--exact",
             "--id",
-            "Microsoft.VisualStudio.2022.BuildTools"
+            "Microsoft.VisualStudio.2022.BuildTools",
+            "--source",
+            "winget",
+            "--accept-package-agreements",
+            "--accept-source-agreements",
+            "--disable-interactivity"
           ],
           "source": {
             "url": "https://visualstudio.microsoft.com/downloads",
@@ -407,7 +422,17 @@
           "kind": "package_manager",
           "targets": [{ "platform": "win32", "arch": "x64" }],
           "executable": "winget.exe",
-          "args": ["install", "--exact", "--id", "BurntSushi.ripgrep.MSVC"],
+          "args": [
+            "install",
+            "--exact",
+            "--id",
+            "BurntSushi.ripgrep.MSVC",
+            "--source",
+            "winget",
+            "--accept-package-agreements",
+            "--accept-source-agreements",
+            "--disable-interactivity"
+          ],
           "source": {
             "url": "https://github.com/BurntSushi/ripgrep",
             "publisher": "Andrew Gallant"

@@ -3,11 +3,11 @@
   "plan_version": "2.0",
   "plan_file": "docs/superpowers/plans/2026-07-10-cross-platform-environment-release-implementation.md",
   "created_at": "2026-07-10",
-  "updated_at": "2026-07-11T12:19:43+08:00",
+  "updated_at": "2026-07-11T12:40:26+08:00",
   "started_at": "2026-07-10T16:02:16+08:00",
   "total_tasks": 22,
-  "completed": 11,
-  "rounds": 11,
+  "completed": 12,
+  "rounds": 12,
   "tasks": {
     "BASE-001": {
       "status": "done",
@@ -87,11 +87,11 @@
       "notes": "Round 11 completed from clean commit d95e3cd4 with strict TDD and security review. MacEnvironmentAdapter now supports fixed arm64 `/opt/homebrew/bin/brew` and x64 `/usr/local/bin/brew` paths, exact catalog formula/version-manager/bundled args, fixed `xcode-select --install` Git fallback, user-only official-guided flows, cancellation/elevation error mapping, minimal PATH/env and 30-minute bounded install processes. Homebrew is never installed automatically and no command uses a shell. macOS pkg requires both fixed SHA-256 and exact Developer ID Installer publisher before `/usr/bin/open`; direct archives require a fixed digest and remain user-reviewed instead of auto-extracted. Shared NodeHttpsAssetDownloader adds HTTPS-only URLs, public-DNS validation on every redirect, DNS pinning against rebinding, three-redirect limit, byte caps, AbortSignal handling, atomic temp files and response cleanup on local I/O failure. A manual-only macos-15/macos-15-intel internal workflow runs adapter/download/process tests and uploads a JSON receipt whose locally verified catalog revision is dc95b1f423e1b8ccde50c66c06fa172f9226b95be7f15e10799ac2a4fefc7ffe. Final make check passed Core 101 files / 837 tests and Desktop 62 files / 280 tests, plus both typechecks, Desktop test typecheck, zero-warning ESLint, Prettier, migration parity, git diff check and production build. No real tool installation or unsigned release publication was performed."
     },
     "ENV-WIN-012": {
-      "status": "pending",
+      "status": "done",
       "title": "Windows 安装 adapter",
       "depends_on": ["ENV-JOB-010"],
-      "attempts": 0,
-      "notes": ""
+      "attempts": 1,
+      "notes": "Round 12 completed from clean commit fdb08f6e with strict TDD and security review. WindowsEnvironmentAdapter is x64-only and executes the immutable catalog through fixed Windows App Installer, Volta/rustup/bundled commands, Authenticode-verified MSI/EXE, or digest-verified bounded ZIP extraction; all processes use argv arrays, minimal environments, output/time limits and no shell. winget is accepted only at the fixed per-user App Installer alias and now receives exact package/source/agreement/noninteractive arguments. MSVC Build Tools is rejected from mixed plans and requires an independent elevated confirmation; UAC decline and cancellation preserve distinct error outcomes. Official installers require SHA-256 plus exact Valid publisher before execution. ZIP handling rejects traversal, links, devices, duplicate paths and archive/file/total limits; managed download/tool symlinks are rejected, candidate installs replace atomically, failed PATH updates restore the prior version, and temporary downloads are removed. User PATH changes use fixed SystemRoot reg.exe, preserve existing REG_EXPAND_SZ content and fail closed on unreadable or malformed output. The manual windows-2022 internal workflow runs adapter/ZIP/download/process tests and uploads a platform-specific receipt; local receipt validation produced catalog revision 4a8fbd5ce9de1636727ad3a353ce07f272f849e5587b9a158ae698564b4ddd09. Final make check passed Core 103 files / 860 tests and Desktop 62 files / 280 tests, plus Core/Desktop typechecks, Desktop test typecheck, zero-warning ESLint, Prettier, migration parity, git diff check and production build. No real installer, elevation prompt or unsigned release publication was executed locally."
     },
     "ENV-LNX-013": {
       "status": "pending",

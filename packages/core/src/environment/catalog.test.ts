@@ -288,7 +288,7 @@ describe('signed ToolCatalog', () => {
   it('ships an immutable catalog covering every planned tool id', () => {
     const bundled = loadBundledToolCatalog()
     expect(bundled.revision).toBe(
-      'dc95b1f423e1b8ccde50c66c06fa172f9226b95be7f15e10799ac2a4fefc7ffe',
+      '4a8fbd5ce9de1636727ad3a353ce07f272f849e5587b9a158ae698564b4ddd09',
     )
     expect(bundled.catalog.tools.map((tool) => tool.id)).toEqual([
       'cargo',
@@ -334,6 +334,22 @@ describe('signed ToolCatalog', () => {
             strategy.requiresSeparateConfirmation &&
             strategy.source.publisher === 'Microsoft Corporation',
         ),
+    ).toBe(true)
+    const wingetStrategies = bundled.catalog.tools.flatMap((tool) =>
+      tool.strategies.filter((strategy) => strategy.id === 'winget'),
+    )
+    expect(wingetStrategies.length).toBeGreaterThan(0)
+    expect(
+      wingetStrategies.every(
+        (strategy) =>
+          strategy.executable === 'winget.exe' &&
+          strategy.args.includes('--exact') &&
+          strategy.args.includes('--source') &&
+          strategy.args.includes('winget') &&
+          strategy.args.includes('--accept-package-agreements') &&
+          strategy.args.includes('--accept-source-agreements') &&
+          strategy.args.includes('--disable-interactivity'),
+      ),
     ).toBe(true)
   })
 })

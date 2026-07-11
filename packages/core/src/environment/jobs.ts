@@ -132,6 +132,11 @@ export class EnvironmentInstallOrchestrator {
     toolIds: EnvironmentToolId[]
   }): Promise<EnvironmentInstallPlan> {
     const parsed = createPlanInputSchema.parse(input)
+    if (
+      parsed.toolIds.includes('msvc-build-tools') &&
+      new Set(parsed.toolIds).size > 1
+    )
+      throw new EnvironmentError('confirmation_required')
     const status = await this.getStatus({
       forceRefresh: false,
       projectRoot: null,

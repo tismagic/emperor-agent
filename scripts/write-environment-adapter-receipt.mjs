@@ -7,6 +7,12 @@ if (!adapter || !arch || !output)
   throw new Error(
     'usage: node scripts/write-environment-adapter-receipt.mjs <adapter> <arch> <output>',
   )
+const adapterChecks = {
+  macos: 'environment/macos-adapter.test.ts',
+  windows: 'environment/windows-adapter.test.ts',
+}
+const adapterCheck = adapterChecks[adapter]
+if (!adapterCheck) throw new Error(`unsupported adapter receipt: ${adapter}`)
 
 const catalogPath = resolve('packages/core/src/environment/tool-catalog.json')
 const catalog = JSON.parse(await readFile(catalogPath, 'utf8'))
@@ -26,9 +32,10 @@ const receipt = {
   generatedAt: new Date().toISOString(),
   status: 'passed',
   checks: [
-    'environment/macos-adapter.test.ts',
+    adapterCheck,
     'environment/download.test.ts',
     'environment/process-runner.test.ts',
+    ...(adapter === 'windows' ? ['environment/zip.test.ts'] : []),
     'core:typecheck',
     'core:lint',
   ],
