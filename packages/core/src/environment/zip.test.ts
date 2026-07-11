@@ -99,6 +99,64 @@ describe('extractBoundedZip', () => {
       }),
     ).toThrow(/total|size|limit/i)
   })
+
+  it('rejects case-folded duplicates and excessive path depth', () => {
+    const base = root()
+    const duplicate = join(base, 'duplicate.zip')
+    writeFileSync(
+      duplicate,
+      zip([
+        { name: 'Skill/SKILL.md', data: Buffer.from('first') },
+        { name: 'skill/skill.md', data: Buffer.from('second') },
+      ]),
+    )
+    expect(() =>
+      extractBoundedZip({
+        archive: duplicate,
+        destination: join(base, 'duplicate'),
+      }),
+    ).toThrow(/duplicate/i)
+
+    const deep = join(base, 'deep.zip')
+    writeFileSync(
+      deep,
+      zip([
+        {
+          name: `${Array.from({ length: 65 }, () => 'a').join('/')}/file`,
+          data: Buffer.from('deep'),
+        },
+      ]),
+    )
+    expect(() =>
+      extractBoundedZip({ archive: deep, destination: join(base, 'deep') }),
+    ).toThrow(/depth|path/i)
+
+    for (const name of ['skill/CON', 'skill/file.', 'skill/file:stream']) {
+      const archive = join(base, `${Buffer.from(name).toString('hex')}.zip`)
+      writeFileSync(archive, zip([{ name, data: Buffer.from('unsafe') }]))
+      expect(() =>
+        extractBoundedZip({
+          archive,
+          destination: join(base, `${Buffer.from(name).toString('hex')}-out`),
+        }),
+      ).toThrow(/unsafe|path/i)
+    }
+
+    const unicode = join(base, 'unicode.zip')
+    writeFileSync(
+      unicode,
+      zip([
+        { name: 'skill/caf\u00e9', data: Buffer.from('first') },
+        { name: 'skill/cafe\u0301', data: Buffer.from('second') },
+      ]),
+    )
+    expect(() =>
+      extractBoundedZip({
+        archive: unicode,
+        destination: join(base, 'unicode'),
+      }),
+    ).toThrow(/duplicate/i)
+  })
 })
 
 function zip(

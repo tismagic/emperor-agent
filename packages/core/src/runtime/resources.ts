@@ -346,22 +346,31 @@ export function migrateLegacyRuntimeSkills(
   return { ...receipt, receiptPath, quarantinedReceiptPath }
 }
 
-export function isSkillBlocked(skillRoot: string): boolean {
+export type SkillBlockStatus = 'blocked' | 'blocked_pending_review'
+
+export function skillBlockStatus(skillRoot: string): SkillBlockStatus | null {
   const markerPath = join(skillRoot, LEGACY_SKILL_STATE_FILE)
   let markerStat
   try {
     markerStat = lstatSync(markerPath)
   } catch (error) {
-    if (isMissingPathError(error)) return false
-    return true
+    if (isMissingPathError(error)) return null
+    return 'blocked_pending_review'
   }
-  if (markerStat.isSymbolicLink() || !markerStat.isFile()) return true
+  if (markerStat.isSymbolicLink() || !markerStat.isFile())
+    return 'blocked_pending_review'
   try {
     const raw = JSON.parse(readFileSync(markerPath, 'utf8'))
-    return raw?.status === 'blocked_pending_review'
+    return raw?.status === 'blocked' || raw?.status === 'blocked_pending_review'
+      ? raw.status
+      : null
   } catch {
-    return true
+    return 'blocked_pending_review'
   }
+}
+
+export function isSkillBlocked(skillRoot: string): boolean {
+  return skillBlockStatus(skillRoot) !== null
 }
 
 function isMissingPathError(error: unknown): boolean {

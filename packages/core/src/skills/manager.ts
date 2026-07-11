@@ -17,7 +17,7 @@ import {
 } from 'node:fs'
 import { isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { parseDocument } from 'yaml'
-import { isSkillBlocked } from '../runtime/resources'
+import { LEGACY_SKILL_STATE_FILE, skillBlockStatus } from '../runtime/resources'
 
 const RESOURCE_DIRS = ['scripts', 'references', 'assets'] as const
 const MAX_SKILL_FILES = 1_000
@@ -29,7 +29,8 @@ const SKILL_NAME_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/
 
 export type SkillResourceDirectory = (typeof RESOURCE_DIRS)[number]
 export type SkillSource = 'builtin' | 'user' | 'project'
-export type SkillStatus = 'active' | 'blocked_pending_review' | 'invalid'
+export type SkillStatus =
+  'active' | 'blocked' | 'blocked_pending_review' | 'invalid'
 
 export interface SkillRequirements {
   bins: string[]
@@ -88,6 +89,17 @@ export interface SkillPackageResult {
   sha256: string
   size: number
   files: string[]
+}
+
+export interface SkillDirectorySnapshot {
+  name: string
+  valid: boolean
+  errors: string[]
+  warnings: string[]
+  requirements: SkillRequirements
+  digest: string
+  totalBytes: number
+  files: Array<{ path: string; data: Buffer }>
 }
 
 interface ParsedSkillMetadata {
@@ -234,6 +246,8 @@ export class SkillManager {
     const errors = [...contentResult.errors, ...collected.errors]
     if (record.status === 'blocked_pending_review')
       errors.push('Skill is blocked pending review')
+    if (record.status === 'blocked')
+      errors.push('Skill is blocked by missing requirements')
     const valid = errors.length === 0 && record.status === 'active'
     return {
       ...contentResult,
@@ -292,6 +306,56 @@ export class SkillManager {
     }
   }
 
+  snapshotDirectory(root: string, name: string): SkillDirectorySnapshot {
+    const safeName = assertCreatorSkillName(name)
+    const resolvedRoot = resolve(root)
+    const collected = collectSkillFiles(resolvedRoot, safeName, {
+      readContents: true,
+    })
+    const skillFile = collected.files.find(
+      (file) => file.relativePath === `${safeName}/SKILL.md`,
+    )
+    const validation = validateSkillContent(
+      safeName,
+      skillFile?.data?.toString('utf8') ?? '',
+    )
+    const errors = [...validation.errors, ...collected.errors]
+    const files = collected.files.map((file) => ({
+      path: file.relativePath.slice(safeName.length + 1),
+      data: file.data!,
+    }))
+    const digest = createHash('sha256')
+    for (const file of files) {
+      digest.update(file.path, 'utf8')
+      digest.update('\0')
+      digest.update(String(file.data.byteLength), 'utf8')
+      digest.update('\0')
+      digest.update(file.data)
+      digest.update('\n')
+    }
+    return {
+      name: safeName,
+      valid: errors.length === 0,
+      errors,
+      warnings: validation.warnings,
+      requirements: validation.requirements,
+      digest: digest.digest('hex'),
+      totalBytes: files.reduce(
+        (total, file) => total + file.data.byteLength,
+        0,
+      ),
+      files,
+    }
+  }
+
+  ensureUserSkillsDirectory(): string {
+    return this.managedDirectory('skills', true)
+  }
+
+  userSkillsDirectory(): string {
+    return this.managedDirectory('skills', false)
+  }
+
   private recordAt(base: string, name: string): SkillRecord | null {
     if (!isRegularDirectory(base)) return null
     const root = join(base, name)
@@ -304,9 +368,7 @@ export class SkillManager {
       skillFile,
       source,
       status:
-        source === 'user' && isSkillBlocked(root)
-          ? 'blocked_pending_review'
-          : 'active',
+        source === 'user' ? (skillBlockStatus(root) ?? 'active') : 'active',
       readOnly: source === 'builtin',
     }
   }
@@ -479,6 +541,7 @@ function collectSkillFiles(
         continue
       }
       if (depth === 0) {
+        if (entry === LEGACY_SKILL_STATE_FILE) continue
         const supported =
           entry === 'SKILL.md' ||
           RESOURCE_DIRS.includes(entry as SkillResourceDirectory)

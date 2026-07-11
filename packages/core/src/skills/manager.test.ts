@@ -13,6 +13,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { SkillManager, replaceFileAtomic } from './manager'
+import { LEGACY_SKILL_STATE_FILE } from '../runtime/resources'
 
 function fixture(): {
   manager: SkillManager
@@ -31,6 +32,61 @@ function fixture(): {
 }
 
 describe('SkillManager', () => {
+  it('creates stable snapshots for arbitrary staging directories', () => {
+    const { manager, stateRoot } = fixture()
+    const staged = join(stateRoot, 'staged-source')
+    mkdirSync(join(staged, 'scripts'), { recursive: true })
+    writeFileSync(
+      join(staged, 'SKILL.md'),
+      [
+        '---',
+        'name: staged-skill',
+        'description: staged',
+        'metadata:',
+        '  emperor:',
+        '    requires:',
+        '      bins: [git]',
+        '---',
+        '',
+        '# Staged',
+      ].join('\n'),
+    )
+    writeFileSync(join(staged, 'scripts', 'run.sh'), '#!/bin/sh\n')
+
+    const first = manager.snapshotDirectory(staged, 'staged-skill')
+    const second = manager.snapshotDirectory(staged, 'staged-skill')
+
+    expect(first).toMatchObject({
+      name: 'staged-skill',
+      valid: true,
+      requirements: { bins: ['git'], runtimes: [], env: [] },
+      files: [{ path: 'SKILL.md' }, { path: 'scripts/run.sh' }],
+    })
+    expect(first.digest).toMatch(/^[a-f0-9]{64}$/)
+    expect(second.digest).toBe(first.digest)
+  })
+
+  it('recognizes dependency-blocked user Skills without packaging the state marker', () => {
+    const { manager, stateRoot } = fixture()
+    const skill = join(stateRoot, 'skills', 'blocked-skill')
+    mkdirSync(skill, { recursive: true })
+    writeFileSync(
+      join(skill, 'SKILL.md'),
+      '---\nname: blocked-skill\ndescription: blocked\n---\n',
+    )
+    writeFileSync(
+      join(skill, LEGACY_SKILL_STATE_FILE),
+      JSON.stringify({ schemaVersion: 1, status: 'blocked' }),
+    )
+
+    expect(manager.resolve('blocked-skill')?.status).toBe('blocked')
+    expect(manager.validate({ name: 'blocked-skill' })).toMatchObject({
+      valid: false,
+      status: 'blocked',
+      files: ['blocked-skill/SKILL.md'],
+    })
+    expect(() => manager.package({ name: 'blocked-skill' })).toThrow(/blocked/)
+  })
   it('creates a valid user Skill with only requested resource directories', () => {
     const { manager, stateRoot } = fixture()
 

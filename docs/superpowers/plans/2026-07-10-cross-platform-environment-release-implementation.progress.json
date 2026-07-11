@@ -3,11 +3,11 @@
   "plan_version": "2.0",
   "plan_file": "docs/superpowers/plans/2026-07-10-cross-platform-environment-release-implementation.md",
   "created_at": "2026-07-10",
-  "updated_at": "2026-07-11T18:29:00+08:00",
+  "updated_at": "2026-07-11T18:56:10+08:00",
   "started_at": "2026-07-10T16:02:16+08:00",
   "total_tasks": 22,
-  "completed": 13,
-  "rounds": 13,
+  "completed": 14,
+  "rounds": 14,
   "tasks": {
     "BASE-001": {
       "status": "done",
@@ -101,11 +101,11 @@
       "notes": "Round 13 completed from clean commit b5f0a77f with strict TDD, official-source verification and security review. LinuxEnvironmentAdapter accepts only Ubuntu 22.04/24.04 x64 from a bounded os-release file, permits the canonical /etc/os-release to /usr/lib/os-release link, and rejects every other distro/arch before process execution. Git/ripgrep use fixed /usr/bin/pkexec with exact apt-get argv, plan elevation proof, minimal env, no sudo/password handling and distinct decline/cancel outcomes. Catalog revision 3e12b926a9e9e32d3de284dbb6ec2f101ea9912a4f744deda856c0a78048d2d5 pins official x64 assets for Volta 2.0.2, uv 0.11.28, rustup 1.29.0 and Go 1.26.5 with SHA-256; no remote installer script is downloaded or piped to a shell. A pure Node bounded tar.gz extractor rejects traversal, duplicate paths, links/devices, unsafe types, checksum errors and entry/file/total limits while preserving owner executable bits. Managed archive installs use candidate/backup atomic replacement, no-follow roots, home-contained activation links, conflict preflight and rollback; Go never replaces an existing PATH installation. rustup-init executes directly with fixed noninteractive argv and temporary download cleanup. Real official Volta, uv and Go archives were independently downloaded, digest-checked and passed isolated-HOME end-to-end extraction/activation; the Go archive's 16,693 entries remained below the 50,000 hard limit. AppImage FUSE diagnostics remain non-installing. A manual ubuntu-22.04/24.04 matrix workflow runs adapter/TAR/download/process tests and emits Linux receipts; local receipt validation passed. Final make check passed Core 105 files / 878 tests and Desktop 62 files / 280 tests, plus both typechecks, Desktop test typecheck, zero-warning ESLint, Prettier, migration parity, git diff check and production build. No package manager, rustup binary or elevation prompt was executed locally."
     },
     "SKILL-INSTALL-014": {
-      "status": "pending",
+      "status": "done",
       "title": "安全预览并安装外部 Skill",
       "depends_on": ["ENV-PROBE-008"],
-      "attempts": 0,
-      "notes": ""
+      "attempts": 1,
+      "notes": "Round 14 completed from clean commit 8b84f954 with strict TDD and security review. SkillInstallService accepts canonical local paths, direct HTTPS .skill/.zip files and public GitHub repo/tree URLs; GitHub tree resolution supports slash-containing refs without credentials. Downloads reuse the DNS-pinned SSRF-safe HTTPS client, allow at most three redirects and stage under stateRoot with limits of 20 MiB download, 100 MiB unpacked, 1000 files, 20 MiB per file and bounded path depth/length. ZIP validation rejects traversal, links/devices, Unicode/case collisions, Windows reserved names, trailing dots/spaces, colons and control characters. Preview exposes source, digest, files, scripts, declared commands/environment and missing requirements; confirmation expires after ten minutes, requires explicit permission, is once-at-a-time, and revalidates the active preview fingerprint, staged archive, local source and candidate snapshot before atomic stage/backup/target replacement with rollback. Missing dependencies write a blocked marker, stay out of Skill summaries/load_skill and can be reactivated only after fresh dependency reconciliation. Focused tests cover source normalization, GitHub slash refs, mutation/expiry, rollback and blocked activation. Final make check passed Core 106 files / 891 tests and Desktop 62 files / 280 tests, plus both typechecks, Desktop test typecheck, zero-warning ESLint, Prettier, migration parity, git diff check and production build. Replacing the legacy skills.importArchive API path with preview/confirm operations is intentionally reserved for the immediately dependent ENV-API-015 task."
     },
     "ENV-API-015": {
       "status": "pending",

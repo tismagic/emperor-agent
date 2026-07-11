@@ -1014,6 +1014,37 @@ describe('AgentLoop (MIG-CORE-011)', () => {
     )
   })
 
+  it('does not expose a dependency-blocked user Skill to model context or load_skill', async () => {
+    const root = tmp('emperor-agent-loop-blocked-skill-root-')
+    const stateRoot = join(root, '.state')
+    const blocked = join(stateRoot, 'skills', 'blocked-skill')
+    mkdirSync(blocked, { recursive: true })
+    writeFileSync(
+      join(blocked, 'SKILL.md'),
+      '---\nname: blocked-skill\ndescription: Blocked dependency.\n---\n\nBLOCKED_CONTENT\n',
+    )
+    writeFileSync(
+      join(blocked, '.emperor-skill-state.json'),
+      JSON.stringify({
+        schemaVersion: 1,
+        status: 'blocked',
+        source: 'skill_install',
+      }),
+    )
+
+    const loop = await AgentLoop.create({
+      root,
+      stateRoot,
+      templatesDir: TEMPLATES_DIR,
+      modelRouter: fakeRouter(new FakeProvider()),
+    })
+
+    expect(
+      await loop.registry.execute('load_skill', { name: 'blocked-skill' }),
+    ).toBe('[ERR] skill "blocked-skill" not found')
+    expect(loop.skillsLoader.summary()).not.toContain('BLOCKED_CONTENT')
+  })
+
   it('does not load project Skills through a symlinked .emperor ancestor', async () => {
     const root = tmp('emperor-agent-loop-project-skill-link-root-')
     const stateRoot = join(root, '.state')

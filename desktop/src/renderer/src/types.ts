@@ -171,7 +171,7 @@ export interface SkillInfo {
   tags?: string
   always?: boolean
   source?: 'builtin' | 'user' | 'project'
-  status?: 'active' | 'blocked_pending_review' | 'invalid'
+  status?: 'active' | 'blocked' | 'blocked_pending_review' | 'invalid'
   readOnly?: boolean
   requirements?: {
     bins: string[]

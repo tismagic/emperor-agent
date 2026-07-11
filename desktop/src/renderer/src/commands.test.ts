@@ -50,5 +50,11 @@ describe('slash command parsing', () => {
     expect(
       parseSkillSlashCommand('/legacy-script run', [...skills, blocked]),
     ).toBeNull()
+    expect(
+      buildSlashPaletteItems([
+        ...skills,
+        { ...blocked, name: 'missing-deps', status: 'blocked' },
+      ]).some((item) => item.id === 'skill:missing-deps'),
+    ).toBe(false)
   })
 })

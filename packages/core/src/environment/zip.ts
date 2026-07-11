@@ -15,6 +15,8 @@ const DEFAULT_MAX_ARCHIVE_BYTES = 1024 * 1024 * 1024
 const DEFAULT_MAX_FILES = 1000
 const DEFAULT_MAX_FILE_BYTES = 200 * 1024 * 1024
 const DEFAULT_MAX_TOTAL_BYTES = 1024 * 1024 * 1024
+const DEFAULT_MAX_PATH_BYTES = 4096
+const DEFAULT_MAX_PATH_DEPTH = 64
 
 export interface ExtractBoundedZipOptions {
   archive: string
@@ -23,6 +25,8 @@ export interface ExtractBoundedZipOptions {
   maxFiles?: number
   maxFileBytes?: number
   maxTotalBytes?: number
+  maxPathBytes?: number
+  maxPathDepth?: number
 }
 
 export interface ExtractBoundedZipResult {
@@ -61,6 +65,8 @@ export function extractBoundedZip(
       DEFAULT_MAX_TOTAL_BYTES,
       DEFAULT_MAX_TOTAL_BYTES,
     ),
+    path: boundedLimit(opts.maxPathBytes, DEFAULT_MAX_PATH_BYTES, 65_535),
+    depth: boundedLimit(opts.maxPathDepth, DEFAULT_MAX_PATH_DEPTH, 256),
   }
   const stat = lstatSync(opts.archive)
   if (stat.isSymbolicLink() || !stat.isFile() || stat.size > limits.archive)
@@ -97,7 +103,13 @@ export function extractBoundedZip(
 
 function readEntries(
   archive: Buffer,
-  limits: { files: number; file: number; total: number },
+  limits: {
+    files: number
+    file: number
+    total: number
+    path: number
+    depth: number
+  },
 ): ZipEntry[] {
   const end = findEndOfCentralDirectory(archive)
   const disk = archive.readUInt16LE(end + 4)
@@ -146,14 +158,19 @@ function readEntries(
     const rawName = Buffer.from(
       archive.subarray(offset + 46, offset + 46 + nameLength),
     )
+    if (rawName.byteLength > limits.path)
+      throw new Error('ZIP path length limit exceeded')
     const rawText = rawName.toString('utf8')
     if (rawText.includes('\u0000')) throw new Error('unsafe ZIP path')
     const directory = rawText.replace(/\\/g, '/').endsWith('/')
     const name = normalizeMember(rawText)
+    if (name.split('/').length > limits.depth)
+      throw new Error('ZIP path depth limit exceeded')
     assertRegularEntryType(madeBy, externalAttributes, directory)
     if (!directory) {
-      if (names.has(name)) throw new Error('duplicate ZIP path')
-      names.add(name)
+      const canonicalName = name.toLowerCase()
+      if (names.has(canonicalName)) throw new Error('duplicate ZIP path')
+      names.add(canonicalName)
       entries.push({
         name,
         rawName,
@@ -215,7 +232,10 @@ function extractEntry(
 }
 
 function normalizeMember(raw: string): string {
-  const normalized = raw.replace(/\\/g, '/').replace(/\/+$/, '')
+  const normalized = raw
+    .normalize('NFC')
+    .replace(/\\/g, '/')
+    .replace(/\/+$/, '')
   const rawParts = normalized.split('/')
   if (
     !normalized ||
@@ -223,7 +243,15 @@ function normalizeMember(raw: string): string {
     isAbsolute(normalized) ||
     win32.isAbsolute(normalized) ||
     /^[A-Za-z]:/.test(normalized) ||
-    rawParts.some((part) => !part || part === '.' || part === '..')
+    rawParts.some(
+      (part) =>
+        !part ||
+        part === '.' ||
+        part === '..' ||
+        hasUnsafePathCharacters(part) ||
+        /[. ]$/.test(part) ||
+        /^(?:con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\..*)?$/i.test(part),
+    )
   )
     throw new Error('unsafe ZIP path')
   const clean = posix.normalize(normalized)
@@ -235,6 +263,13 @@ function normalizeMember(raw: string): string {
   )
     throw new Error('unsafe ZIP path')
   return parts.join('/')
+}
+
+function hasUnsafePathCharacters(value: string): boolean {
+  return [...value].some((character) => {
+    const code = character.charCodeAt(0)
+    return code < 32 || code === 127 || character === ':'
+  })
 }
 
 function assertRegularEntryType(
