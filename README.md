@@ -58,7 +58,13 @@ npm run dist:linux       # Linux AppImage
 npm run dist:win         # Windows NSIS exe
 ```
 
-安装包通过 `desktop/electron-builder.yml` 复制 `templates/`、`skills/`、`assets/` 和示例配置到 `runtime-defaults`，首次启动再复制到用户数据目录下的 `runtime/`。包内不包含 Python backend，也不要求目标机安装 Python、pip 或 `emperor-agent` 命令。
+安装包内含 Electron/Node runtime，不要求目标机预装 Node、npm、Python、pip、Git、ripgrep 或 `emperor-agent` 命令。签名只读的 `runtime-defaults` 直接从应用资源目录加载；模型配置、记忆、会话和用户安装的 Skill 只写入全局私有 `stateRoot`，升级应用不会覆盖用户内容。诊断页可探测项目或 Skill 缺失的开发工具，安装前必须展示固定 catalog 来源、许可、提权和依赖计划并由用户确认。
+
+## 安装包与可信 Release
+
+正式 Release 同批支持 macOS arm64/x64、Windows x64、Ubuntu x64。`.github/workflows/release.yml` 只接受 tag，平台 job 仅上传候选；全部签名、公证、安装 smoke、SHA-256、CycloneDX SBOM 和 GitHub attestation 验证通过后，最终 job 才会发布 GitHub Release。任一平台失败都不会降级为 unsigned 正式包。
+
+`.github/workflows/release-internal.yml` 只允许手动生成保留 7 天的 `UNSIGNED-INTERNAL` 调试包，没有 Release 写权限，不能作为正式分发物。当前可信发布流程已经实现，但首个正式版本仍需 Apple Developer、Azure Artifact Signing 凭据和三平台 CI receipt 完成签收。发布和凭据轮换步骤见 [`docs/release/trusted-release-runbook.md`](docs/release/trusted-release-runbook.md)，环境工具 catalog 变更见 [`docs/release/tool-catalog-review.md`](docs/release/tool-catalog-review.md)。
 
 ## 质量检查
 
@@ -69,10 +75,12 @@ make check
 `make check` 会执行：
 
 - `git diff --check`
+- `npm run format:check`
 - `node scripts/check_migration_parity.mjs`
 - `npm test --workspace @emperor/core`
 - `npm run typecheck --workspace @emperor/core`
-- `npm --prefix desktop run test`
+- Core/Desktop 零 warning ESLint
+- `npm --prefix desktop run test` 与测试专用 typecheck
 - `npm --prefix desktop run typecheck`
 - `npm --prefix desktop run build`
 
@@ -116,7 +124,7 @@ desktop/                        Electron 桌面应用
 ├── tests/visual/               Playwright 截图烟测
 └── electron-builder.yml        三平台打包配置
 
-desktop-pet/                    可选 Electron 桌宠 companion（已整合进主进程，无需独立安装依赖）
+desktop/src/pet/                主进程内托管的桌宠 companion 资源与逻辑
 templates/                      prompt 与初始化模板
 skills/                         项目技能包
 assets/                         品牌、桌宠和生成素材

@@ -35,7 +35,7 @@
 
 - `packages/core/`：核心 Agent runtime、CoreApi、模型/provider、工具、记忆、会话、Scheduler、Team、External、MCP、权限与计划系统。
 - `desktop/`：Electron app。`src/main` 托管 CoreApi 和 `app://` 协议；`src/preload` 暴露 Core IPC；`src/renderer` 是 Vue 桌面应用。
-- `desktop-pet/`：可选 Electron 桌宠 companion，生产包会作为资源内嵌。
+- `desktop/src/pet/`：主进程内托管的可选桌宠 companion；生产包仅内嵌其 allowlist 资源，不存在独立桌宠 runtime。
 - `templates/`：系统提示词、初始化用户档案和记忆模板。
 - `skills/`：项目内技能包。少数技能自带 Python helper 脚本属于技能资产，不是主 runtime。
 - `assets/`：品牌、桌宠、生成素材；生成素材必须记录到对应 `PROMPTS.md`。
@@ -79,6 +79,8 @@ npm --prefix desktop run screenshots
 - 每个 session 独立持久化 `stateRoot/sessions/<id>/history.jsonl`、`_checkpoint.json` 和 `runtime/events.jsonl`（`stateRoot` 默认 `~/.emperor-agent`，与 `runtimeRoot` 是两个独立的根，见 `docs/architecture/global-state-store.md`）。
 - 新增 CoreApi operation 时必须同步 IPC contract、preload bridge、renderer API 映射和相关类型/测试。
 - 新增 runtime event 时必须同步 `packages/core/src/runtime/events.ts`、renderer `types.ts`、`runtime/*` reducer/handlers 和 `useRuntime.ts`。
+- 正式 Release 必须通过 `.github/workflows/release.yml` 的三平台 candidate、receipt、SBOM、attestation 和最终聚合门禁；不得从平台 build job 直接发布，也不得把 `UNSIGNED-INTERNAL` artifact 转为正式包。
+- `packages/core/src/environment/tool-catalog.json` 属于签名静态执行策略。修改版本、来源、摘要、publisher、参数或许可时必须执行 `docs/release/tool-catalog-review.md`，renderer/model 不得提供命令、URL 或 argv。
 
 ## 6. 扩展路径
 
@@ -109,7 +111,6 @@ npm --prefix desktop run screenshots
 - `desktop/screenshots/`
 - `desktop/test-results/`
 - `desktop/.uiplan-progress.json`
-- `desktop-pet/node_modules/`
 
 ## 8. 常见排查
 
@@ -117,7 +118,7 @@ npm --prefix desktop run screenshots
 2. Core IPC 不通：看 `desktop/src/main/core-host.ts`、`desktop/src/preload/core-ipc.ts` 和 renderer `api/http.ts` operation 映射。
 3. Runtime 事件异常：先看 `desktop/src/renderer/src/runtime/reducer.ts`、`handlers/*`、`useRuntime.ts`。
 4. 会话/记忆错乱：看 `packages/core/src/sessions/*`、`memory/*` store 和 `python-runtime-compat.test.ts`。
-5. 打包问题：看 `desktop/electron-builder.yml` 和 `desktop/src/main/runtime-root.ts`，生产包应只复制 runtime defaults，不包含 Python backend。
+5. 打包问题：看 `desktop/electron-builder.yml`、`desktop/src/main/runtime-root.ts` 和 `docs/release/trusted-release-runbook.md`；生产包直接读取签名 runtime defaults，不包含 Python backend。
 
 ## 9. 素材生成规范
 

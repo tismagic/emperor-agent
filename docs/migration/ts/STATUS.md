@@ -247,7 +247,7 @@
 ## W17 打包/发布/对账（REL） · 依赖 全部
 
 > REL-001 已完成本地配置面：release 不运行 PyInstaller，也不把 Python backend 放入 `Resources/backend`；release 包只托管 Electron main 内的 `CoreApi` 与 runtime defaults。legacy backend bundle 脚本已删除。
-> REL-001/002 继续推进：electron-builder 已声明 mac dmg/zip、Linux AppImage、Windows NSIS target；GitHub CI/release 已切到 Node 22 + core/desktop vitest/typecheck/build/package dry run，不再跑 Python/pytest。当前本机已验证 `npm run build` 与 `npm run package:dir`（mac unpacked）通过，三平台远端产物仍需 CI/tag 实跑签收。
+> REL-001/002 继续推进：electron-builder 已声明 macOS dmg/zip、Linux AppImage/DEB、Windows NSIS target；GitHub trusted release 已切到 Node 24，并拆分 macOS 双架构、Windows x64、Ubuntu 22.04 build 与 22.04/24.04 smoke candidate。最终聚合器会校验同 commit receipt、SHA-256、完整 Core+Desktop CycloneDX SBOM 与 GitHub provenance/SBOM attestation，再以 draft-first 流程原子发布。unsigned internal workflow 仅手动触发、保留 7 天且无发布权限。本机 `make check`、macOS arm64 packaged smoke、Linux x64 cross-build 和聚合器测试已通过；正式状态仍为 ◐，等待 Apple/Azure 凭据以及三平台 tag workflow receipt。运维步骤见 `docs/release/trusted-release-runbook.md`。
 > REL-003 已完成：新增 `packages/core/fixtures/python-runtime` 与 `python-runtime-compat.test.ts`，覆盖 Python 布局的 `memory/`、`model_config.json`、`mcp_config.json`、sessions 与 `.team/` 可由 TS 版零迁移读取。
 > REL-004 已完成：`docs/migration/ts/PARITY.md` 作为冻结源清单覆盖 84 个已退役 Python 源测试文件，`scripts/check_migration_parity.mjs` 校验映射到存在的 TS/JS 测试文件；`make check`、`package:dir` 与 Playwright screenshots 均已在本机通过。
 > REL-005 已完成：`agent/`、`tests/`、`agent.py`、`webui.py`、`requirements*.txt`、`pyproject.toml` 已删除；仅保留技能目录自带 helper 脚本作为技能资产。仓库主 runtime 为 TS/Electron/CoreApi。
