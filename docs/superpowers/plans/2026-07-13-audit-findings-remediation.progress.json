@@ -1,9 +1,9 @@
 {
   "started_at": "2026-07-13T00:00:00+08:00",
-  "updated_at": "2026-07-13T23:44:00+08:00",
+  "updated_at": "2026-07-13T23:51:00+08:00",
   "total_tasks": 6,
-  "completed": 4,
-  "rounds": 4,
+  "completed": 5,
+  "rounds": 5,
   "tasks": {
     "SEC-001": {
       "title": "Electron trust boundary",
@@ -28,7 +28,7 @@
     "SEC-005": {
       "title": "Config recovery",
       "module": "core-config",
-      "status": "pending"
+      "status": "done"
     },
     "SEC-006": {
       "title": "Full receipts and audit closure",

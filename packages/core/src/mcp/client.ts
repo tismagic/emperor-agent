@@ -35,8 +35,8 @@ export class MCPClient {
   ): Promise<void> {
     if (this.initialized) return
     this.config = executionEnvironment
-      ? loadMcpConfigForEnvironment(this.root, executionEnvironment)
-      : loadMcpConfig(this.root)
+      ? await loadMcpConfigForEnvironment(this.root, executionEnvironment)
+      : await loadMcpConfig(this.root)
     const defaults = this.config.defaults
 
     for (const server of Object.values(this.config.servers)) {
@@ -100,13 +100,12 @@ export class MCPClient {
     this.initialized = false
   }
 
-  private configForSnapshot(
+  private async configForSnapshot(
     serverName: string,
     snapshot: ExecutionEnvironment,
-  ): ServerConfig | null {
-    const config = loadMcpConfigForEnvironment(this.root, snapshot).servers[
-      serverName
-    ]
+  ): Promise<ServerConfig | null> {
+    const config = (await loadMcpConfigForEnvironment(this.root, snapshot))
+      .servers[serverName]
     return config?.enabled && config.transport !== 'sse' ? config : null
   }
 }
@@ -115,7 +114,10 @@ function createConnection(
   cfg: ServerConfig,
   executionEnvironment: ExecutionEnvironment | null = null,
   configResolver:
-    ((snapshot: ExecutionEnvironment) => ServerConfig | null) | null = null,
+    | ((
+        snapshot: ExecutionEnvironment,
+      ) => ServerConfig | null | Promise<ServerConfig | null>)
+    | null = null,
 ): MCPConnection {
   return cfg.transport === 'sse'
     ? new SSEConnection(cfg.name, cfg)
@@ -125,11 +127,11 @@ function createConnection(
       })
 }
 
-function loadMcpConfigForEnvironment(
+async function loadMcpConfigForEnvironment(
   root: string,
   executionEnvironment: ExecutionEnvironment,
-): MCPConfig {
-  return loadMcpConfig(
+): Promise<MCPConfig> {
+  return await loadMcpConfig(
     root,
     (name) => executionEnvironment.selectEnv([name])[name],
   )

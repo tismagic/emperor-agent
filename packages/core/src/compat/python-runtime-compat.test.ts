@@ -27,7 +27,7 @@ describe('Python runtime data compatibility (MIG-REL-003)', () => {
       secondaryModelId: 'deepseek-chat',
     })
 
-    const mcp = loadMcpConfig(root, { PY_TOOL: '/usr/bin/python3' })
+    const mcp = await loadMcpConfig(root, { PY_TOOL: '/usr/bin/python3' })
     expect(mcp.defaults).toMatchObject({ read_only: true, exclusive: false })
     expect(mcp.servers.legacy_reader).toMatchObject({
       enabled: true,

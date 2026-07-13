@@ -66,14 +66,14 @@ export class CoreConfigService {
     return this.getUserConfig()
   }
 
-  getMcpConfig(): MCPConfig {
-    return loadMcpConfig(this.root)
+  async getMcpConfig(): Promise<MCPConfig> {
+    return await loadMcpConfig(this.root)
   }
 
   async saveMcpConfig(raw: Record<string, unknown>): Promise<MCPConfig> {
-    saveMcpConfig(this.root, raw)
+    await saveMcpConfig(this.root, raw)
     await this.hooks.reloadMcp?.()
-    return this.getMcpConfig()
+    return await this.getMcpConfig()
   }
 
   private userConfigPath(): string {

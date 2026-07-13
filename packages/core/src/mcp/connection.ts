@@ -117,7 +117,12 @@ export class StdioConnection extends MCPConnection {
   private client: Client | null = null
   private executionEnvironment: ExecutionEnvironment | null
   private readonly configResolver:
-    ((snapshot: ExecutionEnvironment) => ServerConfig | null) | null
+    (
+      | ((
+          snapshot: ExecutionEnvironment,
+        ) => ServerConfig | null | Promise<ServerConfig | null>)
+      | null
+    )
 
   constructor(
     serverName: string,
@@ -125,7 +130,10 @@ export class StdioConnection extends MCPConnection {
     opts: {
       executionEnvironment?: ExecutionEnvironment | null
       configResolver?:
-        ((snapshot: ExecutionEnvironment) => ServerConfig | null) | null
+        | ((
+            snapshot: ExecutionEnvironment,
+          ) => ServerConfig | null | Promise<ServerConfig | null>)
+        | null
     } = {},
   ) {
     super(serverName)
@@ -204,7 +212,7 @@ export class StdioConnection extends MCPConnection {
   protected override async applyExecutionEnvironment(
     snapshot: ExecutionEnvironment,
   ): Promise<void> {
-    const resolvedConfig = this.configResolver?.(snapshot)
+    const resolvedConfig = await this.configResolver?.(snapshot)
     if (this.configResolver && !resolvedConfig)
       throw new Error(`MCP server '${this.serverName}' is no longer configured`)
     if (resolvedConfig) this.config = resolvedConfig

@@ -1,5 +1,11 @@
-import { existsSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync } from 'node:fs'
 import { join } from 'node:path'
+import {
+  readJson,
+  writeJsonAtomic,
+  type ConfigRecoveryInfo,
+} from '../store/atomic-json'
+import { logger } from '../util/log'
 
 export interface ServerConfig {
   name: string
@@ -32,26 +38,30 @@ const ENV_RE = /\$\{([A-Za-z_][A-Za-z0-9_]*)\}/g
 export type EnvironmentValueSource =
   Record<string, string | undefined> | ((name: string) => string | undefined)
 
-export function loadMcpConfig(
+export async function loadMcpConfig(
   root: string,
   env: EnvironmentValueSource = process.env,
-): MCPConfig {
+): Promise<MCPConfig> {
   const path = join(root, MCP_CONFIG_FILE)
   const raw = structuredClone(DEFAULT_MCP_CONFIG) as Record<string, unknown>
   if (existsSync(path)) {
-    const loaded = JSON.parse(readFileSync(path, 'utf8') || '{}') as Record<
-      string,
-      unknown
-    >
+    const loaded = await readJson<Record<string, unknown>>(
+      path,
+      structuredClone(DEFAULT_MCP_CONFIG),
+      {
+        validate: validateRawConfig,
+        onCorrupt: reportMcpConfigRecovery,
+      },
+    )
     deepMerge(raw, expandEnv(loaded, env) as Record<string, unknown>)
   }
   return parseConfig(raw)
 }
 
-export function saveMcpConfig(
+export async function saveMcpConfig(
   root: string,
   raw: Record<string, unknown>,
-): void {
+): Promise<void> {
   if (
     !raw.servers ||
     typeof raw.servers !== 'object' ||
@@ -65,11 +75,7 @@ export function saveMcpConfig(
     Array.isArray(data.defaults)
   )
     data.defaults = DEFAULT_MCP_CONFIG.defaults
-  writeFileSync(
-    join(root, MCP_CONFIG_FILE),
-    JSON.stringify(data, null, 2) + '\n',
-    'utf8',
-  )
+  await writeJsonAtomic(join(root, MCP_CONFIG_FILE), data, { mode: 0o600 })
 }
 
 export function expandEnv(
@@ -182,4 +188,33 @@ function objectRecord(value: unknown): Record<string, Record<string, unknown>> {
       out[k] = v as Record<string, unknown>
   }
   return out
+}
+
+function validateRawConfig(value: unknown): Record<string, unknown> {
+  if (!value || typeof value !== 'object' || Array.isArray(value))
+    throw new Error('mcp_config must be an object')
+  const raw = value as Record<string, unknown>
+  if (
+    raw.servers !== undefined &&
+    (!raw.servers ||
+      typeof raw.servers !== 'object' ||
+      Array.isArray(raw.servers))
+  )
+    throw new Error("mcp_config: 'servers' must be an object")
+  if (
+    raw.defaults !== undefined &&
+    (!raw.defaults ||
+      typeof raw.defaults !== 'object' ||
+      Array.isArray(raw.defaults))
+  )
+    throw new Error("mcp_config: 'defaults' must be an object")
+  return raw
+}
+
+function reportMcpConfigRecovery(info: ConfigRecoveryInfo): void {
+  logger.warn('Invalid MCP config isolated; using defaults', {
+    path: info.path,
+    backupPath: info.backupPath,
+    error: info.error instanceof Error ? info.error.message : String(info.error),
+  })
 }

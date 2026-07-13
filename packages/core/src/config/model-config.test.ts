@@ -1,4 +1,4 @@
-import { mkdtemp, readFile } from 'node:fs/promises'
+import { mkdtemp, readFile, readdir, stat, writeFile } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -174,6 +174,45 @@ describe('model-config IO', () => {
     await expect(markEntryVision(dir, 'missing')).rejects.toThrow(
       ValidationError,
     )
+  })
+
+  it('isolates truncated JSON and continues with onboarding-safe defaults', async () => {
+    const path = join(dir, 'model_config.json')
+    await writeFile(path, '{"models":[', 'utf8')
+
+    const config = await loadModelConfig(dir)
+
+    expect(config.models).toEqual([])
+    expect(config.defaults.provider).toBe('auto')
+    expect(existsSync(path)).toBe(false)
+    const backup = (await readdir(dir)).find((name) =>
+      name.startsWith('model_config.json.corrupt-'),
+    )
+    expect(backup).toBeDefined()
+    expect(await readFile(join(dir, backup!), 'utf8')).toBe('{"models":[')
+  })
+
+  it('isolates parseable model config with an invalid schema', async () => {
+    const path = join(dir, 'model_config.json')
+    await writeFile(path, JSON.stringify({ models: {} }), 'utf8')
+
+    await expect(loadModelConfig(dir)).resolves.toMatchObject({ models: [] })
+
+    expect(existsSync(path)).toBe(false)
+    expect(
+      (await readdir(dir)).some((name) =>
+        name.startsWith('model_config.json.corrupt-'),
+      ),
+    ).toBe(true)
+  })
+
+  it('writes created and saved model config with private permissions', async () => {
+    const path = join(dir, 'model_config.json')
+    await loadModelConfig(dir)
+    expect((await stat(path)).mode & 0o777).toBe(0o600)
+
+    await saveModelConfig(dir, { models: [] })
+    expect((await stat(path)).mode & 0o777).toBe(0o600)
   })
 })
 

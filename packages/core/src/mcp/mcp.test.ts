@@ -1,4 +1,11 @@
-import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
+import {
+  existsSync,
+  mkdtempSync,
+  readFileSync,
+  readdirSync,
+  statSync,
+  writeFileSync,
+} from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
@@ -120,7 +127,7 @@ class ReconfigurableConnection extends FakeConnection {
 }
 
 describe('MCP config', () => {
-  it('loads defaults, deep-merges mcp_config.json, and expands env placeholders', () => {
+  it('loads defaults, deep-merges mcp_config.json, and expands env placeholders', async () => {
     const root = tmp('emperor-mcp-config-')
     writeFileSync(
       join(root, 'mcp_config.json'),
@@ -140,7 +147,7 @@ describe('MCP config', () => {
       'utf8',
     )
 
-    const cfg = loadMcpConfig(root, { BIN: '/bin', TOKEN: 'secret' })
+    const cfg = await loadMcpConfig(root, { BIN: '/bin', TOKEN: 'secret' })
     expect(cfg.defaults).toMatchObject({
       read_only: true,
       exclusive: false,
@@ -155,13 +162,62 @@ describe('MCP config', () => {
     })
   })
 
-  it('validates and writes raw config compatibly', () => {
+  it('keeps legacy partial config valid when servers is omitted', async () => {
+    const root = tmp('emperor-mcp-partial-')
+    writeFileSync(
+      join(root, 'mcp_config.json'),
+      JSON.stringify({ defaults: { read_only: true } }),
+      'utf8',
+    )
+
+    await expect(loadMcpConfig(root)).resolves.toMatchObject({
+      servers: {},
+      defaults: { read_only: true, exclusive: false },
+    })
+  })
+
+  it('validates and writes raw config compatibly', async () => {
     const root = tmp('emperor-mcp-save-')
-    expect(() => saveMcpConfig(root, { servers: [] })).toThrow(/servers/)
-    saveMcpConfig(root, { servers: {}, defaults: { read_only: true } })
+    await expect(saveMcpConfig(root, { servers: [] })).rejects.toThrow(/servers/)
+    await saveMcpConfig(root, {
+      servers: {},
+      defaults: { read_only: true },
+    })
     expect(
       JSON.parse(readFileSync(join(root, 'mcp_config.json'), 'utf8')).defaults
         .read_only,
+    ).toBe(true)
+    expect(statSync(join(root, 'mcp_config.json')).mode & 0o777).toBe(0o600)
+  })
+
+  it('isolates truncated JSON and starts with no enabled servers', async () => {
+    const root = tmp('emperor-mcp-corrupt-')
+    const path = join(root, 'mcp_config.json')
+    writeFileSync(path, '{"servers":', 'utf8')
+
+    const config = await loadMcpConfig(root)
+
+    expect(config.servers).toEqual({})
+    expect(existsSync(path)).toBe(false)
+    const backup = readdirSync(root).find((name) =>
+      name.startsWith('mcp_config.json.corrupt-'),
+    )
+    expect(backup).toBeDefined()
+    expect(readFileSync(join(root, backup!), 'utf8')).toBe('{"servers":')
+  })
+
+  it('isolates parseable MCP config with an invalid schema', async () => {
+    const root = tmp('emperor-mcp-invalid-')
+    const path = join(root, 'mcp_config.json')
+    writeFileSync(path, JSON.stringify({ servers: [] }), 'utf8')
+
+    await expect(loadMcpConfig(root)).resolves.toMatchObject({ servers: {} })
+
+    expect(existsSync(path)).toBe(false)
+    expect(
+      readdirSync(root).some((name) =>
+        name.startsWith('mcp_config.json.corrupt-'),
+      ),
     ).toBe(true)
   })
 })

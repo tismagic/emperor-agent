@@ -1,12 +1,11 @@
 import { randomBytes } from 'node:crypto'
 import { existsSync } from 'node:fs'
 import {
-  copyFile,
   mkdir,
+  open,
   readFile,
   rename,
   unlink,
-  writeFile,
 } from 'node:fs/promises'
 import { dirname } from 'node:path'
 
@@ -18,24 +17,33 @@ import { dirname } from 'node:path'
  * `*.corrupt-<ts>` → 返回默认 → 暴露给 diagnostics。**不变量**：终态写要么完整要么保留旧文件。
  */
 
-export interface ReadOptions {
+export interface ConfigRecoveryInfo {
+  path: string
+  backupPath: string
+  error: unknown
+}
+
+export interface ReadOptions<T = unknown> {
   /** 解析失败、已隔离损坏文件后回调（用于 diagnostics 可见，不静默吞）。 */
-  onCorrupt?: (info: {
-    path: string
-    backupPath: string
-    error: unknown
-  }) => void
+  onCorrupt?: (info: ConfigRecoveryInfo) => void
+  /** 语义校验/转换；抛错时按损坏文件处理。 */
+  validate?: (value: unknown) => T
+}
+
+export interface AtomicWriteOptions {
+  mode?: number
 }
 
 function corruptName(path: string): string {
   const ts = new Date().toISOString().replace(/[:.]/g, '-')
-  return `${path}.corrupt-${ts}`
+  const nonce = randomBytes(4).toString('hex')
+  return `${path}.corrupt-${ts}-${nonce}`
 }
 
-/** 把损坏文件复制为 `*.corrupt-<ts>` 旁路保存，返回备份路径。 */
+/** 把损坏文件原子移到 `*.corrupt-<ts>-<nonce>`，返回备份路径。 */
 export async function isolateCorrupt(path: string): Promise<string> {
   const backup = corruptName(path)
-  await copyFile(path, backup)
+  await rename(path, backup)
   return backup
 }
 
@@ -43,7 +51,7 @@ export async function isolateCorrupt(path: string): Promise<string> {
 export async function readJson<T>(
   path: string,
   fallback: T,
-  opts: ReadOptions = {},
+  opts: ReadOptions<T> = {},
 ): Promise<T> {
   if (!existsSync(path)) return fallback
   let raw: string
@@ -53,7 +61,8 @@ export async function readJson<T>(
     return fallback
   }
   try {
-    return JSON.parse(raw) as T
+    const parsed: unknown = JSON.parse(raw)
+    return opts.validate ? opts.validate(parsed) : (parsed as T)
   } catch (error) {
     let backupPath = ''
     try {
@@ -70,14 +79,22 @@ export async function readJson<T>(
 export async function writeJsonAtomic(
   path: string,
   data: unknown,
+  opts: AtomicWriteOptions = {},
 ): Promise<void> {
   await mkdir(dirname(path), { recursive: true })
   const tmp = `${path}.tmp-${process.pid}-${randomBytes(4).toString('hex')}`
   const body = `${JSON.stringify(data, null, 2)}\n`
+  let handle: Awaited<ReturnType<typeof open>> | null = null
   try {
-    await writeFile(tmp, body, 'utf8')
+    handle = await open(tmp, 'wx', opts.mode ?? 0o666)
+    await handle.writeFile(body, 'utf8')
+    if (opts.mode !== undefined) await handle.chmod(opts.mode)
+    await handle.sync()
+    await handle.close()
+    handle = null
     await rename(tmp, path)
   } catch (error) {
+    await handle?.close().catch(() => {})
     await unlink(tmp).catch(() => {})
     throw error
   }

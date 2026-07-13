@@ -121,6 +121,29 @@ const EXPECTED_OPERATIONS = [
 ]
 
 describe('CoreApi (MIG-IPC-001)', () => {
+  it('starts with recoverable defaults when Model and MCP configs are corrupt', async () => {
+    const root = tmp('emperor-core-api-corrupt-config-')
+    const stateRoot = tmp('emperor-core-api-corrupt-state-')
+    writeFileSync(join(stateRoot, 'model_config.json'), '{"models":[', 'utf8')
+    writeFileSync(join(stateRoot, 'mcp_config.json'), '{"servers":', 'utf8')
+
+    const api = await CoreApi.create({
+      root,
+      stateRoot,
+      templatesDir: TEMPLATES_DIR,
+    })
+
+    await expect(api.model.getConfig()).resolves.toMatchObject({
+      config: { models: [] },
+      availability: { usable: false },
+    })
+    await expect(api.mcp.getConfig()).resolves.toMatchObject({ servers: {} })
+    expect(
+      readdirSync(stateRoot).filter((name) => name.includes('.corrupt-')),
+    ).toHaveLength(2)
+    await api.close()
+  })
+
   it('exposes a typed in-process method for every retired web route operation', async () => {
     const api = await CoreApi.create({
       root: tmp('emperor-core-api-'),

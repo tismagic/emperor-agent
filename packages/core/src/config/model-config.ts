@@ -1,9 +1,14 @@
 import { existsSync } from 'node:fs'
-import { readFile, writeFile } from 'node:fs/promises'
+import { readFile } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
 import { ValidationError } from '../errors'
 import { logger } from '../util/log'
 import { PROVIDERS, findByName } from '../providers/registry'
+import {
+  readJson,
+  writeJsonAtomic,
+  type ConfigRecoveryInfo,
+} from '../store/atomic-json'
 
 /**
  * 模型配置加载/解析/保存 (MIG-CFG-002 + CFG-003 IO)。
@@ -446,7 +451,7 @@ function serialize(data: RawConfig): string {
 export async function ensureModelConfig(root: string): Promise<string> {
   const path = join(root, MODEL_CONFIG_FILE)
   if (!existsSync(path))
-    await writeFile(path, serialize(defaultModelConfig()), 'utf8')
+    await writeJsonAtomic(path, defaultModelConfig(), { mode: 0o600 })
   return path
 }
 
@@ -454,7 +459,7 @@ export async function ensureExampleConfig(root: string): Promise<string> {
   const path = join(root, MODEL_CONFIG_EXAMPLE_FILE)
   const desired = serialize(defaultModelConfig())
   if (!existsSync(path) || (await readFile(path, 'utf8')) !== desired) {
-    await writeFile(path, desired, 'utf8')
+    await writeJsonAtomic(path, defaultModelConfig())
   }
   return path
 }
@@ -470,7 +475,10 @@ export async function loadModelConfig(
   const path = join(r, MODEL_CONFIG_FILE)
   const raw = structuredClone(defaultModelConfig())
   if (existsSync(path)) {
-    const loaded = JSON.parse((await readFile(path, 'utf8')) || '{}')
+    const loaded = await readJson<RawConfig>(path, defaultModelConfig(), {
+      validate: validateRawModelConfig,
+      onCorrupt: reportModelConfigRecovery,
+    })
     deepMerge(raw, loaded)
   }
   return parseModelConfig(raw)
@@ -484,7 +492,7 @@ export async function saveModelConfig(
   const config = parseModelConfig(normalizedRaw(data))
   if (opts.validateComplete) validateCompleteModelEntries(config.raw)
   const r = resolve(root)
-  await writeFile(join(r, MODEL_CONFIG_FILE), serialize(config.raw), 'utf8')
+  await writeJsonAtomic(join(r, MODEL_CONFIG_FILE), config.raw, { mode: 0o600 })
   return config
 }
 
@@ -504,4 +512,38 @@ export async function markEntryVision(
     )
   found.supportsVision = Boolean(value)
   return saveModelConfig(root, raw)
+}
+
+function validateRawModelConfig(value: unknown): RawConfig {
+  if (!isRawRecord(value)) throw new Error('model_config must be an object')
+  if ('agents' in value) {
+    if (!isRawRecord(value.agents))
+      throw new Error("model_config: 'agents' must be an object")
+    if (
+      'defaults' in value.agents &&
+      !isRawRecord(value.agents.defaults)
+    )
+      throw new Error("model_config: 'agents.defaults' must be an object")
+  }
+  if ('models' in value) {
+    if (!Array.isArray(value.models))
+      throw new Error("model_config: 'models' must be an array")
+    if (value.models.some((entry) => !isRawRecord(entry)))
+      throw new Error('model_config: every model must be an object')
+  }
+  if ('providers' in value) {
+    if (!isRawRecord(value.providers))
+      throw new Error("model_config: 'providers' must be an object")
+    if (Object.values(value.providers).some((entry) => !isRawRecord(entry)))
+      throw new Error('model_config: every provider must be an object')
+  }
+  return value
+}
+
+function reportModelConfigRecovery(info: ConfigRecoveryInfo): void {
+  logger.warn('Invalid model config isolated; using defaults', {
+    path: info.path,
+    backupPath: info.backupPath,
+    error: info.error instanceof Error ? info.error.message : String(info.error),
+  })
 }
