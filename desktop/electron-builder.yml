@@ -57,6 +57,7 @@ win:
 linux:
   target:
     - AppImage
+  executableName: emperor-agent
   icon: build/icon.png
   category: Utility
   artifactName: Emperor-Agent-${version}-linux-${arch}.${ext}

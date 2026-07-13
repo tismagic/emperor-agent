@@ -1,15 +1,10 @@
-import { existsSync, realpathSync } from 'node:fs'
 import { homedir } from 'node:os'
+import { isAbsolute, join, normalize, resolve } from 'node:path'
 import {
-  basename,
-  dirname,
-  isAbsolute,
-  join,
-  normalize,
-  relative,
-  resolve,
-  sep,
-} from 'node:path'
+  canonicalizeExistingPath,
+  isPathWithin,
+  pathsEqual,
+} from '../util/paths'
 
 export type WorkspaceAccess = 'read' | 'write' | 'execute' | 'media'
 export type OutsideWorkspaceBehavior = 'deny' | 'allow_read'
@@ -97,7 +92,7 @@ export class WorkspacePolicy {
     const requestedPath = String(rawPath ?? '')
     const baseRoot = normalizeRoot(opts.baseRoot) ?? this.workspaceRoot
     const resolvedPath = resolveCandidatePath(requestedPath, baseRoot)
-    const realPath = realExisting(resolvedPath)
+    const realPath = canonicalizeExistingPath(resolvedPath)
     const base = this.baseDecision(
       access,
       requestedPath,
@@ -200,8 +195,8 @@ export class WorkspacePolicy {
     return (
       roots.find(
         (root) =>
-          isWithin(resolvedPath, root.path) ||
-          isWithin(realPath, root.realPath),
+          isPathWithin(resolvedPath, root.path) ||
+          isPathWithin(realPath, root.realPath),
       ) ?? null
     )
   }
@@ -214,8 +209,8 @@ export class WorkspacePolicy {
     return (
       roots.find(
         (root) =>
-          isWithin(resolvedPath, root.path) &&
-          isWithin(realPath, root.realPath),
+          isPathWithin(resolvedPath, root.path) &&
+          isPathWithin(realPath, root.realPath),
       ) ?? null
     )
   }
@@ -231,7 +226,7 @@ export function workspacePolicyForTool(
     normalizeRoot(fallbackWorkspace)
   const root = normalizeRoot(ctx?.root)
   const stateRoot =
-    root && workspaceRoot && root !== workspaceRoot ? root : null
+    root && workspaceRoot && !pathsEqual(root, workspaceRoot) ? root : null
   return new WorkspacePolicy({ workspaceRoot, stateRoot })
 }
 
@@ -252,7 +247,10 @@ export function formatWorkspacePolicyError(
 }
 
 export function isWithinWorkspaceRoot(path: string, root: string): boolean {
-  return isWithin(realExisting(resolve(path)), realExisting(resolve(root)))
+  return isPathWithin(
+    canonicalizeExistingPath(resolve(path)),
+    canonicalizeExistingPath(resolve(root)),
+  )
 }
 
 function normalizeRoot(root: string | null | undefined): string | null {
@@ -273,7 +271,7 @@ function normalizeRoots(
     seen.add(path)
     out.push({
       path,
-      realPath: realExisting(path),
+      realPath: canonicalizeExistingPath(path),
       label:
         typeof value === 'string' ? defaultLabel : value.label || defaultLabel,
     })
@@ -303,31 +301,4 @@ function expandHome(path: string): string {
   if (path.startsWith('~/') || path.startsWith('~\\'))
     return join(homedir(), path.slice(2))
   return path
-}
-
-function realExisting(path: string): string {
-  const tail: string[] = []
-  let cur = path
-  while (true) {
-    try {
-      const real = realpathSync(cur)
-      return tail.length ? resolve(real, ...tail.reverse()) : real
-    } catch {
-      const parent = dirname(cur)
-      if (parent === cur) return path
-      tail.push(basename(cur))
-      cur = parent
-    }
-  }
-}
-
-function isWithin(path: string, parent: string): boolean {
-  const p = resolve(path)
-  const base = resolve(parent)
-  if (!existsSync(base)) {
-    const rel = relative(base, p)
-    return rel === '' || (!rel.startsWith('..') && !isAbsolute(rel))
-  }
-  const baseWithSep = base.endsWith(sep) ? base : base + sep
-  return p === base || p.startsWith(baseWithSep)
 }

@@ -6,7 +6,7 @@ import {
   statSync,
   writeFileSync,
 } from 'node:fs'
-import { basename, dirname, join, relative, resolve } from 'node:path'
+import { basename, dirname, join, resolve } from 'node:path'
 import type { AgentLoop } from '../../agent/loop'
 import {
   CompactionCursorStore,
@@ -30,6 +30,7 @@ import {
 import { readTurnCheckpoint } from '../../sessions/checkpoint'
 import type { WatchlistService } from '../../watchlist/service'
 import type { RuntimeStats } from '../../runtime/store'
+import { relativePortableOrAbsolute } from '../../util/paths'
 
 type Dict = Record<string, any>
 
@@ -656,8 +657,7 @@ export class CoreMemoryService {
   }
 
   private rel(path: string): string {
-    const r = relative(this.root, resolve(path))
-    return r.startsWith('..') ? resolve(path) : r
+    return relativePortableOrAbsolute(this.root, path)
   }
 
   private readPromptSnapshot(

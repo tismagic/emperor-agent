@@ -179,14 +179,12 @@ describe('RunCommand cancellation', () => {
   it('stops a running shell command when the turn abort signal fires', async () => {
     const r = new RunCommand(dir)
     const controller = new AbortController()
-    const pending = r.execute(
-      { command: 'sleep 0.3; echo should-not-finish' },
-      {
-        root: dir,
-        arguments: { command: 'sleep 0.3; echo should-not-finish' },
-        signal: controller.signal,
-      } as never,
-    )
+    const command = `"${process.execPath}" -e "setTimeout(() => console.log('should-not-finish'), 300)"`
+    const pending = r.execute({ command }, {
+      root: dir,
+      arguments: { command },
+      signal: controller.signal,
+    } as never)
     setTimeout(() => controller.abort(), 10)
 
     const out = await pending
@@ -214,10 +212,9 @@ describe('RunCommand execution environment snapshot', () => {
       { PROCESS_ONLY_SECRET: 'captured-but-not-whitelisted' },
     )
     try {
+      const command = `"${process.execPath}" -e "process.stdout.write([process.env.PATH, process.env.HOME, process.env.PROCESS_ONLY_SECRET].map((value) => value || '').join('|'))"`
       const output = await new RunCommand(dir).execute(
-        {
-          command: 'printf "%s|%s|%s" "$PATH" "$HOME" "$PROCESS_ONLY_SECRET"',
-        },
+        { command },
         {
           root: dir,
           arguments: {},

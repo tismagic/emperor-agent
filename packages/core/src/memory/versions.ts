@@ -11,15 +11,9 @@ import {
   unlinkSync,
   writeFileSync,
 } from 'node:fs'
-import {
-  basename,
-  dirname,
-  isAbsolute,
-  join,
-  relative,
-  resolve,
-} from 'node:path'
+import { basename, dirname, isAbsolute, join, resolve } from 'node:path'
 import { randomUUID } from 'node:crypto'
+import { relativePortable, relativePortableOrAbsolute } from '../util/paths'
 
 export type MemoryVersionTarget = 'memory' | 'user' | 'episode' | 'project'
 const DATE_EPISODE_RE = /^\d{4}-\d{2}-\d{2}\.md$/
@@ -293,7 +287,7 @@ export class MemoryVersionStore {
       return 'episode'
     if (
       basename(real) === 'AGENTS.local.md' &&
-      isProjectMemoryRelPath(relative(this.root, real))
+      isProjectMemoryRelPath(relativePortable(this.root, real))
     )
       return 'project'
     return null
@@ -312,8 +306,7 @@ export class MemoryVersionStore {
   }
 
   private rel(path: string): string {
-    const r = relative(this.root, resolve(path))
-    return r.startsWith('..') ? resolve(path) : r
+    return relativePortableOrAbsolute(this.root, path)
   }
 
   private static newId(stamp: number, digest: string): string {

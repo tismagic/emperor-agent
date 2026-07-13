@@ -641,7 +641,7 @@ describe('CoreApi (MIG-IPC-001)', () => {
     const untrusted = (await api.hooks.getConfig()) as any
 
     expect(untrusted.projectTrust).toMatchObject({
-      canonicalRoot: realpathSync(projectRoot),
+      canonicalRoot: realpathSync.native(projectRoot),
       status: 'untrusted',
       digest: expect.any(String),
     })
@@ -1329,10 +1329,10 @@ describe('CoreApi (MIG-IPC-001)', () => {
 
     expect(chatPrompt).not.toContain('PROJECT_A_PRIVATE_MEMORY')
     expect(chatPrompt).not.toContain('PROJECT_B_PRIVATE_MEMORY')
-    expect(promptA).toContain(projectAPath)
+    expect(promptA).toContain(JSON.stringify(projectAPath).slice(1, -1))
     expect(promptA).toContain('PROJECT_A_PRIVATE_MEMORY')
     expect(promptA).not.toContain('PROJECT_B_PRIVATE_MEMORY')
-    expect(promptB).toContain(projectBPath)
+    expect(promptB).toContain(JSON.stringify(projectBPath).slice(1, -1))
     expect(promptB).toContain('PROJECT_B_PRIVATE_MEMORY')
     expect(promptB).not.toContain('PROJECT_A_PRIVATE_MEMORY')
     expect(

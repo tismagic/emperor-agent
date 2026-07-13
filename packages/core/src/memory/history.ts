@@ -14,9 +14,10 @@ import {
   writeFileSync,
 } from 'node:fs'
 import { gzipSync } from 'node:zlib'
-import { basename, dirname, join, relative } from 'node:path'
+import { basename, dirname, join } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import { nowIsoUtc8 } from './time-utc8'
+import { relativePortable } from '../util/paths'
 
 const INDEX_VERSION = 1
 
@@ -374,7 +375,7 @@ export class HistoryLog {
       const path = join(this.archiveDir, f)
       const st = statSync(path)
       return {
-        path: relative(root, path),
+        path: relativePortable(root, path),
         bytes: st.size,
         updated_at: nowIsoUtc8(st.mtimeMs),
       }

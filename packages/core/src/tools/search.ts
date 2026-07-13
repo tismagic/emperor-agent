@@ -7,6 +7,7 @@ import {
   type WorkspacePathDecision,
   type WorkspacePolicy,
 } from '../permissions/workspace-policy'
+import { pathsEqual } from '../util/paths'
 import { Tool, type ToolExecutionContext } from './base'
 import { S, toolParamsSchema } from './schema'
 
@@ -276,7 +277,7 @@ async function inspectEntry(
   const canonicalPath = await realpath(physicalPath)
   const decision = policy.resolvePath(logicalPath, 'read')
   assertPolicyAllowed(decision)
-  if (resolve(decision.realPath) !== resolve(canonicalPath)) {
+  if (!pathsEqual(decision.realPath, canonicalPath)) {
     throw new SearchDiagnostic(
       `[ERR] workspace policy canonical path mismatch: ${toPosixPath(logicalPath)}`,
     )

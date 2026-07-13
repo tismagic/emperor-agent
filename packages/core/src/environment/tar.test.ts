@@ -12,26 +12,31 @@ import { describe, expect, it } from 'vitest'
 import { extractBoundedTarGz } from './tar'
 
 describe('extractBoundedTarGz', () => {
-  it('extracts regular files and preserves executable bits', async () => {
-    const root = tempRoot()
-    const archive = join(root, 'tool.tar.gz')
-    const destination = join(root, 'tool')
-    writeFileSync(
-      archive,
-      tarGz([
-        { name: 'bin/tool', data: Buffer.from('binary'), mode: 0o755 },
-        { name: 'LICENSE', data: Buffer.from('license'), mode: 0o644 },
-      ]),
-    )
+  it.skipIf(process.platform === 'win32')(
+    'extracts regular files and preserves executable bits',
+    async () => {
+      const root = tempRoot()
+      const archive = join(root, 'tool.tar.gz')
+      const destination = join(root, 'tool')
+      writeFileSync(
+        archive,
+        tarGz([
+          { name: 'bin/tool', data: Buffer.from('binary'), mode: 0o755 },
+          { name: 'LICENSE', data: Buffer.from('license'), mode: 0o644 },
+        ]),
+      )
 
-    const result = await extractBoundedTarGz({ archive, destination })
+      const result = await extractBoundedTarGz({ archive, destination })
 
-    expect(result.files).toEqual(['LICENSE', 'bin/tool'])
-    expect(readFileSync(join(destination, 'bin', 'tool'), 'utf8')).toBe(
-      'binary',
-    )
-    expect(statSync(join(destination, 'bin', 'tool')).mode & 0o100).toBe(0o100)
-  })
+      expect(result.files).toEqual(['LICENSE', 'bin/tool'])
+      expect(readFileSync(join(destination, 'bin', 'tool'), 'utf8')).toBe(
+        'binary',
+      )
+      expect(statSync(join(destination, 'bin', 'tool')).mode & 0o100).toBe(
+        0o100,
+      )
+    },
+  )
 
   it('rejects traversal and absolute members', async () => {
     for (const name of ['../escape', 'a/../escape', '/absolute']) {

@@ -1,9 +1,9 @@
 import { randomUUID } from 'node:crypto'
-import { relative } from 'node:path'
 import { TaskKind, TaskRecord, TaskStatus } from './models'
 import { SidechainTranscript } from './sidechain'
 import { TaskStore } from './store'
 import type { HookAggregateDecision, HookEventName } from '../hooks/models'
+import { relativePortable } from '../util/paths'
 
 export interface TaskStartOptions {
   kind: string
@@ -81,7 +81,7 @@ export class TaskManager {
       tool_call_id: opts.toolCallId ?? null,
       job_id: opts.jobId ?? null,
       session_id: opts.sessionId ?? null,
-      transcript_path: relative(this.root, transcript.path),
+      transcript_path: relativePortable(this.root, transcript.path),
       metadata: opts.metadata ?? {},
     })
     return record

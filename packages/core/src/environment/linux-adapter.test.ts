@@ -150,51 +150,57 @@ describe('LinuxEnvironmentAdapter', () => {
     expect(runner.calls).toEqual([])
   })
 
-  it('runs existing version managers using exact catalog commands', async () => {
-    const runner = new FakeRunner()
-    const linux = fixtureAdapter({
-      runner,
-      exists: (path) =>
-        path === '/usr/bin/pkexec' || path.endsWith('/.volta/bin/volta'),
-    })
+  it.skipIf(process.platform === 'win32')(
+    'runs existing version managers using exact catalog commands',
+    async () => {
+      const runner = new FakeRunner()
+      const linux = fixtureAdapter({
+        runner,
+        exists: (path) =>
+          path === '/usr/bin/pkexec' || path.endsWith('/.volta/bin/volta'),
+      })
 
-    await expect(linux.execute(context('node', 'volta'))).resolves.toEqual({
-      status: 'completed',
-    })
-    expect(runner.calls[0]).toMatchObject({
-      executable: expect.stringMatching(/\/\.volta\/bin\/volta$/),
-      args: ['install', 'node@24.18.0'],
-    })
-  })
+      await expect(linux.execute(context('node', 'volta'))).resolves.toEqual({
+        status: 'completed',
+      })
+      expect(runner.calls[0]).toMatchObject({
+        executable: expect.stringMatching(/\/\.volta\/bin\/volta$/),
+        args: ['install', 'node@24.18.0'],
+      })
+    },
+  )
 
-  it('installs a digest-verified archive atomically and activates fixed links', async () => {
-    const archive = tarGz([
-      { name: 'uv-x86_64/uv', data: Buffer.from('uv'), mode: 0o755 },
-      { name: 'uv-x86_64/uvx', data: Buffer.from('uvx'), mode: 0o755 },
-    ])
-    const fixture = assetCatalog('uv', {
-      id: 'official-archive',
-      kind: 'direct_archive',
-      url: 'https://github.com/astral-sh/uv/releases/download/fixture/uv.tar.gz',
-      sha256: sha256(archive),
-      executable: 'uv',
-      args: ['--version'],
-    })
-    const linux = fixtureAdapter({
-      catalog: fixture.catalog,
-      downloader: downloader(archive),
-      root: fixture.root,
-    })
+  it.skipIf(process.platform === 'win32')(
+    'installs a digest-verified archive atomically and activates fixed links',
+    async () => {
+      const archive = tarGz([
+        { name: 'uv-x86_64/uv', data: Buffer.from('uv'), mode: 0o755 },
+        { name: 'uv-x86_64/uvx', data: Buffer.from('uvx'), mode: 0o755 },
+      ])
+      const fixture = assetCatalog('uv', {
+        id: 'official-archive',
+        kind: 'direct_archive',
+        url: 'https://github.com/astral-sh/uv/releases/download/fixture/uv.tar.gz',
+        sha256: sha256(archive),
+        executable: 'uv',
+        args: ['--version'],
+      })
+      const linux = fixtureAdapter({
+        catalog: fixture.catalog,
+        downloader: downloader(archive),
+        root: fixture.root,
+      })
 
-    await expect(
-      linux.execute(context('uv', 'official-archive')),
-    ).resolves.toEqual({ status: 'completed' })
-    const current = join(fixture.root, 'tools', 'uv', 'current')
-    expect(readFileSync(join(current, 'uv-x86_64', 'uv'), 'utf8')).toBe('uv')
-    const active = join(fixture.root, 'home', '.local', 'bin', 'uv')
-    expect(lstatSync(active).isSymbolicLink()).toBe(true)
-    expect(readlinkSync(active)).toContain(join('tools', 'uv', 'current'))
-  })
+      await expect(
+        linux.execute(context('uv', 'official-archive')),
+      ).resolves.toEqual({ status: 'completed' })
+      const current = join(fixture.root, 'tools', 'uv', 'current')
+      expect(readFileSync(join(current, 'uv-x86_64', 'uv'), 'utf8')).toBe('uv')
+      const active = join(fixture.root, 'home', '.local', 'bin', 'uv')
+      expect(lstatSync(active).isSymbolicLink()).toBe(true)
+      expect(readlinkSync(active)).toContain(join('tools', 'uv', 'current'))
+    },
+  )
 
   it('blocks digest mismatch before extraction', async () => {
     const archive = tarGz([
@@ -252,36 +258,39 @@ describe('LinuxEnvironmentAdapter', () => {
     expect(readFileSync(join(outside, 'sentinel'), 'utf8')).toBe('keep')
   })
 
-  it('does not replace an unrelated broken activation symlink', async () => {
-    const archive = tarGz([
-      { name: 'uv', data: Buffer.from('uv'), mode: 0o755 },
-      { name: 'uvx', data: Buffer.from('uvx'), mode: 0o755 },
-    ])
-    const fixture = assetCatalog('uv', {
-      id: 'official-archive',
-      kind: 'direct_archive',
-      url: 'https://github.com/astral-sh/uv/releases/download/fixture/uv.tar.gz',
-      sha256: sha256(archive),
-      executable: 'uv',
-      args: ['--version'],
-    })
-    const binDir = join(fixture.root, 'home', '.local', 'bin')
-    mkdirSync(binDir, { recursive: true })
-    const link = join(binDir, 'uv')
-    symlinkSync('/outside/missing-uv', link)
+  it.skipIf(process.platform === 'win32')(
+    'does not replace an unrelated broken activation symlink',
+    async () => {
+      const archive = tarGz([
+        { name: 'uv', data: Buffer.from('uv'), mode: 0o755 },
+        { name: 'uvx', data: Buffer.from('uvx'), mode: 0o755 },
+      ])
+      const fixture = assetCatalog('uv', {
+        id: 'official-archive',
+        kind: 'direct_archive',
+        url: 'https://github.com/astral-sh/uv/releases/download/fixture/uv.tar.gz',
+        sha256: sha256(archive),
+        executable: 'uv',
+        args: ['--version'],
+      })
+      const binDir = join(fixture.root, 'home', '.local', 'bin')
+      mkdirSync(binDir, { recursive: true })
+      const link = join(binDir, 'uv')
+      symlinkSync('/outside/missing-uv', link)
 
-    await expect(
-      fixtureAdapter({
-        catalog: fixture.catalog,
-        downloader: downloader(archive),
-        root: fixture.root,
-      }).execute(context('uv', 'official-archive')),
-    ).resolves.toMatchObject({
-      status: 'failed',
-      error: { environmentCode: 'confirmation_required' },
-    })
-    expect(readlinkSync(link)).toBe('/outside/missing-uv')
-  })
+      await expect(
+        fixtureAdapter({
+          catalog: fixture.catalog,
+          downloader: downloader(archive),
+          root: fixture.root,
+        }).execute(context('uv', 'official-archive')),
+      ).resolves.toMatchObject({
+        status: 'failed',
+        error: { environmentCode: 'confirmation_required' },
+      })
+      expect(readlinkSync(link)).toBe('/outside/missing-uv')
+    },
+  )
 
   it('rejects an activation directory that escapes the user home', async () => {
     const archive = tarGz([

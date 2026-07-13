@@ -937,12 +937,26 @@ function assertReplaceableSkillTarget(path: string): void {
 }
 
 function readBoundedRegularFile(path: string, maxBytes: number): Buffer {
+  const pathStat = lstatSync(path, { bigint: true })
+  if (
+    pathStat.isSymbolicLink() ||
+    !pathStat.isFile() ||
+    pathStat.size > BigInt(maxBytes)
+  )
+    throw new Error('Skill archive must be a bounded regular file')
   const noFollow =
     typeof constants.O_NOFOLLOW === 'number' ? constants.O_NOFOLLOW : 0
   const descriptor = openSync(path, constants.O_RDONLY | noFollow)
   try {
     const before = fstatSync(descriptor, { bigint: true })
-    if (!before.isFile() || before.size > BigInt(maxBytes))
+    if (
+      !before.isFile() ||
+      before.size > BigInt(maxBytes) ||
+      pathStat.dev !== before.dev ||
+      pathStat.ino !== before.ino ||
+      pathStat.size !== before.size ||
+      pathStat.mtimeNs !== before.mtimeNs
+    )
       throw new Error('Skill archive must be a bounded regular file')
     const content = readFileSync(descriptor)
     const after = fstatSync(descriptor, { bigint: true })

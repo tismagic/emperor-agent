@@ -4,7 +4,8 @@
  */
 import { createHash } from 'node:crypto'
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
-import { join, relative, resolve } from 'node:path'
+import { join, resolve } from 'node:path'
+import { isPathWithin, relativePortable } from '../util/paths'
 import type { OpenAiMsg } from './pairing'
 
 export const DEFAULT_KEEP_RECENT = 10
@@ -123,7 +124,7 @@ export class ToolResultStore {
       turn_id: turnId,
       tool_call_id: toolCallId,
       tool_name: toolName,
-      artifact_path: relative(this.root, artifact),
+      artifact_path: relativePortable(this.root, artifact),
       preview: content.slice(0, opts.previewChars ?? 1000),
       original_chars: content.length,
     }
@@ -146,7 +147,7 @@ export class ToolResultStore {
     const trimmed = String(ref || '').trim()
     if (!trimmed) throw new Error('tool result ref is required')
     const resolved = resolve(this.root, trimmed)
-    if (resolved !== this.dir && !resolved.startsWith(this.dir + '/')) {
+    if (!isPathWithin(resolved, this.dir)) {
       throw new Error('tool result ref escapes the tool-results directory')
     }
     if (!existsSync(resolved)) throw new Error('tool result artifact not found')

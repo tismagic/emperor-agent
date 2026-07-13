@@ -11,7 +11,8 @@ import {
   writeFileSync,
 } from 'node:fs'
 import { gunzipSync, gzipSync } from 'node:zlib'
-import { basename, dirname, join, relative } from 'node:path'
+import { basename, dirname, join } from 'node:path'
+import { relativePortable } from '../util/paths'
 
 type Row = Record<string, any>
 
@@ -333,7 +334,7 @@ export class RuntimeEventStore {
       const path = join(this.archiveDir, name)
       const st = statSync(path)
       return {
-        path: relative(this.root, path),
+        path: relativePortable(this.root, path),
         bytes: st.size,
         updatedAt: st.mtimeMs / 1000,
       }
@@ -352,7 +353,7 @@ export class RuntimeEventStore {
     )
     return {
       version: 1,
-      path: relative(this.root, this.eventsFile),
+      path: relativePortable(this.root, this.eventsFile),
       bytes,
       events: events.length,
       latestSeq,

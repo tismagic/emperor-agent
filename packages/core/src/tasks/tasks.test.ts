@@ -9,7 +9,7 @@ import {
   writeFileSync,
 } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join, resolve } from 'node:path'
+import { basename, join, resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { TaskKind, TaskRecord, TaskStatus } from './models'
 import { TaskManager } from './manager'
@@ -237,7 +237,7 @@ describe('ProjectStore (test_project_store.py)', () => {
       .slice(0, 16)
     expect(entry.project_id).toBe(expectedId)
     expect(entry.project_path).toBe(resolve(projectDir))
-    expect(entry.project_name).toBe(projectDir.split('/').at(-1))
+    expect(entry.project_name).toBe(basename(projectDir))
     const agentsPath = join(projectDir, 'AGENTS.md')
     expect(existsSync(agentsPath)).toBe(false)
     expect(entry.agents_path).toBe(
