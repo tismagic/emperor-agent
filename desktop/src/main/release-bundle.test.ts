@@ -59,6 +59,19 @@ describe('trusted release bundle assembler', () => {
     expect(result.status).toBe(1)
     expect(result.stderr).toContain('UNSIGNED-INTERNAL')
   })
+
+  it('rejects any unsigned Preview marker', () => {
+    const fixture = createFixture()
+    writeFileSync(
+      join(fixture.input, 'UNSIGNED-PREVIEW-macos-arm64.marker.json'),
+      '{"channel":"preview","signingStatus":"unsigned"}\n',
+    )
+
+    const result = runAssembler(fixture)
+
+    expect(result.status).toBe(1)
+    expect(result.stderr).toContain('UNSIGNED-PREVIEW')
+  })
 })
 
 function createFixture(): { root: string; input: string; output: string } {

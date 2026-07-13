@@ -43,6 +43,9 @@ const files = inventory(inputRoot)
 if ([...files.keys()].some((name) => name.includes('UNSIGNED-INTERNAL'))) {
   fail('UNSIGNED-INTERNAL artifacts cannot enter a trusted release')
 }
+if ([...files.keys()].some((name) => name.includes('UNSIGNED-PREVIEW'))) {
+  fail('UNSIGNED-PREVIEW artifacts cannot enter a trusted release')
+}
 
 const version = escapeRegExp(packageMetadata.version)
 const artifactRules = [

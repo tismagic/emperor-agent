@@ -4,6 +4,8 @@ on:
   push:
     tags:
       - 'v*'
+      - '!v*-*'
+      - '!v*-preview.*'
 
 permissions:
   contents: read
