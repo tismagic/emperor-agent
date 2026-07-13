@@ -64,6 +64,12 @@ npm run dist:win         # Windows NSIS exe
 
 正式 Release 同批支持 macOS arm64/x64、Windows x64、Ubuntu x64。`.github/workflows/release.yml` 只接受 tag，平台 job 仅上传候选；全部签名、公证、安装 smoke、SHA-256、CycloneDX SBOM 和 GitHub attestation 验证通过后，最终 job 才会发布 GitHub Release。任一平台失败都不会降级为 unsigned 正式包。
 
+### 未签名公开预览版
+
+在可信签名凭据就绪前，`.github/workflows/release-preview.yml` 可从默认分支上的 `v*-preview.*` annotated tag 发布明确标记的 GitHub Pre-release。首个目标版本是 [`v0.1.0-preview.1`](https://github.com/TheSyart/emperor-agent/releases/tag/v0.1.0-preview.1)。文件名、Release 标题、manifest 和说明均包含 `UNSIGNED-PREVIEW`；它是未签名测试版本，不是 Stable：macOS 未使用 Developer ID 且未经 Apple 公证，Windows 会显示 `Unknown publisher` 并可能触发 SmartScreen。
+
+下载后先在 Release 目录执行 `sha256sum --check SHA256SUMS.txt`，再用 `gh attestation verify <file> --repo TheSyart/emperor-agent` 验证 GitHub 构建来源。Attestation 证明来源与完整性，不代表 Apple/Microsoft 发布者签名。确认摘要后，macOS 仅使用 **System Settings → Privacy & Security → Open Anyway** 的单应用入口，详见 [Apple 官方说明](https://support.apple.com/en-us/102445)；Windows 仅在设备策略允许时使用 **More info → Run anyway**，详见 [Microsoft 官方说明](https://learn.microsoft.com/en-us/windows/apps/package-and-deploy/publish-first-app)。不要更改整机 Gatekeeper、Defender 或 SmartScreen 安全策略。
+
 `.github/workflows/release-internal.yml` 只允许手动生成保留 7 天的 `UNSIGNED-INTERNAL` 调试包，没有 Release 写权限，不能作为正式分发物。当前可信发布流程已经实现，但首个正式版本仍需 Apple Developer、Azure Artifact Signing 凭据和三平台 CI receipt 完成签收。发布和凭据轮换步骤见 [`docs/release/trusted-release-runbook.md`](docs/release/trusted-release-runbook.md)，环境工具 catalog 变更见 [`docs/release/tool-catalog-review.md`](docs/release/tool-catalog-review.md)。
 
 ## 质量检查

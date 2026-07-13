@@ -160,6 +160,33 @@ describe('unsigned preview release channel', () => {
     expect(publisher).toContain('UNSIGNED-PREVIEW')
   })
 
+  it('documents the public Preview channel without weakening system security', () => {
+    const readme = fs.readFileSync(path.join(repoRoot, 'README.md'), 'utf8')
+    const runbook = fs.readFileSync(
+      path.join(repoRoot, 'docs', 'release', 'trusted-release-runbook.md'),
+      'utf8',
+    )
+
+    for (const document of [readme, runbook]) {
+      expect(document).toContain('UNSIGNED-PREVIEW')
+      expect(document).toContain('v0.1.0-preview.1')
+      expect(document).toContain('SHA256SUMS.txt')
+      expect(document).toContain('gh attestation verify')
+      expect(document).toContain('https://support.apple.com/en-us/102445')
+      expect(document).toContain(
+        'https://learn.microsoft.com/en-us/windows/apps/package-and-deploy/publish-first-app',
+      )
+      expect(document).not.toMatch(/spctl\s+--master-disable/i)
+      expect(document).not.toMatch(
+        /disable\s+(Gatekeeper|SmartScreen|Defender)/i,
+      )
+    }
+    expect(readme).toContain('.github/workflows/release-preview.yml')
+    expect(readme).toContain('不是 Stable')
+    expect(runbook).toContain('默认分支')
+    expect(runbook).toContain('annotated tag')
+  })
+
   it('strictly classifies Stable, Preview and unsupported tags', () => {
     const preview = runContract('classify', 'v0.1.0-preview.1')
     const stable = runContract('classify', 'v0.1.0')

@@ -91,3 +91,38 @@ macOS 额外检查 `codesign --verify --deep --strict`、`spctl --assess` 和 `x
 | 已公开版本发现安全问题           | 撤销相关凭据，停止后续 tag，发布安全公告与修复版本；保留原 attestation 审计记录     |
 
 当前首个正式版本仍被 Apple/Azure 凭据和三平台真实 receipt 阻塞。在这些证据完成前，Release 任务不得标记为 done。
+
+## 8. UNSIGNED-PREVIEW 公开预览版
+
+Preview 是独立分发通道，不是 Stable 的降级模式。`.github/workflows/release-preview.yml` 只接受 `v*-preview.*`，不读取 Apple/Azure 签名凭据；`.github/workflows/release.yml` 排除全部 prerelease tag。首个目标是 `v0.1.0-preview.1`。
+
+### 8.1 发布前门禁
+
+1. 目标 commit 必须已进入并可从 GitHub 默认分支到达，且通过 `make check` 和三平台普通 CI。
+2. 确认不存在同名 tag 和 GitHub Release；Preview publisher 不覆盖已有 Release。
+3. 从默认分支 commit 创建并推送 annotated tag，例如 `git tag -a v0.1.0-preview.1 -m "Emperor Agent v0.1.0-preview.1 UNSIGNED-PREVIEW"`。
+4. 确认 Preview workflow 是唯一匹配者，Stable workflow 没有 candidate run。
+5. 不要手工创建 Release；workflow 会先创建 draft，核对 inventory 后再公开为 Pre-release。
+
+### 8.2 候选与聚合
+
+同一 workflow run 必须产出以下七个带 `UNSIGNED-PREVIEW` 的产品文件：macOS arm64/x64 各一份 DMG 和 ZIP、Windows x64 NSIS EXE、Linux x64 AppImage 和 DEB。每个平台 candidate receipt 必须声明 `channel: preview`、`signingStatus: unsigned`、tag、commit、run ID、平台、架构、artifact SHA-256、resource inspection 和 packaged smoke；Ubuntu 22.04/24.04 还必须各有一份安装生命周期 receipt。
+
+`preview-aggregate` 严格拒绝 Stable、`UNSIGNED-INTERNAL`、跨 commit/run、缺失/重复文件和摘要不一致输入。聚合后生成 `preview-release-manifest.json`、`UNSIGNED-PREVIEW.json`、`UNSIGNED-PREVIEW-NOTICE.md`、`ARTIFACT-SHA256SUMS.txt`、`SHA256SUMS.txt` 和 CycloneDX 1.6 SBOM，并对完整 bundle 与七个产品文件分别生成 provenance/SBOM attestation。Attestation 只证明 GitHub 构建来源和完整性，不代表发布者签名、公证或 Stable 信任级别。
+
+### 8.3 发布后验证
+
+从公开 Pre-release 重新下载全部 assets，在同一目录执行：
+
+```bash
+sha256sum --check SHA256SUMS.txt
+gh attestation verify Emperor-Agent-0.1.0-preview.1-UNSIGNED-PREVIEW-<platform>-<arch>.<ext> \
+  --repo TheSyart/emperor-agent
+gh attestation verify Emperor-Agent-0.1.0-preview.1-UNSIGNED-PREVIEW-<platform>-<arch>.<ext> \
+  --repo TheSyart/emperor-agent \
+  --predicate-type https://cyclonedx.org/bom
+```
+
+macOS 预期显示未识别开发者/未公证警告。确认来源和 SHA-256 后，只使用 **System Settings → Privacy & Security → Open Anyway** 为该应用创建例外，参见 [Apple 官方说明](https://support.apple.com/en-us/102445)。Windows 预期显示 `Unknown publisher` 或 SmartScreen；确认摘要后，仅在设备策略提供该选项时选择 **More info → Run anyway**，参见 [Microsoft 官方说明](https://learn.microsoft.com/en-us/windows/apps/package-and-deploy/publish-first-app)。不要更改整机 Gatekeeper、Defender 或 SmartScreen 策略；组织策略不允许时应停止安装并联系管理员。
+
+Actions run summary 必须记录公开 Pre-release URL、tag commit、run ID、七个 artifact、四个平台 candidate receipt、Ubuntu 22.04/24.04 lifecycle receipt、manifest/SBOM 摘要和 attestation verification。只有这些真实证据齐全后，`PREVIEW-QA-025` 才能标记完成；本地 unsigned package 或规划文档不能替代。
