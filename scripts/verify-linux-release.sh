@@ -24,6 +24,7 @@ find_one() {
 find_one 'Emperor-Agent-*-linux-x64.AppImage' APPIMAGE
 find_one 'Emperor-Agent-*-linux-x64.deb' DEB
 CHECKSUMS="$DIST/SHA256SUMS-linux-x64.txt"
+DEB_PACKAGE=''
 
 prepare() {
   chmod 755 "$APPIMAGE"
@@ -125,30 +126,29 @@ smoke() {
   chmod 755 "$APPIMAGE"
   run_smoke appimage "$APPIMAGE"
 
-  local package installed_executable=''
-  package="$(dpkg-deb --field "$DEB" Package)"
+  local installed_executable=''
+  DEB_PACKAGE="$(dpkg-deb --field "$DEB" Package)"
   cleanup_deb() {
-    if dpkg-query -W -f='${db:Status-Status}' "$package" 2>/dev/null \
-      | grep -qx 'installed'; then
-      sudo dpkg --remove "$package"
+    if [[ -n "$DEB_PACKAGE" ]] && dpkg-query -W "$DEB_PACKAGE" >/dev/null 2>&1; then
+      sudo apt-get remove --yes "$DEB_PACKAGE" || true
     fi
   }
   trap cleanup_deb EXIT
-  sudo dpkg --install "$DEB"
+  sudo env DEBIAN_FRONTEND=noninteractive apt-get install --yes "$DEB"
   while IFS= read -r candidate; do
     if [[ -f "$candidate" && -x "$candidate" && "$(basename "$candidate")" == 'emperor-agent' ]]; then
       installed_executable="$candidate"
       break
     fi
-  done < <(dpkg -L "$package")
+  done < <(dpkg -L "$DEB_PACKAGE")
   if [[ -z "$installed_executable" ]]; then
     echo "Installed Emperor Agent executable was not found in the DEB file list" >&2
     exit 1
   fi
   run_smoke deb "$installed_executable"
-  sudo dpkg --remove "$package"
+  sudo apt-get remove --yes "$DEB_PACKAGE"
   trap - EXIT
-  if dpkg-query -W -f='${db:Status-Status}' "$package" 2>/dev/null \
+  if dpkg-query -W -f='${db:Status-Status}' "$DEB_PACKAGE" 2>/dev/null \
     | grep -qx 'installed'; then
     echo "DEB package remained installed after removal" >&2
     exit 1

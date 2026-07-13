@@ -225,8 +225,11 @@ describe('trusted release configuration', () => {
     expect(verifier).toContain('sha256sum --check')
     expect(verifier).toContain('APPIMAGE_EXTRACT_AND_RUN=1')
     expect(verifier).toContain('run-packaged-smoke.cjs')
-    expect(verifier).toContain('sudo dpkg --install')
-    expect(verifier).toContain('sudo dpkg --remove')
+    expect(verifier).toContain(
+      'sudo env DEBIAN_FRONTEND=noninteractive apt-get install --yes "$DEB"',
+    )
+    expect(verifier).toContain('sudo apt-get remove --yes "$DEB_PACKAGE"')
+    expect(verifier).not.toContain('sudo dpkg --install')
     expect(verifier).toContain('AppImage wrapper/FUSE failure')
     expect(verifier).toContain('Chromium sandbox failure')
     expect(runner).toContain("APPIMAGE_EXTRACT_AND_RUN: '1'")
