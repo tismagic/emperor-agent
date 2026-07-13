@@ -117,12 +117,10 @@ export class StdioConnection extends MCPConnection {
   private client: Client | null = null
   private executionEnvironment: ExecutionEnvironment | null
   private readonly configResolver:
-    (
-      | ((
-          snapshot: ExecutionEnvironment,
-        ) => ServerConfig | null | Promise<ServerConfig | null>)
-      | null
-    )
+    | ((
+        snapshot: ExecutionEnvironment,
+      ) => ServerConfig | null | Promise<ServerConfig | null>)
+    | null
 
   constructor(
     serverName: string,

@@ -215,6 +215,7 @@ function reportMcpConfigRecovery(info: ConfigRecoveryInfo): void {
   logger.warn('Invalid MCP config isolated; using defaults', {
     path: info.path,
     backupPath: info.backupPath,
-    error: info.error instanceof Error ? info.error.message : String(info.error),
+    error:
+      info.error instanceof Error ? info.error.message : String(info.error),
   })
 }

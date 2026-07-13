@@ -61,9 +61,9 @@ describe('atomic-json store', () => {
 
     expect(result).toEqual({ servers: {} })
     expect(existsSync(p)).toBe(false)
-    expect((await readdir(dir)).some((f) => f.startsWith('invalid.json.corrupt-'))).toBe(
-      true,
-    )
+    expect(
+      (await readdir(dir)).some((f) => f.startsWith('invalid.json.corrupt-')),
+    ).toBe(true)
   })
 
   it('leaves no tmp files behind after a successful write', async () => {
@@ -96,6 +96,8 @@ describe('atomic-json store', () => {
     await expect(writeJsonAtomic(p, circular)).rejects.toThrow()
 
     expect(JSON.parse(await readFile(p, 'utf8'))).toEqual({ version: 1 })
-    expect((await readdir(dir)).filter((f) => f.includes('.tmp-'))).toHaveLength(0)
+    expect(
+      (await readdir(dir)).filter((f) => f.includes('.tmp-')),
+    ).toHaveLength(0)
   })
 })

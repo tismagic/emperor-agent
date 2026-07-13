@@ -91,9 +91,9 @@ describe('PublicHttpClient', () => {
       resolve: async () => [{ address, family }],
     })
 
-    await expect(client.get(request('http://service.example/'))).rejects.toMatchObject(
-      { code: 'blocked_address' },
-    )
+    await expect(
+      client.get(request('http://service.example/')),
+    ).rejects.toMatchObject({ code: 'blocked_address' })
     expect(transport.requests).toEqual([])
   })
 
@@ -107,9 +107,9 @@ describe('PublicHttpClient', () => {
       ],
     })
 
-    await expect(client.get(request('https://mixed.example/'))).rejects.toMatchObject(
-      { code: 'blocked_address' },
-    )
+    await expect(
+      client.get(request('https://mixed.example/')),
+    ).rejects.toMatchObject({ code: 'blocked_address' })
     expect(transport.requests).toEqual([])
   })
 
@@ -156,9 +156,9 @@ describe('PublicHttpClient', () => {
       ],
     })
 
-    await expect(client.get(request('http://public.example/start'))).rejects.toMatchObject(
-      { code: 'blocked_address' },
-    )
+    await expect(
+      client.get(request('http://public.example/start')),
+    ).rejects.toMatchObject({ code: 'blocked_address' })
     expect(transport.requests).toHaveLength(1)
     expect(firstClosed).toBe(1)
   })
@@ -182,9 +182,9 @@ describe('PublicHttpClient', () => {
       resolve: async () => [{ address: '93.184.216.34', family: 4 }],
     })
 
-    await expect(client.get(request('https://example.com/start'))).rejects.toMatchObject(
-      { code: 'redirect_limit' },
-    )
+    await expect(
+      client.get(request('https://example.com/start')),
+    ).rejects.toMatchObject({ code: 'redirect_limit' })
     expect(closed).toBe(3)
   })
 
@@ -211,12 +211,12 @@ describe('PublicHttpClient', () => {
       resolve: async () => [{ address: '93.184.216.34', family: 4 }],
     })
 
-    await expect(client.get(request('https://example.com/a', 1024))).rejects.toMatchObject(
-      { code: 'response_too_large' },
-    )
-    await expect(client.get(request('https://example.com/b', 1024))).rejects.toMatchObject(
-      { code: 'response_too_large' },
-    )
+    await expect(
+      client.get(request('https://example.com/a', 1024)),
+    ).rejects.toMatchObject({ code: 'response_too_large' })
+    await expect(
+      client.get(request('https://example.com/b', 1024)),
+    ).rejects.toMatchObject({ code: 'response_too_large' })
     expect(closed).toBe(2)
   })
 
@@ -230,7 +230,10 @@ describe('PublicHttpClient', () => {
     })
 
     await expect(
-      client.get({ ...request('https://example.com'), signal: controller.signal }),
+      client.get({
+        ...request('https://example.com'),
+        signal: controller.signal,
+      }),
     ).rejects.toMatchObject({ code: 'cancelled' })
     expect(transport.requests).toEqual([])
   })

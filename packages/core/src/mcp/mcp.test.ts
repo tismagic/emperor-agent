@@ -178,7 +178,9 @@ describe('MCP config', () => {
 
   it('validates and writes raw config compatibly', async () => {
     const root = tmp('emperor-mcp-save-')
-    await expect(saveMcpConfig(root, { servers: [] })).rejects.toThrow(/servers/)
+    await expect(saveMcpConfig(root, { servers: [] })).rejects.toThrow(
+      /servers/,
+    )
     await saveMcpConfig(root, {
       servers: {},
       defaults: { read_only: true },

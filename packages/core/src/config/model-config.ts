@@ -519,10 +519,7 @@ function validateRawModelConfig(value: unknown): RawConfig {
   if ('agents' in value) {
     if (!isRawRecord(value.agents))
       throw new Error("model_config: 'agents' must be an object")
-    if (
-      'defaults' in value.agents &&
-      !isRawRecord(value.agents.defaults)
-    )
+    if ('defaults' in value.agents && !isRawRecord(value.agents.defaults))
       throw new Error("model_config: 'agents.defaults' must be an object")
   }
   if ('models' in value) {
@@ -544,6 +541,7 @@ function reportModelConfigRecovery(info: ConfigRecoveryInfo): void {
   logger.warn('Invalid model config isolated; using defaults', {
     path: info.path,
     backupPath: info.backupPath,
-    error: info.error instanceof Error ? info.error.message : String(info.error),
+    error:
+      info.error instanceof Error ? info.error.message : String(info.error),
   })
 }

@@ -1,12 +1,6 @@
 import { randomBytes } from 'node:crypto'
 import { existsSync } from 'node:fs'
-import {
-  mkdir,
-  open,
-  readFile,
-  rename,
-  unlink,
-} from 'node:fs/promises'
+import { mkdir, open, readFile, rename, unlink } from 'node:fs/promises'
 import { dirname } from 'node:path'
 
 /**

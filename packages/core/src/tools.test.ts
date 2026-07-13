@@ -39,9 +39,9 @@ describe('WebFetch', () => {
     }
     const tool = new WebFetch(client)
 
-    await expect(tool.execute({ url: 'https://example.com', raw: true })).resolves.toBe(
-      '<main>Hello <strong>public</strong></main>',
-    )
+    await expect(
+      tool.execute({ url: 'https://example.com', raw: true }),
+    ).resolves.toBe('<main>Hello <strong>public</strong></main>')
     await expect(tool.execute({ url: 'https://example.com' })).resolves.toBe(
       'Hello public',
     )
@@ -60,17 +60,23 @@ describe('WebFetch', () => {
     ['response_too_large', '[ERR] web_fetch response too large'],
     ['timeout', '[ERR] web_fetch timed out'],
     ['cancelled', '[ERR] web_fetch cancelled'],
-  ] as const)('maps %s failures without exposing exception details', async (code, message) => {
-    const client: WebFetchClient = {
-      async get() {
-        throw new PublicHttpError(code, new Error('private implementation detail'))
-      },
-    }
+  ] as const)(
+    'maps %s failures without exposing exception details',
+    async (code, message) => {
+      const client: WebFetchClient = {
+        async get() {
+          throw new PublicHttpError(
+            code,
+            new Error('private implementation detail'),
+          )
+        },
+      }
 
-    await expect(new WebFetch(client).execute({ url: 'https://example.com' })).resolves.toBe(
-      message,
-    )
-  })
+      await expect(
+        new WebFetch(client).execute({ url: 'https://example.com' }),
+      ).resolves.toBe(message)
+    },
+  )
 
   it('maps unexpected transport failures to a stable generic message', async () => {
     const client: WebFetchClient = {
@@ -79,9 +85,9 @@ describe('WebFetch', () => {
       },
     }
 
-    await expect(new WebFetch(client).execute({ url: 'https://example.com' })).resolves.toBe(
-      '[ERR] web_fetch failed',
-    )
+    await expect(
+      new WebFetch(client).execute({ url: 'https://example.com' }),
+    ).resolves.toBe('[ERR] web_fetch failed')
   })
 })
 

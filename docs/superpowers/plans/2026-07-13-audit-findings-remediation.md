@@ -530,11 +530,11 @@ Inline execution order is SEC-001 → SEC-002 → SEC-003 → SEC-004 → SEC-00
 
 > 6 tasks total / 2 phases. Status: ☐ todo · ◐ wip · ☑ done · ⛔ blocked
 
-| ID      | Title                           | Status | Commit | Notes                                 |
-| ------- | ------------------------------- | ------ | ------ | ------------------------------------- |
-| SEC-001 | Electron trust boundary         | ☑      | 152892c0 | 22 focused and 353 desktop tests pass |
+| ID      | Title                           | Status | Commit   | Notes                                 |
+| ------- | ------------------------------- | ------ | -------- | ------------------------------------- |
+| SEC-001 | Electron trust boundary         | ☑      | 152892c0 | 21 focused and 353 desktop tests pass |
 | SEC-002 | AUTO command policy             | ☑      | 6c4624d9 | 47 focused and 914 core tests pass    |
 | SEC-003 | Scheduler at-most-once          | ☑      | b721f7ba | 29 focused and 917 core tests pass    |
 | SEC-004 | Public HTTP boundary            | ☑      | c47b3ab1 | 55 focused and 942 core tests pass    |
-| SEC-005 | Config recovery                 | ☑      | pending  | 32 focused and 952 core tests pass    |
-| SEC-006 | Full receipts and audit closure | ☐      | —      |                                       |
+| SEC-005 | Config recovery                 | ☑      | 0d2a8317 | 32 focused and 952 core tests pass    |
+| SEC-006 | Full receipts and audit closure | ☑      | closure  | make check and package smoke pass     |

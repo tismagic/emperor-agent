@@ -26,7 +26,9 @@ export class WebFetch extends Tool {
   override readOnly = true
   override maxResultChars = 30_000
 
-  constructor(private readonly client: WebFetchClient = new PublicHttpClient()) {
+  constructor(
+    private readonly client: WebFetchClient = new PublicHttpClient(),
+  ) {
     super()
   }
 
