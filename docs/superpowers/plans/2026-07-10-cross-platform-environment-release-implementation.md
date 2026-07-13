@@ -1,45 +1,45 @@
-# PLAN-EA-XPLAT-002 · 跨平台环境配置与双通道 Release 实施计划
+# PLAN-EA-XPLAT-002 · 跨平台环境配置与未签名 Preview Release 实施计划
 
-> **Version**: v2.1
+> **Version**: v2.2
 > **Date**: 2026-07-13
-> **Status**: executing; 17/25 complete
+> **Status**: complete; 20/20 complete
 > **Owner**: Emperor Agent maintainers
-> **Depends On**: `PLAN-EA-XPLAT-002` v2.1 design approval
-> **Depended By**: first unsigned preview and first trusted stable Emperor Agent release
+> **Depends On**: `PLAN-EA-XPLAT-002` v2.2 design approval
+> **Depended By**: public unsigned Preview releases
 > **Design**: `docs/superpowers/specs/2026-07-10-cross-platform-environment-release-design.md`
 > **Progress**: `docs/superpowers/plans/2026-07-10-cross-platform-environment-release-implementation.progress.json`
 > **Checker**: `docs/superpowers/plans/2026-07-10-cross-platform-environment-release-implementation.check_progress.py`
 
 > **Execution rule**: 使用 `superpowers:executing-plans` 或 `superpowers:subagent-driven-development`。一次只执行一个未阻塞任务；行为改动必须先写测试并确认 RED，再实现并确认 GREEN。任务未通过专属验收和相关全局门禁时不得标记 `done`。
 
-> **v2.1 planning receipt**: 本次只更正规格、计划、progress 与 checker，不实现 workflow 或发布 Release。保留 v2.0 已验收的 17 个 `done` 和 5 个 Stable `blocked` 状态，新增 3 个 Preview 任务为 `pending`。
+> **v2.2 scope receipt**: 正式签名 Stable 规划已取消，原五个 `REL-*`/`QA-022` 任务从本计划和 progress 中移除。当前计划只保留 20 个已完成任务；公开 `v0.1.0-preview.1` receipt 是 Release 验收依据。
 
 ## 1. Overview
 
 ### 1.1 Problem Statement
 
-Emperor 主程序已经是 TypeScript/Electron 单 runtime，但干净系统上的 Coding Agent 能力、Skill 可移植性和正式 Release 仍没有闭环。当前内建搜索依赖 Unix shell，IPC 类型跨进程漂移，测试没有全部 typecheck，runtime defaults 不会可靠升级，默认打包 Skills 含外部 runtime/绝对路径，Release workflow 仍引用退役桌宠项目且没有签名硬门禁。
+Emperor 主程序已经是 TypeScript/Electron 单 runtime，但最初在干净系统上的 Coding Agent 能力、Skill 可移植性和公开分发没有闭环。基线中的内建搜索依赖 Unix shell，IPC 类型跨进程漂移，测试没有全部 typecheck，runtime defaults 不会可靠升级，默认打包 Skills 含外部 runtime/绝对路径，Release workflow 仍引用退役桌宠项目。
 
-本计划按“先治理基础，再增加能力”的顺序完成 25 个任务，并提供两个独立里程碑。`Unsigned Preview` 在三平台构建、smoke、明确风险披露、SBOM 与 provenance 通过后可公开预发布；`Signed Stable` 仍要求三平台签名或等价证明、安装 smoke、资源清单和完整 receipt。
+本计划按“先治理基础，再增加能力”的顺序完成 20 个任务，并以 `Unsigned Preview` 作为唯一公开发布里程碑。三平台构建、smoke、明确风险披露、SBOM 与 provenance 通过后可公开预发布；正式签名 Stable 不属于本计划。
 
 ### 1.2 Goals
 
 1. 保持主程序纯 TypeScript/Electron，目标机无需 Node/Python 即可启动和执行基础文件能力。
 2. 建立零 warning、全仓格式化、测试 typecheck 和类型化 IPC 基线。
 3. 实现 Node 原生 Glob/Grep，关闭搜索工具 shell 注入和 Windows 缺命令问题。
-4. 建立只读、manifest-verified runtime resources、最小 built-in Skill 和安全 Skill 安装流程；Stable 再由应用签名保护包内资源。
+4. 建立只读、manifest-verified runtime resources、最小 built-in Skill 和安全 Skill 安装流程。
 5. 实现 EnvironmentService、三平台 adapter、不可变执行环境 snapshot 和诊断一键安装。
-6. 建立 macOS/Windows/Ubuntu 正式 Release 硬门禁与供应链回执。
-7. 在签名凭据未准备期间，以独立 tag、workflow、artifact 和 receipt 发布可供测试用户使用的未签名 GitHub Pre-release。
+6. 以独立 tag、workflow、artifact 和 receipt 发布可供用户测试的未签名 GitHub Pre-release。
 
 ### 1.3 Non-Goals
 
 - 自动更新、在线 Skill 市场、私有 GitHub 认证、任意网页 Skill 抽取。
 - Windows ARM64、非 Ubuntu Linux、macOS 14 以下、Windows 10 22H2 以下。
 - Python backend、HTTP/WS fallback、静默系统安装、远程动态 ToolCatalog。
-- 把未签名 Preview 宣称为稳定版、可信 publisher、自动更新源或正式 Release 的替代品。
+- Developer ID、Apple notarization、Windows publisher signing 和正式 Stable Release。
+- 把未签名 Preview 宣称为稳定版、可信 publisher、自动更新源或企业部署包。
 
-### 1.4 Current Baseline
+### 1.4 Historical Execution Baseline
 
 | Gate           | Baseline                                                                                                                  |
 | -------------- | ------------------------------------------------------------------------------------------------------------------------- |
@@ -61,7 +61,7 @@ No task may delete existing tests merely to preserve these counts. Test replacem
 - Core tools, API registry, runtime paths, Skills, environment domain, Hooks/MCP/tool execution environment.
 - Electron main/preload/renderer typed IPC and packaged smoke mode.
 - Diagnostics and Skills settings UI.
-- electron-builder configurations and GitHub Actions CI/internal/release workflows.
+- electron-builder Preview configuration and GitHub Actions CI/internal/Preview workflows.
 - 独立的 unsigned preview workflow、预发布聚合、风险披露和 milestone receipt。
 - README、AGENTS、迁移状态和 Release 运维说明的最终同步。
 
@@ -69,12 +69,12 @@ No task may delete existing tests merely to preserve these counts. Test replacem
 
 1. 不修改已有 model、MCP、memory、sessions、Hooks 磁盘 schema。
 2. 现有 Core operation key 保持名称不变。
-3. `stateRoot` 继续承载全部用户私有数据；packaged runtime defaults 只读，Preview 由 manifest/attestation 验证，Stable 再增加应用签名。
+3. `stateRoot` 继续承载全部用户私有数据；packaged runtime defaults 只读，Preview 由 manifest/attestation 验证。
 4. 当前 turn 的环境 snapshot 永不被安装完成事件追溯修改。
 5. Hook/MCP 环境统一不能扩大 secret 白名单。
-6. 正式 Release 不能因为凭据缺失降级为 unsigned。
+6. 公开产物只能使用 `v*-preview.*` tag 并明确标识 unsigned；本计划不创建正式发布 tag。
 7. 用户提供的 URL、路径或 Tool ID 不能变成安装命令、参数或下载来源。
-8. Preview 与 Stable 的 tag、workflow、artifact、manifest 和 receipt 必须双向隔离。
+8. Preview 与 internal/legacy release 的 tag、workflow、artifact、manifest 和 receipt 必须隔离。
 9. Preview 必须公开声明 unsigned；checksums/SBOM/provenance 不能表述为操作系统签名信任。
 
 ## 3. Dependency Topology
@@ -103,13 +103,6 @@ flowchart TD
   K --> PW["PREVIEW-WF-023"]
   PW --> PP["PREVIEW-PUB-024"]
   PP --> PQ["PREVIEW-QA-025"]
-  K --> RM["REL-MAC-018"]
-  K --> RW["REL-WIN-019"]
-  K --> RL["REL-LNX-020"]
-  RM --> RA["REL-AGG-021"]
-  RW --> RA
-  RL --> RA
-  RA --> Q["QA-022"]
 ```
 
 | Phase               | Tasks                                                            | Parallelism                                            | Exit Gate                                      |
@@ -121,8 +114,6 @@ flowchart TD
 | P4 Adapters         | `ENV-MAC-011`, `ENV-WIN-012`, `ENV-LNX-013`, `SKILL-INSTALL-014` | adapters parallel after job; Skill install after probe | platform contracts green                       |
 | P5 Product          | `ENV-API-015` → `ENV-UI-016` → `PKG-017`                         | no                                                     | packaged smoke green                           |
 | P6A Preview         | `PREVIEW-WF-023` → `PREVIEW-PUB-024` → `PREVIEW-QA-025`          | no                                                     | public unsigned Pre-release verified           |
-| P6B Stable Release  | `REL-MAC-018`, `REL-WIN-019`, `REL-LNX-020` → `REL-AGG-021`      | platform jobs parallel                                 | signed candidate set complete                  |
-| P7 Stable Receipt   | `QA-022`                                                         | no                                                     | all stable quality/documentation gates green   |
 
 ## 4. Global Execution Protocol
 
@@ -138,23 +129,23 @@ For every task:
 8. Update progress to `done` only after all binary acceptance criteria pass.
 9. Commit code, tests and progress update together. Platform adapter tasks may use separate branches but must merge only after independent verification.
 
-Configuration-only tasks use a failing check instead of code-level RED. Formal Stable tasks can remain `blocked` only for documented external credentials；Preview 不依赖签名凭据，不得因此标记为 blocked。
+Configuration-only tasks use a failing check instead of code-level RED. Preview 不依赖签名凭据；正式签名能力已移出本计划，不能形成 pending 或 blocked 任务。
 
 ### 4.1 Task Specification Contract
 
-下列 25 项任务均按同一 12 字段契约执行：标题、Purpose/Scope/Excluded、Source Mapping、Target Specification、Detailed Design、Dependencies、Risk/Complexity、Test Plan、Acceptance Criteria、Effort、Status、Notes。为减少重复，任务段中的 `Purpose`、`Target`、`TDD Cases`、`Acceptance`、`Risk/Effort` 分别承载上述字段；未单列的通用约束由本节补足：
+下列 20 项任务均按同一 12 字段契约执行：标题、Purpose/Scope/Excluded、Source Mapping、Target Specification、Detailed Design、Dependencies、Risk/Complexity、Test Plan、Acceptance Criteria、Effort、Status、Notes。为减少重复，任务段中的 `Purpose`、`Target`、`TDD Cases`、`Acceptance`、`Risk/Effort` 分别承载上述字段；未单列的通用约束由本节补足：
 
 - **Scope/Excluded**：任务只允许修改其 `Target` 和为满足测试必须同步的契约文件；后继任务负责的 UI、Release 或文档不得提前混入。
 - **Source Mapping**：执行前必须把 `Source` 展开到具体文件与 symbol，并写入 progress notes；如果仓库已出现候选实现，先将其作为审计输入，不自动视为 GREEN。
-- **Detailed Design**：以 v2.1 design 对应章节为唯一协议来源；数据结构、状态机、下载限制、Preview/Stable 隔离、签名规则和错误码不得在实现时弱化。
-- **Dependencies**：内部依赖以拓扑图和每项 `Depends On` 为准；npm、Node/Electron、系统签名服务和 GitHub runner 属于外部依赖，不改变内部拓扑。
-- **Test Plan**：每组 `TDD Cases` 至少包含 3 个正常场景、3 个边界场景和 2 个错误场景。先记录窄范围 RED 命令和失败原因，再实现并记录 GREEN；配置任务使用结构断言或缺失凭据失败作为 RED。
-- **Status**：以 progress JSON 为唯一可写状态源，本文不直接记录完成度。v2.1 新增任务初始为 `pending`，既有任务状态与 receipt 原样保留。
-- **Notes**：限制、外部凭据、receipt 路径、commit/PR 和偏差理由写入 progress；不得用自由文本覆盖未通过的验收项。
+- **Detailed Design**：以 v2.2 design 对应章节为唯一协议来源；数据结构、状态机、下载限制、Preview/internal 隔离、unsigned 披露和错误码不得在实现时弱化。
+- **Dependencies**：内部依赖以拓扑图和每项 `Depends On` 为准；npm、Node/Electron 和 GitHub runner 属于外部依赖，不改变内部拓扑。
+- **Test Plan**：每组 `TDD Cases` 至少包含 3 个正常场景、3 个边界场景和 2 个错误场景。先记录窄范围 RED 命令和失败原因，再实现并记录 GREEN；配置任务使用结构断言或缺失配置失败作为 RED。
+- **Status**：以 progress JSON 为唯一可写状态源，本文不直接记录逐任务执行状态。v2.2 的最终状态为 20/20 `done`。
+- **Notes**：限制、receipt 路径、commit/PR 和偏差理由写入 progress；不得用自由文本覆盖未通过的验收项。
 
 ### 4.2 Execution Baseline Rule
 
-`1.4 Current Baseline` 是 2026-07-10 规划审计快照，不是后续分支的实时状态。真正执行 `BASE-001` 时必须重新采集 `git status`、HEAD、测试数量、package smoke 和签名凭据状态；若仓库已有本计划的候选实现，执行者必须逐项复验，不得跳过 RED/GREEN 或直接批量把 progress 改为 `done`。
+`1.4 Historical Execution Baseline` 是 2026-07-10 规划审计快照，不是后续分支的实时状态。执行 `BASE-001` 时已重新采集 `git status`、HEAD、测试数量和 package smoke；仓库已有候选实现均按任务逐项复验，不能仅凭文件存在视为 GREEN。
 
 ## 5. Task Specifications
 
@@ -236,7 +227,7 @@ Configuration-only tasks use a failing check instead of code-level RED. Formal S
 
 ### RSC-005 · 直接读取只读 runtime defaults 并校验 manifest
 
-- **Purpose**: 保证每次应用升级获得当前包内模板、Creator 和 ToolCatalog，同时保持用户 state 独立；Preview 使用 manifest/attestation，Stable 再增加应用签名。
+- **Purpose**: 保证每次应用升级获得当前包内模板、Creator 和 ToolCatalog，同时保持用户 state 独立；Preview 使用 manifest/attestation 验证包内资源。
 - **Depends On**: `IPC-004`。
 - **Source**: desktop runtime-root、main startup、Core runtime paths、electron-builder resources。
 - **Target**: packaged `runtimeRoot = resourcesPath/runtime-defaults`；runtime manifest；旧 `userData/runtime` 诊断与安全迁移 receipt。
@@ -423,24 +414,24 @@ Configuration-only tasks use a failing check instead of code-level RED. Formal S
 
 ### PREVIEW-WF-023 · 建立未签名 Preview 构建通道
 
-- **Purpose**: 在不读取签名凭据、不削弱 Stable workflow 的前提下，为 macOS arm64/x64、Windows x64 和 Ubuntu x64 建立公开预览候选构建通道。范围包含 tag 路由、Preview 专用 electron-builder 配置、artifact/receipt 标识和 workflow 权限；不包含 GitHub Pre-release 发布。
-- **Depends On**: `PKG-017`。不依赖 `REL-MAC-018` 或 `REL-WIN-019` 的外部凭据。
+- **Purpose**: 在不读取签名凭据的前提下，为 macOS arm64/x64、Windows x64 和 Ubuntu x64 建立公开预览候选构建通道。范围包含 tag 路由、Preview 专用 electron-builder 配置、artifact/receipt 标识和 workflow 权限；不包含 GitHub Pre-release 发布。
+- **Depends On**: `PKG-017`。不依赖 Apple/Azure 外部凭据。
 - **Source**: `.github/workflows/ci.yml`、`.github/workflows/release-internal.yml`、`.github/workflows/release.yml`、`desktop/electron-builder.yml`、`desktop/electron-builder.release.cjs`、packaged smoke scripts/tests。
 - **Target**:
   - 新增 `.github/workflows/release-preview.yml` 与 `desktop/electron-builder.preview.cjs`。
-  - Preview 只匹配 `v*-preview.*`；Stable workflow 用排除 pattern 拒绝全部 prerelease tag。
+  - Preview 只匹配 `v*-preview.*`；保留的 legacy release workflow 用排除 pattern 拒绝全部 prerelease tag。
   - Preview config 显式关闭签名发现，不声明 `forceCodeSigning`、`notarize` 或 `azureSignOptions`，也不引用 Apple/Azure secrets。
   - artifact、artifact display name、marker 和 receipt 固定包含 `UNSIGNED-PREVIEW`、`channel: preview`、`signingStatus: unsigned`、commit、tag、platform 和 arch。
-  - `UNSIGNED-INTERNAL`、Preview 与 Stable 三类输入通过 schema/marker 双向拒绝。
+  - `UNSIGNED-INTERNAL`、Preview 与 legacy signed 三类输入通过 schema/marker 双向拒绝。
 - **Detailed Design**:
-  - Tag router 是纯函数/结构断言：`v0.1.0-preview.1` 只路由 Preview；`v0.1.0` 只路由 Stable；其他 tag 不发布。
+  - Tag router 是纯函数/结构断言：`v0.1.0-preview.1` 只路由 Preview；Preview tag 不能进入任何其他发布 workflow。
   - Preview build matrix 固定 `macos-15/arm64`、`macos-15-intel/x64`、`windows-2022/x64`、`ubuntu-22.04/x64`，并在构建后使用 Ubuntu 22.04/24.04 smoke matrix 验证 Linux 候选；每个平台先执行质量门禁再打包。
   - macOS 生成 unsigned DMG/ZIP，Windows 生成 unsigned NSIS，Linux 生成 AppImage/DEB；所有候选执行 packaged smoke 和资源 allowlist 检查。
   - Workflow permissions 只允许 `contents: read` 与上传临时 artifact；本任务不授予 `contents: write`。
-  - 不存在签名 secret 时构建必须成功；意外出现签名配置、Stable artifact 名或内部 marker 时必须 fail closed。
-- **TDD Cases**: Preview tag 正确路由、Stable tag 正确路由、其他 prerelease tag 不路由、双架构 macOS matrix、Windows/Linux matrix、无 secrets 构建、artifact 标识、receipt schema、Stable workflow 排除 Preview、internal marker 拒绝、Preview marker 拒绝 Stable、缺失 marker 拒绝。
+  - 不存在签名 secret 时构建必须成功；意外出现签名配置、legacy signed artifact 名或内部 marker 时必须 fail closed。
+- **TDD Cases**: Preview tag 正确路由、其他 prerelease tag 不路由、双架构 macOS matrix、Windows/Linux matrix、无 secrets 构建、artifact 标识、receipt schema、其他 release workflow 排除 Preview、internal marker 拒绝、Preview marker 拒绝 legacy 聚合、缺失 marker 拒绝。
 - **Acceptance**:
-  - [ ] Preview tag 不触发 Stable candidate jobs，Stable tag 不触发 Preview workflow。
+  - [ ] Preview tag 不触发其他 release candidate jobs。
   - [ ] Preview workflow 与 config 不引用 13 个签名 secrets，不启用 signing/notarization。
   - [ ] 七类交付文件均带版本、平台、架构和 `UNSIGNED-PREVIEW` 标识。
   - [ ] 三平台 packaged smoke、resource inspection 和 SHA-256 candidate receipt 通过。
@@ -450,11 +441,11 @@ Configuration-only tasks use a failing check instead of code-level RED. Formal S
 
 ### PREVIEW-PUB-024 · 聚合并原子发布 GitHub Pre-release
 
-- **Purpose**: 将同一 commit/run 的 Preview 候选聚合为可验证、明确披露风险的 GitHub Pre-release。范围包含 manifest、checksums、SBOM、attestations、release notes、draft-first publish 和失败回滚；不包含 Stable Release。
+- **Purpose**: 将同一 commit/run 的 Preview 候选聚合为可验证、明确披露风险的 GitHub Pre-release。范围包含 manifest、checksums、SBOM、attestations、release notes、draft-first publish 和失败回滚；不包含正式签名发布。
 - **Depends On**: `PREVIEW-WF-023`。
 - **Source**: `scripts/assemble-release-bundle.mjs`、`scripts/merge-cyclonedx-sboms.mjs`、`scripts/publish-release.sh`、`.github/workflows/release.yml`、`docs/release/trusted-release-runbook.md`。
 - **Target**:
-  - Preview 专用 bundle schema 与聚合脚本，拒绝 Stable/Internal receipt 和跨 commit/run 输入。
+  - Preview 专用 bundle schema 与聚合脚本，拒绝 legacy signed/Internal receipt 和跨 commit/run 输入。
   - 生成 `SHA256SUMS.txt`、artifact inventory、CycloneDX 1.6 SBOM、provenance 与 SBOM attestations。
   - Preview publish job 使用最小 `contents: write`，先创建 draft，核对 asset inventory 后设置 `prerelease: true`；失败自动删除 draft。
   - 中英文 release notes 明确 `Unsigned Preview`、目标用户、已验证内容、未验证签名状态，以及 macOS Gatekeeper/Windows SmartScreen 官方单应用确认路径。
@@ -465,133 +456,56 @@ Configuration-only tasks use a failing check instead of code-level RED. Formal S
   - Aggregate job 仅获得 `id-token: write`、`attestations: write`、`artifact-metadata: write` 和只读 contents；publish job 才获得 `contents: write` 与 `attestations: read`，平台 build jobs 保持只读。
   - 发布脚本拒绝覆盖同名 tag/Release，拒绝非 Preview tag，拒绝 tag commit 不可从默认分支到达。
   - 用户说明不得要求全局关闭 Gatekeeper、Defender、SmartScreen，不提供移除整机安全策略的命令。
-- **TDD Cases**: 完整 bundle、缺 artifact、重复 artifact、hash mismatch、跨 commit、Stable receipt 注入、Internal marker 注入、错误 channel/signingStatus、SBOM 生成、attestation verify、draft inventory mismatch、同名 Release、非默认分支 commit、风险文案缺失、原子回滚。
+- **TDD Cases**: 完整 bundle、缺 artifact、重复 artifact、hash mismatch、跨 commit、legacy signed receipt 注入、Internal marker 注入、错误 channel/signingStatus、SBOM 生成、attestation verify、draft inventory mismatch、同名 Release、非默认分支 commit、风险文案缺失、原子回滚。
 - **Acceptance**:
   - [ ] Preview bundle 的每个 artifact 均有 checksum、SBOM/provenance 和 packaged smoke 关联。
   - [ ] `gh attestation verify` 通过，但 manifest 始终保留 `signingStatus: unsigned`。
   - [ ] GitHub Release 为 Pre-release，title/assets/notes 均清晰标识 `UNSIGNED-PREVIEW`。
-  - [ ] Stable/Internal 输入、跨 run 输入或风险文案缺失时发布失败。
+  - [ ] legacy signed/Internal 输入、跨 run 输入或风险文案缺失时发布失败。
   - [ ] 上传或 inventory 验证失败不留下可见半成品 Release。
   - [ ] Preview publish job 之外的 build jobs 没有 `contents: write`。
 - **Risk/Effort**: Very High / 13 points。最大风险是 provenance 被误读为签名和半成品公开；通过结构化 unsigned 状态、文案断言和 draft-first 回滚降低。
 
 ### PREVIEW-QA-025 · 发布并验收首个未签名预览版
 
-- **Purpose**: 实际发布 `v0.1.0-preview.1`，证明三平台用户可下载、校验并在接受系统警告后启动。范围包含默认分支可达性、版本/tag、真实 workflow、Release asset、三平台 smoke、文档和 milestone receipt；不改变 Stable 任务状态。
+- **Purpose**: 实际发布 `v0.1.0-preview.1`，证明三平台用户可下载、校验并在接受系统警告后启动。范围包含默认分支可达性、版本/tag、真实 workflow、Release asset、三平台 smoke、文档和 milestone receipt。
 - **Depends On**: `PREVIEW-PUB-024`。
 - **Source**: `desktop/package.json`、Preview workflow、GitHub Release、README 下载说明、release runbook、progress/checker。
 - **Target**:
   - 版本与 tag 一致，annotated tag `v0.1.0-preview.1` 指向默认分支已通过质量门禁的 commit。
   - 保存 Preview workflow run、各平台 artifact/smoke receipt、总 manifest、attestation verification 和公开 Pre-release URL。
   - README/runbook 增加 Preview 安装风险、校验步骤、系统官方单应用放行入口和反馈渠道。
-  - progress checker 支持 `--milestone unsigned_preview`，只在 `PKG-017` 与三个 Preview 任务完成时返回 0；完整计划仍因 Stable blocked 返回非零。
+  - progress checker 支持 `--milestone unsigned_preview`；`PKG-017` 与三个 Preview 任务完成后，milestone 和完整计划均返回 0。
 - **Verification**:
   - `git diff --check`、`npm run format:check`、`make check`、Desktop screenshots。
   - Preview workflow 的 macOS arm64/x64、Windows x64、Ubuntu 22.04 build 与 Ubuntu 22.04/24.04 smoke 全绿。
   - 从公开 Release 重新下载全部 assets，执行 SHA-256 与 `gh attestation verify`。
   - macOS 验证系统显示未识别开发者/未公证预期状态后按官方单应用入口启动；Windows 验证 Unknown Publisher/SmartScreen 预期状态后按系统单应用入口启动；Linux 验证 AppImage 与 DEB。
-- **TDD Cases**: version/tag 一致、tag 默认分支可达、Preview workflow 唯一触发、Stable workflow 未触发、asset inventory、checksum、attestation、macOS 双架构 receipt、Windows receipt、Ubuntu 双版本 receipt、风险文案、官方链接、milestone checker、完整 checker 仍非零、重复 tag 拒绝。
+- **TDD Cases**: version/tag 一致、tag 默认分支可达、Preview workflow 唯一触发、其他 release workflow 未触发、asset inventory、checksum、attestation、macOS 双架构 receipt、Windows receipt、Ubuntu 双版本 receipt、风险文案、官方链接、milestone checker、完整 checker 返回 0、重复 tag 拒绝。
 - **Acceptance**:
-  - [ ] `v0.1.0-preview.1` 是公开 GitHub Pre-release，且没有同 tag Stable workflow candidate。
+  - [ ] `v0.1.0-preview.1` 是公开 GitHub Pre-release，且没有同 tag 的其他 workflow candidate。
   - [ ] macOS arm64/x64、Windows x64、Linux AppImage/DEB 全部可下载并关联真实 smoke receipt。
   - [ ] 所有 assets 的 SHA-256、SBOM 和 attestations 可从公开 Release 重新验证。
   - [ ] 页面首屏和文件名明确提示未签名，用户无需阅读深层文档即可看到风险。
   - [ ] 文档不要求关闭整机安全保护，不把 Preview 描述为 Stable。
-  - [ ] `check_progress.py --milestone unsigned_preview` 返回 0；完整 checker 继续准确列出 Stable blocked tasks。
+  - [ ] `check_progress.py --milestone unsigned_preview` 与完整 checker 都返回 0。
 - **Risk/Effort**: High / 8 points。真实发布不可通过本地模拟签收；任何平台缺失或 Release 不可公开访问都不能标记 done。
-
-### REL-MAC-018 · macOS 双架构签名、公证与安装验收
-
-- **Purpose**: 产出 Gatekeeper 可接受的 arm64/x64 DMG/ZIP。
-- **Depends On**: `PKG-017`；完成最终 gate 还依赖 Apple credentials。
-- **Target**: `macos-15` arm64、`macos-15-intel` x64、release signing config、entitlements、notarization/stapling、DMG smoke。
-- **Checks**: missing credentials must fail; signed build; `codesign`、`spctl`、`stapler`; DMG mount; packaged smoke; artifact naming/hash。
-- **Acceptance**:
-  - [ ] `minimumSystemVersion` 为 14.0，Hardened Runtime 与 helper entitlements 生效。
-  - [ ] 两架构签名 identity、team 和 notarization ticket 可验证。
-  - [ ] DMG 与 ZIP 都有 smoke/checksum/SBOM 输入。
-  - [ ] 无凭据或任一验证失败时 workflow 失败。
-- **Risk/Effort**: External/High / 8 points。凭据未准备时状态为 blocked，不得伪造完成。
-
-### REL-WIN-019 · Windows Artifact Signing 与安装验收
-
-- **Purpose**: 产出受信任 publisher 签名的 x64 NSIS 安装包。
-- **Depends On**: `PKG-017`；完成最终 gate 还依赖 Azure Artifact Signing 或受信任 OV PFX。
-- **Target**: `windows-2022`、`azureSignOptions`、`forceCodeSigning:true`、Authenticode verification、silent install/smoke/uninstall。
-- **Checks**: missing credentials fail、publisher exact match、signature valid、temporary install、receipt、uninstall、artifact hash。
-- **Acceptance**:
-  - [ ] EXE 和已安装 executable 都由预期 publisher 签名。
-  - [ ] SmartScreen/Authenticode 所需链路配置记录完整。
-  - [ ] 安装和卸载退出码为 0，receipt 可解析。
-  - [ ] unsigned candidate 无法进入正式 artifact 集合。
-- **Risk/Effort**: External/Very High / 8 points。
-
-### REL-LNX-020 · Ubuntu DEB/AppImage 与双版本 smoke
-
-- **Purpose**: 产出 Ubuntu x64 DEB/AppImage 并建立 Linux 验证链。
-- **Depends On**: `PKG-017`。
-- **Target**: Ubuntu 22.04 build、22.04/24.04 DEB install smoke、AppImage xvfb smoke、checksums。
-- **Checks**: package metadata、DEB install/remove、AppImage executable/FUSE diagnostics、minimal PATH receipt、artifact hash。
-- **Acceptance**:
-  - [ ] DEB 和 AppImage 在目标 runner 启动。
-  - [ ] 22.04/24.04 receipt 均通过。
-  - [ ] AppImage 失败能区分 FUSE/沙箱/应用错误。
-  - [ ] 两类 artifact 进入 SBOM/provenance 输入。
-- **Risk/Effort**: High / 8 points。
-
-### REL-AGG-021 · 供应链证明与原子 Release 发布
-
-- **Purpose**: 只有完整、可验证的三平台候选集合才能创建正式 Release。
-- **Depends On**: `REL-MAC-018`、`REL-WIN-019`、`REL-LNX-020`。
-- **Target**: CI/internal/release workflow split、SHA-256 manifest、CycloneDX SBOM、GitHub provenance/SBOM attestations、final publish job。
-- **Checks**: missing artifact、hash mismatch、invalid signature、missing SBOM、attestation verify failure、unsigned marker、atomic publish、internal retention。
-- **Acceptance**:
-  - [ ] build jobs 不直接发布 Release。
-  - [ ] final job 下载并重新验证所有 artifact。
-  - [ ] `gh attestation verify` 对每个正式 artifact 通过。
-  - [ ] internal unsigned workflow 仅手动触发、保留期 ≤7 天、无 publish 权限。
-  - [ ] 任一依赖失败时不存在半成品正式 Release。
-- **Risk/Effort**: Very High / 13 points。
-
-### QA-022 · 最终安全回归、receipt 与文档签收
-
-- **Purpose**: 证明功能、兼容、安全和运维文档达到交付标准。
-- **Depends On**: `REL-AGG-021`。
-- **Target**: 完整质量门禁、三平台 receipt bundle、README/AGENTS/STATUS/Release runbook、catalog review checklist。
-- **Verification**:
-  - `git diff --check`
-  - `npm run format:check`
-  - `make check`
-  - `npm --prefix desktop run screenshots`
-  - platform package smoke and signature checks
-  - SBOM/provenance verification
-  - progress checker exit 0
-- **Acceptance**:
-  - [ ] Core tests ≥671、Desktop tests ≥272，新增测试全部通过。
-  - [ ] 0 lint warnings，所有 test/spec typecheck。
-  - [ ] 三平台正式 receipts 与 artifact manifest 对应。
-  - [ ] 文档不再引用独立 `desktop-pet/` 或 Python backend。
-  - [ ] 运维文档说明凭据轮换、catalog 升级、internal workflow 和失败恢复。
-  - [ ] 所有任务状态为 done，checker 返回 0。
-- **Risk/Effort**: High / 8 points。
 
 ## 6. Risk Register
 
-| Risk                            | Level    | Trigger                           | Mitigation                                              | Owner Task        |
-| ------------------------------- | -------- | --------------------------------- | ------------------------------------------------------- | ----------------- |
-| 全仓 Prettier 淹没业务 diff     | High     | 格式化与功能同 commit             | baseline、配置、机械格式化分别提交                      | GOV-002           |
-| 搜索行为兼容回退                | High     | 顺序/上下文/过滤与旧实现不同      | golden fixtures + platform paths                        | PORT-003          |
-| IPC 迁移遗漏 operation          | High     | renderer 运行时 operation missing | registry completeness compile/test gate                 | IPC-004           |
-| Signed runtime 升级丢失用户内容 | High     | runtime/state 边界错误            | read-only package + receipt migration + no delete       | RSC-005           |
-| 外部 Skill 供应链攻击           | Critical | URL/ZIP/script 恶意               | staging、limits、SSRF、digest、permission、blocked deps | SKILL-INSTALL-014 |
-| 安装器参数注入                  | Critical | renderer/model controls command   | catalog-only adapter + shell:false + Zod                | ENV-JOB-010       |
-| 安装中断留下未知系统状态        | High     | app crash/UAC/system installer    | interrupted + reprobe + no auto-resume                  | ENV-JOB-010       |
-| PATH 刷新破坏运行中任务         | High     | install completes mid-turn        | immutable turn snapshot + next-call MCP reconnect       | ENV-SNAP-009      |
-| macOS/Windows 凭据不可用        | Blocking | signing identity/tenant absent    | Stable 保持 blocked；Preview 独立推进                   | REL-MAC/WIN       |
-| Preview/Stable tag 重叠         | Critical | prerelease tag triggers stable    | negative tag patterns + routing governance tests        | PREVIEW-WF-023    |
-| 用户误认 Preview 为可信稳定版   | Critical | unsigned warning hidden/ambiguous | filename/manifest/UI notes all disclose unsigned        | PREVIEW-PUB-024   |
-| Preview 发布半成品              | High     | upload/inventory mismatch         | draft-first publish + delete-on-failure                 | PREVIEW-PUB-024   |
-| 半成品 Release                  | Critical | platform job directly publishes   | candidate upload + final aggregate verification         | REL-AGG-021       |
+| Risk                          | Level    | Trigger                           | Mitigation                                              | Owner Task        |
+| ----------------------------- | -------- | --------------------------------- | ------------------------------------------------------- | ----------------- |
+| 全仓 Prettier 淹没业务 diff   | High     | 格式化与功能同 commit             | baseline、配置、机械格式化分别提交                      | GOV-002           |
+| 搜索行为兼容回退              | High     | 顺序/上下文/过滤与旧实现不同      | golden fixtures + platform paths                        | PORT-003          |
+| IPC 迁移遗漏 operation        | High     | renderer 运行时 operation missing | registry completeness compile/test gate                 | IPC-004           |
+| Runtime 升级丢失用户内容      | High     | runtime/state 边界错误            | read-only package + receipt migration + no delete       | RSC-005           |
+| 外部 Skill 供应链攻击         | Critical | URL/ZIP/script 恶意               | staging、limits、SSRF、digest、permission、blocked deps | SKILL-INSTALL-014 |
+| 安装器参数注入                | Critical | renderer/model controls command   | catalog-only adapter + shell:false + Zod                | ENV-JOB-010       |
+| 安装中断留下未知系统状态      | High     | app crash/UAC/system installer    | interrupted + reprobe + no auto-resume                  | ENV-JOB-010       |
+| PATH 刷新破坏运行中任务       | High     | install completes mid-turn        | immutable turn snapshot + next-call MCP reconnect       | ENV-SNAP-009      |
+| Preview/legacy tag 重叠       | Critical | prerelease tag triggers legacy    | negative tag patterns + routing governance tests        | PREVIEW-WF-023    |
+| 用户误认 Preview 为可信稳定版 | Critical | unsigned warning hidden/ambiguous | filename/manifest/UI notes all disclose unsigned        | PREVIEW-PUB-024   |
+| Preview 发布半成品            | High     | upload/inventory mismatch         | draft-first publish + delete-on-failure                 | PREVIEW-PUB-024   |
 
 ## 7. Receipt Verification
 
@@ -608,15 +522,15 @@ Packaged smoke receipt 必须记录 app version、commit、platform、arch、run
 
 ### 7.3 Release Receipt
 
-Preview 每个平台上传 artifact inventory、SHA-256、`signingStatus: unsigned`、smoke receipt 和 SBOM path；Preview publish job 记录风险披露校验、GitHub Pre-release URL 和 attestation verification result。Stable 每个平台上传 signature/publisher result、install result 和正式 receipt；Stable final publish job 生成独立总 manifest。两类 receipt 不得互相满足依赖。
+Preview 每个平台上传 artifact inventory、SHA-256、`signingStatus: unsigned`、smoke receipt 和 SBOM path；Preview publish job 记录风险披露校验、GitHub Pre-release URL 和 attestation verification result。Receipt 不得声称已签名、已公证或受操作系统 publisher 信任。
 
 ## 8. Progress Tracking
 
 - 状态仅允许 `pending`、`in_progress`、`done`、`blocked`、`failed`。
-- 同一时间最多一个串行任务为 `in_progress`；平台并行阶段最多允许相互独立的 adapter/release tasks 同时进行。
-- `blocked` 必须记录具体外部前置；Apple/Azure 凭据是允许的外部阻塞，测试失败不是长期 blocked 理由。
+- 同一时间最多一个串行任务为 `in_progress`；平台并行阶段最多允许相互独立的 adapter/Preview tasks 同时进行。
+- `blocked` 必须记录具体外部前置；正式签名凭据不再是本计划前置，不能据此保留 blocked 任务。
 - `completed` 必须等于 tasks 中 `done` 数量；checker 会验证数量、状态和依赖。
-- checker 的 `--milestone unsigned_preview` 只验证 Preview 里程碑；无参数时验证全部 25 个任务，Preview 完成不能掩盖 Stable blocked。
+- checker 的 `--milestone unsigned_preview` 验证 Preview 里程碑；无参数时验证全部 20 个任务，当前两种调用都应返回 0。
 - 每次任务 commit 同步更新 `updated_at`、`rounds`、attempts、notes 和 commit/PR 信息。
 
-Initial state is defined in `2026-07-10-cross-platform-environment-release-implementation.progress.json`.
+Final state is defined in `2026-07-10-cross-platform-environment-release-implementation.progress.json`.

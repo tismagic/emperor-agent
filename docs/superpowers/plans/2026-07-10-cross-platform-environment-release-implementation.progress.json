@@ -1,41 +1,42 @@
 {
   "schema_version": 1,
   "plan_id": "PLAN-EA-XPLAT-002",
-  "plan_version": "2.1",
+  "plan_version": "2.2",
   "plan_file": "docs/superpowers/plans/2026-07-10-cross-platform-environment-release-implementation.md",
   "design_file": "docs/superpowers/specs/2026-07-10-cross-platform-environment-release-design.md",
   "created_at": "2026-07-11T21:03:55+08:00",
-  "updated_at": "2026-07-13T14:30:45+08:00",
+  "updated_at": "2026-07-13T14:48:26+08:00",
   "started_at": "2026-07-10T16:02:16+08:00",
-  "completed_at": null,
-  "total_tasks": 25,
+  "completed_at": "2026-07-13T14:48:26+08:00",
+  "total_tasks": 20,
   "completed": 20,
-  "rounds": 32,
+  "rounds": 33,
   "planning_receipt": {
-    "status": "executing",
+    "status": "complete",
     "implementation_started": true,
-    "statement": "The first public Unsigned Preview is published and verified end to end across macOS arm64/x64, Windows x64 and Ubuntu x64. Its checksums, CycloneDX SBOM, provenance and SBOM attestations are public; five Signed Stable tasks remain blocked without weakening their gates."
+    "statement": "PLAN-EA-XPLAT-002 v2.2 is complete at 20/20. The first public Unsigned Preview is verified end to end across macOS arm64/x64, Windows x64 and Ubuntu x64. Formal signed Stable planning was cancelled by scope decision and its five tasks were removed rather than reported as done or blocked."
+  },
+  "scope_revision": {
+    "version": "2.2",
+    "decision": "cancel_formal_signed_release",
+    "removed_tasks": [
+      "REL-MAC-018",
+      "REL-WIN-019",
+      "REL-LNX-020",
+      "REL-AGG-021",
+      "QA-022"
+    ],
+    "policy": "Unsigned Preview is the only public release milestone in this plan. Restoring signed or notarized releases requires a new Plan ID."
   },
   "milestones": {
     "unsigned_preview": {
-      "title": "公开未签名预览版",
+      "title": "公开未签名预览版（唯一发布通道）",
       "target_release": "v0.1.0-preview.1",
       "required_tasks": [
         "PKG-017",
         "PREVIEW-WF-023",
         "PREVIEW-PUB-024",
         "PREVIEW-QA-025"
-      ]
-    },
-    "trusted_stable": {
-      "title": "三平台可信稳定版",
-      "target_release": "v0.1.0",
-      "required_tasks": [
-        "REL-MAC-018",
-        "REL-WIN-019",
-        "REL-LNX-020",
-        "REL-AGG-021",
-        "QA-022"
       ]
     }
   },
@@ -241,7 +242,7 @@
       "completed_at": "2026-07-13T12:25:17+08:00",
       "commit": "25a076e8",
       "receipt": "Preview contract tests 7/7 and release bundle tests 4/4 passed; full make check passed Core 903 and Desktop 318 tests, typechecks, zero-warning lint, format and production build. A real macOS arm64 preview-config directory package skipped signing because identity is explicitly null and passed minimal-PATH packaged smoke.",
-      "notes": "release-preview.yml is tag-only and contents-read; it builds macOS arm64/x64, Windows x64 and Linux x64 candidates without signing secrets, labels artifacts/markers/receipts UNSIGNED-PREVIEW, runs Ubuntu 22.04/24.04 lifecycle smoke, and cannot publish. Stable tags exclude all prereleases and the trusted assembler explicitly rejects Preview input."
+      "notes": "release-preview.yml is tag-only and contents-read; it builds macOS arm64/x64, Windows x64 and Linux x64 candidates without signing secrets, labels artifacts/markers/receipts UNSIGNED-PREVIEW, runs Ubuntu 22.04/24.04 lifecycle smoke, and cannot publish. Legacy release tags exclude all prereleases and the legacy assembler explicitly rejects Preview input."
     },
     "PREVIEW-PUB-024": {
       "status": "done",
@@ -263,62 +264,7 @@
       "completed_at": "2026-07-13T14:30:45+08:00",
       "commit": "87717979903ada861b5ef6e7e0111e7b6e894eb7",
       "receipt": "GitHub Actions run 29227858676 completed every macOS arm64/x64, Windows x64, Linux x64, Ubuntu 22.04/24.04 lifecycle, aggregate/attest and atomic publish job. Public prerelease v0.1.0-preview.1 contains exactly 13 assets and seven installable products; all 12 SHA256SUMS entries passed and every product passed both repository-bound provenance and CycloneDX SBOM attestation verification.",
-      "notes": "Published at https://github.com/TheSyart/emperor-agent/releases/tag/v0.1.0-preview.1 from annotated tag v0.1.0-preview.1 at 87717979903ada861b5ef6e7e0111e7b6e894eb7. Manifest and marker preserve signingStatus=unsigned, notarized=false and UNSIGNED-PREVIEW risk disclosure. Four prior fail-closed runs exposed and fixed Windows CRLF checkout, Linux architecture naming, DEB dependency installation and CycloneDX serial-number defects. The Stable release workflow was not triggered."
-    },
-    "REL-MAC-018": {
-      "status": "blocked",
-      "title": "macOS 双架构签名、公证与安装验收",
-      "depends_on": ["PKG-017"],
-      "attempts": 1,
-      "started_at": "2026-07-11T20:46:41+08:00",
-      "completed_at": null,
-      "commit": "fe745bb4",
-      "receipt": null,
-      "notes": "Candidate configuration and static verifier are implemented. Generic macOS CI run 29220027666 passed tests, typecheck, lint, build and package dry run on da954aa9. Developer ID and App Store Connect credentials remain absent, so no signed/notarized arm64/x64 receipts exist and the Stable gate cannot run; this does not block Unsigned Preview."
-    },
-    "REL-WIN-019": {
-      "status": "blocked",
-      "title": "Windows Artifact Signing 与安装验收",
-      "depends_on": ["PKG-017"],
-      "attempts": 1,
-      "started_at": "2026-07-11T21:07:00+08:00",
-      "completed_at": null,
-      "commit": "e70faa95",
-      "receipt": null,
-      "notes": "Windows release config, isolated smoke environment, windows-2022 candidate workflow and Authenticode install/smoke/uninstall verifier are implemented. Generic Windows CI run 29220027666 passed all tests, typecheck, lint, build and package dry run after native path and ASAR validation fixes through da954aa9. Azure signing credentials remain absent; the Stable receipt stays blocked until the installer and installed binaries have the expected publisher on windows-2022, without blocking Unsigned Preview."
-    },
-    "REL-LNX-020": {
-      "status": "blocked",
-      "title": "Ubuntu DEB/AppImage 与双版本 smoke",
-      "depends_on": ["PKG-017"],
-      "attempts": 1,
-      "started_at": "2026-07-11T21:22:00+08:00",
-      "completed_at": null,
-      "commit": "6b692d54",
-      "receipt": null,
-      "notes": "Trusted Linux config, Ubuntu 22.04 build job, Ubuntu 22.04/24.04 smoke matrix and fail-closed DEB/AppImage verifier are implemented. Generic Ubuntu CI run 29220027666 passed all tests, typecheck, lint, build and package dry run on da954aa9. Docker is not a release dependency; completion still requires the formal DEB/AppImage receipts from both Ubuntu 22.04 and 24.04 release runners."
-    },
-    "REL-AGG-021": {
-      "status": "blocked",
-      "title": "供应链证明与原子 Release 发布",
-      "depends_on": ["REL-MAC-018", "REL-WIN-019", "REL-LNX-020"],
-      "attempts": 1,
-      "started_at": "2026-07-11T21:41:00+08:00",
-      "completed_at": null,
-      "commit": "33c3db6e",
-      "receipt": null,
-      "notes": "Structured platform receipts, fail-closed bundle assembly, complete Core+Desktop CycloneDX SBOM merging, GitHub provenance/SBOM attestations, draft-first atomic publication and the isolated unsigned internal workflow are implemented in 33c3db6e. The implementation branch is pushed and generic CI run 29220027666 is green on all three platforms. Aggregate/publish remains blocked because its hard dependencies are formal signed platform receipts, not generic package dry-run results."
-    },
-    "QA-022": {
-      "status": "blocked",
-      "title": "最终安全回归、receipt 与文档签收",
-      "depends_on": ["REL-AGG-021"],
-      "attempts": 1,
-      "started_at": "2026-07-11T22:03:10+08:00",
-      "completed_at": null,
-      "commit": "932fe41a",
-      "receipt": null,
-      "notes": "README, AGENTS, migration status, trusted Release runbook and ToolCatalog review checklist are synchronized in 932fe41a. Fresh local make check passed Core 903/Desktop 310 with format, parity, test typecheck, zero-warning lint and production build; prior Playwright screenshots passed 33/33. GitHub CI run 29220027666 passed macOS, Windows and Ubuntu tests/build/package dry runs. Stable QA remains blocked at 17/25 until signed platform receipts and aggregate publication verification exist; Preview has its own QA task."
+      "notes": "Published at https://github.com/TheSyart/emperor-agent/releases/tag/v0.1.0-preview.1 from annotated tag v0.1.0-preview.1 at 87717979903ada861b5ef6e7e0111e7b6e894eb7. Manifest and marker preserve signingStatus=unsigned, notarized=false and UNSIGNED-PREVIEW risk disclosure. Four prior fail-closed runs exposed and fixed Windows CRLF checkout, Linux architecture naming, DEB dependency installation and CycloneDX serial-number defects. No other release workflow was triggered."
     }
   }
 }

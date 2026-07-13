@@ -22,6 +22,13 @@ REQUIRED_TASK_FIELDS = {
     "notes",
 }
 REQUIRED_MILESTONE_FIELDS = {"title", "target_release", "required_tasks"}
+CANCELLED_TASK_IDS = {
+    "REL-MAC-018",
+    "REL-WIN-019",
+    "REL-LNX-020",
+    "REL-AGG-021",
+    "QA-022",
+}
 
 
 def fail(message: str, code: int = 2) -> int:
@@ -62,12 +69,34 @@ def main() -> int:
         return fail("unsupported progress schema_version")
     if data.get("plan_id") != "PLAN-EA-XPLAT-002":
         return fail("unexpected plan_id")
-    if data.get("plan_version") != "2.1":
+    if data.get("plan_version") != "2.2":
         return fail("unexpected plan_version")
+
+    cancelled_tasks_present = sorted(CANCELLED_TASK_IDS.intersection(tasks))
+    if cancelled_tasks_present:
+        return fail(
+            "cancelled signed-release tasks remain in progress: "
+            + ", ".join(cancelled_tasks_present)
+        )
+
+    scope_revision = data.get("scope_revision")
+    if not isinstance(scope_revision, dict):
+        return fail("missing v2.2 scope_revision")
+    if scope_revision.get("decision") != "cancel_formal_signed_release":
+        return fail("unexpected v2.2 scope decision")
+    removed_tasks = scope_revision.get("removed_tasks")
+    if not isinstance(removed_tasks, list) or not all(
+        isinstance(task_id, str) for task_id in removed_tasks
+    ):
+        return fail("scope_revision removed_tasks must be a string array")
+    if set(removed_tasks) != CANCELLED_TASK_IDS:
+        return fail("scope_revision removed_tasks does not match cancelled task set")
 
     milestones = data.get("milestones")
     if not isinstance(milestones, dict) or not milestones:
         return fail("progress milestones must be a non-empty object")
+    if set(milestones) != {"unsigned_preview"}:
+        return fail("v2.2 must contain only the unsigned_preview milestone")
 
     for milestone_id, milestone in sorted(milestones.items()):
         if not isinstance(milestone, dict):

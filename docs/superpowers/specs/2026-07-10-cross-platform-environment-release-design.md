@@ -1,21 +1,21 @@
-# Emperor Agent 跨平台环境配置与双通道 Release 设计
+# Emperor Agent 跨平台环境配置与未签名 Preview Release 设计
 
 > **Plan ID**: `PLAN-EA-XPLAT-002`
-> **Version**: v2.1
+> **Version**: v2.2
 > **Date**: 2026-07-13
-> **Status**: approved revision; implementation in progress
+> **Status**: complete; Preview-only scope accepted
 > **Targets**: macOS 14+ arm64/x64、Windows 10 22H2+ x64、Ubuntu 22.04/24.04 x64
 > **Implementation Plan**: `docs/superpowers/plans/2026-07-10-cross-platform-environment-release-implementation.md`
 
-> **Document boundary**: 本文件冻结目标架构、协议、安全边界和 Preview/Stable Release 门禁，不代表新增 Preview 任务已经实现。实际执行状态仅以配套 progress 文件及可验证 receipt 为准。
+> **Document boundary**: 本文件冻结目标架构、协议、安全边界和公开未签名 Preview Release 门禁。实际完成状态以配套 progress 文件及公开 receipt 为准。
 
-> **v2.1 amendment**: 在不削弱正式签名门禁的前提下，新增可公开下载的 `Unsigned Preview` 通道。Preview 是明确标识的 GitHub Pre-release，不得冒充签名稳定版。
+> **v2.2 amendment**: 取消正式签名 Stable 的当前规划、任务和进度门禁。`Unsigned Preview` 是本计划唯一公开发布通道；未来若恢复代码签名、公证或稳定版发布，必须使用新的 Plan ID 重新设计和审批。
 
 ## 1. 背景与基线
 
 Emperor Agent 已经完成 Python runtime 退役。Electron main 进程托管 `@emperor/core`，renderer 通过 preload IPC 调用 CoreApi；安装包内含 Chromium、Electron Node runtime、Core、模板、Skills、Assets 和桌宠资源，主程序启动不要求目标机安装 Node 或 Python。
 
-当前工程基线经本地验证：
+v2.0 启动时工程基线经本地验证（历史快照）：
 
 - Core：84 个测试文件、671 项 Vitest 通过。
 - Desktop：62 个测试文件、272 项 Vitest 通过。
@@ -36,14 +36,13 @@ Emperor Agent 已经完成 Python runtime 退役。Electron main 进程托管 `@
 
 ### 2.1 Goals
 
-1. 三类目标平台上的正式安装包可以在没有外部 Node、Python、Git、ripgrep 的干净用户环境中启动、完成 bootstrap、配置云模型并执行基础文件任务。
+1. 三类目标平台上的 Preview 安装包可以在没有外部 Node、Python、Git、ripgrep 的干净用户环境中启动、完成 bootstrap、配置云模型并执行基础文件任务。
 2. 内建 Glob/Grep 不依赖系统 shell 或外部搜索命令，所有模型输入都不会进入 shell 解释器。
 3. 诊断页能够识别基础开发工具、当前项目语言声明和已安装 Skill 依赖，并通过受控、可取消、可审计流程安装缺失环境。
 4. RunCommand、command hooks、stdio MCP、Scheduler、Subagent 和 agent handler 使用同一不可变执行环境快照。
 5. 默认只内置无需外部 runtime 的 Core 原生 `skill-creator`；其他 Skills 由用户从本地包、公开 GitHub 或 HTTPS Skill 包显式安装。
 6. CoreApi、preload 和 renderer 使用同一个类型化 operation registry；所有 IPC 参数在 main 侧通过 Zod 校验。
-7. macOS、Windows、Ubuntu 正式产物同时完成签名/公证或等价供应链证明、安装 smoke、SBOM、摘要与 provenance 后才发布。
-8. 在 Apple/Azure 凭据未准备期间，允许发布三平台未签名预览版供测试用户使用，并通过命名、元数据、警告和独立 receipt 与正式版本完全隔离。
+7. macOS、Windows、Ubuntu 未签名产物完成安装 smoke、SBOM、摘要与 provenance 后，以明确风险披露的 GitHub Pre-release 公开发布。
 
 ### 2.2 Non-Goals
 
@@ -53,30 +52,30 @@ Emperor Agent 已经完成 Python runtime 退役。Electron main 进程托管 `@
 - 不建设自动更新、在线 Skill 市场、私有 GitHub 凭证接入或远程 ToolCatalog 更新。
 - 不允许从任意网页抽取并直接安装 Skill；普通网页只允许作为用户参考资料。
 - 不自动覆盖不满足项目要求的现有 Go，不自动卸载用户已安装工具。
-- 不把正式签名失败降级为 unsigned 正式产物。
-- 不把 Preview 作为稳定版、自动更新源、企业部署包或签名能力替代品。
+- 不在本计划内建设 Developer ID、Apple notarization、Windows publisher signing 或签名 Stable Release。
+- 不把 Preview 描述为稳定版、自动更新源、企业部署包或受信任 publisher 产物。
 
 ## 3. 已确认决策
 
-| Topic            | Decision                                                                                                         |
-| ---------------- | ---------------------------------------------------------------------------------------------------------------- |
-| 实施顺序         | 基础治理是 EnvironmentService 的硬前置，不并行绕过                                                               |
-| 格式规范         | 全仓 Prettier，覆盖其支持的代码、配置和 Markdown；机械格式化独立提交                                             |
-| IPC              | 共享 `CoreOperationMap` + Zod 参数 registry，不使用代码生成                                                      |
-| 内置 Skills      | 正式包和开发默认只激活 `skill-creator`                                                                           |
-| Skill Creator    | 初始化、校验、打包迁入 Core 原生 TypeScript，无外部 runtime                                                      |
-| 其他 Skills      | 移入非激活 `skills-catalog/`，后续由用户显式安装                                                                 |
-| Skill 来源       | 本地 `.skill/.zip`、公开 GitHub repo/tree、HTTPS `.skill/.zip`                                                   |
-| Skill 信任       | 下载预览、digest 绑定、风险摘要、二次确认后安装                                                                  |
-| Runtime defaults | 生产环境直接读取只读 `Resources/runtime-defaults`；Preview 由 manifest/attestation 验证，Stable 再由应用签名保护 |
-| 基础环境         | Git、ripgrep、Volta、Node、npm                                                                                   |
-| 项目生态         | Node、Python、Go、Rust；Skill requirements 为第三类来源                                                          |
-| 安装归属         | 系统包管理器优先、用户级版本管理器优先，最终对当前用户全局可用                                                   |
-| 版本隔离         | Node 使用 Volta，Python 使用 uv，Rust 使用 rustup；Go 冲突只提示                                                 |
-| 批量确认         | 展示来源、版本、许可、体积、提权、不可取消步骤后一次确认                                                         |
-| Rust on Windows  | MSVC Build Tools 单独二次确认，不进入普通批量计划                                                                |
-| Release          | `Unsigned Preview` 可公开预发布；`Signed Stable` 继续三平台同批硬门禁                                            |
-| 自动更新         | 本轮继续排除                                                                                                     |
+| Topic            | Decision                                                                                     |
+| ---------------- | -------------------------------------------------------------------------------------------- |
+| 实施顺序         | 基础治理是 EnvironmentService 的硬前置，不并行绕过                                           |
+| 格式规范         | 全仓 Prettier，覆盖其支持的代码、配置和 Markdown；机械格式化独立提交                         |
+| IPC              | 共享 `CoreOperationMap` + Zod 参数 registry，不使用代码生成                                  |
+| 内置 Skills      | 正式包和开发默认只激活 `skill-creator`                                                       |
+| Skill Creator    | 初始化、校验、打包迁入 Core 原生 TypeScript，无外部 runtime                                  |
+| 其他 Skills      | 移入非激活 `skills-catalog/`，后续由用户显式安装                                             |
+| Skill 来源       | 本地 `.skill/.zip`、公开 GitHub repo/tree、HTTPS `.skill/.zip`                               |
+| Skill 信任       | 下载预览、digest 绑定、风险摘要、二次确认后安装                                              |
+| Runtime defaults | 生产环境直接读取只读 `Resources/runtime-defaults`；由 manifest、checksum 与 attestation 验证 |
+| 基础环境         | Git、ripgrep、Volta、Node、npm                                                               |
+| 项目生态         | Node、Python、Go、Rust；Skill requirements 为第三类来源                                      |
+| 安装归属         | 系统包管理器优先、用户级版本管理器优先，最终对当前用户全局可用                               |
+| 版本隔离         | Node 使用 Volta，Python 使用 uv，Rust 使用 rustup；Go 冲突只提示                             |
+| 批量确认         | 展示来源、版本、许可、体积、提权、不可取消步骤后一次确认                                     |
+| Rust on Windows  | MSVC Build Tools 单独二次确认，不进入普通批量计划                                            |
+| Release          | `Unsigned Preview` 是当前唯一公开发布通道；正式签名发布已取消并移出本计划                    |
+| 自动更新         | 本轮继续排除                                                                                 |
 
 ## 4. 总体架构
 
@@ -85,7 +84,7 @@ flowchart LR
   UI["Diagnostics / Skills UI"] --> IPC["Typed Core IPC Registry"]
   IPC --> ENV["EnvironmentService"]
   IPC --> SKILL["SkillService"]
-  ENV --> CAT["Signed ToolCatalog"]
+  ENV --> CAT["Static ToolCatalog"]
   ENV --> PROBE["Probe + Project Detector"]
   ENV --> JOB["InstallOrchestrator"]
   JOB --> ADAPTER["macOS / Windows / Ubuntu adapters"]
@@ -95,7 +94,7 @@ flowchart LR
   SNAP --> MCP["stdio MCP"]
   SNAP --> AGENT["Scheduler / Subagent / Agent handler"]
   SKILL --> STAGE["Skill staging + review"]
-  PKG["Signed runtime-defaults"] --> CAT
+  PKG["Manifest-verified runtime-defaults"] --> CAT
   PKG --> SKILL
 ```
 
@@ -154,7 +153,7 @@ type CoreOperationMap = {
 - `stateRoot` 继续保存用户配置、会话、安装记录和用户 Skills；只读 runtime 与私有 state 永远不合并。
 - 旧 `userData/runtime` 不删除。迁移只复制其中不属于已知内置集合的 Skill，并标记 `blocked_pending_review`；旧模板和资产保留原位供诊断，不覆盖包内只读资源。
 - 包内生成 runtime manifest，记录 schema version、app version、文件路径与 SHA-256；packaged smoke 校验 manifest。
-- Preview 通过 artifact checksum、manifest 和 GitHub attestation 证明来源与内容完整性；Stable 在此基础上增加操作系统应用签名与公证。
+- Preview 通过 artifact checksum、manifest 和 GitHub attestation 证明来源与内容完整性；这些证据不代表操作系统 publisher 信任。
 
 ### 6.2 Built-In And Catalog Layout
 
@@ -268,7 +267,7 @@ interface EnvironmentInstallPlan {
 }
 ```
 
-ToolCatalog 是随应用签名的静态 JSON，启动时用 Zod 校验。每个条目声明平台、架构、探测命令、版本规则、依赖、安装策略、官方来源、许可、估算体积、摘要和发布者；catalog 不接受运行时远程更新。
+ToolCatalog 是随 Release 锁定的静态 JSON，启动时用 Zod 校验。每个条目声明平台、架构、探测命令、版本规则、依赖、安装策略、官方来源、许可、估算体积、摘要和发布者；catalog 不接受运行时远程更新。
 
 ## 8. Probe, Project Detection And PATH
 
@@ -419,7 +418,7 @@ stateRoot/environment/
 
 Skills 页面展示 built-in/user/legacy 来源、digest、依赖状态和 blocked 原因。本地导入或 Agent 链接安装都复用同一个 Preview/Confirm 模型。
 
-## 13. Dual-Channel Release
+## 13. Unsigned Preview Release
 
 ### 13.1 Package Outputs
 
@@ -429,38 +428,34 @@ Skills 页面展示 built-in/user/legacy 来源、digest、依赖状态和 block
 - Ubuntu x64：DEB + AppImage
 - 全平台：SHA-256、CycloneDX SBOM、build provenance、SBOM attestation
 
-包内必须包含 `app.asar`、manifest-verified runtime defaults、仅一个 built-in skill-creator、Assets 和桌宠资源；不得包含 Python backend、`skills-catalog/`、开发机绝对路径或旧 `desktop-pet` npm project。Preview 依赖 checksum/attestation 验证包来源与完整性，Stable 额外依赖应用签名保护这些资源。
+包内必须包含 `app.asar`、manifest-verified runtime defaults、仅一个 built-in skill-creator、Assets 和桌宠资源；不得包含 Python backend、`skills-catalog/`、开发机绝对路径或旧 `desktop-pet` npm project。Preview 依赖 checksum、manifest 和 attestation 验证包来源与完整性。
 
 ### 13.2 Workflow Separation
 
 - `ci.yml`：三平台测试、typecheck、零 warning lint、format、build、package dry-run。
 - `release-internal.yml`：手动 unsigned 构建，artifact 名含 `UNSIGNED-INTERNAL`，保留不超过七天，不创建 Release。
 - `release-preview.yml`：仅匹配 `v*-preview.*` tag，构建未签名三平台产物，验证、聚合后创建 GitHub Pre-release。
-- `release.yml`：排除 Preview tag，仅处理无 prerelease suffix 的稳定 tag，执行正式签名构建、平台验证和聚合发布。
+- `release.yml`：属于已保留的历史签名能力，不是本计划交付入口；本计划不得创建无 prerelease suffix 的正式发布 tag。
 - 平台 job 先上传候选 artifact；最终 publish job 下载并校验全部候选，通过后一次性创建 GitHub Release。
 
 ### 13.3 Unsigned Preview Contract
 
 - 首个目标 tag 为 `v0.1.0-preview.1`；后续使用单调递增的 `preview.N`，同名 tag 或 Release 不得覆盖。
-- Preview tag 必须指向默认分支可达的 commit；Preview 与 Stable tag 路由测试必须证明不会同时触发两个发布 workflow。
+- Preview tag 必须指向默认分支可达的 commit；路由测试必须证明 Preview tag 不会触发其他发布 workflow。
 - artifact 文件名、artifact display name、release title、release notes、bundle manifest 和 receipt 都包含 `UNSIGNED-PREVIEW` 或等价结构化字段 `channel: preview`、`signingStatus: unsigned`。
 - macOS arm64/x64 生成 unsigned DMG/ZIP，Windows x64 生成 unsigned NSIS EXE，Ubuntu x64 生成 AppImage/DEB；不得读取 Apple/Azure signing secrets，也不得设置 `forceCodeSigning`。
 - Preview 仍执行 `make check`、packaged smoke、资源清单、SHA-256、CycloneDX SBOM、provenance 和 SBOM attestation；这些证据只证明构建来源与完整性，不代表操作系统 publisher 信任。
 - GitHub Release 必须设置 `prerelease: true`，发布说明用中英文明确披露 macOS Gatekeeper 与 Windows SmartScreen/Unknown Publisher 警告，并链接系统官方的单应用放行说明。
 - 不指导用户全局关闭 Gatekeeper、Defender、SmartScreen 或执行移除整机安全策略的命令；只允许记录系统提供的单应用确认路径。
-- Preview candidate、receipt、marker 或 manifest 进入 Stable 聚合输入时，Stable workflow 必须 fail closed；`UNSIGNED-INTERNAL` 仍不得进入 Preview 或 Stable Release。
+- Preview 聚合必须拒绝 legacy signed/internal receipt 与跨 channel marker；`UNSIGNED-INTERNAL` 不得进入公开 Preview Release。
 - Preview 发布失败时删除 draft/pre-release 半成品；不得手工混用不同 commit、run 或版本的 artifact 补发。
 
-### 13.4 Signed Stable Platform Gates
+### 13.4 Cancelled Signed Release Boundary
 
-- macOS arm64 使用 `macos-15`，x64 使用 `macos-15-intel`。配置 `minimumSystemVersion: 14.0`、Hardened Runtime、主/子进程 entitlements、Developer ID、notarization 和 stapling。
-- macOS 验证 `codesign --verify --deep --strict`、`spctl --assess`、`stapler validate`、DMG mount 和 packaged smoke。
-- Windows 使用 `windows-2022`、NSIS、`win.azureSignOptions` 和 `forceCodeSigning: true`。服务名称使用 Azure Artifact Signing；electron-builder 配置字段保持 `azureSignOptions`。
-- Windows 验证 Authenticode publisher，静默安装到临时目录，执行 packaged smoke，再卸载并检查退出码。
-- Ubuntu 在 22.04 构建 DEB/AppImage；22.04 与 24.04 执行安装/启动 smoke，AppImage 使用 `xvfb-run`。
-- Linux 使用 SHA-256、SBOM 和 GitHub artifact attestation 建立验证链。
-
-正式 Stable Release 缺少 Apple/Azure 凭据、签名失败、公证失败、publisher 不符、artifact 不完整、SBOM/attestation 失败或任一 smoke 失败时必须失败。Unsigned Preview 产物不能进入 Stable Release；Stable 阻塞不阻止独立 Preview 通道发布。
+- Developer ID、Apple notarization、Azure Artifact Signing、OV PFX 和正式 Stable 聚合均不属于 v2.2 交付范围。
+- 原有签名配置、验证脚本与 `release.yml` 可以保留用于历史审计，但不计入 progress，不要求准备凭据，也不得作为当前公开发布入口。
+- 当前维护者只创建 `v*-preview.*` tag。无 prerelease suffix 的正式 tag 不属于本计划的发布流程。
+- 未来恢复签名发布时必须建立新的设计、implementation plan、progress 和凭据轮换方案；不得把本计划中的 Preview receipt 直接升级为签名 receipt。
 
 ## 14. Packaged Smoke Contract
 
@@ -495,9 +490,8 @@ Skills 页面展示 built-in/user/legacy 来源、digest、依赖状态和 block
 
 - `prettier --check`、Core/Desktop test/typecheck/lint、production build、Playwright、package smoke 和 `make check` 全绿。
 - 三平台目标架构产物齐全且文件名包含版本、平台和架构。
-- Preview 产物与 Release 元数据明确标识 unsigned，GitHub Release 为 Pre-release，tag routing 不触发 Stable workflow。
+- Preview 产物与 Release 元数据明确标识 unsigned，GitHub Release 为 Pre-release，tag routing 不触发其他发布 workflow。
 - Preview 的 SHA-256、SBOM、provenance、资源清单和 packaged smoke 可验证；receipt 不声称 signature/publisher 成功。
-- 正式 macOS/Windows 产物通过系统签名验证；Ubuntu 产物具备可验证摘要、SBOM 与 provenance。
 - `gh attestation verify` 能验证发布 artifact。
 - runtime package inspection 证明只包含允许资源。
 
@@ -510,11 +504,10 @@ Skills 页面展示 built-in/user/legacy 来源、digest、依赖状态和 block
 - 安装中断不视为成功；重新启动后必须重新探测和生成 plan。
 - Catalog schema 和 Skill metadata 都带 `schemaVersion`；未知未来版本 fail closed。
 
-## 17. 外部前置与阻塞规则
+## 17. 发布与环境约束
 
-- Apple Developer Program、Developer ID Application 证书、App Store Connect API key 尚未准备；`REL-MAC-018` 在凭据完成前保持 blocked。
-- Windows 默认申请 Azure Artifact Signing；不可用时允许改用受信任 OV PFX，但仍要求 `forceCodeSigning`，`REL-WIN-019` 在凭据完成前保持 blocked。
-- Preview workflow 不需要 Apple/Azure 凭据；签名任务 blocked 不得传播为 Preview 任务 blocked。
+- Preview workflow 不读取 Apple/Azure 凭据，项目不因缺少代码签名账号产生未完成任务。
+- 正式签名、公证和受信任 publisher 发布已取消；任何相关恢复工作必须进入新的独立计划。
 - 每个 Release 将 Node 24 LTS、Python 3.12、Rust stable 和 Go stable 解析为审核过的具体 patch/toolchain；不能让 `latest` 在运行时改变安装内容。
 - Homebrew、winget、apt package identifiers 和官方资产摘要属于 Release 审核数据；每次 catalog revision 变化必须经过 golden tests 和三平台 internal installer workflow。
 
@@ -522,9 +515,6 @@ Skills 页面展示 built-in/user/legacy 来源、digest、依赖状态和 block
 
 - [GitHub-hosted runners](https://docs.github.com/en/actions/reference/runners/github-hosted-runners)
 - [GitHub artifact attestations](https://docs.github.com/en/actions/how-tos/secure-your-work/use-artifact-attestations)
-- [electron-builder Code Signing](https://www.electron.build/docs/features/code-signing/)
-- [electron-builder Windows Signing](https://www.electron.build/docs/features/code-signing/code-signing-win/)
-- [electron-builder macOS Notarization](https://www.electron.build/docs/notarization/)
 - [Homebrew Installation](https://docs.brew.sh/Installation)
 - [WinGet install](https://learn.microsoft.com/en-us/windows/package-manager/winget/install)
 - [Volta Getting Started](https://docs.volta.sh/guide/getting-started)
@@ -533,12 +523,12 @@ Skills 页面展示 built-in/user/legacy 来源、digest、依赖状态和 block
 
 ## 19. 实施交接边界
 
-本设计由配套 implementation plan 拆解为 25 个任务，其中新增 3 个 Preview 任务。创建或更新本设计、implementation plan、progress JSON 与 progress checker 仅属于规划交付，不得据此把 Preview 标记为已实现，也不得视为 workflow、安装器或 GitHub Pre-release 已发布。
+本设计由配套 implementation plan 收敛为 20 个任务，全部具有可验证 receipt。v2.2 取消原五个正式 Stable 任务，不把取消项计作完成，也不保留 blocked 门禁。
 
-正式开始实施前必须满足以下条件：
+当前交接状态：
 
-1. 由执行者重新记录目标分支、HEAD、工作树状态和 Core/Desktop 测试数量，作为不可覆盖的 execution baseline。
-2. v2.1 沿用 v2.0 已验收的 17 个 `done` 和 5 个 Stable `blocked` 状态，新增 3 个 Preview 任务初始为 `pending`；只有对应 RED、GREEN、验收清单和 receipt 同时成立后才能改为 `done`。
-3. Apple Developer 与 Windows 代码签名凭据可以使相应 Release 任务进入 `blocked`，但不能使其提前完成，也不能降级正式产物的签名要求。
-4. 任何已经存在但缺少本计划 receipt 的代码只能作为待审计候选实现，不能仅凭文件存在或历史 commit 自动签收。
-5. 本轮文档交付不修改 README、AGENTS、产品代码、测试、workflow、打包配置、tag 或 GitHub Release；这些改动只允许在后续执行阶段按 Preview 任务发生。
+1. `v0.1.0-preview.1` 已从默认分支可达 commit 发布为公开 GitHub Pre-release。
+2. macOS arm64/x64、Windows x64、Linux x64 候选与 Ubuntu 22.04/24.04 生命周期测试均已有真实 receipt。
+3. checksum、CycloneDX SBOM、provenance 与 SBOM attestation 已从公开 Release 重新验证。
+4. progress 默认 checker 与 `--milestone unsigned_preview` 均应返回 0。
+5. 正式签名发布没有 pending 或 blocked 任务；未来恢复时不得复用 `PLAN-EA-XPLAT-002`，必须创建新的 Plan ID。
