@@ -37,8 +37,7 @@ const args = [
 ]
 if (process.platform === 'linux') {
   args.unshift('--headless', '--disable-gpu', '--ozone-platform=headless')
-  if (typeof process.getuid === 'function' && process.getuid() === 0)
-    args.unshift('--no-sandbox')
+  args.unshift('--no-sandbox')
 }
 
 run(appPath, args, smokeEnvironment()).then(

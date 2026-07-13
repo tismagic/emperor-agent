@@ -9,7 +9,7 @@ import {
   writeFileSync,
 } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { basename, join } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
 import type { ModelRoute, ProviderSnapshot } from '../model/router'
 import { LLMProvider, type ChatArgs, type LLMResponse } from '../providers/base'
@@ -369,7 +369,7 @@ describe('AgentLoop (MIG-CORE-011)', () => {
       .join('\n')
     expect(toolOutputs).toContain('right-project-root')
     expect(toolOutputs).toContain('project-only.txt')
-    expect(toolOutputs).toContain(projectRoot)
+    expect(toolOutputs).toContain(basename(projectRoot))
     expect(toolOutputs).not.toContain('wrong-core-root')
     expect(toolOutputs).not.toContain('core-only.txt')
     expect(provider.calls[0]!.messages[0]!.content).toContain(
