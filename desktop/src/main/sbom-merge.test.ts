@@ -21,9 +21,13 @@ describe('CycloneDX SBOM merger', () => {
 
     expect(result.status).toBe(0)
     const merged = JSON.parse(readFileSync(fixture.output, 'utf8')) as {
+      serialNumber: string
       components: Array<{ group?: string; name: string }>
       dependencies: Array<{ ref: string; dependsOn: string[] }>
     }
+    expect(merged.serialNumber).toMatch(
+      /^urn:uuid:[0-9a-f]{8}-[0-9a-f]{4}-5[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
+    )
     expect(
       merged.components.some(
         (component) =>
@@ -34,6 +38,12 @@ describe('CycloneDX SBOM merger', () => {
       (dependency) => dependency.ref === 'desktop|@emperor/core',
     )
     expect(desktopCore?.dependsOn).toContain('core|@anthropic-ai/sdk')
+
+    expect(runMerger(fixture).status).toBe(0)
+    const repeated = JSON.parse(readFileSync(fixture.output, 'utf8')) as {
+      serialNumber: string
+    }
+    expect(repeated.serialNumber).toBe(merged.serialNumber)
   })
 
   it('rejects a Core BOM that omits a declared dependency', () => {
