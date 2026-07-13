@@ -166,11 +166,12 @@ describe('RunCommand deny-list (audit P1-1)', () => {
     }
   })
 
-  it('refusal message tells the model an actionable alternative', async () => {
+  it('refusal message requires approval without teaching script indirection', async () => {
     const r = new RunCommand(dir)
     const out = await r.execute({ command: 'python3 -c "print(1)"' })
     expect(out).toContain('refused by safety policy')
-    expect(out).toContain('临时脚本文件')
+    expect(out).not.toContain('临时脚本文件')
+    expect(out).toContain('明确批准')
     expect(out).toContain('不要')
   })
 })

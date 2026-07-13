@@ -252,7 +252,7 @@ Inline execution order is SEC-001 → SEC-002 → SEC-003 → SEC-004 → SEC-00
   - [ ] Hook-transformed input is reclassified by the existing runner recheck.
   - [ ] Direct deny rules remain effective.
 - **Estimate:** 4 hours / 3 points.
-- **Status:** ☐ todo
+- **Status:** ☑ done
 - **Notes:** This is an intentional security tightening of AUTO semantics.
 
 ### SEC-003 · Guarantee Scheduler at-most-once effect start
@@ -533,7 +533,7 @@ Inline execution order is SEC-001 → SEC-002 → SEC-003 → SEC-004 → SEC-00
 | ID      | Title                           | Status | Commit | Notes                                 |
 | ------- | ------------------------------- | ------ | ------ | ------------------------------------- |
 | SEC-001 | Electron trust boundary         | ☑      | —      | 22 focused and 353 desktop tests pass |
-| SEC-002 | AUTO command policy             | ☐      | —      |                                       |
+| SEC-002 | AUTO command policy             | ☑      | —      | 47 focused and 914 core tests pass    |
 | SEC-003 | Scheduler at-most-once          | ☐      | —      |                                       |
 | SEC-004 | Public HTTP boundary            | ☐      | —      |                                       |
 | SEC-005 | Config recovery                 | ☐      | —      |                                       |

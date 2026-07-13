@@ -163,14 +163,38 @@ describe('PermissionPolicy (test_permissions.py)', () => {
     expect(dist.requiresApproval).toBe(true)
   })
 
-  it('auto mode does not require policy approval for ordinary commands', () => {
+  it('auto mode allows positively read-only diagnostic commands', () => {
     const decision = new PermissionPolicy().assess(
       'run_command',
-      { command: 'npm run build' },
+      { command: 'git status' },
       PermissionMode.AUTO,
     )
     expect(decision.allowed).toBe(true)
     expect(decision.requiresApproval).toBe(false)
+  })
+
+  it('auto mode requires approval for every command not proven read-only', () => {
+    for (const command of [
+      'bash payload.sh',
+      'sh payload.sh',
+      'zsh payload.sh',
+      'pwsh -File payload.ps1',
+      'powershell -File payload.ps1',
+      './payload',
+      'npm test',
+      'npm run build',
+      'git status && pwd',
+      'ls > files.txt',
+    ]) {
+      const decision = new PermissionPolicy().assess(
+        'run_command',
+        { command },
+        PermissionMode.AUTO,
+      )
+      expect(decision.allowed, command).toBe(false)
+      expect(decision.requiresApproval, command).toBe(true)
+      expect(decision.risk, command).toBe('high')
+    }
   })
 
   it('auto mode still requires approval for high-risk commands (audit P1-1)', () => {
@@ -245,8 +269,28 @@ describe('PermissionPipeline (test_permission_pipeline_v2.py)', () => {
     expect(run('rm -rf ~/notes').risk).toBe('high')
   })
 
-  it('auto mode allows ordinary commands without approval', () => {
-    expect(run('npm run build', PermissionMode.AUTO).allowed).toBe(true)
+  it('auto mode allows readonly commands without approval', () => {
+    const decision = run('git diff --stat', PermissionMode.AUTO)
+    expect(decision.allowed).toBe(true)
+    expect(decision.requiresApproval).toBe(false)
+    expect(decision.rule).toBe('mode.auto.read_only_command')
+  })
+
+  it('auto mode requires approval for scripts, interpreters, builds, and unknown executables', () => {
+    for (const command of [
+      '/bin/bash payload.sh',
+      'python script.py',
+      './payload',
+      'npm test',
+      'npm run build',
+      'ls; pwd',
+      'pwd > result.txt',
+    ]) {
+      const decision = run(command, PermissionMode.AUTO)
+      expect(decision.allowed, command).toBe(false)
+      expect(decision.requiresApproval, command).toBe(true)
+      expect(decision.rule, command).toBe('mode.auto.command_approval')
+    }
   })
 
   it('auto mode still requires approval for high-risk commands (audit P1-1)', () => {

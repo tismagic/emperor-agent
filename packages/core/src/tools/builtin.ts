@@ -385,7 +385,7 @@ export class RunCommand extends Tool {
       if (pat.test(command)) {
         return (
           `${SAFETY_REFUSAL_PREFIX} (matches dangerous pattern: ${pat})\n` +
-          '替代方案：把代码写入临时脚本文件后执行，或运行现有的测试/脚本文件；不要重试同类命令或尝试绕过安全检查。'
+          '替代方案：改用具备明确安全边界的专用工具；若确需执行，请说明影响并请求用户明确批准。不要重试同类命令或尝试绕过安全检查。'
         )
       }
     }

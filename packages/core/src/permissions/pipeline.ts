@@ -15,6 +15,7 @@ import {
 import {
   isHighRiskCommand,
   isLowRiskCommand,
+  isReadonlyCommand,
   isSensitivePath,
 } from '../tools/resolvers'
 import { resolveToolProfile } from './resolve-profile'
@@ -88,23 +89,30 @@ export class PermissionPipeline {
     }
 
     if (normalizedMode === PermissionMode.AUTO) {
-      // AUTO 模式关闭常规审批，但高风险 shell 命令仍需审批（审计 P1-1）——否则
-      // AUTO 模式唯一的残余防线就是 RunCommand 的拒绝列表（黑名单，覆盖面天然不全）。
-      if (
-        profile.name === 'run_command' &&
-        isHighRiskCommand(profile.command)
-      ) {
+      // AUTO 只能自动执行经正向证明为只读的诊断命令。脚本、解释器、构建、测试和
+      // 未知 executable 都可能承载任意副作用，不能再依赖有限黑名单判断安全性。
+      if (profile.name === 'run_command') {
+        if (isReadonlyCommand(profile.command)) {
+          trace.push(
+            traceEntry(
+              'mode.auto.read_only_command',
+              'allow',
+              profile.command.slice(0, 160),
+            ),
+          )
+          return allow(profile, 'mode.auto.read_only_command', trace)
+        }
         trace.push(
           traceEntry(
-            'mode.auto.high_risk_command',
+            'mode.auto.command_approval',
             'approval',
             profile.command.slice(0, 160),
           ),
         )
         return approval(
           profile,
-          'mode.auto.high_risk_command',
-          `high-risk shell command still requires approval even in auto mode: ${profile.command.slice(0, 160)}`,
+          'mode.auto.command_approval',
+          `shell commands not proven read-only require approval in auto mode: ${profile.command.slice(0, 160)}`,
           trace,
           RiskLevel.HIGH,
         )
