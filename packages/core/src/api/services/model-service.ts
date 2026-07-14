@@ -119,6 +119,7 @@ export interface ModelDiscoveryPayload {
 export class CoreModelService {
   readonly root: string
   private readonly deps: CoreModelServiceDeps
+  private profileOnboardingRequested = false
 
   constructor(root: string, deps: CoreModelServiceDeps) {
     this.root = resolve(root)
@@ -144,25 +145,19 @@ export class CoreModelService {
     const wasUsable = modelAvailability(before).usable
     const update = normalizeEntrySecret(input)
     await saveModelEntry(this.root, update)
-    await this.deps.refreshModelConfig?.()
-    const payload = await this.getConfig()
-    if (!wasUsable && payload.availability.usable) {
-      const profileOnboarding = await this.deps.afterConfigSaved?.()
-      if (profileOnboarding) return { ...payload, profileOnboarding }
-    }
-    return payload
+    return this.afterModelMutation(wasUsable)
   }
 
-  async deleteEntry(entryId: string): Promise<ModelConfigPayload> {
+  async deleteEntry(entryId: string): Promise<ModelConfigSavePayload> {
+    const before = await loadModelConfig(this.root)
     await deleteModelEntry(this.root, requiredId(entryId))
-    await this.deps.refreshModelConfig?.()
-    return this.getConfig()
+    return this.afterModelMutation(modelAvailability(before).usable)
   }
 
-  async activate(entryId: string): Promise<ModelConfigPayload> {
+  async activate(entryId: string): Promise<ModelConfigSavePayload> {
+    const before = await loadModelConfig(this.root)
     await activateModelEntry(this.root, requiredId(entryId))
-    await this.deps.refreshModelConfig?.()
-    return this.getConfig()
+    return this.afterModelMutation(modelAvailability(before).usable)
   }
 
   async setReasoningEffort(
@@ -209,8 +204,22 @@ export class CoreModelService {
       protocol,
       submittedBase || entry?.apiBase || spec.apiBases[protocol] || '',
     )
-    const apiKey = discoveryApiKey(input.apiKey, entry)
-    const extraHeaders = discoveryExtraHeaders(input.extraHeaders, entry)
+    const canReuseEntryCredentials = discoveryIdentityMatches(
+      entry,
+      spec,
+      protocol,
+      apiBase,
+    )
+    const apiKey = discoveryApiKey(
+      input.apiKey,
+      entry,
+      canReuseEntryCredentials,
+    )
+    const extraHeaders = discoveryExtraHeaders(
+      input.extraHeaders,
+      entry,
+      canReuseEntryCredentials,
+    )
     const discovery = spec.modelDiscovery[protocol] ?? 'unsupported'
 
     if (discovery === 'unsupported')
@@ -296,17 +305,6 @@ export class CoreModelService {
         sample,
         finishReason: response.finishReason || 'stop',
       }
-      if (kind === 'vision' && ok) {
-        await saveModelEntry(this.root, {
-          entryId,
-          capabilityOverrides: {
-            ...entry.capabilityOverrides,
-            vision: true,
-          },
-        })
-        await this.deps.refreshModelConfig?.()
-        payload.visionMarked = true
-      }
       return payload
     } catch (error) {
       return {
@@ -334,6 +332,25 @@ export class CoreModelService {
       capabilityOverrides: { ...entry.capabilityOverrides, vision: true },
     })
     return buildProviderSnapshot(parseModelConfig(raw), { modelOverride: entryId })
+  }
+
+  private async afterModelMutation(
+    wasUsable: boolean,
+  ): Promise<ModelConfigSavePayload> {
+    await this.deps.refreshModelConfig?.()
+    const payload = await this.getConfig()
+    if (
+      !wasUsable &&
+      payload.availability.usable &&
+      !this.profileOnboardingRequested
+    ) {
+      const profileOnboarding = await this.deps.afterConfigSaved?.()
+      if (profileOnboarding) {
+        this.profileOnboardingRequested = true
+        return { ...payload, profileOnboarding }
+      }
+    }
+    return payload
   }
 }
 
@@ -400,18 +417,46 @@ function currentModelPayload(entry: ModelEntry): CurrentModelPayload {
   }
 }
 
-function discoveryApiKey(input: unknown, entry: ModelEntry | null): string {
+function discoveryIdentityMatches(
+  entry: ModelEntry | null,
+  spec: ProviderSpec,
+  protocol: ModelProtocol,
+  apiBase: string,
+): boolean {
+  if (!entry || entry.provider !== spec.name) return false
+  const entryProtocol = entry.protocol ?? spec.defaultProtocol
+  if (entryProtocol !== protocol) return false
+  const entryApiBase = normalizeApiBase(
+    protocol,
+    entry.apiBase || spec.apiBases[protocol] || '',
+  )
+  return entryApiBase === apiBase
+}
+
+function discoveryApiKey(
+  input: unknown,
+  entry: ModelEntry | null,
+  canReuseEntryCredentials: boolean,
+): string {
+  if (input === null) return ''
   const direct = trimString(input)
   const existing = trimString(entry?.apiKey)
-  if (!direct || direct.startsWith('***')) return existing
+  if (!direct || direct.startsWith('***'))
+    return canReuseEntryCredentials ? existing : ''
   return direct
 }
 
 function discoveryExtraHeaders(
   input: unknown,
   entry: ModelEntry | null,
+  canReuseEntryCredentials: boolean,
 ): Record<string, string> {
-  const resolved = recordValue(input) || recordValue(entry?.legacy?.extraHeaders) || {}
+  const resolved =
+    recordValue(input) ||
+    (input !== null && canReuseEntryCredentials
+      ? recordValue(entry?.legacy?.extraHeaders)
+      : null) ||
+    {}
   return Object.fromEntries(
     Object.entries(resolved)
       .filter(([, value]) => value !== null && value !== undefined)
@@ -624,7 +669,8 @@ function visionProbeMessages(): OpenAiMessage[] {
         {
           type: 'image_url',
           image_url: {
-            url: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Y9Z0QAAAABJRU5ErkJggg==',
+            // 1×1 opaque red RGBA PNG. Keep the expected answer aligned with visionOk().
+            url: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4z8DwHwAFAAH/iZk9HQAAAABJRU5ErkJggg==',
           },
         },
       ],
@@ -633,7 +679,8 @@ function visionProbeMessages(): OpenAiMessage[] {
 }
 
 function visionOk(sample: string): boolean {
-  return /red|color|colour|像素|红/i.test(sample)
+  const normalized = sample.trim().toLowerCase().replace(/[.!。！]+$/g, '')
+  return normalized === 'red' || normalized === '红' || normalized === '红色'
 }
 
 function trimString(value: unknown): string {

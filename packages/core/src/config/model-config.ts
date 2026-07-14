@@ -834,10 +834,7 @@ export function upsertModelEntryConfig(
   if (existing && update.capabilityOverrides === undefined)
     merged.capabilityOverrides = structuredClone(existing.capabilityOverrides)
   else if (existing && isRecord(update.capabilityOverrides))
-    merged.capabilityOverrides = mergeDefined(
-      existing.capabilityOverrides ?? {},
-      update.capabilityOverrides,
-    )
+    merged.capabilityOverrides = structuredClone(update.capabilityOverrides)
   const normalized = normalizeEntry(merged)
   const models = raw.models.slice()
   if (index >= 0) models[index] = normalized

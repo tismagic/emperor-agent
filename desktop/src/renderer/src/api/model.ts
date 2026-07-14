@@ -57,9 +57,6 @@ export async function testModelEntry(
       ? { finishReason: result.finishReason }
       : {}),
     ...(typeof result.error === 'string' ? { error: result.error } : {}),
-    ...(typeof result.visionMarked === 'boolean'
-      ? { visionMarked: result.visionMarked }
-      : {}),
   }
 }
 

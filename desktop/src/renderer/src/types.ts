@@ -509,7 +509,6 @@ export interface ModelTestResult {
   sample?: string
   finishReason?: string
   error?: string
-  visionMarked?: boolean // 视觉测试通过且后端已持久化 supportsVision
 }
 
 export interface DiscoveredModel {

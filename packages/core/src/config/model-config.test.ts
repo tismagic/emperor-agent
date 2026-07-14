@@ -266,6 +266,40 @@ describe('typed entry mutation', () => {
     )
   })
 
+  it('replaces submitted capability overrides so fields can return to automatic detection', async () => {
+    await saveModelConfig(dir, {
+      schemaVersion: 2,
+      activeModelId: 'entry-openai',
+      models: [
+        entry({
+          capabilityOverrides: {
+            toolCall: false,
+            vision: false,
+            reasoning: true,
+          },
+        }),
+      ],
+    })
+
+    await saveModelEntry(dir, {
+      entryId: 'entry-openai',
+      capabilityOverrides: { reasoning: false },
+    })
+
+    expect((await loadModelConfig(dir)).raw.models[0]?.capabilityOverrides).toEqual({
+      reasoning: false,
+    })
+
+    await saveModelEntry(dir, {
+      entryId: 'entry-openai',
+      capabilityOverrides: {},
+    })
+
+    expect((await loadModelConfig(dir)).raw.models[0]).not.toHaveProperty(
+      'capabilityOverrides',
+    )
+  })
+
   it('does not expose masked placeholders as secrets', () => {
     expect(maskSecret('sk-old-secret')).toBe('***cret')
     expect(maskSecret('abc')).toBe('***')

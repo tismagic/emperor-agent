@@ -250,6 +250,115 @@ describe('CoreModelService schema v2', () => {
     expect(calls[0]?.headers.get('x-api-key')).toBe('sk-secret-1234')
   })
 
+  it('never reuses an entry credential for a changed discovery endpoint or explicit null key', async () => {
+    const root = tmp('emperor-model-service-discover-secret-boundary-')
+    writeConfig(root, [entry({
+      entryId: 'deepseek',
+      provider: 'deepseek',
+      protocol: 'openai',
+      modelId: 'deepseek-chat',
+      apiBase: 'https://api.deepseek.com/v1',
+    })])
+    const fetchSpy = vi.spyOn(globalThis, 'fetch')
+    const modelService = await service(root)
+
+    await expect(modelService.discoverModels({
+      entryId: 'deepseek',
+      provider: 'deepseek',
+      protocol: 'openai',
+      apiBase: 'https://attacker.example/v1',
+      apiKey: '***1234',
+    })).resolves.toMatchObject({ ok: false, code: 'credential_required' })
+
+    await expect(modelService.discoverModels({
+      entryId: 'deepseek',
+      provider: 'deepseek',
+      protocol: 'openai',
+      apiBase: 'https://api.deepseek.com/v1',
+      apiKey: null,
+    })).resolves.toMatchObject({ ok: false, code: 'credential_required' })
+
+    expect(fetchSpy).not.toHaveBeenCalled()
+  })
+
+  it('requests onboarding when activate or delete first transitions the active model to usable', async () => {
+    const invalid = entry({ entryId: 'invalid', apiKey: null })
+    const local = entry({
+      entryId: 'local',
+      provider: 'ollama',
+      modelId: 'llama3',
+      apiBase: 'http://localhost:11434/v1',
+      apiKey: null,
+      reasoningEffort: null,
+    })
+
+    const activateRoot = tmp('emperor-model-service-activate-onboarding-')
+    writeConfig(activateRoot, [invalid, local], 'invalid')
+    const activateHook = vi.fn(() => ({
+      started: true,
+      state: { status: 'in_progress' },
+    }))
+    const activated = await (await service(activateRoot, {
+      afterConfigSaved: activateHook,
+    })).activate('local')
+    expect(activated.profileOnboarding).toMatchObject({ started: true })
+    expect(activateHook).toHaveBeenCalledOnce()
+
+    const deleteRoot = tmp('emperor-model-service-delete-onboarding-')
+    writeConfig(deleteRoot, [invalid, local], 'invalid')
+    const deleteHook = vi.fn(() => ({
+      started: true,
+      state: { status: 'in_progress' },
+    }))
+    const deleted = await (await service(deleteRoot, {
+      afterConfigSaved: deleteHook,
+    })).deleteEntry('invalid')
+    expect(deleted.profileOnboarding).toMatchObject({ started: true })
+    expect(deleteHook).toHaveBeenCalledOnce()
+  })
+
+  it('keeps vision tests read-only and rejects descriptive negative answers', async () => {
+    const root = tmp('emperor-model-service-vision-readonly-')
+    writeConfig(root, [entry({ capabilityOverrides: { vision: false } })])
+    const modelService = await service(root)
+    const original = readFileSync(join(root, 'model_config.json'), 'utf8')
+    const chat = vi
+      .fn()
+      .mockResolvedValueOnce({
+        content: 'The image has no red color.',
+        toolCalls: [],
+        finishReason: 'stop',
+        usage: { input: 1, output: 1 },
+        reasoningContent: null,
+        thinkingBlocks: null,
+      })
+      .mockResolvedValueOnce({
+        content: 'red',
+        toolCalls: [],
+        finishReason: 'stop',
+        usage: { input: 1, output: 1 },
+        reasoningContent: null,
+        thinkingBlocks: null,
+      })
+    vi.spyOn(modelService as any, 'snapshotForModelTest').mockReturnValue({
+      model: 'gpt-5.2',
+      providerName: 'openai',
+      provider: { chat },
+    })
+
+    await expect(modelService.test({
+      entryId: 'entry-openai',
+      kind: 'vision',
+    })).resolves.toMatchObject({ ok: false })
+    expect(readFileSync(join(root, 'model_config.json'), 'utf8')).toBe(original)
+
+    await expect(modelService.test({
+      entryId: 'entry-openai',
+      kind: 'vision',
+    })).resolves.toMatchObject({ ok: true, sample: 'red' })
+    expect(readFileSync(join(root, 'model_config.json'), 'utf8')).toBe(original)
+  })
+
   it('requires an explicit protocol for custom discovery and rejects removed providers', async () => {
     const root = tmp('emperor-model-service-discover-validation-')
     writeConfig(root, [])
