@@ -1,9 +1,6 @@
 import { ref } from 'vue'
 import { core } from '../api/http'
-import type {
-  BootstrapPayload,
-  McpConfigPayload,
-} from '../types'
+import type { BootstrapPayload, McpConfigPayload } from '../types'
 
 export function useBootstrap(showToast: (message: string) => void) {
   const boot = ref<BootstrapPayload | null>(null)

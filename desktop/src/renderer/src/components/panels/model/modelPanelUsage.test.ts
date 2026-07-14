@@ -2,7 +2,10 @@ import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 
-const panelSource = readFileSync(join(__dirname, '..', 'ModelPanel.vue'), 'utf8')
+const panelSource = readFileSync(
+  join(__dirname, '..', 'ModelPanel.vue'),
+  'utf8',
+)
 const listSource = readFileSync(join(__dirname, 'ModelEntryList.vue'), 'utf8')
 
 describe('single-model settings information architecture', () => {

@@ -64,10 +64,7 @@ function providerIcon(entry: ModelEntry): string | null {
           <div class="model-card-copy">
             <div class="model-card-title-row">
               <strong>{{ entry.displayName || entry.modelId }}</strong>
-              <span
-                v-if="entry.entryId === activeModelId"
-                class="active-badge"
-              >
+              <span v-if="entry.entryId === activeModelId" class="active-badge">
                 <Check :size="12" aria-hidden="true" />
                 激活
               </span>
@@ -76,7 +73,9 @@ function providerIcon(entry: ModelEntry): string | null {
             <div class="model-card-meta">
               <span>{{ providerLabel(entry) }}</span>
               <span aria-hidden="true">·</span>
-              <span>{{ entry.protocol === 'anthropic' ? 'Anthropic' : 'OpenAI' }}</span>
+              <span>{{
+                entry.protocol === 'anthropic' ? 'Anthropic' : 'OpenAI'
+              }}</span>
             </div>
           </div>
         </div>

@@ -32,10 +32,8 @@ const PROVIDER_ICON_ASSETS: Readonly<Record<string, string>> = {
     '../../../assets/provider-logos/deepseek.svg',
     import.meta.url,
   ).href,
-  dashscope: new URL(
-    '../../../assets/provider-logos/qwen.svg',
-    import.meta.url,
-  ).href,
+  dashscope: new URL('../../../assets/provider-logos/qwen.svg', import.meta.url)
+    .href,
   moonshot: new URL('../../../assets/provider-logos/kimi.svg', import.meta.url)
     .href,
   zhipu: new URL('../../../assets/provider-logos/zhipu.svg', import.meta.url)
@@ -74,7 +72,9 @@ const PROVIDER_ICON_ASSETS: Readonly<Record<string, string>> = {
     .href,
 }
 
-export function providerIconAsset(iconId: string | null | undefined): string | null {
+export function providerIconAsset(
+  iconId: string | null | undefined,
+): string | null {
   const normalized = String(iconId ?? '')
     .trim()
     .toLowerCase()
@@ -85,4 +85,3 @@ export function providerIconAsset(iconId: string | null | undefined): string | n
 export function providerIconFallback(displayName: string): string {
   return Array.from(displayName.trim())[0]?.toUpperCase() ?? '?'
 }
-

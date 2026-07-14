@@ -1,8 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import {
-  providerIconAsset,
-  providerIconFallback,
-} from './providerIcons'
+import { providerIconAsset, providerIconFallback } from './providerIcons'
 
 describe('providerIcons', () => {
   it.each([
