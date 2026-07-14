@@ -34,6 +34,7 @@ import { dispatchControlHost, permissionOnlyControlHost } from './control-hosts'
 import { loadLocalConfig, type PromptProfile } from '../config/local-config'
 import type { PermissionRuleInput } from '../permissions/rules'
 import { loadModelConfig } from '../config/model-config'
+import { ModelConfigurationError } from '../errors'
 import { ControlManager } from '../control/manager'
 import type { Interaction } from '../control/models'
 import { TurnPaused } from '../control/exceptions'
@@ -719,6 +720,19 @@ export class AgentLoop {
     if (targetSessionId && this.activeSessionId !== targetSessionId)
       this.activateSession(targetSessionId)
     assertModelAvailable(this.modelRouter.availability)
+    const activeSession =
+      this.activeSession ??
+      (this.activeSessionId
+        ? this.sessionStore.get(this.activeSessionId)
+        : null)
+    const activeProfile = this.modelRouter.route('main_agent').snapshot.profile
+    const requiresTools =
+      activeSession?.mode === 'build' || opts.source === 'scheduler'
+    if (requiresTools && activeProfile?.toolCall === false) {
+      throw new ModelConfigurationError(
+        '当前激活模型不支持工具调用，无法用于 Build 或自动执行。请切换支持工具调用的模型。',
+      )
+    }
     const turnId = opts.turnId || randomUUID().replace(/-/g, '').slice(0, 16)
     const taskId = opts.taskId || `turn:${turnId}`
     const abortController = new AbortController()
@@ -1284,7 +1298,7 @@ export class AgentLoop {
               provider: snapshot.provider,
               model: snapshot.model,
               providerName: snapshot.providerName,
-              modelRole: snapshot.modelRole,
+              modelEntryId: snapshot.modelEntryId,
               maxTokens: snapshot.generation.maxTokens,
               temperature: snapshot.generation.temperature,
               reasoningEffort: snapshot.generation.reasoningEffort,
@@ -1657,16 +1671,7 @@ export class AgentLoop {
     if (typeof this.modelRouter.routeForRole === 'function') {
       return this.modelRouter.routeForRole(useCase, role, task)
     }
-    if (role === 'secondary') return this.modelRouter.route(useCase, null, task)
-    const route = this.modelRouter.route('main_agent', null, task)
-    const reason = `${useCase}:explicit_main`
-    return {
-      ...route,
-      useCase,
-      reason,
-      fallback: null,
-      snapshot: { ...route.snapshot, routeReason: reason },
-    }
+    return this.modelRouter.route(useCase, null, task)
   }
 
   private appendLifecycleHookContext(

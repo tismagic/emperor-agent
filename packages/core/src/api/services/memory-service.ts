@@ -300,7 +300,7 @@ export class CoreMemoryService {
           provider: snapshot.provider,
           model: snapshot.model,
           providerName: snapshot.providerName,
-          modelRole: snapshot.modelRole,
+          modelEntryId: snapshot.modelEntryId,
           maxTokens: snapshot.generation.maxTokens,
           temperature: snapshot.generation.temperature,
           reasoningEffort: snapshot.generation.reasoningEffort,
@@ -416,7 +416,7 @@ export class CoreMemoryService {
       mode: contextPlan.mode ?? null,
       model: snapshot.model ?? null,
       provider: snapshot.provider ?? null,
-      modelRole: snapshot.modelRole ?? null,
+      modelEntryId: snapshot.modelEntryId ?? null,
       estimatedInputTokens: snapshot.estimatedInputTokens ?? null,
       activeMemoryBinding: contextPlan.activeMemoryBinding ?? null,
       injected: items.map((item) => ({

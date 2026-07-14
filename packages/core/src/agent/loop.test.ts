@@ -301,6 +301,55 @@ describe('AgentLoop (MIG-CORE-011)', () => {
     expect(events.map((event) => event.event)).not.toContain('user_message')
   })
 
+  it('blocks Build before recording history when the active model has no tool calling', async () => {
+    const root = tmp('emperor-agent-loop-build-no-tools-')
+    const projectRoot = tmp('emperor-agent-loop-build-no-tools-project-')
+    const provider = new FakeProvider()
+    const loop = await AgentLoop.create({
+      root,
+      stateRoot: join(root, '.emperor'),
+      templatesDir: TEMPLATES_DIR,
+      modelRouter: fakeRouter(provider, false),
+    })
+    const project = loop.projectStore.resolve(projectRoot)
+    const buildSession = loop.sessionStore.create('Build project', {
+      mode: 'build',
+      project: project as unknown as Record<string, unknown>,
+    })
+    loop.activateSession(buildSession.id)
+
+    await expect(loop.runUserTurn('修改项目')).rejects.toMatchObject({
+      code: 'model_configuration_required',
+      action: 'open_model_settings',
+    })
+    expect(provider.calls).toHaveLength(0)
+    expect(loop.history).toEqual([])
+    expect(loop.activeMemoryStore.loadUnarchivedHistory()).toEqual([])
+  })
+
+  it('blocks Scheduler automation but still permits ordinary Chat without tool calling', async () => {
+    const root = tmp('emperor-agent-loop-chat-no-tools-')
+    const provider = new QueueProvider([response('chat still works')])
+    const loop = await AgentLoop.create({
+      root,
+      stateRoot: join(root, '.emperor'),
+      templatesDir: TEMPLATES_DIR,
+      modelRouter: fakeRouter(provider, false),
+    })
+
+    await expect(loop.runUserTurn('普通问答')).resolves.toBe('chat still works')
+    await expect(
+      loop.runUserTurn('自动执行', {
+        source: 'scheduler',
+        useActiveTask: false,
+      }),
+    ).rejects.toMatchObject({
+      code: 'model_configuration_required',
+      action: 'open_model_settings',
+    })
+    expect(provider.calls).toHaveLength(1)
+  })
+
   it('runs build session file tools inside the bound project workspace', async () => {
     const root = tmp('emperor-agent-loop-core-root-')
     const projectRoot = tmp('emperor-agent-loop-project-')
@@ -555,7 +604,7 @@ describe('AgentLoop (MIG-CORE-011)', () => {
     expect(
       emitted.filter((event) => event.event === 'record_degraded'),
     ).toEqual([])
-    expect(provider.calls[1]!.model).toBe('fake-secondary')
+    expect(provider.calls[1]!.model).toBe('fake-active')
     expect(loop.sharedMemory.readMemory()).toContain(
       'Auto compaction uses compactSession',
     )
@@ -1174,7 +1223,7 @@ class DelayedProvider extends LLMProvider {
   }
 }
 
-function fakeRouter(provider: LLMProvider): {
+function fakeRouter(provider: LLMProvider, toolCall = true): {
   route: (
     useCase: string,
     agentType?: string | null,
@@ -1188,40 +1237,49 @@ function fakeRouter(provider: LLMProvider): {
       _agentType?: string | null,
       _task?: string | null,
     ) => ({
-      snapshot: snapshot(
-        provider,
-        useCase === 'main_agent' ? 'main' : 'secondary',
-      ),
-      fallback: null,
+      snapshot: snapshot(provider, toolCall),
       useCase,
       reason: `${useCase}:fake`,
       estimatedTokens: null,
     }),
     payload: () => ({
-      mainModel: 'fake-main',
-      secondaryModel: 'fake-secondary',
+      activeModel: 'fake-active',
     }),
   }
 }
 
 function snapshot(
   provider: LLMProvider,
-  role: 'main' | 'secondary',
+  toolCall = true,
 ): ProviderSnapshot {
   return {
     provider,
     providerName: 'fake',
     providerLabel: 'Fake',
-    model: role === 'main' ? 'fake-main' : 'fake-secondary',
+    model: 'fake-active',
     apiBase: null,
     generation: { maxTokens: 2000, temperature: 0.1, reasoningEffort: null },
+    profile: {
+      toolCall,
+      vision: true,
+      reasoning: false,
+      sources: {
+        toolCall: 'override',
+        vision: 'override',
+        reasoning: 'default',
+      },
+      contextWindowTokens: 100_000,
+      maxTokens: 2_000,
+      reasoningEfforts: [],
+      reasoningAdapter: 'none',
+    },
     contextWindowTokens: 100_000,
     config: {},
     supportsVision: true,
-    entryName: 'fake',
+    modelEntryId: 'active-entry',
+    entryName: 'active-entry',
     entryLabel: 'Fake',
-    modelRole: role,
-    routeReason: `${role}_model`,
+    routeReason: 'active_model',
   }
 }
 

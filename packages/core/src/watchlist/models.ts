@@ -9,6 +9,8 @@ export class WatchlistDecision {
   checked_at: number
   model: string | null
   provider: string | null
+  model_entry_id: string | null
+  /** 历史记录读取兼容；新记录不再写入。 */
   model_role: string | null
 
   constructor(
@@ -19,6 +21,7 @@ export class WatchlistDecision {
       checked_at?: number
       model?: string | null
       provider?: string | null
+      model_entry_id?: string | null
       model_role?: string | null
     } = {},
   ) {
@@ -28,6 +31,7 @@ export class WatchlistDecision {
     this.checked_at = opts.checked_at ?? 0
     this.model = opts.model ?? null
     this.provider = opts.provider ?? null
+    this.model_entry_id = opts.model_entry_id ?? null
     this.model_role = opts.model_role ?? null
   }
 
@@ -49,6 +53,7 @@ export class WatchlistDecision {
       checked_at: Number(raw.checked_at ?? raw.checkedAt ?? nowTs()),
       model: nullableString(raw.model),
       provider: nullableString(raw.provider),
+      model_entry_id: nullableString(raw.model_entry_id ?? raw.modelEntryId),
       model_role: nullableString(raw.model_role ?? raw.modelRole),
     })
   }
@@ -61,7 +66,8 @@ export class WatchlistDecision {
       checkedAt: this.checked_at,
       model: this.model,
       provider: this.provider,
-      modelRole: this.model_role,
+      modelEntryId: this.model_entry_id,
+      ...(this.model_role ? { modelRole: this.model_role } : {}),
     }
   }
 }

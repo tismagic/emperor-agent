@@ -6,7 +6,6 @@ import {
   ModelRouter,
   buildProviderSnapshot,
   roughTokenEstimate,
-  type ProviderSnapshot,
 } from './router'
 
 describe('buildProviderSnapshot profile forwarding', () => {
@@ -107,44 +106,76 @@ describe('roughTokenEstimate', () => {
 })
 
 describe('hook model routing', () => {
-  it('routes hook use cases to secondary with main fallback by default', () => {
-    const router = routerWithSnapshots()
+  it('routes every use case through the one active model entry', () => {
+    const router = configuredRouter()
+    const cases = [
+      ['main_agent', null],
+      ['memory_compaction', null],
+      ['watchlist_check', null],
+      ['session_title', null],
+      ['hook_prompt', null],
+      ['hook_agent', null],
+      ['subagent', 'xiaohuangmen'],
+      ['team', 'neiguan_yingzao'],
+    ] as const
 
-    const prompt = router.route('hook_prompt', null, 'check this')
-    const agent = router.route('hook_agent', null, 'inspect this')
-
-    expect(prompt.snapshot.model).toBe('secondary-model')
-    expect(prompt.fallback?.model).toBe('main-model')
-    expect(prompt.useCase).toBe('hook_prompt')
-    expect(agent.snapshot.model).toBe('secondary-model')
-    expect(agent.fallback?.model).toBe('main-model')
+    for (const [useCase, agentType] of cases) {
+      const route = router.route(useCase, agentType, 'check this')
+      expect(route.snapshot.model).toBe('active-model')
+      expect(route.snapshot.modelEntryId).toBe('active-entry')
+      expect(route.useCase).toBe(useCase)
+      expect(route.reason).toBe(useCase)
+      expect('fallback' in route).toBe(false)
+    }
   })
 
-  it('honors an explicit main role without secondary fallback', () => {
-    const router = routerWithSnapshots()
+  it('keeps routeForRole only as a compatibility shim and ignores the role', () => {
+    const router = configuredRouter()
 
-    const route = router.routeForRole('hook_prompt', 'main', 'check this')
+    const main = router.routeForRole('hook_prompt', 'main', 'check this')
+    const secondary = router.routeForRole(
+      'hook_prompt',
+      'secondary',
+      'check this',
+    )
 
-    expect(route.snapshot.model).toBe('main-model')
-    expect(route.fallback).toBeNull()
-    expect(route.useCase).toBe('hook_prompt')
-    expect(route.reason).toContain('explicit_main')
+    expect(main.snapshot.modelEntryId).toBe('active-entry')
+    expect(secondary.snapshot.modelEntryId).toBe('active-entry')
+    expect(secondary.snapshot.model).toBe(main.snapshot.model)
+    expect('fallback' in secondary).toBe(false)
   })
 })
 
-function routerWithSnapshots(): ModelRouter {
-  const main = {
-    model: 'main-model',
-    modelRole: 'main',
-    contextWindowTokens: 200_000,
-  } as ProviderSnapshot
-  const secondary = {
-    model: 'secondary-model',
-    modelRole: 'secondary',
-    contextWindowTokens: 64_000,
-  } as ProviderSnapshot
-  return Object.assign(Object.create(ModelRouter.prototype) as ModelRouter, {
-    main,
-    secondary,
-  })
+function configuredRouter(): ModelRouter {
+  return new ModelRouter(
+    '/tmp/emperor-router-test',
+    parseModelConfig({
+      schemaVersion: 2,
+      activeModelId: 'active-entry',
+      models: [
+        {
+          entryId: 'inactive-entry',
+          provider: 'openai',
+          protocol: 'openai',
+          modelId: 'inactive-model',
+          apiBase: 'https://api.openai.com/v1',
+          apiKey: null,
+          contextWindowTokens: 32_000,
+          maxTokens: 4_000,
+          reasoningEffort: null,
+        },
+        {
+          entryId: 'active-entry',
+          provider: 'openai',
+          protocol: 'openai',
+          modelId: 'active-model',
+          apiBase: 'https://api.openai.com/v1',
+          apiKey: null,
+          contextWindowTokens: 128_000,
+          maxTokens: 8_000,
+          reasoningEffort: null,
+        },
+      ],
+    }),
+  )
 }

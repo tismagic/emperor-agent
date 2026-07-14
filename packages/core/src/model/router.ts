@@ -1,9 +1,4 @@
-/**
- * ModelRouter (MIG-CFG-004)。
- * 对齐 Python `agent/model_router.py`：main/secondary 角色路由 + fallback + rough token 估算。
- * `build_provider_snapshot` 的 credential-resolution 链在 Python 侧耦合了 create_provider，
- * TS 侧一样由 ModelRouter 封装：加载 config → 找 spec → resolve credentials → create_provider。
- */
+/** 单模型路由：所有 use case 共享当前激活条目，路由只记录用途，不再选型或 fallback。 */
 import { resolve } from 'node:path'
 import {
   activeEntry,
@@ -36,40 +31,35 @@ export interface ProviderSnapshot {
   generation: GenerationSettings
   /** Compatibility-optional for synthetic test snapshots; real snapshots always set it. */
   profile?: ResolvedModelProfile
+  protocol?: ProviderProtocol
   contextWindowTokens: number
   config: Record<string, unknown>
   supportsVision: boolean
+  /** Compatibility-optional for synthetic test snapshots; real snapshots always set it. */
+  modelEntryId?: string
+  /** @deprecated CoreApi 迁移期间的只读别名。 */
   entryName: string
   entryLabel: string
-  modelRole: ModelRole
+  /** @deprecated Historical synthetic fixtures only; real snapshots omit it. */
+  modelRole?: ModelRole
   routeReason: string
 }
 
 export interface ModelRoute {
   snapshot: ProviderSnapshot
-  fallback: ProviderSnapshot | null
+  /** @deprecated Historical synthetic fixtures only; real routes omit it. */
+  fallback?: ProviderSnapshot | null
   useCase: string
   reason: string
   estimatedTokens: number | null
 }
 
-const MAIN: ModelRole = 'main'
-const SECONDARY: ModelRole = 'secondary'
-
-const LIGHTWEIGHT_AGENT_TYPES = new Set([
-  'xiaohuangmen',
-  'sili_suitang',
-  'dongchang_tanshi',
-  'shangbao_dianbu',
-])
-const WRITING_AGENT_TYPES = new Set(['neiguan_yingzao'])
-
 export class ModelRouter {
   readonly root: string
   readonly modelOverride: string | null
   readonly availability: ModelAvailability
-  readonly main: ProviderSnapshot
-  readonly secondary: ProviderSnapshot
+  readonly active: ProviderSnapshot
+  private readonly routeCounts = new Map<string, number>()
 
   constructor(
     root: string,
@@ -77,16 +67,10 @@ export class ModelRouter {
     modelOverride?: string | null,
   ) {
     this.root = resolve(root)
+    // modelOverride 只保留构造签名兼容；全局 activeModelId 是唯一运行时选择。
     this.modelOverride = modelOverride ?? null
     this.availability = modelAvailability(config)
-    this.main = buildProviderSnapshot(config, {
-      modelOverride: this.modelOverride,
-      role: MAIN,
-    })
-    this.secondary = buildProviderSnapshot(config, {
-      modelOverride: this.modelOverride,
-      role: SECONDARY,
-    })
+    this.active = buildProviderSnapshot(config)
   }
 
   route(
@@ -94,100 +78,34 @@ export class ModelRouter {
     agentType?: string | null,
     task?: string | null,
   ): ModelRoute {
+    void agentType
     const key = String(useCase || 'main_agent')
-    if (key === 'main_agent') return this.mainRoute('main_agent')
-    if (
-      [
-        'memory_compaction',
-        'watchlist_check',
-        'session_title',
-        'hook_prompt',
-        'hook_agent',
-      ].includes(key)
-    ) {
-      return this.secondaryRoute(key, task)
-    }
-    if (['subagent', 'team'].includes(key)) {
-      const normalizedAgent = String(agentType ?? '').trim()
-      const estimated = task ? roughTokenEstimate(task) : null
-      if (WRITING_AGENT_TYPES.has(normalizedAgent)) {
-        return this.mainRoute(
-          `${key}:${normalizedAgent}:write_capable`,
-          estimated ?? undefined,
-        )
-      }
-      if (LIGHTWEIGHT_AGENT_TYPES.has(normalizedAgent)) {
-        return this.secondaryRoute(
-          `${key}:${normalizedAgent}:lightweight`,
-          task,
-        )
-      }
-      return this.mainRoute(
-        `${key}:${normalizedAgent || 'unknown'}:default_main`,
-        estimated ?? undefined,
-      )
-    }
-    return this.mainRoute(`${key}:default_main`)
+    this.routeCounts.set(key, (this.routeCounts.get(key) ?? 0) + 1)
+    return this.activeRoute(key, task)
   }
 
   routeForRole(
     useCase: string,
-    role: ModelRole,
+    _role: ModelRole,
     task?: string | null,
   ): ModelRoute {
-    const key = String(useCase || 'main_agent')
-    const estimated = task ? roughTokenEstimate(task) : null
-    if (role === MAIN)
-      return this.mainRoute(`${key}:explicit_main`, estimated ?? undefined)
-    return this.secondaryRoute(key, task)
+    return this.route(useCase, null, task)
   }
 
-  private mainRoute(reason: string, estimatedTokens?: number): ModelRoute {
+  private activeRoute(useCase: string, task?: string | null): ModelRoute {
     return {
-      snapshot: { ...this.main, routeReason: reason },
-      fallback: null,
-      useCase: reason.split(':', 1)[0]!,
-      reason,
-      estimatedTokens: estimatedTokens ?? null,
-    }
-  }
-
-  private secondaryRoute(reason: string, task?: string | null): ModelRoute {
-    const estimated = task ? roughTokenEstimate(task) : null
-    if (this.secondary.modelRole !== SECONDARY) {
-      return this.mainRoute(
-        `${reason}:secondary_missing`,
-        estimated ?? undefined,
-      )
-    }
-    if (
-      estimated !== null &&
-      estimated > this.secondary.contextWindowTokens * 0.65
-    ) {
-      return this.mainRoute(
-        `${reason}:secondary_context_too_small`,
-        estimated ?? undefined,
-      )
-    }
-    const snapshot = { ...this.secondary, routeReason: reason }
-    const fallback = { ...this.main, routeReason: `${reason}:fallback_main` }
-    return {
-      snapshot,
-      fallback,
-      useCase: reason.split(':', 1)[0]!,
-      reason,
-      estimatedTokens: estimated,
+      snapshot: { ...this.active, routeReason: useCase },
+      useCase,
+      reason: useCase,
+      estimatedTokens: task ? roughTokenEstimate(task) : null,
     }
   }
 
   payload(): Record<string, unknown> {
     return {
-      secondaryEnabled: this.secondary.modelRole === SECONDARY,
-      fallbackToMain: true,
-      mainEntry: this.main.entryName,
-      mainModel: this.main.model,
-      secondaryModel:
-        this.secondary.model === this.main.model ? null : this.secondary.model,
+      activeModelId: this.active.modelEntryId ?? this.active.entryName,
+      activeModel: this.active.model,
+      routeCounts: Object.fromEntries(this.routeCounts),
     }
   }
 }
@@ -200,6 +118,7 @@ export function roughTokenEstimate(text: string): number {
 
 export interface SnapshotArgs {
   modelOverride?: string | null
+  /** @deprecated 单模型运行时忽略 role。 */
   role?: ModelRole
 }
 
@@ -208,10 +127,9 @@ export function buildProviderSnapshot(
   args: SnapshotArgs = {},
 ): ProviderSnapshot {
   const modelOverride = args.modelOverride ?? null
-  const role: ModelRole = args.role ?? MAIN
   const entry = resolveActiveEntry(config, modelOverride)
   const spec = findByName(entry.provider) ?? fallbackSpec(entry.provider)
-  const [modelId, selectedRole, routeReason] = entryModelForRole(entry, role)
+  const modelId = entry.modelId || entry.mainModelId
   const [apiKey, apiBase, extraHeaders, extraBody] = resolveCredentials(
     entry,
     config.providers,
@@ -258,13 +176,14 @@ export function buildProviderSnapshot(
     apiBase: resolvedApiBase,
     generation,
     profile,
+    protocol,
     contextWindowTokens,
     config: config.raw,
-    supportsVision: selectedRole === 'main' ? profile.vision : false,
-    entryName: entry.name,
-    entryLabel: entry.label || entry.name,
-    modelRole: selectedRole,
-    routeReason,
+    supportsVision: profile.vision,
+    modelEntryId: entry.entryId || entry.name,
+    entryName: entry.entryId || entry.name,
+    entryLabel: entry.displayName || entry.label || entry.name,
+    routeReason: 'active_model',
   }
 }
 
@@ -381,16 +300,4 @@ function resolveCredentials(
     entry.extraHeaders || (p?.extraHeaders ?? null),
     entry.extraBody || (p?.extraBody ?? null),
   ]
-}
-
-function entryModelForRole(
-  entry: ModelEntry,
-  role: ModelRole,
-): [string, ModelRole, string] {
-  if (role === 'secondary') {
-    if (entry.secondaryModelId)
-      return [entry.secondaryModelId, 'secondary', 'secondary_model']
-    return [entry.mainModelId, 'main', 'secondary_missing_fallback_main']
-  }
-  return [entry.mainModelId, 'main', 'main_model']
 }

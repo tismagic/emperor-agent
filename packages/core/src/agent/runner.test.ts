@@ -891,7 +891,7 @@ describe('AgentRunner turn phases (test_runner_state.py)', () => {
     ).toHaveLength(2)
   })
 
-  it('degrades to a configured fallback provider without mutating the main route', async () => {
+  it('never switches to a legacy fallback provider after the active model fails', async () => {
     const primary = new FlakyProvider(3, () =>
       Object.assign(new Error('temporarily unavailable'), { status: 503 }),
     )
@@ -901,43 +901,35 @@ describe('AgentRunner turn phases (test_runner_state.py)', () => {
         usage: { input: 70, output: 5 },
       }),
     ])
-    const runner = new AgentRunner({
+    const legacyOptions = {
       provider: primary,
       model: 'main-model',
+      modelEntryId: 'active-entry',
       registry: new ToolRegistry(),
       systemPrompt: 'system',
       fallbackProvider: fallback,
       fallbackModel: 'fallback-model',
       fallbackProviderName: 'fallback-provider',
       usageType: 'scheduler',
-    })
+    }
+    const runner = new AgentRunner(legacyOptions)
     const emitted: Msg[] = []
 
-    const reply = await runner.stepAsync([{ role: 'user', content: 'hi' }], {
-      emit: (event) => {
-        emitted.push(event)
-      },
-    })
+    await expect(
+      runner.stepAsync([{ role: 'user', content: 'hi' }], {
+        emit: (event) => {
+          emitted.push(event)
+        },
+      }),
+    ).rejects.toMatchObject({ code: 'model_provider_transient' })
 
-    expect(reply).toBe('fallback done')
     expect(primary.calls).toBe(3)
-    expect(fallback.seenMessages).toHaveLength(1)
+    expect(fallback.seenMessages).toHaveLength(0)
     expect(runner.model).toBe('main-model')
     expect(runner.provider).toBe(primary)
-    expect(
-      emitted.find((event) => event.event === 'model_route_fallback'),
-    ).toMatchObject({
-      from_model: 'main-model',
-      to_model: 'fallback-model',
-      usage_type: 'scheduler',
-    })
-    expect(
-      emitted.find((event) => event.event === 'context_usage'),
-    ).toMatchObject({
-      model: 'fallback-model',
-      provider_retry_count: 2,
-      used_fallback: true,
-    })
+    expect(emitted.some((event) => event.event === 'model_route_fallback')).toBe(
+      false,
+    )
   })
 
   it('writes a redacted prompt snapshot for each turn', async () => {

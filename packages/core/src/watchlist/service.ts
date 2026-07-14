@@ -70,31 +70,18 @@ export class WatchlistService {
     if (!this.modelRouter)
       return WatchlistDecision.skip('model router is unavailable')
     const route = this.modelRouter.route('watchlist_check', undefined, content)
-    let snapshot = route.snapshot
-    let usedFallback = false
-    let fallbackReason = ''
-    let resp: LLMResponse
-    try {
-      resp = await callSnapshot(snapshot, content, items)
-    } catch (error) {
-      if (!route.fallback) throw error
-      fallbackReason = error instanceof Error ? error.message : String(error)
-      snapshot = route.fallback
-      usedFallback = true
-      resp = await callSnapshot(snapshot, content, items)
-    }
+    const snapshot = route.snapshot
+    const resp: LLMResponse = await callSnapshot(snapshot, content, items)
     this.tokenTracker?.record(snapshot.model, resp.usage, {
       provider: snapshot.providerName,
       usageType: 'watchlist_check',
-      modelRole: snapshot.modelRole,
+      modelEntryId: snapshot.modelEntryId,
       routeReason: snapshot.routeReason,
-      usedFallback,
-      fallbackReason,
     })
     const decision = parseWatchlistDecision(resp.content || '')
     decision.model = snapshot.model
     decision.provider = snapshot.providerName
-    decision.model_role = snapshot.modelRole
+    decision.model_entry_id = snapshot.modelEntryId ?? snapshot.entryName
     return decision
   }
 }

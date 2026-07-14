@@ -44,7 +44,7 @@ export interface ScopedCompactionModel {
   provider: LLMProvider
   model: string
   providerName?: string | null
-  modelRole?: string | null
+  modelEntryId?: string | null
   maxTokens?: number
   temperature?: number
   reasoningEffort?: string | null
@@ -311,7 +311,7 @@ async function callCompactionModel(
     tokenTracker.record(model.model, response.usage, {
       provider: model.providerName ?? null,
       usageType: 'memory_compaction',
-      modelRole: model.modelRole ?? 'secondary',
+      modelEntryId: model.modelEntryId ?? 'unknown',
       routeReason: model.routeReason ?? 'memory_compaction',
       estimatedInputTokens: Math.max(1, Math.trunc(prompt.length / 3)),
     })

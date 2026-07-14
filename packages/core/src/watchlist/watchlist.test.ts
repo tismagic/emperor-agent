@@ -99,7 +99,7 @@ describe('WatchlistDecision and service', () => {
     ).toBe('run')
   })
 
-  it('uses model router secondary route with fallback and token tracking', async () => {
+  it('uses the active model once and records model_entry_id', async () => {
     const root = tmp('emperor-watchlist-model-')
     const tracker = new TokenTracker(join(root, 'memory', 'token_ledger.jsonl'))
     const service = new WatchlistService(root, {
@@ -110,27 +110,25 @@ describe('WatchlistDecision and service', () => {
 
     const decision = await service.check()
     expect(decision.action).toBe('run')
-    expect(decision.model).toBe('main-model')
-    expect(decision.model_role).toBe('main')
+    expect(decision.model).toBe('active-model')
+    expect(decision.model_entry_id).toBe('active-entry')
+    expect(decision.model_role).toBeNull()
     const ledger = readFileSync(tracker.logFile, 'utf8')
     expect(ledger).toContain('"usage_type":"watchlist_check"')
-    expect(ledger).toContain('"used_fallback":true')
+    expect(ledger).toContain('"model_entry_id":"active-entry"')
+    expect(ledger).not.toContain('"used_fallback"')
   })
 })
 
 function fakeRouter(): ModelRouter {
-  const secondary = snapshot('secondary-model', 'secondary', async () => {
-    throw new Error('secondary down')
-  })
-  const main = snapshot('main-model', 'main', async () =>
+  const active = snapshot('active-model', async () =>
     response(
       '{"action":"run","reason":"timely","message":"Check incident queue"}',
     ),
   )
   return {
     route: () => ({
-      snapshot: secondary,
-      fallback: main,
+      snapshot: active,
       useCase: 'watchlist_check',
       reason: 'watchlist_check',
       estimatedTokens: 10,
@@ -140,7 +138,6 @@ function fakeRouter(): ModelRouter {
 
 function snapshot(
   model: string,
-  role: 'main' | 'secondary',
   chat: (args: Record<string, unknown>) => Promise<LLMResponse>,
 ): ProviderSnapshot {
   return {
@@ -153,13 +150,10 @@ function snapshot(
     contextWindowTokens: 100_000,
     config: {},
     supportsVision: false,
-    entryName: 'fake',
+    modelEntryId: 'active-entry',
+    entryName: 'active-entry',
     entryLabel: 'Fake',
-    modelRole: role,
-    routeReason:
-      role === 'secondary'
-        ? 'watchlist_check'
-        : 'watchlist_check:fallback_main',
+    routeReason: 'watchlist_check',
   }
 }
 

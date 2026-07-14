@@ -262,7 +262,7 @@ describe('DispatchSubagentTool (W04-014/W08)', () => {
     ).toBe(false)
   })
 
-  it('builds routed subagent runners through ModelRouter and records usage role', async () => {
+  it('uses the one active model for subagents and records model_entry_id', async () => {
     const root = tmp('emperor-dispatch-routed-')
     const subagents = new SubagentRegistry(TEMPLATES)
     const tracker = new TokenTracker(join(root, 'memory', 'tokens.jsonl'))
@@ -275,8 +275,11 @@ describe('DispatchSubagentTool (W04-014/W08)', () => {
       ) => {
         calls.push({ useCase, agentType, task })
         return {
-          snapshot: snapshot('secondary-model', 'secondary'),
-          fallback: snapshot('main-model', 'main'),
+          snapshot: {
+            ...snapshot('active-model', 'main'),
+            modelEntryId: 'active-entry',
+            entryName: 'active-entry',
+          },
           useCase,
           reason: `${useCase}:${agentType}:lightweight`,
           estimatedTokens: 10,
@@ -302,8 +305,9 @@ describe('DispatchSubagentTool (W04-014/W08)', () => {
       task: '阅读 docs',
     })
     expect(requireTokenLedger(tracker.logFile)).toContain(
-      '"model_role":"secondary"',
+      '"model_entry_id":"active-entry"',
     )
+    expect(requireTokenLedger(tracker.logFile)).not.toContain('"model_role"')
     expect(requireTokenLedger(tracker.logFile)).toContain(
       '"usage_type":"subagent:sili_suitang"',
     )

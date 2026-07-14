@@ -334,7 +334,7 @@ export class CoreModelService {
         entry?.mainModelId ??
         (snapshot.modelRole === 'main' ? snapshot.model : ''),
       secondaryModelId: entry?.secondaryModelId ?? '',
-      modelRole: snapshot.modelRole,
+      modelRole: snapshot.modelRole ?? 'main',
     }
   }
 }

@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto'
 import type { TokenTrackerLike } from '../agent/runner'
+import { ModelConfigurationError } from '../errors'
 import type { ModelRole, ModelRoute } from '../model/router'
 import {
   type LLMResponse,
@@ -80,46 +81,28 @@ export class RoutedHookModelGateway implements HookModelGateway {
       { role: 'system', content: request.systemPrompt },
       ...request.messages,
     ]
-    let response: LLMResponse
-    let snapshot = route.snapshot
-    let usedFallback = false
-    let fallbackReason = ''
-    try {
-      response = await snapshot.provider.chat({
-        messages,
-        tools: request.tools as unknown as Array<
-          Record<string, unknown>
-        > | null,
-        model: snapshot.model,
-        maxTokens: snapshot.generation.maxTokens,
-        temperature: snapshot.generation.temperature,
-        reasoningEffort: snapshot.generation.reasoningEffort,
-        signal: request.signal,
-      })
-    } catch (error) {
-      if (!route.fallback) throw error
-      snapshot = route.fallback
-      usedFallback = true
-      fallbackReason = error instanceof Error ? error.message : String(error)
-      response = await snapshot.provider.chat({
-        messages,
-        tools: request.tools as unknown as Array<
-          Record<string, unknown>
-        > | null,
-        model: snapshot.model,
-        maxTokens: snapshot.generation.maxTokens,
-        temperature: snapshot.generation.temperature,
-        reasoningEffort: snapshot.generation.reasoningEffort,
-        signal: request.signal,
-      })
+    const snapshot = route.snapshot
+    if (request.tools?.length && snapshot.profile?.toolCall === false) {
+      throw new ModelConfigurationError(
+        '当前激活模型不支持工具调用，无法执行 Agent Hook。',
+      )
     }
+    const response: LLMResponse = await snapshot.provider.chat({
+      messages,
+      tools: (snapshot.profile?.toolCall ?? true)
+        ? (request.tools as unknown as Array<Record<string, unknown>> | null)
+        : null,
+      model: snapshot.model,
+      maxTokens: snapshot.generation.maxTokens,
+      temperature: snapshot.generation.temperature,
+      reasoningEffort: snapshot.generation.reasoningEffort,
+      signal: request.signal,
+    })
     this.tokenTracker?.record(snapshot.model, response.usage, {
       provider: snapshot.providerName,
       usageType: request.useCase,
-      modelRole: snapshot.modelRole,
+      modelEntryId: snapshot.modelEntryId,
       routeReason: snapshot.routeReason,
-      usedFallback,
-      fallbackReason,
       routeEstimatedTokens: route.estimatedTokens,
     })
     return {

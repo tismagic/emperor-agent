@@ -233,7 +233,7 @@ describe('TokenTracker (test_token_usage.py)', () => {
       ts: '2026-05-01T10:01:00',
       provider: 'anthropic',
       model: 'claude',
-      model_role: 'unknown',
+      model_entry_id: 'unknown',
       usage_type: 'main_agent',
       input: 7,
       output: 1,
@@ -244,7 +244,7 @@ describe('TokenTracker (test_token_usage.py)', () => {
     expect(tracker.recentCacheCalls().map((r) => r.model)).toEqual(['claude'])
   })
 
-  it('records route observability fields', () => {
+  it('writes model_entry_id and never writes legacy role/fallback fields', () => {
     const root = tmp('emperor-token-route-')
     const tracker = new TokenTracker(join(root, 'tokens.jsonl'))
     tracker.record(
@@ -253,18 +253,18 @@ describe('TokenTracker (test_token_usage.py)', () => {
       {
         provider: 'fake',
         usageType: 'subagent:sili_suitang',
-        modelRole: 'secondary',
-        routeReason: 'subagent:sili_suitang:lightweight',
-        usedFallback: true,
-        fallbackReason: 'secondary down',
+        modelEntryId: 'active-entry',
+        routeReason: 'subagent',
         estimatedInputTokens: 42,
         routeEstimatedTokens: 9,
       },
     )
     const row = tracker.recentCalls(1)[0]!
-    expect(row.route_reason).toBe('subagent:sili_suitang:lightweight')
-    expect(row.used_fallback).toBe(true)
-    expect(row.fallback_reason).toBe('secondary down')
+    expect(row.model_entry_id).toBe('active-entry')
+    expect(row.route_reason).toBe('subagent')
+    expect(row).not.toHaveProperty('model_role')
+    expect(row).not.toHaveProperty('used_fallback')
+    expect(row).not.toHaveProperty('fallback_reason')
     expect(row.estimated_input_tokens).toBe(42)
     expect(row.route_estimated_tokens).toBe(9)
   })

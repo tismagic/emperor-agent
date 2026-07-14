@@ -14,7 +14,7 @@ describe('writePromptSnapshot', () => {
       turnId: 'turn_1',
       model: 'fake',
       provider: 'test',
-      modelRole: 'main',
+      modelEntryId: 'active-entry',
       sections: [
         {
           name: 'project_agents',

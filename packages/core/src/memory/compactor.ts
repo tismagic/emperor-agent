@@ -5,12 +5,7 @@
  */
 import { appendFileSync, mkdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import type {
-  ChatArgs,
-  GenerationSettings,
-  LLMProvider,
-  LLMResponse,
-} from '../providers/base'
+import type { ChatArgs, LLMProvider, LLMResponse } from '../providers/base'
 import type { HistoryArchiveGate } from './history'
 import type { TokenTracker } from './token-tracker'
 import { nowIsoUtc8 } from './time-utc8'
@@ -85,13 +80,11 @@ interface CompactionCall {
   provider: LLMProvider
   model: string
   providerName: string | null
-  modelRole: string
+  modelEntryId: string
   maxTokens: number
   temperature: number
   reasoningEffort: string | null
   routeReason: string
-  usedFallback: boolean
-  fallbackReason: string
 }
 
 export interface CompactorOptions {
@@ -105,14 +98,8 @@ export interface CompactorOptions {
   providerName?: string | null
   tokenTracker?: TokenTracker | null
   usageType?: string
-  modelRole?: string
-  fallbackProvider?: LLMProvider | null
-  fallbackModel?: string | null
-  fallbackProviderName?: string | null
-  fallbackGeneration?: GenerationSettings | null
-  fallbackModelRole?: string
+  modelEntryId?: string
   routeReason?: string
-  fallbackRouteReason?: string
   runtimeContextProvider?: RuntimeContextProvider | null
 }
 
@@ -129,14 +116,8 @@ export class Compactor {
   private readonly providerName: string | null
   private readonly tokenTracker: TokenTracker | null
   private readonly usageType: string
-  private readonly modelRole: string
-  private readonly fallbackProvider: LLMProvider | null
-  private readonly fallbackModel: string | null
-  private readonly fallbackProviderName: string | null
-  private readonly fallbackGeneration: GenerationSettings | null
-  private readonly fallbackModelRole: string
+  private readonly modelEntryId: string
   private readonly routeReason: string
-  private readonly fallbackRouteReason: string
   private readonly runtimeContextProvider: RuntimeContextProvider | null
 
   constructor(opts: CompactorOptions) {
@@ -153,15 +134,8 @@ export class Compactor {
     this.providerName = opts.providerName ?? null
     this.tokenTracker = opts.tokenTracker ?? null
     this.usageType = opts.usageType ?? 'memory_compaction'
-    this.modelRole = opts.modelRole ?? 'main'
-    this.fallbackProvider = opts.fallbackProvider ?? null
-    this.fallbackModel = opts.fallbackModel ?? null
-    this.fallbackProviderName = opts.fallbackProviderName ?? null
-    this.fallbackGeneration = opts.fallbackGeneration ?? null
-    this.fallbackModelRole = opts.fallbackModelRole ?? 'main'
+    this.modelEntryId = opts.modelEntryId ?? 'unknown'
     this.routeReason = opts.routeReason ?? 'memory_compaction'
-    this.fallbackRouteReason =
-      opts.fallbackRouteReason || `${this.routeReason}:fallback_main`
     this.runtimeContextProvider = opts.runtimeContextProvider ?? null
   }
 
@@ -195,7 +169,7 @@ export class Compactor {
       today_episode: this.memory.readTodayEpisode() || '(空)',
       now_hhmm: nowHhmm(),
     })
-    const [call, resp] = await this.callWithFallback(prompt)
+    const [call, resp] = await this.callActiveModel(prompt)
     const text = resp.content ?? ''
     let parsed: CompactionResult
     try {
@@ -221,47 +195,22 @@ export class Compactor {
     return true
   }
 
-  private async callWithFallback(
+  private async callActiveModel(
     prompt: string,
   ): Promise<[CompactionCall, LLMResponse]> {
     const call: CompactionCall = {
       provider: this.provider,
       model: this.model,
       providerName: this.providerName,
-      modelRole: this.modelRole,
+      modelEntryId: this.modelEntryId,
       maxTokens: this.maxTokens,
       temperature: this.temperature,
       reasoningEffort: this.reasoningEffort,
       routeReason: this.routeReason,
-      usedFallback: false,
-      fallbackReason: '',
     }
-    try {
-      const resp = await this.chat(call, prompt)
-      this.recordUsage(call, resp.usage, prompt)
-      return [call, resp]
-    } catch (exc) {
-      if (!(this.fallbackProvider && this.fallbackModel)) throw exc
-      const generation = this.fallbackGeneration
-      const fallbackCall: CompactionCall = {
-        provider: this.fallbackProvider,
-        model: this.fallbackModel,
-        providerName: this.fallbackProviderName,
-        modelRole: this.fallbackModelRole,
-        maxTokens: Math.min(
-          this.maxTokens,
-          Number(generation?.maxTokens ?? this.maxTokens) || this.maxTokens,
-        ),
-        temperature: generation?.temperature ?? this.temperature,
-        reasoningEffort: generation?.reasoningEffort ?? this.reasoningEffort,
-        routeReason: this.fallbackRouteReason,
-        usedFallback: true,
-        fallbackReason: String(exc),
-      }
-      const resp = await this.chat(fallbackCall, prompt)
-      this.recordUsage(fallbackCall, resp.usage, prompt)
-      return [fallbackCall, resp]
-    }
+    const resp = await this.chat(call, prompt)
+    this.recordUsage(call, resp.usage, prompt)
+    return [call, resp]
   }
 
   private async chat(
@@ -288,10 +237,8 @@ export class Compactor {
     this.tokenTracker.record(call.model, usage, {
       provider: call.providerName,
       usageType: this.usageType,
-      modelRole: call.modelRole,
+      modelEntryId: call.modelEntryId,
       routeReason: call.routeReason,
-      usedFallback: call.usedFallback,
-      fallbackReason: call.fallbackReason,
       estimatedInputTokens: Math.max(1, Math.trunc(prompt.length / 3)),
     })
   }

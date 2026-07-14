@@ -590,7 +590,7 @@ describe('CoreMemoryService (MIG-IPC-007)', () => {
       turnId: 'turn_explain_1',
       model: 'fake-main',
       provider: 'fake',
-      modelRole: 'main',
+      modelEntryId: 'active-entry',
       estimatedInputTokens: 123,
       sections: [
         {

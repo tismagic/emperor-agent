@@ -1,12 +1,11 @@
 /**
  * ModelCaller (MIG-CORE-001)。对齐 Python `agent/runner_model.py`。
- * 统一模型调用 + 次模型失败一次性升主；记 _lastModelCall（route_reason/估算输入/fallback）。
+ * 统一调用全局激活模型并记录重试元数据；不执行跨模型 fallback。
  */
 import {
   parseJsonArgs,
   type ChatArgs,
   type ChatStreamArgs,
-  type GenerationSettings,
   type LLMProvider,
   type LLMResponse,
   type ToolCallDelta,
@@ -28,12 +27,10 @@ export type StreamEmitter = (
 export interface ModelCallMeta {
   model: string
   provider: string | null
-  modelRole: string
+  modelEntryId: string
   routeReason: string
   routeEstimatedTokens: number | null
   estimatedInputTokens: number | null
-  usedFallback: boolean
-  fallbackReason: string
   providerRetryCount: number
   providerErrorKind: string
 }
@@ -43,18 +40,14 @@ export interface RunnerModelHost {
   provider: LLMProvider
   model: string
   providerName: string | null
-  modelRole: string
+  modelEntryId: string
+  supportsToolCall: boolean
   routeReason: string
   routeEstimatedTokens: number | null
   maxTokens: number
   temperature: number
   reasoningEffort: string | null
   usageType: string
-  fallbackProvider: LLMProvider | null
-  fallbackModel: string | null
-  fallbackProviderName: string | null
-  fallbackGeneration: GenerationSettings | null
-  fallbackModelRole: string
   lastEstimatedInputTokens: number | null
   lastModelCall: ModelCallMeta
 }
@@ -84,22 +77,19 @@ export class ModelCaller {
     )
     const onToolCallDelta = planDeltaThrottle.onDelta
     const onToolCallComplete = opts.onToolCallComplete ?? null
-    let primaryRetryCount = 0
-    let primaryErrorKind = ''
-    try {
-      runner.lastModelCall = {
-        model: runner.model,
-        provider: runner.providerName,
-        modelRole: runner.modelRole,
-        routeReason: runner.routeReason,
-        routeEstimatedTokens: runner.routeEstimatedTokens,
-        estimatedInputTokens: runner.lastEstimatedInputTokens,
-        usedFallback: false,
-        fallbackReason: '',
-        providerRetryCount: 0,
-        providerErrorKind: '',
-      }
-      const primary = await ModelCaller.callProviderWithRetries({
+    let retryCount = 0
+    let errorKind = ''
+    runner.lastModelCall = {
+      model: runner.model,
+      provider: runner.providerName,
+      modelEntryId: runner.modelEntryId,
+      routeReason: runner.routeReason,
+      routeEstimatedTokens: runner.routeEstimatedTokens,
+      estimatedInputTokens: runner.lastEstimatedInputTokens,
+      providerRetryCount: 0,
+      providerErrorKind: '',
+    }
+    const result = await ModelCaller.callProviderWithRetries({
         provider: runner.provider,
         model: runner.model,
         providerName: runner.providerName,
@@ -108,80 +98,28 @@ export class ModelCaller {
         temperature: runner.temperature,
         reasoningEffort: runner.reasoningEffort,
         messages: opts.messages,
-        tools: opts.tools,
+        tools: runner.supportsToolCall ? opts.tools : null,
         emit: opts.emit,
         onDelta,
         onToolCallDelta,
         onToolCallComplete,
         signal: opts.signal ?? null,
         onRetry: (count, kind) => {
-          primaryRetryCount = count
-          primaryErrorKind = kind
+          retryCount = count
+          errorKind = kind
         },
       })
-      primaryRetryCount = primary.retryCount
-      primaryErrorKind = primary.errorKind
-      runner.lastModelCall = {
-        ...runner.lastModelCall,
-        providerRetryCount: primaryRetryCount,
-        providerErrorKind: primaryErrorKind,
-      }
-      await planDeltaThrottle.flush()
-      return primary.response
-    } catch (exc) {
-      primaryErrorKind = classifyProviderError(exc)
-      if (isContextOverflowProviderError(exc)) throw exc
-      if (!(runner.fallbackProvider && runner.fallbackModel)) throw exc
-      if (opts.emit) {
-        await opts.emit(
-          runtimeEvents.modelRouteFallback({
-            fromModel: runner.model,
-            toModel: runner.fallbackModel,
-            reason: String(exc),
-            usageType: runner.usageType,
-          }),
-        )
-      }
-      const generation = runner.fallbackGeneration
-      runner.lastModelCall = {
-        model: runner.fallbackModel,
-        provider: runner.fallbackProviderName,
-        modelRole: runner.fallbackModelRole,
-        routeReason: `${runner.routeReason}:fallback`,
-        routeEstimatedTokens: runner.routeEstimatedTokens,
-        estimatedInputTokens: runner.lastEstimatedInputTokens,
-        usedFallback: true,
-        fallbackReason: String(exc),
-        providerRetryCount: primaryRetryCount,
-        providerErrorKind: primaryErrorKind,
-      }
-      const fallback = await ModelCaller.callProviderWithRetries({
-        provider: runner.fallbackProvider,
-        model: runner.fallbackModel,
-        providerName: runner.fallbackProviderName,
-        usageType: runner.usageType,
-        maxTokens: Math.min(
-          runner.maxTokens,
-          Number(generation?.maxTokens ?? runner.maxTokens) || runner.maxTokens,
-        ),
-        temperature: generation?.temperature ?? runner.temperature,
-        reasoningEffort: generation?.reasoningEffort ?? runner.reasoningEffort,
-        messages: opts.messages,
-        tools: opts.tools,
-        emit: opts.emit,
-        onDelta,
-        onToolCallDelta,
-        onToolCallComplete,
-        signal: opts.signal ?? null,
-      })
-      runner.lastModelCall = {
-        ...runner.lastModelCall,
-        providerRetryCount: primaryRetryCount + fallback.retryCount,
-        providerErrorKind: fallback.errorKind || primaryErrorKind,
-      }
-      await planDeltaThrottle.flush()
-      return fallback.response
+    retryCount = result.retryCount
+    errorKind = result.errorKind
+    runner.lastModelCall = {
+      ...runner.lastModelCall,
+      providerRetryCount: retryCount,
+      providerErrorKind: errorKind,
     }
+    await planDeltaThrottle.flush()
+    return runner.supportsToolCall
+      ? result.response
+      : { ...result.response, toolCalls: [] }
   }
 
   private static async callProviderWithRetries(opts: {

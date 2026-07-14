@@ -1,6 +1,6 @@
 /**
  * TokenTracker — 每调用 JSONL 账本 + 聚合 (MIG-MEM-004)。对齐 Python `agent/telemetry.py`。
- * should_compact 阈值 0.7；记 route_reason/model_role/fallback；token 估算口径见 README（记风险）。
+ * should_compact 阈值 0.7；新记录使用 model_entry_id，旧 role/fallback 字段只读兼容。
  * 实现 runner 的 TokenTrackerLike。
  */
 import { randomUUID } from 'node:crypto'
@@ -35,7 +35,9 @@ export interface TokenUsageRow {
   ts: string
   provider: string
   model: string
-  model_role: string
+  model_entry_id: string
+  /** 旧账本读取兼容；record() 不再写入。 */
+  model_role?: string
   usage_type: string
   input: number
   output: number
@@ -53,10 +55,8 @@ export interface TokenUsageRow {
 export interface RecordOptions {
   provider?: string | null
   usageType?: string
-  modelRole?: string | null
+  modelEntryId?: string | null
   routeReason?: string | null
-  usedFallback?: boolean
-  fallbackReason?: string | null
   estimatedInputTokens?: number | null
   routeEstimatedTokens?: number | null
 }
@@ -89,11 +89,10 @@ export class TokenTracker {
     const o = opts as Record<string, unknown>
     const usageType = String(o.usageType ?? o.usage_type ?? 'main_agent')
     const provider = (o.provider ?? null) as string | null
-    const modelRole = (o.modelRole ?? o.model_role ?? null) as string | null
+    const modelEntryId = (o.modelEntryId ?? o.model_entry_id ?? null) as
+      | string
+      | null
     const routeReason = (o.routeReason ?? o.route_reason ?? null) as
-      string | null
-    const usedFallback = Boolean(o.usedFallback ?? o.used_fallback ?? false)
-    const fallbackReason = (o.fallbackReason ?? o.fallback_reason ?? null) as
       string | null
     const estimatedInputTokens = (o.estimatedInputTokens ??
       o.estimated_input_tokens ??
@@ -114,7 +113,7 @@ export class TokenTracker {
       ts: localIsoSeconds(),
       provider: provider || 'unknown',
       model,
-      model_role: modelRole || 'unknown',
+      model_entry_id: modelEntryId || 'unknown',
       usage_type: usageType,
       input: inputTokens,
       output: outputTokens,
@@ -122,8 +121,6 @@ export class TokenTracker {
       cache_create: cacheCreate,
     }
     if (routeReason) row.route_reason = routeReason
-    if (usedFallback) row.used_fallback = true
-    if (fallbackReason) row.fallback_reason = fallbackReason
     if (estimatedInputTokens !== null && estimatedInputTokens !== undefined)
       row.estimated_input_tokens = estimatedInputTokens
     if (routeEstimatedTokens !== null && routeEstimatedTokens !== undefined)
@@ -432,7 +429,7 @@ function normalizeRow(row: Row): TokenUsageRow {
     ts: String(row.ts ?? ''),
     provider: String(row.provider ?? 'unknown'),
     model: String(row.model ?? 'unknown'),
-    model_role: String(row.model_role ?? 'unknown'),
+    model_entry_id: String(row.model_entry_id ?? 'unknown'),
     usage_type: String(row.usage_type ?? 'main_agent'),
     input: inputTokens,
     output: outputTokens,
@@ -440,6 +437,7 @@ function normalizeRow(row: Row): TokenUsageRow {
     cache_create: cacheCreate,
     total: inputTokens + outputTokens + cacheRead + cacheCreate,
   }
+  if (row.model_role) normalized.model_role = String(row.model_role)
   for (const key of ['route_reason', 'fallback_reason']) {
     if (row[key]) normalized[key] = String(row[key])
   }

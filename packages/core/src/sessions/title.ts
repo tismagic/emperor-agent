@@ -1,4 +1,4 @@
-import type { ModelRouter, ProviderSnapshot } from '../model/router'
+import type { ModelRouter } from '../model/router'
 
 const FORBIDDEN_PREFIXES = [
   '关于',
@@ -26,32 +26,28 @@ export class SessionTitleService {
     const fallback = fallbackSessionTitle(firstMessage)
     const prompt = titlePrompt(firstMessage)
     const route = this.modelRouter.route('session_title', null, firstMessage)
-    const snapshots = [route.snapshot, route.fallback].filter(
-      Boolean,
-    ) as ProviderSnapshot[]
-    for (const snapshot of snapshots) {
-      try {
-        const generation = snapshot.generation
-        const response = await snapshot.provider.chat({
-          messages: [
-            {
-              role: 'system',
-              content:
-                '你只负责给聊天会话命名。必须只输出标题本身，不要解释，不要标点，不要换行。',
-            },
-            { role: 'user', content: prompt },
-          ],
-          tools: null,
-          model: snapshot.model,
-          maxTokens: Math.min(64, Number(generation.maxTokens || 64)),
-          temperature: 0.1,
-          reasoningEffort: generation.reasoningEffort,
-        })
-        const title = sanitizeSessionTitle(response.content || '')
-        if (title) return title
-      } catch {
-        continue
-      }
+    const snapshot = route.snapshot
+    try {
+      const generation = snapshot.generation
+      const response = await snapshot.provider.chat({
+        messages: [
+          {
+            role: 'system',
+            content:
+              '你只负责给聊天会话命名。必须只输出标题本身，不要解释，不要标点，不要换行。',
+          },
+          { role: 'user', content: prompt },
+        ],
+        tools: null,
+        model: snapshot.model,
+        maxTokens: Math.min(64, Number(generation.maxTokens || 64)),
+        temperature: 0.1,
+        reasoningEffort: generation.reasoningEffort,
+      })
+      const title = sanitizeSessionTitle(response.content || '')
+      if (title) return title
+    } catch {
+      // 标题失败仅回退到本地确定性标题，不再跨模型重试。
     }
     return fallback
   }

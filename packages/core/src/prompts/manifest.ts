@@ -96,7 +96,7 @@ export interface PromptSnapshot {
   createdAt: string
   model: string
   provider: string | null
-  modelRole: string
+  modelEntryId: string
   estimatedInputTokens: number | null
   finalMessagesHash: string
   historyRange: PromptHistoryRange
@@ -139,7 +139,7 @@ export function writePromptSnapshot(opts: {
   turnId: string
   model: string
   provider?: string | null
-  modelRole?: string | null
+  modelEntryId?: string | null
   estimatedInputTokens?: number | null
   sections: PromptSectionInput[]
   contextPlan?: PromptContextPlan | null
@@ -157,7 +157,7 @@ export function writePromptSnapshot(opts: {
     createdAt: new Date().toISOString(),
     model: opts.model,
     provider: opts.provider ?? null,
-    modelRole: opts.modelRole ?? 'main',
+    modelEntryId: opts.modelEntryId ?? 'unknown',
     estimatedInputTokens: opts.estimatedInputTokens ?? null,
     finalMessagesHash: hashJson(messages),
     historyRange: buildHistoryRange(messages),

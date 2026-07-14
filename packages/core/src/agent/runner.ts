@@ -10,7 +10,6 @@ import {
   shouldExecuteTools,
   toOpenAiToolCall,
   type ChatArgs,
-  type GenerationSettings,
   type LLMProvider,
   type LLMResponse,
   type ToolCallRequest,
@@ -227,14 +226,10 @@ export interface AgentRunnerOptions {
   temperature?: number
   reasoningEffort?: string | null
   providerName?: string | null
-  modelRole?: string
+  modelEntryId?: string
+  supportsToolCall?: boolean
   routeReason?: string
   routeEstimatedTokens?: number | null
-  fallbackProvider?: LLMProvider | null
-  fallbackModel?: string | null
-  fallbackProviderName?: string | null
-  fallbackGeneration?: GenerationSettings | null
-  fallbackModelRole?: string
   usageType?: string
   memoryStore?: MemoryStoreLike | null
   tokenTracker?: TokenTrackerLike | null
@@ -273,14 +268,10 @@ export class AgentRunner implements RunnerModelHost {
   temperature: number
   reasoningEffort: string | null
   providerName: string | null
-  modelRole: string
+  modelEntryId: string
+  supportsToolCall: boolean
   routeReason: string
   routeEstimatedTokens: number | null
-  fallbackProvider: LLMProvider | null
-  fallbackModel: string | null
-  fallbackProviderName: string | null
-  fallbackGeneration: GenerationSettings | null
-  fallbackModelRole: string
   usageType: string
   memoryStore: MemoryStoreLike | null
   tokenTracker: TokenTrackerLike | null
@@ -314,14 +305,10 @@ export class AgentRunner implements RunnerModelHost {
     this.temperature = opts.temperature ?? 0.1
     this.reasoningEffort = opts.reasoningEffort ?? null
     this.providerName = opts.providerName ?? null
-    this.modelRole = opts.modelRole ?? 'main'
+    this.modelEntryId = opts.modelEntryId ?? 'unknown'
+    this.supportsToolCall = opts.supportsToolCall ?? true
     this.routeReason = opts.routeReason ?? ''
     this.routeEstimatedTokens = opts.routeEstimatedTokens ?? null
-    this.fallbackProvider = opts.fallbackProvider ?? null
-    this.fallbackModel = opts.fallbackModel ?? null
-    this.fallbackProviderName = opts.fallbackProviderName ?? null
-    this.fallbackGeneration = opts.fallbackGeneration ?? null
-    this.fallbackModelRole = opts.fallbackModelRole ?? 'main'
     this.usageType = opts.usageType ?? 'main_agent'
     this.memoryStore = opts.memoryStore ?? null
     this.tokenTracker = opts.tokenTracker ?? null
@@ -344,12 +331,10 @@ export class AgentRunner implements RunnerModelHost {
     this.lastModelCall = {
       model: this.model,
       provider: this.providerName,
-      modelRole: this.modelRole,
+      modelEntryId: this.modelEntryId,
       routeReason: this.routeReason,
       routeEstimatedTokens: this.routeEstimatedTokens,
       estimatedInputTokens: null,
-      usedFallback: false,
-      fallbackReason: '',
       providerRetryCount: 0,
       providerErrorKind: '',
     }
@@ -494,12 +479,12 @@ export class AgentRunner implements RunnerModelHost {
                 callMeta.provider || this.providerName || 'unknown',
               ),
               usageType: this.usageType,
-              modelRole: String(callMeta.modelRole || this.modelRole),
+              modelEntryId: String(
+                callMeta.modelEntryId || this.modelEntryId,
+              ),
               routeReason: String(
                 callMeta.routeReason || this.routeReason || '',
               ),
-              usedFallback: Boolean(callMeta.usedFallback),
-              fallbackReason: String(callMeta.fallbackReason || ''),
               estimatedInputTokens: optionalInt(callMeta.estimatedInputTokens),
               routeEstimatedTokens: optionalInt(callMeta.routeEstimatedTokens),
             },
@@ -512,13 +497,11 @@ export class AgentRunner implements RunnerModelHost {
             max: this.maxContext,
             threshold: Math.trunc(this.maxContext * this.compactThreshold),
             usage_type: this.usageType,
-            model_role: callMeta.modelRole,
+            model_entry_id: callMeta.modelEntryId,
             model: callMeta.model,
             provider: callMeta.provider,
             route_reason: callMeta.routeReason,
             estimated_input_tokens: callMeta.estimatedInputTokens,
-            used_fallback: Boolean(callMeta.usedFallback),
-            fallback_reason: callMeta.fallbackReason || undefined,
             provider_retry_count:
               optionalInt(callMeta.providerRetryCount) ?? undefined,
             provider_error_kind: callMeta.providerErrorKind || undefined,
@@ -556,10 +539,9 @@ export class AgentRunner implements RunnerModelHost {
               type: 'model_call',
               model: this.lastModelCall.model || this.model,
               provider: this.lastModelCall.provider || this.providerName,
-              model_role: this.lastModelCall.modelRole || this.modelRole,
+              model_entry_id:
+                this.lastModelCall.modelEntryId || this.modelEntryId,
               route_reason: this.lastModelCall.routeReason || this.routeReason,
-              used_fallback: Boolean(this.lastModelCall.usedFallback),
-              fallback_reason: this.lastModelCall.fallbackReason || '',
               estimated_input_tokens: this.lastModelCall.estimatedInputTokens,
               route_estimated_tokens: this.lastModelCall.routeEstimatedTokens,
               usage_type: this.usageType,
@@ -1061,7 +1043,7 @@ export class AgentRunner implements RunnerModelHost {
           turnId,
           model: this.model,
           provider: this.providerName,
-          modelRole: this.modelRole,
+          modelEntryId: this.modelEntryId,
           estimatedInputTokens: this.lastEstimatedInputTokens,
           sections: promptSections,
           contextPlan,
