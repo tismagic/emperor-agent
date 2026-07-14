@@ -79,12 +79,16 @@ export type RuntimeEvent = RuntimeEventEnvelope &
         max?: number
         threshold?: number
         usage_type?: string
+        model_entry_id?: string
+        /** Historical replay compatibility only. */
         model_role?: string
         model?: string
         provider?: string
         route_reason?: string
         estimated_input_tokens?: number
+        /** Historical replay compatibility only. */
         used_fallback?: boolean
+        /** Historical replay compatibility only. */
         fallback_reason?: string
         provider_retry_count?: number
         provider_error_kind?: string

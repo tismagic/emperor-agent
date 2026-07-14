@@ -83,20 +83,6 @@ export function error(
   })
 }
 
-export function modelRouteFallback(opts: {
-  fromModel: string
-  toModel: string
-  reason: string
-  usageType: string
-}): EventPayload {
-  return runtimeEvent('model_route_fallback', {
-    from_model: opts.fromModel,
-    to_model: opts.toModel,
-    reason: opts.reason,
-    usage_type: opts.usageType,
-  })
-}
-
 export function sessionCreated(
   session: EventPayload,
   opts: { clientDraftId?: string | null } = {},

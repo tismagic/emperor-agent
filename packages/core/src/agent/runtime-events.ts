@@ -26,21 +26,6 @@ export function planEntryDecision(
   return { event: 'plan_entry_decision', ...contract }
 }
 
-export function modelRouteFallback(opts: {
-  fromModel: string
-  toModel: string
-  reason: string
-  usageType: string
-}): Record<string, unknown> {
-  return {
-    event: 'model_route_fallback',
-    from_model: opts.fromModel,
-    to_model: opts.toModel,
-    reason: opts.reason,
-    usage_type: opts.usageType,
-  }
-}
-
 export function contextProjection(opts: {
   report: Record<string, unknown>
   messageCount: number

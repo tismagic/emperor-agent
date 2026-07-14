@@ -274,6 +274,30 @@ class EarlyToolProvider extends LLMProvider {
   }
 }
 
+class ToolCallbackProbeProvider extends LLMProvider {
+  sawDeltaCallback = false
+  sawCompleteCallback = false
+  sawTools = false
+
+  constructor() {
+    super({ defaultModel: 'fake' })
+  }
+
+  async chat(): Promise<LLMResponse> {
+    return makeResponse({ content: 'plain response' })
+  }
+
+  override async chatStream(args: ChatStreamArgs): Promise<LLMResponse> {
+    this.sawDeltaCallback = Boolean(args.onToolCallDelta)
+    this.sawCompleteCallback = Boolean(args.onToolCallComplete)
+    this.sawTools = Boolean(args.tools?.length)
+    return makeResponse({
+      content: 'plain response',
+      toolCalls: [toolCall('unexpected', 'read_file', { path: 'secret' })],
+    })
+  }
+}
+
 class BudgetedEchoTool extends Tool {
   override name = 'budgeted_echo'
   override description = 'Echo with a small context budget.'
@@ -930,6 +954,27 @@ describe('AgentRunner turn phases (test_runner_state.py)', () => {
     expect(emitted.some((event) => event.event === 'model_route_fallback')).toBe(
       false,
     )
+  })
+
+  it('disables tool payloads and streaming callbacks when tool calling is unsupported', async () => {
+    const provider = new ToolCallbackProbeProvider()
+    const runner = new AgentRunner({
+      provider,
+      model: 'plain-model',
+      modelEntryId: 'plain-entry',
+      supportsToolCall: false,
+      registry: new ToolRegistry(),
+      systemPrompt: 'system',
+    })
+
+    await expect(
+      runner.stepAsync([{ role: 'user', content: 'hello' }], {
+        emit: async () => {},
+      }),
+    ).resolves.toBe('plain response')
+    expect(provider.sawTools).toBe(false)
+    expect(provider.sawDeltaCallback).toBe(false)
+    expect(provider.sawCompleteCallback).toBe(false)
   })
 
   it('writes a redacted prompt snapshot for each turn', async () => {

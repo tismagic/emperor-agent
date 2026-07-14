@@ -719,19 +719,35 @@ export class AgentLoop {
     const previousSessionId = this.activeSessionId
     if (targetSessionId && this.activeSessionId !== targetSessionId)
       this.activateSession(targetSessionId)
-    assertModelAvailable(this.modelRouter.availability)
-    const activeSession =
-      this.activeSession ??
-      (this.activeSessionId
-        ? this.sessionStore.get(this.activeSessionId)
-        : null)
-    const activeProfile = this.modelRouter.route('main_agent').snapshot.profile
-    const requiresTools =
-      activeSession?.mode === 'build' || opts.source === 'scheduler'
-    if (requiresTools && activeProfile?.toolCall === false) {
-      throw new ModelConfigurationError(
-        '当前激活模型不支持工具调用，无法用于 Build 或自动执行。请切换支持工具调用的模型。',
-      )
+    const restorePreviousSession = (): void => {
+      if (!opts.restoreActiveSessionAfterTurn) return
+      if (!previousSessionId || previousSessionId === this.activeSessionId)
+        return
+      if (targetSessionId && this.activeSessionId !== targetSessionId) return
+      try {
+        this.activateSession(previousSessionId)
+      } catch {
+        // The previous session may have been deleted while a background turn was running.
+      }
+    }
+    try {
+      assertModelAvailable(this.modelRouter.availability)
+      const activeSession =
+        this.activeSession ??
+        (this.activeSessionId
+          ? this.sessionStore.get(this.activeSessionId)
+          : null)
+      const activeProfile = this.modelRouter.route('main_agent').snapshot.profile
+      const requiresTools =
+        activeSession?.mode === 'build' || opts.source === 'scheduler'
+      if (requiresTools && activeProfile?.toolCall === false) {
+        throw new ModelConfigurationError(
+          '当前激活模型不支持工具调用，无法用于 Build 或自动执行。请切换支持工具调用的模型。',
+        )
+      }
+    } catch (error) {
+      restorePreviousSession()
+      throw error
     }
     const turnId = opts.turnId || randomUUID().replace(/-/g, '').slice(0, 16)
     const taskId = opts.taskId || `turn:${turnId}`
@@ -744,15 +760,7 @@ export class AgentLoop {
         abortController.signal,
       ).finally(() => {
         this.hookService.endTurn(turnId)
-        if (!opts.restoreActiveSessionAfterTurn) return
-        if (!previousSessionId || previousSessionId === this.activeSessionId)
-          return
-        if (targetSessionId && this.activeSessionId !== targetSessionId) return
-        try {
-          this.activateSession(previousSessionId)
-        } catch {
-          // The previous session may have been deleted while a background turn was running.
-        }
+        restorePreviousSession()
       })
     if (opts.useActiveTask === false) return execute()
     return this.activeTasks.run({
@@ -1866,6 +1874,8 @@ export class AgentLoop {
       activeTasks: this.activeTasks,
       taskManager: this.taskManager,
       controlPending: () => Boolean(this.controlManager.payload().pending),
+      toolCallingAvailable: () =>
+        this.modelRouter.route('team').snapshot.profile?.toolCall !== false,
       teamManagerForProject: (projectId) =>
         this.teamManagerForProject(projectId),
       submitAgentTurn: async (payload: SchedulerAgentTurnPayload) => {

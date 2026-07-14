@@ -350,6 +350,30 @@ describe('AgentLoop (MIG-CORE-011)', () => {
     expect(provider.calls).toHaveLength(1)
   })
 
+  it('restores the foreground session when a targeted Scheduler turn is rejected', async () => {
+    const root = tmp('emperor-agent-loop-scheduler-restore-')
+    const provider = new QueueProvider([])
+    const loop = await AgentLoop.create({
+      root,
+      stateRoot: join(root, '.emperor'),
+      templatesDir: TEMPLATES_DIR,
+      modelRouter: fakeRouter(provider, false),
+    })
+    const foregroundId = String(loop.activeSessionId)
+    const background = loop.sessionStore.create('Background', { mode: 'chat' })
+
+    await expect(
+      loop.runUserTurn('自动执行', {
+        sessionId: background.id,
+        restoreActiveSessionAfterTurn: true,
+        source: 'scheduler',
+        useActiveTask: false,
+      }),
+    ).rejects.toMatchObject({ code: 'model_configuration_required' })
+    expect(loop.activeSessionId).toBe(foregroundId)
+    expect(provider.calls).toHaveLength(0)
+  })
+
   it('runs build session file tools inside the bound project workspace', async () => {
     const root = tmp('emperor-agent-loop-core-root-')
     const projectRoot = tmp('emperor-agent-loop-project-')

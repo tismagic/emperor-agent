@@ -161,6 +161,34 @@ describe('SchedulerJobExecutor', () => {
     ])
   })
 
+  it('blocks team_wake when the active model cannot call tools', async () => {
+    let sends = 0
+    const executor = new SchedulerJobExecutor({
+      submitAgentTurn: async () => 'unused',
+      toolCallingAvailable: () => false,
+      teamManagerForProject: () => ({
+        sendMessage: async () => {
+          sends += 1
+          return 'should not run'
+        },
+      }),
+    })
+
+    await expect(
+      executor.run(
+        makeJob('team_wake', {
+          target: 'alice',
+          project_id: 'project-1',
+          message: 'wake up',
+        }),
+      ),
+    ).rejects.toMatchObject({
+      code: 'model_configuration_required',
+      action: 'open_model_settings',
+    })
+    expect(sends).toBe(0)
+  })
+
   it('handles system_event jobs and watchlist run decisions', async () => {
     const submitted: SchedulerAgentTurnPayload[] = []
     const executor = new SchedulerJobExecutor({

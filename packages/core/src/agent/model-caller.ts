@@ -90,25 +90,27 @@ export class ModelCaller {
       providerErrorKind: '',
     }
     const result = await ModelCaller.callProviderWithRetries({
-        provider: runner.provider,
-        model: runner.model,
-        providerName: runner.providerName,
-        usageType: runner.usageType,
-        maxTokens: runner.maxTokens,
-        temperature: runner.temperature,
-        reasoningEffort: runner.reasoningEffort,
-        messages: opts.messages,
-        tools: runner.supportsToolCall ? opts.tools : null,
-        emit: opts.emit,
-        onDelta,
-        onToolCallDelta,
-        onToolCallComplete,
-        signal: opts.signal ?? null,
-        onRetry: (count, kind) => {
-          retryCount = count
-          errorKind = kind
-        },
-      })
+      provider: runner.provider,
+      model: runner.model,
+      providerName: runner.providerName,
+      usageType: runner.usageType,
+      maxTokens: runner.maxTokens,
+      temperature: runner.temperature,
+      reasoningEffort: runner.reasoningEffort,
+      messages: opts.messages,
+      tools: runner.supportsToolCall ? opts.tools : null,
+      emit: opts.emit,
+      onDelta,
+      onToolCallDelta: runner.supportsToolCall ? onToolCallDelta : null,
+      onToolCallComplete: runner.supportsToolCall
+        ? onToolCallComplete
+        : null,
+      signal: opts.signal ?? null,
+      onRetry: (count, kind) => {
+        retryCount = count
+        errorKind = kind
+      },
+    })
     retryCount = result.retryCount
     errorKind = result.errorKind
     runner.lastModelCall = {
@@ -134,7 +136,7 @@ export class ModelCaller {
     tools: Array<Record<string, unknown>> | null
     emit: StreamEmitter | null
     onDelta: (delta: string) => Promise<void>
-    onToolCallDelta: (delta: ToolCallDelta) => Promise<void>
+    onToolCallDelta?: ((delta: ToolCallDelta) => Promise<void>) | null
     onToolCallComplete?:
       ((call: ToolCallRequest) => void | Promise<void>) | null
     signal: AbortSignal | null
@@ -194,7 +196,7 @@ export class ModelCaller {
     tools: Array<Record<string, unknown>> | null
     emit: StreamEmitter | null
     onDelta: (delta: string) => Promise<void>
-    onToolCallDelta: (delta: ToolCallDelta) => Promise<void>
+    onToolCallDelta?: ((delta: ToolCallDelta) => Promise<void>) | null
     onToolCallComplete?:
       ((call: ToolCallRequest) => void | Promise<void>) | null
     signal: AbortSignal | null
@@ -208,7 +210,7 @@ export class ModelCaller {
         temperature: opts.temperature,
         reasoningEffort: opts.reasoningEffort,
         onContentDelta: opts.onDelta,
-        onToolCallDelta: opts.onToolCallDelta,
+        onToolCallDelta: opts.onToolCallDelta ?? undefined,
         onToolCallComplete: opts.onToolCallComplete ?? undefined,
         signal: opts.signal,
       }

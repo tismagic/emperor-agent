@@ -1,4 +1,5 @@
 import { ActiveTaskRegistry } from '../runtime/active'
+import { ModelConfigurationError } from '../errors'
 import { TaskManager } from '../tasks/manager'
 import { TaskKind } from '../tasks/models'
 import type { WatchlistDecision } from '../watchlist/models'
@@ -47,6 +48,7 @@ export class SchedulerJobExecutor {
   private readonly teamManagerForProject:
     ((projectId: string) => TeamWakeManager) | null
   private readonly controlPending: () => boolean
+  private readonly toolCallingAvailable: () => boolean
   private readonly systemHandlers: Record<string, SchedulerSystemHandler>
   private readonly watchlistService: WatchlistServiceLike | null
 
@@ -56,6 +58,7 @@ export class SchedulerJobExecutor {
     submitAgentTurn: (payload: SchedulerAgentTurnPayload) => Promise<string>
     teamManagerForProject?: ((projectId: string) => TeamWakeManager) | null
     controlPending?: (() => boolean) | null
+    toolCallingAvailable?: (() => boolean) | null
     systemHandlers?: Record<string, SchedulerSystemHandler>
     watchlistService?: WatchlistServiceLike | null
   }) {
@@ -64,6 +67,7 @@ export class SchedulerJobExecutor {
     this.submitAgentTurn = opts.submitAgentTurn
     this.teamManagerForProject = opts.teamManagerForProject ?? null
     this.controlPending = opts.controlPending ?? (() => false)
+    this.toolCallingAvailable = opts.toolCallingAvailable ?? (() => true)
     this.systemHandlers = opts.systemHandlers ?? {}
     this.watchlistService = opts.watchlistService ?? null
   }
@@ -170,6 +174,11 @@ export class SchedulerJobExecutor {
       throw new Error('team_wake scheduler job requires payload.message')
     if (!projectId)
       throw new Error('team_wake scheduler job requires payload.project_id')
+    if (!this.toolCallingAvailable()) {
+      throw new ModelConfigurationError(
+        '当前激活模型不支持工具调用，无法执行自动 Team 唤醒。请切换支持工具调用的模型。',
+      )
+    }
     if (!this.teamManagerForProject)
       throw new Error('team manager lookup is unavailable')
     const manager = this.teamManagerForProject(projectId)
