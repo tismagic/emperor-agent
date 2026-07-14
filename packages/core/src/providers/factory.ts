@@ -22,7 +22,15 @@ export function createProvider(
   args: CreateProviderArgs,
 ): AnthropicProvider | OpenAICompatProvider | BedrockProvider {
   const { spec, ...common } = args
-  const backend = spec?.backend ?? 'openai_compat'
+  // Transitional runtime bridge. RegistryProvider.backend is deliberately
+  // limited to the two public protocols; Task 2 removes these dead branches.
+  const backend = (spec?.backend ?? 'openai_compat') as
+    | 'openai_compat'
+    | 'anthropic'
+    | 'azure_openai'
+    | 'bedrock'
+    | 'openai_codex'
+    | 'github_copilot'
   switch (backend) {
     case 'anthropic':
       return new AnthropicProvider(common)

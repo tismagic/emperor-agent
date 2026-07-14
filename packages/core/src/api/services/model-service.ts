@@ -170,7 +170,7 @@ export class CoreModelService {
       providerConfig,
     )
 
-    if (spec.modelDiscovery === 'unsupported') {
+    if (spec.legacyModelDiscovery === 'unsupported') {
       return discoveryUnavailable(
         spec,
         apiBase,
@@ -186,7 +186,7 @@ export class CoreModelService {
         `请先填写 ${spec.displayName} 的 API Key 后再获取模型列表。`,
       )
     }
-    if (!apiBase && spec.modelDiscovery === 'openai_compat') {
+    if (!apiBase && spec.legacyModelDiscovery === 'openai_compat') {
       return discoveryUnavailable(
         spec,
         apiBase,
@@ -195,7 +195,7 @@ export class CoreModelService {
       )
     }
 
-    if (spec.modelDiscovery === 'anthropic') {
+    if (spec.legacyModelDiscovery === 'anthropic') {
       return discoverAnthropicModels(spec, apiBase, apiKey, extraHeaders)
     }
     return discoverOpenAiCompatibleModels(spec, apiBase, apiKey, extraHeaders)
@@ -510,7 +510,7 @@ function discoveryUnavailable(
     ok: false,
     provider: spec.name,
     apiBase,
-    source: spec.modelDiscovery,
+    source: spec.legacyModelDiscovery,
     models: [],
     code,
     message,

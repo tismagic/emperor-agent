@@ -10,26 +10,12 @@ export type ProviderProtocol = 'openai' | 'anthropic'
 /** @deprecated factory 完成双协议迁移后删除。 */
 export type ProviderBackend = 'openai_compat' | 'anthropic'
 
-/** @deprecated 仅让尚未迁移的 factory switch 编译；registry 不接受这些值。 */
-type LegacyFactoryBackend =
-  | ProviderBackend
-  | 'azure_openai'
-  | 'bedrock'
-  | 'openai_codex'
-  | 'github_copilot'
-
-export type RegistryProviderBackend = ProviderBackend
-
 export type ProviderModelDiscovery =
   'openai_compat' | 'anthropic' | 'unsupported'
 
 export type ProviderDiscoveryByProtocol = Readonly<
   Partial<Record<ProviderProtocol, ProviderModelDiscovery>>
 >
-
-/** @deprecated Task 2 删除与标量 discovery 的交叉兼容。 */
-type TransitionalProviderDiscovery = ProviderDiscoveryByProtocol &
-  ProviderModelDiscovery
 
 export type ProviderReasoningAdapter =
   | 'openai_effort'
@@ -46,9 +32,7 @@ export type ProviderReasoningAdapters = Readonly<
 export type ProviderRegion =
   'foreign' | 'aggregator' | 'cloud' | 'cn' | 'local' | 'other'
 
-export interface ProviderSpec<
-  Backend extends LegacyFactoryBackend = LegacyFactoryBackend,
-> {
+export interface ProviderSpec {
   name: string
   displayName: string
   protocols: readonly ProviderProtocol[]
@@ -59,10 +43,12 @@ export interface ProviderSpec<
    * Protocol-aware discovery metadata. The scalar union remains type-visible
    * only while the legacy CoreApi discovery caller is migrated in Task 2.
    */
-  modelDiscovery: TransitionalProviderDiscovery
+  modelDiscovery: ProviderDiscoveryByProtocol
+  /** @deprecated Task 2 将 discovery 调用方切到显式 protocol 后删除。 */
+  legacyModelDiscovery: ProviderModelDiscovery
   reasoningAdapter: ProviderReasoningAdapters
   /** @deprecated use protocols/defaultProtocol. */
-  backend: Backend
+  backend: ProviderBackend
   /** @deprecated use apiBases[protocol]. */
   defaultApiBase: string | null
   websiteUrl: string | null
@@ -105,7 +91,7 @@ export interface ProviderOption {
   thinkingStyle: string | null
 }
 
-type RegistryProviderSpec = ProviderSpec<RegistryProviderBackend>
+type RegistryProviderSpec = ProviderSpec
 
 type SpecInput = Pick<
   RegistryProviderSpec,
@@ -216,7 +202,10 @@ function spec(input: SpecInput): RegistryProviderSpec {
       ? (apiBases[defaultProtocol] ?? null)
       : null,
     iconId: input.iconId === undefined ? input.name : input.iconId,
-    modelDiscovery: discovery as unknown as TransitionalProviderDiscovery,
+    modelDiscovery: discovery,
+    legacyModelDiscovery:
+      (defaultProtocol ? discovery[defaultProtocol] : undefined) ??
+      'unsupported',
     reasoningAdapter,
   }
 }
@@ -592,7 +581,7 @@ export function providerOptions(): ProviderOption[] {
     defaultProtocol: s.defaultProtocol,
     apiBases: s.apiBases,
     iconId: s.iconId,
-    modelDiscovery: s.modelDiscovery as ProviderDiscoveryByProtocol,
+    modelDiscovery: s.modelDiscovery,
     reasoningAdapter: s.reasoningAdapter,
     websiteUrl: s.websiteUrl ?? '',
     apiKeyUrl: s.apiKeyUrl ?? '',
