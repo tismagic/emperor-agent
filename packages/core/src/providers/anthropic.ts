@@ -1,8 +1,5 @@
 import Anthropic from '@anthropic-ai/sdk'
-import {
-  reasoningPayload,
-  type ReasoningEffort,
-} from '../model/profile'
+import { reasoningPayload, type ReasoningEffort } from '../model/profile'
 import { logger } from '../util/log'
 import { normalizeApiBase } from './registry'
 import {
@@ -374,15 +371,9 @@ function thinkingBudget(reasoning: Record<string, unknown>): number | null {
 function asReasoningEffort(
   value: string | null | undefined,
 ): ReasoningEffort | null {
-  return [
-    'none',
-    'minimal',
-    'low',
-    'medium',
-    'high',
-    'xhigh',
-    'max',
-  ].includes(value ?? '')
+  return ['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'].includes(
+    value ?? '',
+  )
     ? (value as ReasoningEffort)
     : null
 }

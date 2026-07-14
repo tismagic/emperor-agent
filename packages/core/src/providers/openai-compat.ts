@@ -3,10 +3,7 @@
  * 对齐 Python `agent/providers/openai_compat.py`。
  */
 import OpenAI from 'openai'
-import {
-  reasoningPayload,
-  type ReasoningEffort,
-} from '../model/profile'
+import { reasoningPayload, type ReasoningEffort } from '../model/profile'
 import { logger } from '../util/log'
 import { normalizeApiBase, type ProviderSpec } from './registry'
 import {
@@ -64,8 +61,7 @@ const UI_AND_CORE_BODY_FIELDS = new Set([
   'max_tokens',
   'max_completion_tokens',
 ])
-const NO_TEMPERATURE_MODEL_RE =
-  /(?:^|[/._-])(?:gpt-5|o[134])(?:$|[/._-])/
+const NO_TEMPERATURE_MODEL_RE = /(?:^|[/._-])(?:gpt-5|o[134])(?:$|[/._-])/
 
 export class OpenAICompatProvider extends LLMProvider {
   readonly spec: ProviderSpec | undefined
@@ -396,16 +392,12 @@ function streamUsageUnsupported(text: string): boolean {
   return lower.includes('stream_options') || lower.includes('include_usage')
 }
 
-function asReasoningEffort(value: string | null | undefined): ReasoningEffort | null {
-  return [
-    'none',
-    'minimal',
-    'low',
-    'medium',
-    'high',
-    'xhigh',
-    'max',
-  ].includes(value ?? '')
+function asReasoningEffort(
+  value: string | null | undefined,
+): ReasoningEffort | null {
+  return ['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'].includes(
+    value ?? '',
+  )
     ? (value as ReasoningEffort)
     : null
 }

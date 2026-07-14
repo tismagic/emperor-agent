@@ -28,9 +28,7 @@ function profile(
     modelId: options.modelId ?? 'unknown-model',
     maxTokens: options.maxTokens,
     capabilityOverrides: {
-      ...(options.toolCall === undefined
-        ? {}
-        : { toolCall: options.toolCall }),
+      ...(options.toolCall === undefined ? {} : { toolCall: options.toolCall }),
       ...(options.vision === undefined ? {} : { vision: options.vision }),
       ...(options.reasoning === undefined
         ? {}
@@ -403,7 +401,13 @@ describe('OpenAICompatProvider', () => {
   })
 
   it.each([
-    ['deepseek', 'deepseek-reasoner', 'thinking', { type: 'disabled' }, { type: 'enabled' }],
+    [
+      'deepseek',
+      'deepseek-reasoner',
+      'thinking',
+      { type: 'disabled' },
+      { type: 'enabled' },
+    ],
     ['dashscope', 'qwen3-thinking', 'enable_thinking', false, true],
     ['minimax', 'MiniMax-M2', 'reasoning_split', false, true],
   ] as const)(
@@ -643,7 +647,6 @@ describe('AbortSignal forwarding', () => {
     await prov.chatStream({ messages: [{ role: 'user', content: 'hi' }] })
     expect(receivedOptions).toBeUndefined()
   })
-
 })
 
 // ── Wave5 onToolCallComplete ──

@@ -15,10 +15,7 @@ import {
 } from '../providers/registry'
 import { type GenerationSettings, type LLMProvider } from '../providers/base'
 import { modelAvailability, type ModelAvailability } from './availability'
-import {
-  resolveModelProfile,
-  type ResolvedModelProfile,
-} from './profile'
+import { resolveModelProfile, type ResolvedModelProfile } from './profile'
 
 export type ModelRole = 'main' | 'secondary'
 
