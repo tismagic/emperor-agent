@@ -14,9 +14,7 @@ function tmp(prefix: string): string {
   return mkdtempSync(join(tmpdir(), prefix))
 }
 
-function entry(
-  overrides: Partial<ModelEntryV2> = {},
-): ModelEntryV2 {
+function entry(overrides: Partial<ModelEntryV2> = {}): ModelEntryV2 {
   return {
     entryId: 'entry-openai',
     provider: 'openai',
@@ -32,7 +30,11 @@ function entry(
   }
 }
 
-function writeConfig(root: string, models: ModelEntryV2[], activeModelId = models[0]?.entryId ?? null): void {
+function writeConfig(
+  root: string,
+  models: ModelEntryV2[],
+  activeModelId = models[0]?.entryId ?? null,
+): void {
   const config: ModelConfigV2 = { schemaVersion: 2, activeModelId, models }
   writeFileSync(
     join(root, 'model_config.json'),
@@ -100,7 +102,9 @@ describe('CoreModelService schema v2', () => {
       },
       availability: { usable: true },
     })
-    expect(payload.providerOptions.some((item) => item.name === 'openai')).toBe(true)
+    expect(payload.providerOptions.some((item) => item.name === 'openai')).toBe(
+      true,
+    )
     expect(payload).not.toHaveProperty('config')
     expect(payload).not.toHaveProperty('secondary')
     expect(payload).not.toHaveProperty('routing')
@@ -124,10 +128,12 @@ describe('CoreModelService schema v2', () => {
       },
     })
 
-    const first = await modelService.saveEntry(entry({
-      entryId: undefined as unknown as string,
-      legacy: { temperature: 0.3, extraBody: { keep: true } },
-    }))
+    const first = await modelService.saveEntry(
+      entry({
+        entryId: undefined as unknown as string,
+        legacy: { temperature: 0.3, extraBody: { keep: true } },
+      }),
+    )
     const firstId = first.activeModelId!
     expect(first.models).toHaveLength(1)
     expect(first.profileOnboarding).toMatchObject({ started: true })
@@ -138,9 +144,14 @@ describe('CoreModelService schema v2', () => {
       modelId: 'gpt-5.3-codex',
       apiKey: '',
     })
-    let onDisk = JSON.parse(readFileSync(join(root, 'model_config.json'), 'utf8'))
+    let onDisk = JSON.parse(
+      readFileSync(join(root, 'model_config.json'), 'utf8'),
+    )
     expect(onDisk.models[0].apiKey).toBe('sk-secret-1234')
-    expect(onDisk.models[0].legacy).toEqual({ temperature: 0.3, extraBody: { keep: true } })
+    expect(onDisk.models[0].legacy).toEqual({
+      temperature: 0.3,
+      extraBody: { keep: true },
+    })
 
     await modelService.saveEntry({ entryId: firstId, apiKey: '***1234' })
     onDisk = JSON.parse(readFileSync(join(root, 'model_config.json'), 'utf8'))
@@ -150,17 +161,28 @@ describe('CoreModelService schema v2', () => {
     onDisk = JSON.parse(readFileSync(join(root, 'model_config.json'), 'utf8'))
     expect(onDisk.models[0].apiKey).toBeNull()
 
-    const second = await modelService.saveEntry(entry({
-      entryId: undefined as unknown as string,
-      provider: 'ollama',
-      modelId: 'llama3',
-      apiBase: 'http://localhost:11434/v1',
-      apiKey: null,
-      reasoningEffort: null,
-    }))
-    const secondId = second.models.find((item) => item.modelId === 'llama3')!.entryId
+    const second = await modelService.saveEntry(
+      entry({
+        entryId: undefined as unknown as string,
+        provider: 'ollama',
+        modelId: 'llama3',
+        apiBase: 'http://localhost:11434/v1',
+        apiKey: null,
+        reasoningEffort: null,
+      }),
+    )
+    const secondId = second.models.find(
+      (item) => item.modelId === 'llama3',
+    )!.entryId
     expect(second.activeModelId).toBe(firstId)
-    expect(lifecycle).toEqual(['refresh', 'onboarding', 'refresh', 'refresh', 'refresh', 'refresh'])
+    expect(lifecycle).toEqual([
+      'refresh',
+      'onboarding',
+      'refresh',
+      'refresh',
+      'refresh',
+      'refresh',
+    ])
 
     await modelService.activate(secondId)
     expect((await modelService.getConfig()).activeModelId).toBe(secondId)
@@ -182,47 +204,111 @@ describe('CoreModelService schema v2', () => {
     const modelService = await service(root)
 
     await modelService.setReasoningEffort('entry-openai', 'xhigh')
-    expect((await loadModelConfig(root)).raw.models[0]?.reasoningEffort).toBe('xhigh')
+    expect((await loadModelConfig(root)).raw.models[0]?.reasoningEffort).toBe(
+      'xhigh',
+    )
     await expect(
       modelService.setReasoningEffort('entry-openai', 'max'),
     ).rejects.toThrow('不支持思考强度')
     await modelService.setReasoningEffort('entry-openai', null)
-    expect((await loadModelConfig(root)).raw.models[0]?.reasoningEffort).toBeNull()
+    expect(
+      (await loadModelConfig(root)).raw.models[0]?.reasoningEffort,
+    ).toBeNull()
+
+    await expect(
+      modelService.saveEntry({
+        entryId: 'entry-openai',
+        modelId: 'unknown-model',
+        reasoningEffort: 'high',
+      }),
+    ).rejects.toThrow('不支持思考强度')
+  })
+
+  it('resolves a draft model profile before an entry is saved', async () => {
+    const root = tmp('emperor-model-service-profile-preview-')
+    writeConfig(root, [])
+    const modelService = await service(root)
+
+    expect(
+      modelService.resolveProfile({
+        provider: 'openai',
+        protocol: 'openai',
+        modelId: 'gpt-5.2',
+        contextWindowTokens: 256_000,
+        maxTokens: 32_000,
+        capabilityOverrides: { vision: false },
+      }),
+    ).toMatchObject({
+      reasoning: true,
+      vision: false,
+      sources: { vision: 'override' },
+      contextWindowTokens: 256_000,
+      maxTokens: 32_000,
+      reasoningEfforts: expect.arrayContaining(['high', 'xhigh']),
+    })
   })
 
   it('tests exactly the requested entry without accepting a model role', async () => {
     const root = tmp('emperor-model-service-test-')
-    writeConfig(root, [entry({ entryId: 'active', modelId: 'active-model' }), entry({ entryId: 'target', modelId: 'target-model' })], 'active')
+    writeConfig(
+      root,
+      [
+        entry({ entryId: 'active', modelId: 'active-model' }),
+        entry({ entryId: 'target', modelId: 'target-model' }),
+      ],
+      'active',
+    )
     const modelService = await service(root)
-    const chat = vi.spyOn((modelService as any).snapshotForModelTest(
-      await loadModelConfig(root),
-      'target',
-    ).provider, 'chat').mockResolvedValue({
-      content: 'pong', toolCalls: [], finishReason: 'stop', usage: { input: 1, output: 1 }, reasoningContent: null, thinkingBlocks: null,
-    })
+    const chat = vi
+      .spyOn(
+        (modelService as any).snapshotForModelTest(
+          await loadModelConfig(root),
+          'target',
+        ).provider,
+        'chat',
+      )
+      .mockResolvedValue({
+        content: 'pong',
+        toolCalls: [],
+        finishReason: 'stop',
+        usage: { input: 1, output: 1 },
+        reasoningContent: null,
+        thinkingBlocks: null,
+      })
     vi.spyOn(modelService as any, 'snapshotForModelTest').mockReturnValue({
-      ...(modelService as any).snapshotForModelTest(await loadModelConfig(root), 'target'),
+      ...(modelService as any).snapshotForModelTest(
+        await loadModelConfig(root),
+        'target',
+      ),
       provider: { chat },
     })
 
-    await expect(modelService.test({ entryId: 'target', kind: 'text' })).resolves.toMatchObject({
+    await expect(
+      modelService.test({ entryId: 'target', kind: 'text' }),
+    ).resolves.toMatchObject({
       ok: true,
       entryId: 'target',
       model: 'target-model',
       sample: 'pong',
     })
-    expect(JSON.stringify(await modelService.test({ entryId: 'missing', kind: 'text' }))).not.toContain('modelRole')
+    expect(
+      JSON.stringify(
+        await modelService.test({ entryId: 'missing', kind: 'text' }),
+      ),
+    ).not.toContain('modelRole')
   })
 
   it('discovers models using the selected protocol and restores an existing masked key', async () => {
     const root = tmp('emperor-model-service-discover-')
-    writeConfig(root, [entry({
-      entryId: 'deepseek',
-      provider: 'deepseek',
-      protocol: 'anthropic',
-      modelId: 'deepseek-chat',
-      apiBase: 'https://api.deepseek.com/anthropic',
-    })])
+    writeConfig(root, [
+      entry({
+        entryId: 'deepseek',
+        provider: 'deepseek',
+        protocol: 'anthropic',
+        modelId: 'deepseek-chat',
+        apiBase: 'https://api.deepseek.com/anthropic',
+      }),
+    ])
     const calls: Array<{ url: string; headers: Headers }> = []
     vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
       calls.push({ url: String(input), headers: new Headers(init?.headers) })
@@ -232,7 +318,9 @@ describe('CoreModelService schema v2', () => {
       })
     })
 
-    const result = await (await service(root)).discoverModels({
+    const result = await (
+      await service(root)
+    ).discoverModels({
       entryId: 'deepseek',
       provider: 'deepseek',
       protocol: 'anthropic',
@@ -252,31 +340,37 @@ describe('CoreModelService schema v2', () => {
 
   it('never reuses an entry credential for a changed discovery endpoint or explicit null key', async () => {
     const root = tmp('emperor-model-service-discover-secret-boundary-')
-    writeConfig(root, [entry({
-      entryId: 'deepseek',
-      provider: 'deepseek',
-      protocol: 'openai',
-      modelId: 'deepseek-chat',
-      apiBase: 'https://api.deepseek.com/v1',
-    })])
+    writeConfig(root, [
+      entry({
+        entryId: 'deepseek',
+        provider: 'deepseek',
+        protocol: 'openai',
+        modelId: 'deepseek-chat',
+        apiBase: 'https://api.deepseek.com/v1',
+      }),
+    ])
     const fetchSpy = vi.spyOn(globalThis, 'fetch')
     const modelService = await service(root)
 
-    await expect(modelService.discoverModels({
-      entryId: 'deepseek',
-      provider: 'deepseek',
-      protocol: 'openai',
-      apiBase: 'https://attacker.example/v1',
-      apiKey: '***1234',
-    })).resolves.toMatchObject({ ok: false, code: 'credential_required' })
+    await expect(
+      modelService.discoverModels({
+        entryId: 'deepseek',
+        provider: 'deepseek',
+        protocol: 'openai',
+        apiBase: 'https://attacker.example/v1',
+        apiKey: '***1234',
+      }),
+    ).resolves.toMatchObject({ ok: false, code: 'credential_required' })
 
-    await expect(modelService.discoverModels({
-      entryId: 'deepseek',
-      provider: 'deepseek',
-      protocol: 'openai',
-      apiBase: 'https://api.deepseek.com/v1',
-      apiKey: null,
-    })).resolves.toMatchObject({ ok: false, code: 'credential_required' })
+    await expect(
+      modelService.discoverModels({
+        entryId: 'deepseek',
+        provider: 'deepseek',
+        protocol: 'openai',
+        apiBase: 'https://api.deepseek.com/v1',
+        apiKey: null,
+      }),
+    ).resolves.toMatchObject({ ok: false, code: 'credential_required' })
 
     expect(fetchSpy).not.toHaveBeenCalled()
   })
@@ -298,9 +392,11 @@ describe('CoreModelService schema v2', () => {
       started: true,
       state: { status: 'in_progress' },
     }))
-    const activated = await (await service(activateRoot, {
-      afterConfigSaved: activateHook,
-    })).activate('local')
+    const activated = await (
+      await service(activateRoot, {
+        afterConfigSaved: activateHook,
+      })
+    ).activate('local')
     expect(activated.profileOnboarding).toMatchObject({ started: true })
     expect(activateHook).toHaveBeenCalledOnce()
 
@@ -310,9 +406,11 @@ describe('CoreModelService schema v2', () => {
       started: true,
       state: { status: 'in_progress' },
     }))
-    const deleted = await (await service(deleteRoot, {
-      afterConfigSaved: deleteHook,
-    })).deleteEntry('invalid')
+    const deleted = await (
+      await service(deleteRoot, {
+        afterConfigSaved: deleteHook,
+      })
+    ).deleteEntry('invalid')
     expect(deleted.profileOnboarding).toMatchObject({ started: true })
     expect(deleteHook).toHaveBeenCalledOnce()
   })
@@ -346,16 +444,20 @@ describe('CoreModelService schema v2', () => {
       provider: { chat },
     })
 
-    await expect(modelService.test({
-      entryId: 'entry-openai',
-      kind: 'vision',
-    })).resolves.toMatchObject({ ok: false })
+    await expect(
+      modelService.test({
+        entryId: 'entry-openai',
+        kind: 'vision',
+      }),
+    ).resolves.toMatchObject({ ok: false })
     expect(readFileSync(join(root, 'model_config.json'), 'utf8')).toBe(original)
 
-    await expect(modelService.test({
-      entryId: 'entry-openai',
-      kind: 'vision',
-    })).resolves.toMatchObject({ ok: true, sample: 'red' })
+    await expect(
+      modelService.test({
+        entryId: 'entry-openai',
+        kind: 'vision',
+      }),
+    ).resolves.toMatchObject({ ok: true, sample: 'red' })
     expect(readFileSync(join(root, 'model_config.json'), 'utf8')).toBe(original)
   })
 
@@ -364,11 +466,20 @@ describe('CoreModelService schema v2', () => {
     writeConfig(root, [])
     const modelService = await service(root)
 
-    await expect(modelService.discoverModels({
-      provider: 'custom', apiBase: 'https://example.test/v1', apiKey: 'key',
-    })).rejects.toThrow('protocol')
-    await expect(modelService.discoverModels({
-      provider: 'azure_openai', protocol: 'openai', apiBase: 'https://example.test/v1', apiKey: 'key',
-    })).rejects.toThrow('provider')
+    await expect(
+      modelService.discoverModels({
+        provider: 'custom',
+        apiBase: 'https://example.test/v1',
+        apiKey: 'key',
+      }),
+    ).rejects.toThrow('protocol')
+    await expect(
+      modelService.discoverModels({
+        provider: 'azure_openai',
+        protocol: 'openai',
+        apiBase: 'https://example.test/v1',
+        apiKey: 'key',
+      }),
+    ).rejects.toThrow('provider')
   })
 })

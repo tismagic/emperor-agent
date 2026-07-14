@@ -84,6 +84,7 @@ const CORE_API_ROUTE_OPERATION_LIST = [
   op('mcp.saveConfig', 'POST', '/api/mcp-config'),
   op('model.discoverModels', 'IPC', 'model.discoverModels'),
   op('model.getConfig', 'GET', '/api/model-config'),
+  op('model.resolveProfile', 'IPC', 'model.resolveProfile'),
   op('model.saveEntry', 'POST', '/api/models'),
   op('model.deleteEntry', 'DELETE', '/api/models/{entryId}'),
   op('model.activate', 'POST', '/api/models/{entryId}/activate'),
@@ -596,6 +597,9 @@ export class CoreApi {
 
   readonly model = {
     getConfig: async () => this.modelService.getConfig(),
+    resolveProfile: (
+      input: Parameters<CoreModelService['resolveProfile']>[0],
+    ) => this.modelService.resolveProfile(input),
     saveEntry: async (entry: Parameters<CoreModelService['saveEntry']>[0]) => {
       this.assertMutation('model', 'saveEntry')
       await this.hooksService.authorizeConfigChange('model.saveEntry', entry)
@@ -603,10 +607,9 @@ export class CoreApi {
     },
     deleteEntry: async ({ entryId }: { entryId: string }) => {
       this.assertMutation('model', 'deleteEntry')
-      await this.hooksService.authorizeConfigChange(
-        'model.deleteEntry',
-        { entryId },
-      )
+      await this.hooksService.authorizeConfigChange('model.deleteEntry', {
+        entryId,
+      })
       return this.modelService.deleteEntry(entryId)
     },
     activate: async ({ entryId }: { entryId: string }) => {

@@ -15,7 +15,7 @@ describe('Core operation registry', () => {
   it('covers every public CoreApi route exactly once', () => {
     const routeKeys = CORE_API_ROUTE_OPERATIONS.map((entry) => entry.key).sort()
 
-    expect(coreOperationKeys()).toHaveLength(95)
+    expect(coreOperationKeys()).toHaveLength(96)
     expect(coreOperationKeys()).toEqual(routeKeys)
     expect(Object.keys(CORE_OPERATION_REGISTRY).sort()).toEqual(routeKeys)
   })
@@ -66,6 +66,7 @@ describe('Core operation registry', () => {
         'model.saveEntry',
         'model.deleteEntry',
         'model.activate',
+        'model.resolveProfile',
         'model.setReasoningEffort',
       ]),
     )
@@ -97,6 +98,18 @@ describe('Core operation registry', () => {
         { entryId: 'entry-1', kind: 'text', role: 'secondary' },
       ]),
     ).toThrow()
+    expect(
+      CORE_OPERATION_REGISTRY['model.resolveProfile'].args.parse([
+        {
+          provider: 'openai',
+          protocol: 'openai',
+          modelId: 'gpt-5.2',
+          capabilityOverrides: { vision: false },
+          contextWindowTokens: 128_000,
+          maxTokens: 16_000,
+        },
+      ]),
+    ).toHaveLength(1)
     expect(
       CORE_OPERATION_REGISTRY['model.test'].args.parse([
         { entryId: 'entry-1', kind: 'vision' },

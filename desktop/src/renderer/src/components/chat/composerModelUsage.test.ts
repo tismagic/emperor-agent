@@ -19,4 +19,12 @@ describe('Composer single-model controls', () => {
     expect(source).toContain("if (normalized === 'max') return 'Max'")
     expect(source).not.toMatch(/normalized === 'xhigh'.*return 'max'/s)
   })
+
+  it('moves keyboard focus into the model menu and keeps navigation inside it', () => {
+    expect(source).toContain('focusModelMenuItem(0)')
+    expect(source).toContain("event.key !== 'ArrowDown'")
+    expect(source).toContain("event.key !== 'ArrowUp'")
+    expect(source).toContain("event.key !== 'Tab'")
+    expect(source).toContain('@keydown="onModelMenuKeydown"')
+  })
 })

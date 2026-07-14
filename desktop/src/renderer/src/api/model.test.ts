@@ -3,6 +3,7 @@ import {
   activateModelEntry,
   deleteModelEntry,
   discoverProviderModels,
+  resolveModelProfilePreview,
   saveModelEntry,
   setModelReasoningEffort,
   testModelEntry,
@@ -100,6 +101,13 @@ describe('model API Core IPC (MIG-IPC-010)', () => {
     })
     await activateModelEntry('entry-1')
     await setModelReasoningEffort('entry-1', 'xhigh')
+    await resolveModelProfilePreview({
+      provider: 'openai',
+      protocol: 'openai',
+      modelId: 'gpt-5.2',
+      contextWindowTokens: 128_000,
+      maxTokens: 16_000,
+    })
     await deleteModelEntry('entry-1')
 
     expect(calls).toEqual([
@@ -108,6 +116,16 @@ describe('model API Core IPC (MIG-IPC-010)', () => {
       [
         'model.setReasoningEffort',
         { entryId: 'entry-1', reasoningEffort: 'xhigh' },
+      ],
+      [
+        'model.resolveProfile',
+        {
+          provider: 'openai',
+          protocol: 'openai',
+          modelId: 'gpt-5.2',
+          contextWindowTokens: 128_000,
+          maxTokens: 16_000,
+        },
       ],
       ['model.deleteEntry', { entryId: 'entry-1' }],
     ])

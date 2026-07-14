@@ -15,8 +15,14 @@ import {
   type ModelEntryV2,
   type ModelProtocol,
 } from '../../config/model-config'
-import { modelAvailability, type ModelAvailability } from '../../model/availability'
-import { resolveModelProfile, type ResolvedModelProfile } from '../../model/profile'
+import {
+  modelAvailability,
+  type ModelAvailability,
+} from '../../model/availability'
+import {
+  resolveModelProfile,
+  type ResolvedModelProfile,
+} from '../../model/profile'
 import {
   buildProviderSnapshot,
   type ModelRoute,
@@ -51,17 +57,24 @@ export interface CoreModelServiceDeps {
   router: CoreModelRouterLike | (() => CoreModelRouterLike)
   refreshModelConfig?: () => void | Promise<void>
   afterConfigSaved?: () =>
-    | ProfileOnboardingActionResult
-    | Promise<ProfileOnboardingActionResult>
+    ProfileOnboardingActionResult | Promise<ProfileOnboardingActionResult>
 }
 
-export type ModelEntrySaveInput = Omit<
-  ModelEntryUpdate,
-  'legacy'
->
+export type ModelEntrySaveInput = Omit<ModelEntryUpdate, 'legacy'>
 
-export interface ModelEntryPayload
-  extends Omit<ModelEntryV2, 'apiKey' | 'legacy'> {
+export interface ModelProfilePreviewInput {
+  provider: string
+  protocol: ModelProtocol
+  modelId: string
+  capabilityOverrides?: ModelEntryV2['capabilityOverrides']
+  contextWindowTokens?: number
+  maxTokens?: number
+}
+
+export interface ModelEntryPayload extends Omit<
+  ModelEntryV2,
+  'apiKey' | 'legacy'
+> {
   apiKey: string
   resolvedProfile: ResolvedModelProfile
 }
@@ -77,10 +90,7 @@ export interface CurrentModelPayload {
   reasoningEffort: string | null
   contextWindowTokens: number
   maxTokens: number
-  capabilities: Pick<
-    ResolvedModelProfile,
-    'toolCall' | 'vision' | 'reasoning'
-  >
+  capabilities: Pick<ResolvedModelProfile, 'toolCall' | 'vision' | 'reasoning'>
   capabilitySources: ResolvedModelProfile['sources']
   reasoningEfforts: ResolvedModelProfile['reasoningEfforts']
   reasoningAdapter: ResolvedModelProfile['reasoningAdapter']
@@ -144,8 +154,43 @@ export class CoreModelService {
     const before = await loadModelConfig(this.root)
     const wasUsable = modelAvailability(before).usable
     const update = normalizeEntrySecret(input)
+    const prospective = upsertModelEntryConfig(before.raw, update)
+    const prospectiveEntry = update.entryId
+      ? prospective.models.find((entry) => entry.entryId === update.entryId)
+      : prospective.models[prospective.models.length - 1]
+    if (!prospectiveEntry) throw new Error('保存模型前无法解析模型条目')
+    const prospectiveProfile = resolvedProfile(prospectiveEntry)
+    if (
+      prospectiveEntry.reasoningEffort &&
+      !prospectiveProfile.reasoningEfforts.includes(
+        prospectiveEntry.reasoningEffort as any,
+      )
+    )
+      throw new Error(
+        `模型 ${prospectiveEntry.modelId} 不支持思考强度 ${prospectiveEntry.reasoningEffort}`,
+      )
     await saveModelEntry(this.root, update)
     return this.afterModelMutation(wasUsable)
+  }
+
+  resolveProfile(input: ModelProfilePreviewInput): ResolvedModelProfile {
+    const provider = trimString(input.provider)
+    const spec = findByName(provider)
+    if (!spec) throw new Error(`provider 无效: ${provider}`)
+    if (!spec.protocols.includes(input.protocol))
+      throw new Error(
+        `provider ${spec.name} 不支持 protocol: ${input.protocol}`,
+      )
+    const modelId = trimString(input.modelId)
+    if (!modelId) throw new Error('modelId required')
+    return resolveModelProfile({
+      provider: spec.name,
+      protocol: input.protocol,
+      modelId,
+      capabilityOverrides: input.capabilityOverrides,
+      contextWindowTokens: input.contextWindowTokens,
+      maxTokens: input.maxTokens,
+    })
   }
 
   async deleteEntry(entryId: string): Promise<ModelConfigSavePayload> {
@@ -172,9 +217,7 @@ export class CoreModelService {
       reasoningEffort !== null &&
       !profile.reasoningEfforts.includes(reasoningEffort as any)
     )
-      throw new Error(
-        `模型 ${entry.modelId} 不支持思考强度 ${reasoningEffort}`,
-      )
+      throw new Error(`模型 ${entry.modelId} 不支持思考强度 ${reasoningEffort}`)
     await saveModelEntry(this.root, {
       entryId: entry.entryId,
       reasoningEffort,
@@ -193,11 +236,13 @@ export class CoreModelService {
     const submittedProtocol = trimString(input.protocol)
     if (spec.name === 'custom' && !submittedProtocol)
       throw new Error('custom provider 必须明确选择 protocol')
-    const protocol = (submittedProtocol || entry?.protocol || spec.defaultProtocol) as
-      | ModelProtocol
-      | null
+    const protocol = (submittedProtocol ||
+      entry?.protocol ||
+      spec.defaultProtocol) as ModelProtocol | null
     if (!protocol || !spec.protocols.includes(protocol))
-      throw new Error(`provider ${spec.name} 不支持 protocol: ${protocol ?? ''}`)
+      throw new Error(
+        `provider ${spec.name} 不支持 protocol: ${protocol ?? ''}`,
+      )
 
     const submittedBase = trimString(input.apiBase)
     const apiBase = normalizeApiBase(
@@ -267,7 +312,8 @@ export class CoreModelService {
 
     const config = await loadModelConfig(this.root)
     const entry = findEntry(config, entryId)
-    if (!entry) return { ok: false, kind, error: `model entry not found: ${entryId}` }
+    if (!entry)
+      return { ok: false, kind, error: `model entry not found: ${entryId}` }
 
     let snapshot: ProviderSnapshot
     try {
@@ -293,7 +339,9 @@ export class CoreModelService {
         temperature: 0,
         reasoningEffort: null,
       })
-      const sample = String(response.content || '').trim().slice(0, 200)
+      const sample = String(response.content || '')
+        .trim()
+        .slice(0, 200)
       const ok = kind === 'vision' ? visionOk(sample) : /pong/i.test(sample)
       const payload: Dict = {
         ok,
@@ -324,14 +372,17 @@ export class CoreModelService {
     entryId: string,
     forceVision = false,
   ): ProviderSnapshot {
-    if (!forceVision) return buildProviderSnapshot(config, { modelOverride: entryId })
+    if (!forceVision)
+      return buildProviderSnapshot(config, { modelOverride: entryId })
     const entry = findEntry(config, entryId)
     if (!entry) throw new Error(`model entry not found: ${entryId}`)
     const raw = upsertModelEntryConfig(config.raw, {
       entryId,
       capabilityOverrides: { ...entry.capabilityOverrides, vision: true },
     })
-    return buildProviderSnapshot(parseModelConfig(raw), { modelOverride: entryId })
+    return buildProviderSnapshot(parseModelConfig(raw), {
+      modelOverride: entryId,
+    })
   }
 
   private async afterModelMutation(
@@ -370,7 +421,9 @@ function normalizeEntrySecret(input: ModelEntrySaveInput): ModelEntryUpdate {
   return update
 }
 
-function resolvedProfile(entry: ModelEntry | ModelEntryV2): ResolvedModelProfile {
+function resolvedProfile(
+  entry: ModelEntry | ModelEntryV2,
+): ResolvedModelProfile {
   const modelId =
     entry.modelId || ('mainModelId' in entry ? entry.mainModelId : '')
   return resolveModelProfile({
@@ -582,7 +635,10 @@ function discoveryUnavailable(
   }
 }
 
-async function fetchWithTimeout(url: string, init: RequestInit): Promise<Response> {
+async function fetchWithTimeout(
+  url: string,
+  init: RequestInit,
+): Promise<Response> {
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), MODEL_DISCOVERY_TIMEOUT_MS)
   try {
@@ -597,7 +653,8 @@ function discoveryHeaders(
   defaults: Record<string, string>,
 ): Headers {
   const headers = new Headers({ accept: 'application/json', ...defaults })
-  for (const [key, value] of Object.entries(extraHeaders)) headers.set(key, value)
+  for (const [key, value] of Object.entries(extraHeaders))
+    headers.set(key, value)
   return headers
 }
 
@@ -620,14 +677,19 @@ function parseDiscoveredModels(body: unknown): DiscoveredModel[] {
   for (const raw of data) {
     if (!raw || typeof raw !== 'object' || Array.isArray(raw)) continue
     const item = raw as Record<string, unknown>
-    const id = trimString(item.id) || trimString(item.name) || trimString(item.model)
+    const id =
+      trimString(item.id) || trimString(item.name) || trimString(item.model)
     if (!id || seen.has(id)) continue
     seen.add(id)
     const model: DiscoveredModel = { id }
-    const ownedBy = trimString(item.owned_by) || trimString(item.ownedBy) || trimString(item.owner)
+    const ownedBy =
+      trimString(item.owned_by) ||
+      trimString(item.ownedBy) ||
+      trimString(item.owner)
     const created = item.created ?? item.created_at ?? item.createdAt
     if (ownedBy) model.ownedBy = ownedBy
-    if (typeof created === 'number' || typeof created === 'string') model.created = created
+    if (typeof created === 'number' || typeof created === 'string')
+      model.created = created
     out.push(model)
   }
   return out.sort((a, b) => a.id.localeCompare(b.id))
@@ -656,7 +718,8 @@ function codeForFetchError(error: unknown): string {
 }
 
 function fetchErrorMessage(error: unknown): string {
-  if (error instanceof Error && error.name === 'AbortError') return '获取模型列表超时。'
+  if (error instanceof Error && error.name === 'AbortError')
+    return '获取模型列表超时。'
   return error instanceof Error ? error.message : String(error)
 }
 
@@ -665,7 +728,10 @@ function visionProbeMessages(): OpenAiMessage[] {
     {
       role: 'user',
       content: [
-        { type: 'text', text: 'What is the color of this image? Reply with one word.' },
+        {
+          type: 'text',
+          text: 'What is the color of this image? Reply with one word.',
+        },
         {
           type: 'image_url',
           image_url: {
@@ -679,7 +745,10 @@ function visionProbeMessages(): OpenAiMessage[] {
 }
 
 function visionOk(sample: string): boolean {
-  const normalized = sample.trim().toLowerCase().replace(/[.!。！]+$/g, '')
+  const normalized = sample
+    .trim()
+    .toLowerCase()
+    .replace(/[.!。！]+$/g, '')
   return normalized === 'red' || normalized === '红' || normalized === '红色'
 }
 

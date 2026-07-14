@@ -411,14 +411,18 @@ export type ProviderRegion =
 export interface ProviderOption {
   name: string
   displayName?: string
-  protocols?: Array<'openai' | 'anthropic'> | readonly ('openai' | 'anthropic')[]
+  protocols?:
+    Array<'openai' | 'anthropic'> | readonly ('openai' | 'anthropic')[]
   defaultProtocol?: 'openai' | 'anthropic' | null
   apiBases?: Partial<Record<'openai' | 'anthropic', string>>
   iconId?: string | null
   websiteUrl?: string
   apiKeyUrl?: string
   modelDiscovery?: Partial<
-    Record<'openai' | 'anthropic', 'openai_compat' | 'anthropic' | 'unsupported'>
+    Record<
+      'openai' | 'anthropic',
+      'openai_compat' | 'anthropic' | 'unsupported'
+    >
   >
   region?: ProviderRegion
   isGateway?: boolean
@@ -478,6 +482,15 @@ export interface ModelEntrySaveInput {
   contextWindowTokens?: number
   maxTokens?: number
   reasoningEffort?: string | null
+}
+
+export interface ModelProfilePreviewInput {
+  provider: string
+  protocol: 'openai' | 'anthropic'
+  modelId: string
+  capabilityOverrides?: ModelCapabilityOverrides
+  contextWindowTokens?: number
+  maxTokens?: number
 }
 
 export interface AttachmentRef {

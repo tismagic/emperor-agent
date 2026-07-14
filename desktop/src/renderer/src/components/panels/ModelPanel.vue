@@ -1,17 +1,11 @@
 <script setup lang="ts">
-import { computed, nextTick, ref } from 'vue'
-import {
-  Eye,
-  EyeOff,
-  LoaderCircle,
-  RotateCw,
-  Search,
-  X,
-} from 'lucide-vue-next'
+import { computed, nextTick, ref, watch } from 'vue'
+import { Eye, EyeOff, LoaderCircle, RotateCw, Search, X } from 'lucide-vue-next'
 import {
   activateModelEntry,
   deleteModelEntry,
   discoverProviderModels,
+  resolveModelProfilePreview,
   saveModelEntry,
   testModelEntry,
 } from '../../api/model'
@@ -58,6 +52,7 @@ const testing = ref<'text' | 'vision' | null>(null)
 const testResult = ref<ModelTestResult | null>(null)
 const firstField = ref<HTMLInputElement | null>(null)
 const dialog = ref<HTMLElement | null>(null)
+let profilePreviewRevision = 0
 
 const fallbackProvider: ProviderOption = {
   name: 'custom',
@@ -126,6 +121,57 @@ const capabilityOptions: Array<{ value: CapabilityControl; label: string }> = [
 
 const inputTokenPresets = [32_000, 64_000, 128_000, 256_000]
 const outputTokenPresets = [8_000, 16_000, 32_000, 64_000]
+
+watch(
+  () => {
+    const draft = editing.value
+    if (!draft) return null
+    return JSON.stringify({
+      provider: draft.provider,
+      protocol: draft.protocol,
+      modelId: draft.modelId.trim(),
+      capabilityControls: draft.capabilityControls,
+      contextWindowTokens: draft.contextWindowTokens,
+      maxTokens: draft.maxTokens,
+    })
+  },
+  () => {
+    void refreshDraftProfile()
+  },
+)
+
+async function refreshDraftProfile(): Promise<void> {
+  const draft = editing.value
+  const modelId = draft?.modelId.trim() || ''
+  const revision = ++profilePreviewRevision
+  if (!draft || !modelId) {
+    if (draft) {
+      draft.resolvedProfile = undefined
+      draft.reasoningEffort = null
+    }
+    return
+  }
+  const preview = toModelEntrySaveInput(draft)
+  try {
+    const resolved = await resolveModelProfilePreview({
+      provider: draft.provider,
+      protocol: draft.protocol,
+      modelId,
+      capabilityOverrides: preview.capabilityOverrides,
+      contextWindowTokens: preview.contextWindowTokens,
+      maxTokens: preview.maxTokens,
+    })
+    if (revision !== profilePreviewRevision || editing.value !== draft) return
+    draft.resolvedProfile = resolved
+    const choices = reasoningChoices(resolved.reasoningEfforts)
+    if (draft.reasoningEffort && !choices.includes(draft.reasoningEffort))
+      draft.reasoningEffort = null
+  } catch {
+    if (revision !== profilePreviewRevision || editing.value !== draft) return
+    draft.resolvedProfile = undefined
+    draft.reasoningEffort = null
+  }
+}
 
 function providerForEntry(entry?: ModelEntry | null): ProviderOption {
   return (
@@ -210,9 +256,11 @@ function selectProtocol(protocol: 'openai' | 'anthropic'): void {
   )
 }
 
-function capabilityStatus(
-  key: (typeof capabilityRows)[number]['key'],
-): string {
+function onApiKeyInput(): void {
+  if (editing.value?.apiKey.trim()) editing.value.clearApiKey = false
+}
+
+function capabilityStatus(key: (typeof capabilityRows)[number]['key']): string {
   const profile = editing.value?.resolvedProfile
   if (!profile) return '保存后识别'
   const enabled = profile[key]
@@ -366,12 +414,16 @@ async function runTest(kind: 'text' | 'vision'): Promise<void> {
           class="model-editor-dialog"
           role="dialog"
           aria-modal="true"
-          :aria-labelledby="editing.entryId ? 'edit-model-title' : 'add-model-title'"
+          :aria-labelledby="
+            editing.entryId ? 'edit-model-title' : 'add-model-title'
+          "
           @keydown="keepFocusInDialog"
         >
           <header class="dialog-head">
             <div>
-              <h2 :id="editing.entryId ? 'edit-model-title' : 'add-model-title'">
+              <h2
+                :id="editing.entryId ? 'edit-model-title' : 'add-model-title'"
+              >
                 {{ editing.entryId ? '编辑模型' : '添加模型' }}
               </h2>
               <p>每条配置只对应一个模型，保存后可在列表中切换。</p>
@@ -403,7 +455,9 @@ async function runTest(kind: 'text' | 'vision'): Promise<void> {
                     v-model="providerSearch"
                     type="search"
                     autocomplete="off"
-                    :placeholder="selectedProvider.displayName || selectedProvider.name"
+                    :placeholder="
+                      selectedProvider.displayName || selectedProvider.name
+                    "
                     @click="providerResultsOpen = true"
                     @input="providerResultsOpen = true"
                   />
@@ -479,7 +533,10 @@ async function runTest(kind: 'text' | 'vision'): Promise<void> {
                     :type="showApiKey ? 'text' : 'password'"
                     autocomplete="off"
                     :disabled="editing.clearApiKey"
-                    :placeholder="editing.entryId ? '留空保留现有凭证' : '输入 API Key'"
+                    :placeholder="
+                      editing.entryId ? '留空保留现有凭证' : '输入 API Key'
+                    "
+                    @input="onApiKeyInput"
                   />
                   <button
                     type="button"
@@ -637,7 +694,10 @@ async function runTest(kind: 'text' | 'vision'): Promise<void> {
               </label>
             </section>
 
-            <section v-if="editing.entryId" class="form-section connection-test">
+            <section
+              v-if="editing.entryId"
+              class="form-section connection-test"
+            >
               <div class="form-section-title">
                 <span>连通测试</span>
                 <small>使用已保存配置发送最小请求</small>

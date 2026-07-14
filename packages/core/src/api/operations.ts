@@ -135,6 +135,16 @@ const modelDiscoverySchema = z
     extraHeaders: z.record(z.string(), z.string()).optional(),
   })
   .strict()
+const modelProfilePreviewSchema = z
+  .object({
+    provider: z.string().trim().min(1),
+    protocol: modelProtocolSchema,
+    modelId: z.string().trim().min(1),
+    capabilityOverrides: modelCapabilityOverridesSchema.optional(),
+    contextWindowTokens: z.number().int().positive().optional(),
+    maxTokens: z.number().int().positive().optional(),
+  })
+  .strict()
 
 const controlResumeSchema = z
   .object({
@@ -466,12 +476,18 @@ export const CORE_OPERATION_REGISTRY = {
     z.tuple([modelEntryIdSchema]),
     (api, [input]) => api.model.deleteEntry(input),
   ),
-  'model.discoverModels': operation(z.tuple([modelDiscoverySchema]), (api, [input]) =>
-    api.model.discoverModels(input),
+  'model.discoverModels': operation(
+    z.tuple([modelDiscoverySchema]),
+    (api, [input]) => api.model.discoverModels(input),
   ),
   'model.getConfig': operation(z.tuple([]), (api) => api.model.getConfig()),
-  'model.saveEntry': operation(z.tuple([modelEntrySaveSchema]), (api, [input]) =>
-    api.model.saveEntry(input),
+  'model.resolveProfile': operation(
+    z.tuple([modelProfilePreviewSchema]),
+    (api, [input]) => api.model.resolveProfile(input),
+  ),
+  'model.saveEntry': operation(
+    z.tuple([modelEntrySaveSchema]),
+    (api, [input]) => api.model.saveEntry(input),
   ),
   'model.setReasoningEffort': operation(
     z.tuple([modelReasoningEffortSchema]),

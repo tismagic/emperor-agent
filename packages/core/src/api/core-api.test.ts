@@ -75,6 +75,7 @@ const EXPECTED_OPERATIONS = [
   'model.deleteEntry',
   'model.discoverModels',
   'model.getConfig',
+  'model.resolveProfile',
   'model.saveEntry',
   'model.setReasoningEffort',
   'model.test',

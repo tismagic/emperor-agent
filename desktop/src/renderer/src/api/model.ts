@@ -2,7 +2,9 @@ import type {
   ModelConfigPayload,
   ModelDiscoveryResult,
   ModelEntrySaveInput,
+  ModelProfilePreviewInput,
   ModelTestResult,
+  ResolvedModelProfile,
 } from '../types'
 import { invokeCore } from './backend'
 
@@ -32,6 +34,12 @@ export async function setModelReasoningEffort(
     entryId,
     reasoningEffort,
   })
+}
+
+export async function resolveModelProfilePreview(
+  input: ModelProfilePreviewInput,
+): Promise<ResolvedModelProfile> {
+  return invokeCore('model.resolveProfile', input)
 }
 
 export async function testModelEntry(

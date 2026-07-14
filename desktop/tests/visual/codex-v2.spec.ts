@@ -211,8 +211,17 @@ test('model editor discovers candidates and retains a custom model id', async ({
   const modelId = page.getByLabel('模型 ID')
   await modelId.fill('visual-pro')
   await expect(modelId).toHaveValue('visual-pro')
+  const reasoning = page.getByLabel('思考强度')
+  await expect(reasoning).toBeEnabled()
+  await expect(
+    reasoning.getByRole('option', { name: 'high', exact: true }),
+  ).toHaveCount(1)
+  await expect(
+    reasoning.getByRole('option', { name: 'xhigh', exact: true }),
+  ).toHaveCount(1)
   await modelId.fill('private-model-v2')
   await expect(modelId).toHaveValue('private-model-v2')
+  await expect(reasoning).toBeDisabled()
   await expect(page.getByRole('button', { name: '保存模型' })).toBeEnabled()
 })
 
@@ -226,15 +235,17 @@ test('model editor remains inside the settings viewport when it shrinks', async 
   await expect(dialog).toBeVisible()
   await page.setViewportSize({ width: 390, height: 844 })
   await expectDialogWithinViewport(page, dialog)
-  const dialogScroll = await page.locator('.dialog-body').evaluate((element) => {
-    const host = element as HTMLElement
-    host.scrollTop = Math.min(80, host.scrollHeight - host.clientHeight)
-    return {
-      overflowY: window.getComputedStyle(host).overflowY,
-      scrollable: host.scrollHeight > host.clientHeight + 1,
-      scrolled: host.scrollTop > 0,
-    }
-  })
+  const dialogScroll = await page
+    .locator('.dialog-body')
+    .evaluate((element) => {
+      const host = element as HTMLElement
+      host.scrollTop = Math.min(80, host.scrollHeight - host.clientHeight)
+      return {
+        overflowY: window.getComputedStyle(host).overflowY,
+        scrollable: host.scrollHeight > host.clientHeight + 1,
+        scrolled: host.scrollTop > 0,
+      }
+    })
   expect(dialogScroll).toEqual({
     overflowY: 'auto',
     scrollable: true,
@@ -693,6 +704,12 @@ test('captures composer model menu on desktop', async ({ page }) => {
   await expect(page.locator('.composer')).toBeVisible()
   await page.locator('.model-button').click()
   await assertFloatingModelMenu(page)
+  await expect(page.locator('.model-menu button').first()).toBeFocused()
+  await page.keyboard.press('Tab')
+  await expect(page.locator('.model-menu')).toContainText('模型条目')
+  await expect(page.locator('.model-menu button:focus')).toHaveCount(1)
+  await page.keyboard.press('ArrowDown')
+  await expect(page.locator('.model-menu button:focus')).toHaveCount(1)
   await page.screenshot({
     path: resolve(screenshotDir, 'composer-model-menu-desktop.png'),
     fullPage: false,
@@ -1533,6 +1550,35 @@ async function installVisualCoreBridge(page: Page) {
               }
             case 'model.getConfig':
               return modelConfig
+            case 'model.resolveProfile': {
+              const input = (args[0] || {}) as any
+              const reasoning = /gpt|claude|visual/i.test(input.modelId || '')
+              return {
+                ...visualModelEntry.resolvedProfile,
+                toolCall: input.capabilityOverrides?.toolCall ?? true,
+                vision: input.capabilityOverrides?.vision ?? false,
+                reasoning: input.capabilityOverrides?.reasoning ?? reasoning,
+                sources: {
+                  toolCall:
+                    input.capabilityOverrides?.toolCall === undefined
+                      ? 'default'
+                      : 'override',
+                  vision:
+                    input.capabilityOverrides?.vision === undefined
+                      ? 'default'
+                      : 'override',
+                  reasoning:
+                    input.capabilityOverrides?.reasoning === undefined
+                      ? 'inferred'
+                      : 'override',
+                },
+                contextWindowTokens: input.contextWindowTokens || 128000,
+                maxTokens: input.maxTokens || 4096,
+                reasoningEfforts: reasoning
+                  ? ['none', 'low', 'medium', 'high', 'xhigh', 'max']
+                  : [],
+              }
+            }
             case 'model.saveEntry': {
               const input = (args[0] || {}) as any
               const wasUsable = Boolean(modelConfig.availability.usable)
@@ -1551,8 +1597,7 @@ async function installVisualCoreBridge(page: Page) {
                   toolCall: overrides.toolCall ?? true,
                   vision: overrides.vision ?? true,
                   reasoning: overrides.reasoning ?? true,
-                  contextWindowTokens:
-                    input.contextWindowTokens || 128000,
+                  contextWindowTokens: input.contextWindowTokens || 128000,
                   maxTokens: input.maxTokens || 4096,
                 },
               }
@@ -1561,7 +1606,8 @@ async function installVisualCoreBridge(page: Page) {
               )
               if (index >= 0) modelConfig.models[index] = saved
               else modelConfig.models.push(saved)
-              if (!modelConfig.activeModelId) modelConfig.activeModelId = entryId
+              if (!modelConfig.activeModelId)
+                modelConfig.activeModelId = entryId
               const active = modelConfig.models.find(
                 (entry: any) => entry.entryId === modelConfig.activeModelId,
               )
@@ -1600,8 +1646,7 @@ async function installVisualCoreBridge(page: Page) {
                   modelConfig.models[0]?.entryId || null
               }
               const active = modelConfig.models.find(
-                (entry: any) =>
-                  entry.entryId === modelConfig.activeModelId,
+                (entry: any) => entry.entryId === modelConfig.activeModelId,
               )
               modelConfig.current = active ? currentForEntry(active) : null
               modelConfig.availability.usable = Boolean(active)

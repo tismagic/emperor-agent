@@ -1,9 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import {
-  activateModelEntry,
-  setModelReasoningEffort,
-} from '../api/model'
+import { activateModelEntry, setModelReasoningEffort } from '../api/model'
 import { useAppContext } from '../composables/useAppContext'
 import { useSession } from '../composables/useSession'
 import { activeBottomControlPanel } from '../components/chat/bottomControlPanel'
@@ -16,9 +13,7 @@ import type { ModelConfigPayload } from '../types'
 
 const ctx = useAppContext()
 const sessionStore = useSession()
-const modelEntries = computed(
-  () => ctx.boot.value?.modelConfig?.models || [],
-)
+const modelEntries = computed(() => ctx.boot.value?.modelConfig?.models || [])
 const currentModel = computed(
   () => ctx.boot.value?.modelConfig?.current || null,
 )
@@ -40,19 +35,27 @@ const showProfileOnboardingPrompt = computed(
     !activeBottomControl.value,
 )
 
-function applyModelConfig(payload: ModelConfigPayload): void {
+async function applyModelConfig(payload: ModelConfigPayload): Promise<void> {
   if (!ctx.boot.value) return
   ctx.boot.value.modelConfig = payload
   ctx.boot.value.model = payload.current?.modelId || ''
   ctx.boot.value.provider = payload.current?.provider || undefined
   ctx.boot.value.providerLabel = payload.current?.providerLabel || undefined
+  if (payload.profileOnboarding) {
+    ctx.boot.value.profileOnboarding = payload.profileOnboarding.state
+  }
+  if (payload.profileOnboarding?.started) {
+    await ctx.openProfileInterviewSession(
+      payload.profileOnboarding.state.sessionId,
+    )
+  }
 }
 
 function switchModel(entryId: string) {
   const payload = ctx.boot.value?.modelConfig
   if (!payload || payload.current?.entryId === entryId) return
   void ctx.runSafely(async () => {
-    applyModelConfig(await activateModelEntry(entryId))
+    await applyModelConfig(await activateModelEntry(entryId))
   })
 }
 
@@ -69,7 +72,7 @@ function setReasoningEffort(level: string | null) {
   const nextValue = normalizeReasoningEffort(level)
   if (currentValue === nextValue) return
   void ctx.runSafely(async () => {
-    applyModelConfig(
+    await applyModelConfig(
       await setModelReasoningEffort(activeId, nextValue || null),
     )
   })
@@ -151,7 +154,8 @@ function normalizeReasoningEffort(value?: string | null) {
             :current-model="currentModel"
             :model-entries="modelEntries"
             :supports-vision="
-              ctx.boot.value?.modelConfig?.current?.capabilities?.vision ?? false
+              ctx.boot.value?.modelConfig?.current?.capabilities?.vision ??
+              false
             "
             :send-blocked-reason="sendBlockedReason"
             @set-mode="ctx.setControlMode"

@@ -25,6 +25,11 @@ export interface ModelEntryDraft {
   maxTokens: number
   reasoningEffort: string | null
   resolvedProfile?: ModelEntry['resolvedProfile']
+  savedIdentity?: {
+    provider: string
+    protocol: 'openai' | 'anthropic'
+    apiBase: string
+  }
 }
 
 function providerProtocols(
@@ -43,12 +48,37 @@ export function capabilityControlValue(
   return 'auto'
 }
 
-function capabilityOverride(
-  control: CapabilityControl,
-): boolean | undefined {
+function capabilityOverride(control: CapabilityControl): boolean | undefined {
   if (control === 'on') return true
   if (control === 'off') return false
   return undefined
+}
+
+export function canonicalModelApiBase(
+  protocol: 'openai' | 'anthropic',
+  value: string,
+): string {
+  const trimmed = value.trim().replace(/\/+$/, '')
+  const resource = protocol === 'openai' ? '/chat/completions' : '/v1/messages'
+  return trimmed.toLowerCase().endsWith(resource)
+    ? trimmed.slice(0, -resource.length).replace(/\/+$/, '')
+    : trimmed
+}
+
+function savedIdentityChanged(
+  draft: ModelEntryDraft,
+  provider: string,
+  protocol: 'openai' | 'anthropic',
+  apiBase: string,
+): boolean {
+  const saved = draft.savedIdentity
+  if (!saved) return false
+  return (
+    saved.provider !== provider ||
+    saved.protocol !== protocol ||
+    canonicalModelApiBase(protocol, saved.apiBase) !==
+      canonicalModelApiBase(protocol, apiBase)
+  )
 }
 
 export function createModelEntryDraft(
@@ -62,7 +92,7 @@ export function createModelEntryDraft(
       ? requestedProtocol
       : provider.defaultProtocol && protocols.includes(provider.defaultProtocol)
         ? provider.defaultProtocol
-        : protocols[0] ?? 'openai'
+        : (protocols[0] ?? 'openai')
   const overrides = entry?.capabilityOverrides ?? {}
   return {
     ...(entry?.entryId ? { entryId: entry.entryId } : {}),
@@ -84,6 +114,15 @@ export function createModelEntryDraft(
     ...(entry?.resolvedProfile
       ? { resolvedProfile: entry.resolvedProfile }
       : {}),
+    ...(entry
+      ? {
+          savedIdentity: {
+            provider: entry.provider,
+            protocol: entry.protocol,
+            apiBase: entry.apiBase,
+          },
+        }
+      : {}),
   }
 }
 
@@ -98,12 +137,21 @@ export function applyProviderSelection(
       ? requestedProtocol
       : provider.defaultProtocol && protocols.includes(provider.defaultProtocol)
         ? provider.defaultProtocol
-        : protocols[0] ?? 'openai'
+        : (protocols[0] ?? 'openai')
+  const apiBase = provider.apiBases?.[protocol] ?? ''
+  const identityChanged = savedIdentityChanged(
+    draft,
+    provider.name,
+    protocol,
+    apiBase,
+  )
   return {
     ...draft,
     provider: provider.name,
     protocol,
-    apiBase: provider.apiBases?.[protocol] ?? '',
+    apiBase,
+    apiKey: '',
+    clearApiKey: draft.clearApiKey || identityChanged,
     modelId: '',
     reasoningEffort: null,
     resolvedProfile: undefined,
@@ -138,19 +186,24 @@ export function toModelEntrySaveInput(
   if (vision !== undefined) capabilityOverrides.vision = vision
   if (reasoning !== undefined) capabilityOverrides.reasoning = reasoning
 
-  const apiKey = draft.clearApiKey
-    ? null
-    : draft.apiKey.trim()
-      ? draft.apiKey.trim()
+  const submittedApiKey = draft.apiKey.trim()
+  const identityChanged = savedIdentityChanged(
+    draft,
+    draft.provider,
+    draft.protocol,
+    draft.apiBase,
+  )
+  const apiKey = submittedApiKey
+    ? submittedApiKey
+    : draft.clearApiKey || identityChanged
+      ? null
       : undefined
   return {
     ...(draft.entryId ? { entryId: draft.entryId } : {}),
     provider: draft.provider,
     protocol: draft.protocol,
     modelId: draft.modelId.trim(),
-    ...(draft.displayName.trim()
-      ? { displayName: draft.displayName.trim() }
-      : {}),
+    displayName: draft.displayName.trim(),
     apiBase: draft.apiBase.trim(),
     ...(apiKey !== undefined ? { apiKey } : {}),
     capabilityOverrides,

@@ -421,6 +421,48 @@ async function toggleModelMenu() {
   modelFloatingMenu.addListeners()
   await nextTick()
   modelFloatingMenu.position()
+  focusModelMenuItem(0)
+}
+
+function modelMenuItems(): HTMLButtonElement[] {
+  if (!modelMenu.value) return []
+  return Array.from(
+    modelMenu.value.querySelectorAll<HTMLButtonElement>(
+      'button:not(:disabled)',
+    ),
+  )
+}
+
+function focusModelMenuItem(index: number): void {
+  const items = modelMenuItems()
+  if (!items.length) return
+  items[((index % items.length) + items.length) % items.length]?.focus()
+}
+
+function onModelMenuKeydown(event: KeyboardEvent): void {
+  if (event.key === 'Escape') {
+    event.preventDefault()
+    closeModelMenu()
+    modelButton.value?.focus()
+    return
+  }
+  if (
+    event.key !== 'ArrowDown' &&
+    event.key !== 'ArrowUp' &&
+    event.key !== 'Home' &&
+    event.key !== 'End' &&
+    event.key !== 'Tab'
+  )
+    return
+  const items = modelMenuItems()
+  if (!items.length) return
+  event.preventDefault()
+  const current = items.indexOf(document.activeElement as HTMLButtonElement)
+  if (event.key === 'Home') focusModelMenuItem(0)
+  else if (event.key === 'End') focusModelMenuItem(items.length - 1)
+  else if (event.key === 'ArrowUp' || (event.key === 'Tab' && event.shiftKey))
+    focusModelMenuItem(current <= 0 ? items.length - 1 : current - 1)
+  else focusModelMenuItem(current < 0 ? 0 : current + 1)
 }
 
 function selectModel(entryId: string) {
@@ -720,6 +762,7 @@ onBeforeUnmount(() => {
               ref="modelButton"
               type="button"
               class="model-button"
+              aria-controls="composer-model-menu"
               :aria-expanded="modelMenuOpen"
               :title="modelTitle"
               :disabled="props.busy"
@@ -813,11 +856,14 @@ onBeforeUnmount(() => {
     <Teleport to="body">
       <div
         v-if="modelMenuOpen"
+        id="composer-model-menu"
         ref="modelMenu"
         class="model-menu model-menu-floating"
+        role="dialog"
+        aria-label="模型与思考"
         :data-placement="modelMenuPlacement"
         :style="modelMenuStyle"
-        @keydown.esc="closeModelMenu"
+        @keydown="onModelMenuKeydown"
       >
         <div class="model-menu-head">
           <span>模型与思考</span>
