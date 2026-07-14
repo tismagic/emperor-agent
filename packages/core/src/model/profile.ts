@@ -202,6 +202,7 @@ function resolveCapability(
 function inferCapabilities(id: string): InferredCapabilities {
   const result: InferredCapabilities = {}
   const isGpt5 = GPT5_FAMILY_RE.test(id)
+  const isOpenAiOSeries = /(?:^|\/)o(?:1|3|4)(?:[.-]|$)/.test(id)
   const isClaude = /(?:^|[/_-])claude(?:[._-]|$)/.test(id)
   const isDeepSeekReasoning =
     id.includes('deepseek-reasoner') ||
@@ -218,7 +219,12 @@ function inferCapabilities(id: string): InferredCapabilities {
     result.toolCall = true
     result.vision = true
     result.reasoning = true
-  } else if (isDeepSeekReasoning || isQwenReasoning || isMiniMaxReasoning) {
+  } else if (
+    isOpenAiOSeries ||
+    isDeepSeekReasoning ||
+    isQwenReasoning ||
+    isMiniMaxReasoning
+  ) {
     result.toolCall = true
     result.reasoning = true
   }

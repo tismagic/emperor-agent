@@ -85,6 +85,25 @@ describe('resolveModelProfile', () => {
     expect(profile.reasoningEfforts).not.toContain('max')
   })
 
+  it.each(['o1', 'o3-mini', 'openai/o4-mini'])(
+    'recognizes OpenAI o-series reasoning for %s',
+    (modelId) => {
+      const profile = resolveModelProfile(
+        entry({ provider: 'openai', modelId }),
+      )
+
+      expect(profile).toMatchObject({
+        toolCall: true,
+        reasoning: true,
+        reasoningAdapter: 'openai_effort',
+      })
+      expect(profile.reasoningEfforts).toContain('high')
+      expect(reasoningPayload(profile, 'high')).toEqual({
+        reasoning_effort: 'high',
+      })
+    },
+  )
+
   it.each([
     ['claude-opus-4-6', ['low', 'medium', 'high', 'max'], 'anthropic_adaptive'],
     [

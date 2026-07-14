@@ -350,6 +350,30 @@ describe('OpenAICompatProvider', () => {
     expect(kwargs).not.toHaveProperty('extra_body')
   })
 
+  it.each(['o1', 'o3-mini', 'o4-mini'])(
+    'emits configured reasoning effort for the resolved %s profile',
+    (modelId) => {
+      const prov = new OpenAICompatProvider({
+        apiKey: 'test',
+        spec: findByName('openai'),
+        defaultModel: modelId,
+        profile: profile('openai', { provider: 'openai', modelId }),
+      })
+
+      const kwargs = prov.kwargsFor(
+        {
+          messages: [{ role: 'user', content: 'hi' }],
+          temperature: 0.8,
+          reasoningEffort: 'high',
+        },
+        false,
+      )
+
+      expect(kwargs).toMatchObject({ reasoning_effort: 'high' })
+      expect(kwargs).not.toHaveProperty('temperature')
+    },
+  )
+
   it('does not add vendor reasoning history fields for OpenAI effort models', () => {
     const prov = new OpenAICompatProvider({
       apiKey: 'test',
