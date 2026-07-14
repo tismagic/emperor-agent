@@ -1,17 +1,14 @@
 import { ref } from 'vue'
-import { cloneJson, core } from '../api/http'
+import { core } from '../api/http'
 import type {
   BootstrapPayload,
-  ModelConfigRaw,
   McpConfigPayload,
-  ProfileOnboardingActionResult,
 } from '../types'
 
 export function useBootstrap(showToast: (message: string) => void) {
   const boot = ref<BootstrapPayload | null>(null)
   const loading = ref(true)
   const error = ref('')
-  const modelDraftProvider = ref<string | null>(null)
   const activeSkill = ref<string | null>(null)
   const skillContent = ref('')
   const configContent = ref('')
@@ -25,8 +22,6 @@ export function useBootstrap(showToast: (message: string) => void) {
         sessionId: sessionId || null,
       })
       boot.value = payload
-      modelDraftProvider.value =
-        payload.modelConfig?.config?.agents?.defaults?.provider || null
     } catch (err) {
       error.value = err instanceof Error ? err.message : String(err)
     } finally {
@@ -38,41 +33,6 @@ export function useBootstrap(showToast: (message: string) => void) {
     if (!boot.value) return
     boot.value.memory = await core('memory.get')
     if (shouldToast) showToast('记忆与 Token 统计已刷新')
-  }
-
-  async function refreshModelConfig() {
-    if (!boot.value) return
-    boot.value.modelConfig = await core('model.getConfig')
-    boot.value.model = boot.value.modelConfig.current?.model || boot.value.model
-    boot.value.provider =
-      boot.value.modelConfig.current?.provider || boot.value.provider
-    modelDraftProvider.value =
-      boot.value.modelConfig.config?.agents?.defaults?.provider || null
-  }
-
-  async function saveModelConfig(config: ModelConfigRaw) {
-    const data = await core('model.saveConfig', { config })
-    if (boot.value) {
-      boot.value.modelConfig = data
-      boot.value.model = data.current?.model || boot.value.model
-      boot.value.provider = data.current?.provider || boot.value.provider
-      boot.value.providerLabel =
-        data.current?.providerLabel || boot.value.providerLabel
-      if (data.profileOnboarding)
-        boot.value.profileOnboarding = data.profileOnboarding.state
-    }
-    modelDraftProvider.value = data.config?.agents?.defaults?.provider || null
-    const label = data.current?.entryLabel || data.current?.entryName
-    const provider =
-      data.current?.provider || boot.value?.provider || 'provider'
-    const model = data.current?.model || boot.value?.model || 'model'
-    if (label) {
-      showToast(`已切换到「${label}」· ${provider}/${model}`)
-    } else {
-      showToast(`已切换到 ${provider} / ${model}`)
-    }
-    return (data.profileOnboarding ??
-      null) as ProfileOnboardingActionResult | null
   }
 
   async function startProfileInterview() {
@@ -222,15 +182,12 @@ export function useBootstrap(showToast: (message: string) => void) {
     boot,
     loading,
     error,
-    modelDraftProvider,
     activeSkill,
     skillContent,
     configContent,
     mcpContent,
     loadBootstrap,
     refreshMemory,
-    refreshModelConfig,
-    saveModelConfig,
     startProfileInterview,
     skipProfileInterview,
     compactMemory,
@@ -250,6 +207,5 @@ export function useBootstrap(showToast: (message: string) => void) {
     saveWatchlist,
     checkWatchlist,
     setDesktopPetEnabled,
-    cloneJson,
   }
 }

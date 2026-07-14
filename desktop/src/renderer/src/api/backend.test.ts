@@ -59,7 +59,7 @@ describe('with an injected Core IPC bridge', () => {
     }
 
     await expect(
-      invokeCore('model.test', { entryName: 'main' }),
+      invokeCore('model.test', { entryId: 'main' }),
     ).rejects.toMatchObject({
       message: 'Internal error',
       errorId: 'ipc_abc123',

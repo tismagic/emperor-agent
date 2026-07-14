@@ -84,8 +84,14 @@ const CORE_API_ROUTE_OPERATION_LIST = [
   op('mcp.saveConfig', 'POST', '/api/mcp-config'),
   op('model.discoverModels', 'IPC', 'model.discoverModels'),
   op('model.getConfig', 'GET', '/api/model-config'),
-  op('model.saveConfig', 'POST', '/api/model-config'),
-  op('model.saveOnboardingConfig', 'IPC', 'model.saveOnboardingConfig'),
+  op('model.saveEntry', 'POST', '/api/models'),
+  op('model.deleteEntry', 'DELETE', '/api/models/{entryId}'),
+  op('model.activate', 'POST', '/api/models/{entryId}/activate'),
+  op(
+    'model.setReasoningEffort',
+    'PATCH',
+    '/api/models/{entryId}/reasoning-effort',
+  ),
   op('model.test', 'POST', '/api/model-test'),
   op('onboarding.getProfileStatus', 'GET', '/api/onboarding/profile'),
   op(
@@ -590,18 +596,39 @@ export class CoreApi {
 
   readonly model = {
     getConfig: async () => this.modelService.getConfig(),
-    saveConfig: async (raw: Dict) => {
-      this.assertMutation('model', 'saveConfig')
-      await this.hooksService.authorizeConfigChange('model.saveConfig', raw)
-      return this.modelService.saveConfig(raw)
+    saveEntry: async (entry: Parameters<CoreModelService['saveEntry']>[0]) => {
+      this.assertMutation('model', 'saveEntry')
+      await this.hooksService.authorizeConfigChange('model.saveEntry', entry)
+      return this.modelService.saveEntry(entry)
     },
-    saveOnboardingConfig: async (settings: Dict) => {
-      this.assertMutation('model', 'saveOnboardingConfig')
+    deleteEntry: async ({ entryId }: { entryId: string }) => {
+      this.assertMutation('model', 'deleteEntry')
       await this.hooksService.authorizeConfigChange(
-        'model.saveOnboardingConfig',
-        settings,
+        'model.deleteEntry',
+        { entryId },
       )
-      return this.modelService.saveOnboardingConfig(settings)
+      return this.modelService.deleteEntry(entryId)
+    },
+    activate: async ({ entryId }: { entryId: string }) => {
+      this.assertMutation('model', 'activate')
+      await this.hooksService.authorizeConfigChange('model.activate', {
+        entryId,
+      })
+      return this.modelService.activate(entryId)
+    },
+    setReasoningEffort: async ({
+      entryId,
+      reasoningEffort,
+    }: {
+      entryId: string
+      reasoningEffort: string | null
+    }) => {
+      this.assertMutation('model', 'setReasoningEffort')
+      await this.hooksService.authorizeConfigChange(
+        'model.setReasoningEffort',
+        { entryId, reasoningEffort },
+      )
+      return this.modelService.setReasoningEffort(entryId, reasoningEffort)
     },
     discoverModels: async (body: Dict) =>
       this.modelService.discoverModels(body),

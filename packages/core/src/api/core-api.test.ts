@@ -71,10 +71,12 @@ const EXPECTED_OPERATIONS = [
   'memory.saveEpisode',
   'memory.saveWatchlist',
   'memory.tokens',
+  'model.activate',
+  'model.deleteEntry',
   'model.discoverModels',
   'model.getConfig',
-  'model.saveConfig',
-  'model.saveOnboardingConfig',
+  'model.saveEntry',
+  'model.setReasoningEffort',
   'model.test',
   'onboarding.getProfileStatus',
   'onboarding.skipProfileInterview',
@@ -134,7 +136,9 @@ describe('CoreApi (MIG-IPC-001)', () => {
     })
 
     await expect(api.model.getConfig()).resolves.toMatchObject({
-      config: { models: [] },
+      schemaVersion: 2,
+      models: [],
+      activeModelId: null,
       availability: { usable: false },
     })
     await expect(api.mcp.getConfig()).resolves.toMatchObject({ servers: {} })
@@ -900,8 +904,8 @@ describe('CoreApi (MIG-IPC-001)', () => {
       api.mcp.saveConfig({ servers: {}, defaults: { read_only: false } }),
     ).rejects.toThrow(/ConfigChange hook denied mcp\.saveConfig/)
     await expect(
-      api.model.saveConfig({ config: validModelConfig('forbidden-model') }),
-    ).rejects.toThrow(/ConfigChange hook denied model\.saveConfig/)
+      api.model.saveEntry(validModelEntry('forbidden-model')),
+    ).rejects.toThrow(/ConfigChange hook denied model\.saveEntry/)
     expect(api.config.get().content).toBe(userBefore)
     expect(existsSync(join(stateRoot, 'mcp_config.json'))).toBe(false)
     expect(existsSync(join(stateRoot, 'model_config.json'))).toBe(false)
@@ -919,15 +923,13 @@ describe('CoreApi (MIG-IPC-001)', () => {
       modelRouter: fakeRouter(new FakeProvider()),
     })
 
-    await api.model.saveConfig({
-      config: validModelConfig('state-root-model'),
-    })
+    await api.model.saveEntry(validModelEntry('state-root-model'))
 
     expect(existsSync(join(stateRoot, 'model_config.json'))).toBe(true)
     expect(existsSync(join(root, 'model_config.json'))).toBe(false)
     expect(
       JSON.parse(readFileSync(join(stateRoot, 'model_config.json'), 'utf8'))
-        .models[0].name,
+        .models[0].displayName,
     ).toBe('state-root-model')
 
     await api.close()
@@ -1785,10 +1787,10 @@ describe('CoreApi (MIG-IPC-001)', () => {
     await expect(api.mcp.saveConfig({ servers: {} })).rejects.toThrow(
       CoreMutationGuardError,
     )
-    await expect(api.model.saveConfig({})).rejects.toThrow(
+    await expect(api.model.saveEntry({})).rejects.toThrow(
       CoreMutationGuardError,
     )
-    await expect(api.model.saveOnboardingConfig({})).rejects.toThrow(
+    await expect(api.model.deleteEntry({ entryId: 'entry-1' })).rejects.toThrow(
       CoreMutationGuardError,
     )
     expect(() => api.config.save('x')).toThrow(CoreMutationGuardError)
@@ -2324,28 +2326,33 @@ describe('CoreApi (MIG-IPC-001)', () => {
     await api.close()
   })
 
-  it('probes the active model entry through CoreApi model.test', async () => {
-    const provider = new FakeProvider()
+  it('probes a requested model entry through CoreApi model.test without a role', async () => {
     const api = await CoreApi.create({
       root: tmp('emperor-core-api-'),
       stateRoot: tmp('emperor-core-api-state-'),
       templatesDir: TEMPLATES_DIR,
-      modelRouter: fakeRouter(provider),
+      modelRouter: fakeRouter(new FakeProvider()),
+    })
+    const probe = vi.spyOn(api.modelService, 'test').mockResolvedValue({
+      ok: true,
+      kind: 'text',
+      entryId: 'entry-1',
+      model: 'fake-main',
+      provider: 'fake',
+      sample: 'pong',
     })
 
     await expect(
-      api.model.test({ entryName: 'fake', kind: 'text', role: 'main' }),
+      api.model.test({ entryId: 'entry-1', kind: 'text' }),
     ).resolves.toMatchObject({
       ok: true,
       kind: 'text',
+      entryId: 'entry-1',
       model: 'fake-main',
       provider: 'fake',
-      modelRole: 'main',
       sample: 'pong',
     })
-    expect(provider.calls.at(-1)?.messages.at(-1)?.content).toBe(
-      'Reply with exactly one word: pong',
-    )
+    expect(probe).toHaveBeenCalledWith({ entryId: 'entry-1', kind: 'text' })
 
     await api.close()
   })
@@ -2564,35 +2571,17 @@ function resolveMethod(api: CoreApi, key: string): unknown {
   return current
 }
 
-function validModelConfig(name: string): Record<string, unknown> {
+function validModelEntry(name: string) {
   return {
-    agents: {
-      defaults: {
-        model: name,
-        provider: 'openai',
-        maxTokens: 8192,
-        temperature: 0.1,
-        reasoningEffort: null,
-        contextWindowTokens: 128000,
-      },
-    },
-    models: [
-      {
-        name,
-        provider: 'openai',
-        mainModelId: 'gpt-4.1',
-        secondaryModelId: 'gpt-4.1-mini',
-        apiKey: 'sk-test-entry',
-      },
-    ],
-    providers: {
-      openai: {
-        apiKey: 'sk-test-provider',
-        apiBase: 'https://api.openai.com/v1',
-        extraHeaders: null,
-        extraBody: null,
-      },
-    },
+    provider: 'openai',
+    protocol: 'openai' as const,
+    modelId: 'gpt-5.2',
+    displayName: name,
+    apiKey: 'sk-test-entry',
+    apiBase: 'https://api.openai.com/v1',
+    maxTokens: 8192,
+    reasoningEffort: 'high',
+    contextWindowTokens: 128000,
   }
 }
 

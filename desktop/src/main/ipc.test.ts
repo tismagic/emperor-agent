@@ -121,7 +121,7 @@ describe('core IPC bridge (MIG-IPC-002)', () => {
     )
 
     const payload = await ipc.invoke('emperor:core:model:test', {
-      entryName: 'main',
+      entryId: 'main',
     })
 
     expect(payload).toMatchObject({
@@ -195,7 +195,7 @@ describe('core IPC bridge (MIG-IPC-002)', () => {
     )
 
     const payload = await ipc.invoke('emperor:core:model:test', {
-      entryName: 'main',
+      entryId: 'main',
     })
 
     expect(payload).toMatchObject({
@@ -239,7 +239,7 @@ describe('core IPC bridge (MIG-IPC-002)', () => {
     )
 
     const payload = await ipc.invoke('emperor:core:model:test', {
-      entryName: 'main',
+      entryId: 'main',
     })
 
     expect(payload).toMatchObject({

@@ -15,7 +15,7 @@ describe('Core operation registry', () => {
   it('covers every public CoreApi route exactly once', () => {
     const routeKeys = CORE_API_ROUTE_OPERATIONS.map((entry) => entry.key).sort()
 
-    expect(coreOperationKeys()).toHaveLength(93)
+    expect(coreOperationKeys()).toHaveLength(95)
     expect(coreOperationKeys()).toEqual(routeKeys)
     expect(Object.keys(CORE_OPERATION_REGISTRY).sort()).toEqual(routeKeys)
   })
@@ -58,6 +58,50 @@ describe('Core operation registry', () => {
         { archived: 'yes' },
       ]),
     ).toThrow()
+  })
+
+  it('exposes only typed schema-v2 model mutations', () => {
+    expect(coreOperationKeys()).toEqual(
+      expect.arrayContaining([
+        'model.saveEntry',
+        'model.deleteEntry',
+        'model.activate',
+        'model.setReasoningEffort',
+      ]),
+    )
+    expect(coreOperationKeys()).not.toContain('model.saveConfig')
+    expect(coreOperationKeys()).not.toContain('model.saveOnboardingConfig')
+
+    expect(
+      CORE_OPERATION_REGISTRY['model.saveEntry'].args.parse([
+        {
+          provider: 'openai',
+          protocol: 'openai',
+          modelId: 'gpt-5.2',
+          apiBase: 'https://api.openai.com/v1',
+          apiKey: null,
+          contextWindowTokens: 128_000,
+          maxTokens: 16_000,
+          reasoningEffort: 'high',
+          capabilityOverrides: { vision: false },
+        },
+      ]),
+    ).toHaveLength(1)
+    expect(() =>
+      CORE_OPERATION_REGISTRY['model.saveEntry'].args.parse([
+        { config: { arbitrary: true } },
+      ]),
+    ).toThrow()
+    expect(() =>
+      CORE_OPERATION_REGISTRY['model.test'].args.parse([
+        { entryId: 'entry-1', kind: 'text', role: 'secondary' },
+      ]),
+    ).toThrow()
+    expect(
+      CORE_OPERATION_REGISTRY['model.test'].args.parse([
+        { entryId: 'entry-1', kind: 'vision' },
+      ]),
+    ).toEqual([{ entryId: 'entry-1', kind: 'vision' }])
   })
 
   it('rejects malformed security-sensitive payloads before invoking CoreApi', () => {

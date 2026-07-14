@@ -95,6 +95,47 @@ const booleanLikeSchema = z
   .nullable()
   .optional()
 
+const modelProtocolSchema = z.enum(['openai', 'anthropic'])
+const modelCapabilityOverridesSchema = z
+  .object({
+    toolCall: z.boolean().optional(),
+    vision: z.boolean().optional(),
+    reasoning: z.boolean().optional(),
+  })
+  .strict()
+const modelEntrySaveSchema = z
+  .object({
+    entryId: idSchema.optional(),
+    provider: z.string().trim().min(1).optional(),
+    protocol: modelProtocolSchema.optional(),
+    modelId: z.string().trim().min(1).optional(),
+    displayName: z.string().trim().optional(),
+    apiBase: z.string().trim().min(1).optional(),
+    apiKey: z.string().nullable().optional(),
+    capabilityOverrides: modelCapabilityOverridesSchema.optional(),
+    contextWindowTokens: z.number().int().positive().optional(),
+    maxTokens: z.number().int().positive().optional(),
+    reasoningEffort: z.string().trim().nullable().optional(),
+  })
+  .strict()
+const modelEntryIdSchema = z.object({ entryId: idSchema }).strict()
+const modelReasoningEffortSchema = z
+  .object({
+    entryId: idSchema,
+    reasoningEffort: z.string().trim().min(1).nullable(),
+  })
+  .strict()
+const modelDiscoverySchema = z
+  .object({
+    entryId: idSchema.optional(),
+    provider: z.string().trim().min(1).optional(),
+    protocol: modelProtocolSchema.optional(),
+    apiBase: z.string().trim().optional(),
+    apiKey: z.string().nullable().optional(),
+    extraHeaders: z.record(z.string(), z.string()).optional(),
+  })
+  .strict()
+
 const controlResumeSchema = z
   .object({
     clientMessageId: nullableStringSchema,
@@ -418,26 +459,32 @@ export const CORE_OPERATION_REGISTRY = {
     api.memory.saveWatchlist(content),
   ),
   'memory.tokens': operation(z.tuple([]), (api) => api.memory.tokens()),
-  'model.discoverModels': operation(z.tuple([dictSchema]), (api, [input]) =>
+  'model.activate': operation(z.tuple([modelEntryIdSchema]), (api, [input]) =>
+    api.model.activate(input),
+  ),
+  'model.deleteEntry': operation(
+    z.tuple([modelEntryIdSchema]),
+    (api, [input]) => api.model.deleteEntry(input),
+  ),
+  'model.discoverModels': operation(z.tuple([modelDiscoverySchema]), (api, [input]) =>
     api.model.discoverModels(input),
   ),
   'model.getConfig': operation(z.tuple([]), (api) => api.model.getConfig()),
-  'model.saveConfig': operation(z.tuple([dictSchema]), (api, [input]) =>
-    api.model.saveConfig(input),
+  'model.saveEntry': operation(z.tuple([modelEntrySaveSchema]), (api, [input]) =>
+    api.model.saveEntry(input),
   ),
-  'model.saveOnboardingConfig': operation(
-    z.tuple([dictSchema]),
-    (api, [input]) => api.model.saveOnboardingConfig(input),
+  'model.setReasoningEffort': operation(
+    z.tuple([modelReasoningEffortSchema]),
+    (api, [input]) => api.model.setReasoningEffort(input),
   ),
   'model.test': operation(
     z.tuple([
       z
         .object({
-          entryName: z.string(),
+          entryId: idSchema,
           kind: z.enum(['text', 'vision']).optional(),
-          role: z.enum(['main', 'secondary']).optional(),
         })
-        .passthrough(),
+        .strict(),
     ]),
     (api, [input]) => api.model.test(input),
   ),

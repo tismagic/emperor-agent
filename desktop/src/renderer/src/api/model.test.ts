@@ -1,5 +1,12 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { discoverProviderModels, testModelEntry } from './model'
+import {
+  activateModelEntry,
+  deleteModelEntry,
+  discoverProviderModels,
+  saveModelEntry,
+  setModelReasoningEffort,
+  testModelEntry,
+} from './model'
 
 const g = globalThis as unknown as { window?: any; fetch?: unknown }
 
@@ -21,15 +28,13 @@ describe('model API Core IPC (MIG-IPC-010)', () => {
     }
     const fetchSpy = vi.spyOn(globalThis, 'fetch')
 
-    await expect(testModelEntry('main', 'text', 'secondary')).resolves.toEqual({
+    await expect(testModelEntry('entry-1', 'text')).resolves.toEqual({
       ok: true,
       kind: 'text',
       sample: 'pong',
     })
 
-    expect(calls).toEqual([
-      ['model.test', { entryName: 'main', kind: 'text', role: 'secondary' }],
-    ])
+    expect(calls).toEqual([['model.test', { entryId: 'entry-1', kind: 'text' }]])
     expect(fetchSpy).not.toHaveBeenCalled()
   })
 
@@ -48,7 +53,8 @@ describe('model API Core IPC (MIG-IPC-010)', () => {
     await expect(
       discoverProviderModels({
         provider: 'deepseek',
-        entryName: 'deepseek-work',
+        protocol: 'openai',
+        entryId: 'deepseek-work',
         apiBase: 'https://api.deepseek.com',
         apiKey: '***1234',
       }),
@@ -59,7 +65,8 @@ describe('model API Core IPC (MIG-IPC-010)', () => {
         'model.discoverModels',
         {
           provider: 'deepseek',
-          entryName: 'deepseek-work',
+          protocol: 'openai',
+          entryId: 'deepseek-work',
           apiBase: 'https://api.deepseek.com',
           apiKey: '***1234',
         },
@@ -68,11 +75,47 @@ describe('model API Core IPC (MIG-IPC-010)', () => {
     expect(fetchSpy).not.toHaveBeenCalled()
   })
 
+  it('uses the typed model CRUD operations', async () => {
+    const calls: unknown[][] = []
+    g.window = {
+      emperor: {
+        invokeCore: async (...args: unknown[]) => {
+          calls.push(args)
+          return { schemaVersion: 2, activeModelId: 'entry-1', models: [] }
+        },
+      },
+    }
+
+    await saveModelEntry({
+      entryId: 'entry-1',
+      provider: 'openai',
+      protocol: 'openai',
+      modelId: 'gpt-5.2',
+      apiBase: 'https://api.openai.com/v1',
+      contextWindowTokens: 128_000,
+      maxTokens: 16_000,
+      reasoningEffort: 'high',
+    })
+    await activateModelEntry('entry-1')
+    await setModelReasoningEffort('entry-1', 'xhigh')
+    await deleteModelEntry('entry-1')
+
+    expect(calls).toEqual([
+      ['model.saveEntry', expect.objectContaining({ entryId: 'entry-1' })],
+      ['model.activate', { entryId: 'entry-1' }],
+      [
+        'model.setReasoningEffort',
+        { entryId: 'entry-1', reasoningEffort: 'xhigh' },
+      ],
+      ['model.deleteEntry', { entryId: 'entry-1' }],
+    ])
+  })
+
   it('does not fall back to HTTP model tests when the Core IPC bridge is unavailable', async () => {
     g.window = { emperor: {} }
     const fetchSpy = vi.spyOn(globalThis, 'fetch')
 
-    await expect(testModelEntry('main', 'text')).rejects.toThrow(
+    await expect(testModelEntry('entry-1', 'text')).rejects.toThrow(
       'Core IPC bridge is unavailable; use the Electron desktop window.',
     )
     expect(fetchSpy).not.toHaveBeenCalled()

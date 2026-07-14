@@ -1,34 +1,36 @@
 import { resolve } from 'node:path'
 import {
+  activateModelEntry,
   activeEntry,
-  buildWizardModelConfig,
+  deleteModelEntry,
   findEntry,
   loadModelConfig,
-  markEntryVision,
-  saveModelConfig,
+  maskSecret,
+  parseModelConfig,
+  saveModelEntry,
+  upsertModelEntryConfig,
   type ModelConfig,
   type ModelEntry,
-  type ProviderConfig,
-  type WizardModelSettings,
+  type ModelEntryUpdate,
+  type ModelEntryV2,
+  type ModelProtocol,
 } from '../../config/model-config'
+import { modelAvailability, type ModelAvailability } from '../../model/availability'
+import { resolveModelProfile, type ResolvedModelProfile } from '../../model/profile'
 import {
   buildProviderSnapshot,
-  type ModelRole,
   type ModelRoute,
   type ProviderSnapshot,
 } from '../../model/router'
-import {
-  modelAvailability,
-  type ModelAvailability,
-} from '../../model/availability'
 import type { OpenAiMessage } from '../../providers/base'
-import type { ProfileOnboardingActionResult } from '../../sessions/onboarding'
 import {
   findByName,
+  normalizeApiBase,
   providerOptions,
   type ProviderOption,
   type ProviderSpec,
 } from '../../providers/registry'
+import type { ProfileOnboardingActionResult } from '../../sessions/onboarding'
 
 type Dict = Record<string, any>
 
@@ -49,32 +51,47 @@ export interface CoreModelServiceDeps {
   router: CoreModelRouterLike | (() => CoreModelRouterLike)
   refreshModelConfig?: () => void | Promise<void>
   afterConfigSaved?: () =>
-    ProfileOnboardingActionResult | Promise<ProfileOnboardingActionResult>
+    | ProfileOnboardingActionResult
+    | Promise<ProfileOnboardingActionResult>
+}
+
+export type ModelEntrySaveInput = Omit<
+  ModelEntryUpdate,
+  'legacy'
+>
+
+export interface ModelEntryPayload
+  extends Omit<ModelEntryV2, 'apiKey' | 'legacy'> {
+  apiKey: string
+  resolvedProfile: ResolvedModelProfile
 }
 
 export interface CurrentModelPayload {
+  entryId: string
   provider: string
   providerLabel: string
-  model: string
-  apiBase: string | null
-  maxTokens: number
-  temperature: number
+  protocol: ModelProtocol
+  modelId: string
+  displayName: string | null
+  apiBase: string
   reasoningEffort: string | null
   contextWindowTokens: number
-  entryName: string
-  entryLabel: string
-  supportsVision: boolean
-  mainModelId: string
-  secondaryModelId: string
-  modelRole: ModelRole
+  maxTokens: number
+  capabilities: Pick<
+    ResolvedModelProfile,
+    'toolCall' | 'vision' | 'reasoning'
+  >
+  capabilitySources: ResolvedModelProfile['sources']
+  reasoningEfforts: ResolvedModelProfile['reasoningEfforts']
+  reasoningAdapter: ResolvedModelProfile['reasoningAdapter']
 }
 
 export interface ModelConfigPayload {
-  current: CurrentModelPayload
-  secondary: CurrentModelPayload | null
+  schemaVersion: 2
+  activeModelId: string | null
+  models: ModelEntryPayload[]
+  current: CurrentModelPayload | null
   availability: ModelAvailability
-  routing: Record<string, unknown>
-  config: Dict
   providerOptions: ProviderOption[]
 }
 
@@ -91,6 +108,7 @@ export interface DiscoveredModel {
 export interface ModelDiscoveryPayload {
   ok: boolean
   provider: string
+  protocol: ModelProtocol
   apiBase: string | null
   source: string
   models: DiscoveredModel[]
@@ -110,122 +128,141 @@ export class CoreModelService {
   async getConfig(): Promise<ModelConfigPayload> {
     const config = await loadModelConfig(this.root)
     const entry = activeEntry(config) ?? null
-    const current = this.router().route('main_agent').snapshot
-    const secondary = entry?.secondaryModelId
-      ? this.snapshotPayload(
-          this.router().route('memory_compaction').snapshot,
-          entry,
-        )
-      : null
+    const models = config.raw.models.map((item) => modelEntryPayload(item))
     return {
-      current: this.snapshotPayload(current, entry),
-      secondary,
+      schemaVersion: 2,
+      activeModelId: config.activeModelId,
+      models,
+      current: entry ? currentModelPayload(entry) : null,
       availability: modelAvailability(config),
-      routing: this.router().payload?.() ?? {
-        secondaryEnabled: Boolean(entry?.secondaryModelId),
-        fallbackToMain: true,
-      },
-      config: redactApiKeys(config.raw),
       providerOptions: providerOptions(),
     }
   }
 
-  async saveConfig(input: unknown): Promise<ModelConfigSavePayload> {
-    const body =
-      isRecord(input) && isRecord(input.config) ? input.config : input
-    if (!isRecord(body)) throw new Error('model config must be an object')
-    const existing = (await loadModelConfig(this.root)).raw
-    const next = structuredClone(body)
-    restoreMaskedKeys(next, existing)
-    await saveModelConfig(this.root, next, { validateComplete: true })
+  async saveEntry(input: ModelEntrySaveInput): Promise<ModelConfigSavePayload> {
+    const before = await loadModelConfig(this.root)
+    const wasUsable = modelAvailability(before).usable
+    const update = normalizeEntrySecret(input)
+    await saveModelEntry(this.root, update)
     await this.deps.refreshModelConfig?.()
-    return this.savedPayload()
+    const payload = await this.getConfig()
+    if (!wasUsable && payload.availability.usable) {
+      const profileOnboarding = await this.deps.afterConfigSaved?.()
+      if (profileOnboarding) return { ...payload, profileOnboarding }
+    }
+    return payload
   }
 
-  async saveOnboardingConfig(input: unknown): Promise<ModelConfigSavePayload> {
-    const settings = wizardSettings(input)
-    const existing = (await loadModelConfig(this.root)).raw
-    const next = buildWizardModelConfig(existing, settings)
-    await saveModelConfig(this.root, next, { validateComplete: true })
+  async deleteEntry(entryId: string): Promise<ModelConfigPayload> {
+    await deleteModelEntry(this.root, requiredId(entryId))
     await this.deps.refreshModelConfig?.()
-    return this.savedPayload()
+    return this.getConfig()
+  }
+
+  async activate(entryId: string): Promise<ModelConfigPayload> {
+    await activateModelEntry(this.root, requiredId(entryId))
+    await this.deps.refreshModelConfig?.()
+    return this.getConfig()
+  }
+
+  async setReasoningEffort(
+    entryId: string,
+    reasoningEffort: string | null,
+  ): Promise<ModelConfigPayload> {
+    const config = await loadModelConfig(this.root)
+    const entry = findEntry(config, requiredId(entryId))
+    if (!entry) throw new Error(`model entry not found: ${entryId}`)
+    const profile = resolvedProfile(entry)
+    if (
+      reasoningEffort !== null &&
+      !profile.reasoningEfforts.includes(reasoningEffort as any)
+    )
+      throw new Error(
+        `模型 ${entry.modelId} 不支持思考强度 ${reasoningEffort}`,
+      )
+    await saveModelEntry(this.root, {
+      entryId: entry.entryId,
+      reasoningEffort,
+    })
+    await this.deps.refreshModelConfig?.()
+    return this.getConfig()
   }
 
   async discoverModels(input: Dict): Promise<ModelDiscoveryPayload> {
     const config = await loadModelConfig(this.root)
-    const providerName = String(input.provider ?? '').trim()
-    const spec = findByName(providerName) ?? findByName('custom')
-    if (!spec) throw new Error('custom provider missing from registry')
+    const entryId = trimString(input.entryId)
+    const entry = entryId ? (findEntry(config, entryId) ?? null) : null
+    const providerName = trimString(input.provider) || entry?.provider || ''
+    const spec = findByName(providerName)
+    if (!spec) throw new Error(`provider 无效: ${providerName}`)
+    const submittedProtocol = trimString(input.protocol)
+    if (spec.name === 'custom' && !submittedProtocol)
+      throw new Error('custom provider 必须明确选择 protocol')
+    const protocol = (submittedProtocol || entry?.protocol || spec.defaultProtocol) as
+      | ModelProtocol
+      | null
+    if (!protocol || !spec.protocols.includes(protocol))
+      throw new Error(`provider ${spec.name} 不支持 protocol: ${protocol ?? ''}`)
 
-    const entryName = String(input.entryName ?? '').trim()
-    const entry = entryName
-      ? (findEntry(config, entryName) ?? null)
-      : (activeEntry(config) ?? null)
-    const providerConfig = config.providers[spec.name] ?? null
-    const apiBase = discoveryApiBase(input.apiBase, entry, providerConfig, spec)
-    const apiKey = discoveryApiKey(input.apiKey, entry, providerConfig)
-    const extraHeaders = discoveryExtraHeaders(
-      input.extraHeaders,
-      entry,
-      providerConfig,
+    const submittedBase = trimString(input.apiBase)
+    const apiBase = normalizeApiBase(
+      protocol,
+      submittedBase || entry?.apiBase || spec.apiBases[protocol] || '',
     )
+    const apiKey = discoveryApiKey(input.apiKey, entry)
+    const extraHeaders = discoveryExtraHeaders(input.extraHeaders, entry)
+    const discovery = spec.modelDiscovery[protocol] ?? 'unsupported'
 
-    if (spec.legacyModelDiscovery === 'unsupported') {
+    if (discovery === 'unsupported')
       return discoveryUnavailable(
         spec,
+        protocol,
         apiBase,
-        'unsupported_backend',
-        `${spec.displayName} 当前不支持自动获取模型列表，请手动填写模型 ID。`,
+        'unsupported_protocol',
+        `${spec.displayName} 当前不支持通过 ${protocol} 自动获取模型列表，请手动填写模型 ID。`,
       )
-    }
-    if (!spec.isLocal && !spec.isOauth && !apiKey) {
+    if (!spec.isLocal && !spec.isOauth && !apiKey)
       return discoveryUnavailable(
         spec,
+        protocol,
         apiBase,
         'credential_required',
         `请先填写 ${spec.displayName} 的 API Key 后再获取模型列表。`,
       )
-    }
-    if (!apiBase && spec.legacyModelDiscovery === 'openai_compat') {
+    if (!apiBase)
       return discoveryUnavailable(
         spec,
+        protocol,
         apiBase,
         'missing_api_base',
         `请先填写 ${spec.displayName} 的 API Base 后再获取模型列表。`,
       )
-    }
 
-    if (spec.legacyModelDiscovery === 'anthropic') {
-      return discoverAnthropicModels(spec, apiBase, apiKey, extraHeaders)
-    }
-    return discoverOpenAiCompatibleModels(spec, apiBase, apiKey, extraHeaders)
+    return discovery === 'anthropic'
+      ? discoverAnthropicModels(spec, protocol, apiBase, apiKey, extraHeaders)
+      : discoverOpenAiCompatibleModels(
+          spec,
+          protocol,
+          apiBase,
+          apiKey,
+          extraHeaders,
+        )
   }
 
-  async test(body: Dict): Promise<Dict> {
-    const entryName = String(body.entryName ?? '').trim()
-    const kind = String(body.kind ?? 'text').toLowerCase()
-    let role = String(body.role ?? 'main').toLowerCase() as ModelRole
-    if (!['text', 'vision'].includes(kind))
+  async test(body: { entryId?: string; kind?: string }): Promise<Dict> {
+    const entryId = trimString(body.entryId)
+    const kind = trimString(body.kind || 'text').toLowerCase()
+    if (kind !== 'text' && kind !== 'vision')
       return { ok: false, kind, error: "kind must be 'text' or 'vision'" }
-    if (!entryName) return { ok: false, kind, error: 'entryName required' }
-    if (!['main', 'secondary'].includes(role))
-      return { ok: false, kind, error: "role must be 'main' or 'secondary'" }
-    if (kind === 'vision') role = 'main'
+    if (!entryId) return { ok: false, kind, error: 'entryId required' }
 
     const config = await loadModelConfig(this.root)
-    const entry = findEntry(config, entryName)
-    if (role === 'secondary' && entry && !entry.secondaryModelId) {
-      return {
-        ok: false,
-        kind,
-        error:
-          'secondaryModelId is required before testing the secondary model',
-      }
-    }
+    const entry = findEntry(config, entryId)
+    if (!entry) return { ok: false, kind, error: `model entry not found: ${entryId}` }
 
     let snapshot: ProviderSnapshot
     try {
-      snapshot = this.snapshotForModelTest(config, entryName, role)
+      snapshot = this.snapshotForModelTest(config, entryId, kind === 'vision')
     } catch (error) {
       return {
         ok: false,
@@ -247,167 +284,144 @@ export class CoreModelService {
         temperature: 0,
         reasoningEffort: null,
       })
-      const sample = String(response.content || '')
-        .trim()
-        .slice(0, 200)
-      const ok =
-        kind === 'vision'
-          ? visionOk(sample)
-          : Boolean(sample && sample.toLowerCase().includes('pong'))
+      const sample = String(response.content || '').trim().slice(0, 200)
+      const ok = kind === 'vision' ? visionOk(sample) : /pong/i.test(sample)
       const payload: Dict = {
         ok,
         kind,
+        entryId,
         latencyMs: Date.now() - started,
         model: snapshot.model,
         provider: snapshot.providerName,
-        modelRole: snapshot.modelRole,
         sample,
         finishReason: response.finishReason || 'stop',
       }
       if (kind === 'vision' && ok) {
-        try {
-          await markEntryVision(this.root, entryName, true)
-          await this.deps.refreshModelConfig?.()
-          payload.visionMarked = true
-        } catch {
-          payload.visionMarked = false
-        }
+        await saveModelEntry(this.root, {
+          entryId,
+          capabilityOverrides: {
+            ...entry.capabilityOverrides,
+            vision: true,
+          },
+        })
+        await this.deps.refreshModelConfig?.()
+        payload.visionMarked = true
       }
       return payload
     } catch (error) {
       return {
         ok: false,
         kind,
+        entryId,
         error: error instanceof Error ? error.message : String(error),
         latencyMs: Date.now() - started,
         model: snapshot.model,
         provider: snapshot.providerName,
-        modelRole: snapshot.modelRole,
       }
     }
   }
 
-  private async savedPayload(): Promise<ModelConfigSavePayload> {
-    const profileOnboarding = await this.deps.afterConfigSaved?.()
-    return {
-      ...(await this.getConfig()),
-      ...(profileOnboarding ? { profileOnboarding } : {}),
-    }
-  }
-
-  private router(): CoreModelRouterLike {
-    return typeof this.deps.router === 'function'
-      ? this.deps.router()
-      : this.deps.router
-  }
-
   private snapshotForModelTest(
     config: ModelConfig,
-    entryName: string,
-    role: ModelRole,
+    entryId: string,
+    forceVision = false,
   ): ProviderSnapshot {
-    const routed =
-      role === 'secondary'
-        ? this.router().route('memory_compaction').snapshot
-        : this.router().route('main_agent').snapshot
-    if (routed.entryName === entryName) return routed
-    return buildProviderSnapshot(config, { modelOverride: entryName, role })
-  }
-
-  private snapshotPayload(
-    snapshot: ProviderSnapshot,
-    entry: ModelEntry | null,
-  ): CurrentModelPayload {
-    return {
-      provider: snapshot.providerName,
-      providerLabel: snapshot.providerLabel,
-      model: snapshot.model,
-      apiBase: snapshot.apiBase,
-      maxTokens: snapshot.generation.maxTokens,
-      temperature: snapshot.generation.temperature,
-      reasoningEffort: snapshot.generation.reasoningEffort,
-      contextWindowTokens: snapshot.contextWindowTokens,
-      entryName: entry?.name ?? snapshot.entryName,
-      entryLabel: entry?.label || entry?.name || snapshot.entryLabel,
-      supportsVision: Boolean(snapshot.supportsVision),
-      mainModelId:
-        entry?.mainModelId ??
-        (snapshot.modelRole === 'main' ? snapshot.model : ''),
-      secondaryModelId: entry?.secondaryModelId ?? '',
-      modelRole: snapshot.modelRole ?? 'main',
-    }
+    if (!forceVision) return buildProviderSnapshot(config, { modelOverride: entryId })
+    const entry = findEntry(config, entryId)
+    if (!entry) throw new Error(`model entry not found: ${entryId}`)
+    const raw = upsertModelEntryConfig(config.raw, {
+      entryId,
+      capabilityOverrides: { ...entry.capabilityOverrides, vision: true },
+    })
+    return buildProviderSnapshot(parseModelConfig(raw), { modelOverride: entryId })
   }
 }
 
-export function redactApiKeys(raw: Dict): Dict {
-  const out = structuredClone(raw)
-  for (const prov of Object.values(out.providers ?? {})) {
-    if (isRecord(prov) && typeof prov.apiKey === 'string' && prov.apiKey)
-      prov.apiKey = maskKey(prov.apiKey)
-  }
-  for (const entry of out.models ?? []) {
-    if (isRecord(entry) && typeof entry.apiKey === 'string' && entry.apiKey)
-      entry.apiKey = maskKey(entry.apiKey)
-  }
-  return out
+function requiredId(value: string): string {
+  const id = value.trim()
+  if (!id) throw new Error('entryId required')
+  return id
 }
 
-function discoveryApiBase(
-  input: unknown,
-  entry: ModelEntry | null,
-  provider: ProviderConfig | null,
-  spec: ProviderSpec,
-): string | null {
-  const direct = trimString(input)
-  if (direct) return direct
-  return (
-    trimString(entry?.apiBase) ||
-    trimString(provider?.apiBase) ||
-    spec.defaultApiBase ||
-    null
+function normalizeEntrySecret(input: ModelEntrySaveInput): ModelEntryUpdate {
+  const update = structuredClone(input) as ModelEntryUpdate
+  if (
+    typeof update.apiKey === 'string' &&
+    (!update.apiKey.trim() || update.apiKey.trim().startsWith('***'))
   )
+    delete update.apiKey
+  return update
 }
 
-function discoveryApiKey(
-  input: unknown,
-  entry: ModelEntry | null,
-  provider: ProviderConfig | null,
-): string {
+function resolvedProfile(entry: ModelEntry | ModelEntryV2): ResolvedModelProfile {
+  const modelId =
+    entry.modelId || ('mainModelId' in entry ? entry.mainModelId : '')
+  return resolveModelProfile({
+    provider: entry.provider,
+    protocol: entry.protocol ?? 'openai',
+    modelId,
+    capabilityOverrides: entry.capabilityOverrides,
+    contextWindowTokens: entry.contextWindowTokens ?? undefined,
+    maxTokens: entry.maxTokens ?? undefined,
+  })
+}
+
+function modelEntryPayload(entry: ModelEntryV2): ModelEntryPayload {
+  const { legacy: _legacy, ...safe } = entry
+  return {
+    ...safe,
+    apiKey: maskSecret(entry.apiKey),
+    resolvedProfile: resolvedProfile(entry),
+  }
+}
+
+function currentModelPayload(entry: ModelEntry): CurrentModelPayload {
+  const profile = resolvedProfile(entry)
+  const spec = findByName(entry.provider)
+  return {
+    entryId: entry.entryId || entry.name,
+    provider: entry.provider,
+    providerLabel: spec?.displayName ?? entry.provider,
+    protocol: entry.protocol ?? spec?.defaultProtocol ?? 'openai',
+    modelId: entry.modelId || entry.mainModelId,
+    displayName: entry.displayName || entry.label || null,
+    apiBase: entry.apiBase || '',
+    reasoningEffort: entry.reasoningEffort,
+    contextWindowTokens: profile.contextWindowTokens,
+    maxTokens: profile.maxTokens,
+    capabilities: {
+      toolCall: profile.toolCall,
+      vision: profile.vision,
+      reasoning: profile.reasoning,
+    },
+    capabilitySources: profile.sources,
+    reasoningEfforts: profile.reasoningEfforts,
+    reasoningAdapter: profile.reasoningAdapter,
+  }
+}
+
+function discoveryApiKey(input: unknown, entry: ModelEntry | null): string {
   const direct = trimString(input)
-  if (direct && !direct.startsWith('***')) return direct
-  const candidates = [
-    trimString(entry?.apiKey),
-    trimString(provider?.apiKey),
-  ].filter(Boolean)
-  if (!direct) return candidates[0] ?? ''
-  const suffix = direct.replace(/^\*+/, '')
-  return (
-    candidates.find((candidate) => suffix && candidate.endsWith(suffix)) ??
-    candidates[0] ??
-    ''
-  )
+  const existing = trimString(entry?.apiKey)
+  if (!direct || direct.startsWith('***')) return existing
+  return direct
 }
 
 function discoveryExtraHeaders(
   input: unknown,
   entry: ModelEntry | null,
-  provider: ProviderConfig | null,
 ): Record<string, string> {
-  const resolved =
-    recordValue(input) ||
-    recordValue(entry?.extraHeaders) ||
-    recordValue(provider?.extraHeaders) ||
-    {}
-  const headers: Record<string, string> = {}
-  for (const [key, value] of Object.entries(resolved)) {
-    if (value === null || value === undefined) continue
-    headers[key] = String(value)
-  }
-  return headers
+  const resolved = recordValue(input) || recordValue(entry?.legacy?.extraHeaders) || {}
+  return Object.fromEntries(
+    Object.entries(resolved)
+      .filter(([, value]) => value !== null && value !== undefined)
+      .map(([key, value]) => [key, String(value)]),
+  )
 }
 
 async function discoverOpenAiCompatibleModels(
   spec: ProviderSpec,
+  protocol: ModelProtocol,
   apiBase: string | null,
   apiKey: string,
   extraHeaders: Record<string, string>,
@@ -425,23 +439,25 @@ async function discoverOpenAiCompatibleModels(
       if (!response.ok) {
         last = discoveryUnavailable(
           spec,
+          protocol,
           apiBase,
           codeForHttpStatus(response.status),
           response.statusText || `HTTP ${response.status}`,
         )
         continue
       }
-      const body = await response.json()
       return {
         ok: true,
         provider: spec.name,
+        protocol,
         apiBase,
         source: 'openai_compat',
-        models: parseDiscoveredModels(body),
+        models: parseDiscoveredModels(await response.json()),
       }
     } catch (error) {
       last = discoveryUnavailable(
         spec,
+        protocol,
         apiBase,
         codeForFetchError(error),
         fetchErrorMessage(error),
@@ -452,6 +468,7 @@ async function discoverOpenAiCompatibleModels(
     last ??
     discoveryUnavailable(
       spec,
+      protocol,
       apiBase,
       'no_endpoint',
       '未找到可用的模型列表 endpoint。',
@@ -461,38 +478,39 @@ async function discoverOpenAiCompatibleModels(
 
 async function discoverAnthropicModels(
   spec: ProviderSpec,
+  protocol: ModelProtocol,
   apiBase: string | null,
   apiKey: string,
   extraHeaders: Record<string, string>,
 ): Promise<ModelDiscoveryPayload> {
-  const url = anthropicModelsUrl(apiBase)
   try {
-    const response = await fetchWithTimeout(url, {
+    const response = await fetchWithTimeout(anthropicModelsUrl(apiBase), {
       method: 'GET',
       headers: discoveryHeaders(extraHeaders, {
         'x-api-key': apiKey,
         'anthropic-version': ANTHROPIC_VERSION,
       }),
     })
-    if (!response.ok) {
+    if (!response.ok)
       return discoveryUnavailable(
         spec,
+        protocol,
         apiBase,
         codeForHttpStatus(response.status),
         response.statusText || `HTTP ${response.status}`,
       )
-    }
-    const body = await response.json()
     return {
       ok: true,
       provider: spec.name,
+      protocol,
       apiBase,
       source: 'anthropic',
-      models: parseDiscoveredModels(body),
+      models: parseDiscoveredModels(await response.json()),
     }
   } catch (error) {
     return discoveryUnavailable(
       spec,
+      protocol,
       apiBase,
       codeForFetchError(error),
       fetchErrorMessage(error),
@@ -502,6 +520,7 @@ async function discoverAnthropicModels(
 
 function discoveryUnavailable(
   spec: ProviderSpec,
+  protocol: ModelProtocol,
   apiBase: string | null,
   code: string,
   message: string,
@@ -509,18 +528,16 @@ function discoveryUnavailable(
   return {
     ok: false,
     provider: spec.name,
+    protocol,
     apiBase,
-    source: spec.legacyModelDiscovery,
+    source: spec.modelDiscovery[protocol] ?? 'unsupported',
     models: [],
     code,
     message,
   }
 }
 
-async function fetchWithTimeout(
-  url: string,
-  init: RequestInit,
-): Promise<Response> {
+async function fetchWithTimeout(url: string, init: RequestInit): Promise<Response> {
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), MODEL_DISCOVERY_TIMEOUT_MS)
   try {
@@ -535,41 +552,13 @@ function discoveryHeaders(
   defaults: Record<string, string>,
 ): Headers {
   const headers = new Headers({ accept: 'application/json', ...defaults })
-  for (const [key, value] of Object.entries(extraHeaders))
-    headers.set(key, value)
+  for (const [key, value] of Object.entries(extraHeaders)) headers.set(key, value)
   return headers
 }
 
 function openAiModelEndpointCandidates(apiBase: string): string[] {
   const base = trimApiBase(apiBase)
-  const candidates = new Set<string>()
-  addModelEndpoint(candidates, base)
-  for (const normalized of normalizedOpenAiCompatBases(base))
-    addModelEndpoint(candidates, normalized)
-  return [...candidates]
-}
-
-function addModelEndpoint(out: Set<string>, base: string): void {
-  if (!base) return
-  out.add(`${base}/models`)
-}
-
-function normalizedOpenAiCompatBases(base: string): string[] {
-  if (!base) return []
-  const suffixes = [
-    /\/api\/anthropic$/i,
-    /\/anthropic$/i,
-    /\/apps\/anthropic$/i,
-    /\/step_plan(?:\/v\d+)?$/i,
-    /\/api\/coding(?:\/v\d+)?$/i,
-    /\/coding(?:\/v\d+)?$/i,
-  ]
-  const out: string[] = []
-  for (const suffix of suffixes) {
-    const next = trimApiBase(base.replace(suffix, ''))
-    if (next && next !== base) out.push(next)
-  }
-  return out
+  return base ? [`${base}/models`] : []
 }
 
 function anthropicModelsUrl(apiBase: string | null): string {
@@ -586,19 +575,14 @@ function parseDiscoveredModels(body: unknown): DiscoveredModel[] {
   for (const raw of data) {
     if (!raw || typeof raw !== 'object' || Array.isArray(raw)) continue
     const item = raw as Record<string, unknown>
-    const id =
-      trimString(item.id) || trimString(item.name) || trimString(item.model)
+    const id = trimString(item.id) || trimString(item.name) || trimString(item.model)
     if (!id || seen.has(id)) continue
     seen.add(id)
     const model: DiscoveredModel = { id }
-    const ownedBy =
-      trimString(item.owned_by) ||
-      trimString(item.ownedBy) ||
-      trimString(item.owner)
+    const ownedBy = trimString(item.owned_by) || trimString(item.ownedBy) || trimString(item.owner)
     const created = item.created ?? item.created_at ?? item.createdAt
     if (ownedBy) model.ownedBy = ownedBy
-    if (typeof created === 'number' || typeof created === 'string')
-      model.created = created
+    if (typeof created === 'number' || typeof created === 'string') model.created = created
     out.push(model)
   }
   return out.sort((a, b) => a.id.localeCompare(b.id))
@@ -621,50 +605,35 @@ function codeForHttpStatus(status: number): string {
 }
 
 function codeForFetchError(error: unknown): string {
-  if (error instanceof Error && error.name === 'AbortError') return 'timeout'
-  return 'network_error'
+  return error instanceof Error && error.name === 'AbortError'
+    ? 'timeout'
+    : 'network_error'
 }
 
 function fetchErrorMessage(error: unknown): string {
-  if (error instanceof Error && error.name === 'AbortError')
-    return '获取模型列表超时。'
+  if (error instanceof Error && error.name === 'AbortError') return '获取模型列表超时。'
   return error instanceof Error ? error.message : String(error)
 }
 
-export function restoreMaskedKeys(config: Dict, existing: Dict): void {
-  const incomingProviders = isRecord(config.providers) ? config.providers : {}
-  const existingProviders = isRecord(existing.providers)
-    ? existing.providers
-    : {}
-  for (const [name, prov] of Object.entries(incomingProviders)) {
-    if (
-      isRecord(prov) &&
-      typeof prov.apiKey === 'string' &&
-      prov.apiKey.startsWith('***')
-    ) {
-      const old = existingProviders[name]
-      prov.apiKey = isRecord(old) ? String(old.apiKey ?? '') : ''
-    }
-  }
-
-  const existingModels = new Map<string, Dict>()
-  for (const item of Array.isArray(existing.models) ? existing.models : []) {
-    if (isRecord(item) && item.name) existingModels.set(String(item.name), item)
-  }
-  for (const entry of Array.isArray(config.models) ? config.models : []) {
-    if (
-      !isRecord(entry) ||
-      typeof entry.apiKey !== 'string' ||
-      !entry.apiKey.startsWith('***')
-    )
-      continue
-    const old = existingModels.get(String(entry.name ?? ''))
-    entry.apiKey = old ? String(old.apiKey ?? '') : ''
-  }
+function visionProbeMessages(): OpenAiMessage[] {
+  return [
+    {
+      role: 'user',
+      content: [
+        { type: 'text', text: 'What is the color of this image? Reply with one word.' },
+        {
+          type: 'image_url',
+          image_url: {
+            url: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Y9Z0QAAAABJRU5ErkJggg==',
+          },
+        },
+      ],
+    },
+  ]
 }
 
-function maskKey(key: string): string {
-  return key.length > 4 ? `***${key.slice(-4)}` : '***'
+function visionOk(sample: string): boolean {
+  return /red|color|colour|像素|红/i.test(sample)
 }
 
 function trimString(value: unknown): string {
@@ -676,58 +645,7 @@ function trimApiBase(value: string): string {
 }
 
 function recordValue(value: unknown): Record<string, unknown> | null {
-  return isRecord(value) ? value : null
-}
-
-function isRecord(value: unknown): value is Dict {
-  return Boolean(value && typeof value === 'object' && !Array.isArray(value))
-}
-
-function wizardSettings(input: unknown): WizardModelSettings {
-  if (!isRecord(input)) throw new Error('wizard settings must be an object')
-  return {
-    provider: String(input.provider ?? '').trim(),
-    name: String(input.name ?? '').trim(),
-    label: String(input.label ?? '').trim(),
-    apiKey: String(input.apiKey ?? ''),
-    apiBase: String(input.apiBase ?? ''),
-    mainModelId: String(input.mainModelId ?? '').trim(),
-    secondaryModelId: String(input.secondaryModelId ?? '').trim(),
-    maxTokens: Number(input.maxTokens ?? 8192),
-    temperature: Number(input.temperature ?? 0.1),
-    contextWindowTokens: Number(input.contextWindowTokens ?? 128000),
-    reasoningEffort: input.reasoningEffort
-      ? String(input.reasoningEffort)
-      : null,
-  }
-}
-
-const PROBE_JPEG_BASE64 = '/9j/4AAQSkZJRgABAQAAAQABAAD/2w=='
-
-function visionProbeMessages(): OpenAiMessage[] {
-  return [
-    {
-      role: 'user',
-      content: [
-        {
-          type: 'text',
-          text: 'Reply with ONE English word only: name a visible color in this image.',
-        },
-        {
-          type: 'image_url',
-          image_url: { url: `data:image/jpeg;base64,${PROBE_JPEG_BASE64}` },
-        },
-      ],
-    },
-  ]
-}
-
-function visionOk(sample: string): boolean {
-  const lower = sample.toLowerCase()
-  return (
-    Boolean(sample) &&
-    !['invalid', 'error', 'cannot', 'unable', 'sorry'].some((token) =>
-      lower.includes(token),
-    )
-  )
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : null
 }

@@ -387,9 +387,13 @@ export interface TokenUsageRecord {
   ts: string
   provider: string
   model: string
+  model_entry_id?: string
+  /** Historical replay compatibility only. */
   model_role?: string
   route_reason?: string
+  /** Historical replay compatibility only. */
   used_fallback?: boolean
+  /** Historical replay compatibility only. */
   fallback_reason?: string
   estimated_input_tokens?: number
   route_estimated_tokens?: number
@@ -407,12 +411,15 @@ export type ProviderRegion =
 export interface ProviderOption {
   name: string
   displayName?: string
-  display_name?: string
-  backend?: string
+  protocols?: Array<'openai' | 'anthropic'> | readonly ('openai' | 'anthropic')[]
+  defaultProtocol?: 'openai' | 'anthropic' | null
+  apiBases?: Partial<Record<'openai' | 'anthropic', string>>
+  iconId?: string | null
   websiteUrl?: string
   apiKeyUrl?: string
-  modelDiscovery?: string
-  defaultApiBase?: string
+  modelDiscovery?: Partial<
+    Record<'openai' | 'anthropic', 'openai_compat' | 'anthropic' | 'unsupported'>
+  >
   region?: ProviderRegion
   isGateway?: boolean
   isLocal?: boolean
@@ -422,21 +429,55 @@ export interface ProviderOption {
 }
 
 export interface ModelEntry {
-  name: string // 唯一 key（agents.defaults.model 引用）
-  id?: string // 兼容旧字段，等价于 mainModelId
-  mainModelId?: string // 主模型 id：复杂任务 / 主 Agent
-  secondaryModelId?: string // 次模型 id：简单任务 / 内部任务
-  provider: string // registry name
-  apiKey?: string | null // "***last4" 占位 / 空 / 真值
-  apiBase?: string | null
-  extraHeaders?: Record<string, unknown> | null
-  extraBody?: Record<string, unknown> | null
-  maxTokens?: number | null
-  temperature?: number | null
-  contextWindowTokens?: number | null
+  entryId: string
+  provider: string
+  protocol: 'openai' | 'anthropic'
+  modelId: string
+  displayName?: string
+  apiKey: string
+  apiBase: string
+  capabilityOverrides?: ModelCapabilityOverrides
+  contextWindowTokens: number
+  maxTokens: number
+  reasoningEffort: string | null
+  resolvedProfile: ResolvedModelProfile
+}
+
+export interface ModelCapabilityOverrides {
+  toolCall?: boolean
+  vision?: boolean
+  reasoning?: boolean
+}
+
+export type CapabilitySource = 'override' | 'inferred' | 'default'
+
+export interface ResolvedModelProfile {
+  toolCall: boolean
+  vision: boolean
+  reasoning: boolean
+  sources: {
+    toolCall: CapabilitySource
+    vision: CapabilitySource
+    reasoning: CapabilitySource
+  }
+  contextWindowTokens: number
+  maxTokens: number
+  reasoningEfforts: string[] | readonly string[]
+  reasoningAdapter: string
+}
+
+export interface ModelEntrySaveInput {
+  entryId?: string
+  provider?: string
+  protocol?: 'openai' | 'anthropic'
+  modelId?: string
+  displayName?: string
+  apiKey?: string | null
+  apiBase?: string
+  capabilityOverrides?: ModelCapabilityOverrides
+  contextWindowTokens?: number
+  maxTokens?: number
   reasoningEffort?: string | null
-  label?: string
-  supportsVision?: boolean // 仅由"测试视觉"成功时自动 true；UI 用 👁 徽章渲染
 }
 
 export interface AttachmentRef {
@@ -461,9 +502,9 @@ export interface ChatSendPayload {
 export interface ModelTestResult {
   ok: boolean
   kind: 'text' | 'vision'
+  entryId?: string
   latencyMs?: number
   model?: string
-  modelRole?: string
   provider?: string
   sample?: string
   finishReason?: string
@@ -480,6 +521,7 @@ export interface DiscoveredModel {
 export interface ModelDiscoveryResult {
   ok: boolean
   provider?: string
+  protocol?: 'openai' | 'anthropic'
   apiBase?: string | null
   source?: string
   models: DiscoveredModel[]
@@ -487,48 +529,25 @@ export interface ModelDiscoveryResult {
   message?: string
 }
 
-export interface AgentDefaults {
-  provider?: string | null
-  model?: string | null
-  maxTokens?: number | null
-  temperature?: number | null
-  reasoningEffort?: string | null
-  contextWindowTokens?: number | null
-}
-
-export interface ProviderConfig {
-  apiKey?: string | null
-  apiBase?: string | null
-  extraHeaders?: Record<string, unknown> | null
-  extraBody?: Record<string, unknown> | null
-  [key: string]: unknown
-}
-
-export interface ModelConfigRaw {
-  agents?: {
-    defaults?: AgentDefaults
-    [key: string]: unknown
-  }
-  models?: ModelEntry[]
-  providers?: Record<string, ProviderConfig>
-  [key: string]: unknown
-}
-
 export interface CurrentModelConfig {
-  provider?: string | null
-  providerLabel?: string | null
-  model?: string | null
-  apiBase?: string | null
-  maxTokens?: number | null
-  temperature?: number | null
-  reasoningEffort?: string | null
-  contextWindowTokens?: number | null
-  entryName?: string | null
-  entryLabel?: string | null
-  supportsVision?: boolean
-  mainModelId?: string | null
-  secondaryModelId?: string | null
-  modelRole?: string | null
+  entryId: string
+  provider: string
+  providerLabel: string
+  protocol: 'openai' | 'anthropic'
+  modelId: string
+  displayName: string | null
+  apiBase: string
+  maxTokens: number
+  reasoningEffort: string | null
+  contextWindowTokens: number
+  capabilities: {
+    toolCall: boolean
+    vision: boolean
+    reasoning: boolean
+  }
+  capabilitySources: ResolvedModelProfile['sources']
+  reasoningEfforts: string[] | readonly string[]
+  reasoningAdapter: string
 }
 
 export interface ModelAvailability {
@@ -559,18 +578,13 @@ export interface ProfileOnboardingActionResult {
 }
 
 export interface ModelConfigPayload {
-  current?: CurrentModelConfig
-  secondary?: CurrentModelConfig | null
-  availability?: ModelAvailability
-  routing?: {
-    secondaryEnabled?: boolean
-    fallbackToMain?: boolean
-    mainEntry?: string | null
-    mainModel?: string | null
-    secondaryModel?: string | null
-  }
-  config?: ModelConfigRaw
-  providerOptions?: ProviderOption[]
+  schemaVersion: 2
+  activeModelId: string | null
+  models: ModelEntry[]
+  current: CurrentModelConfig | null
+  availability: ModelAvailability
+  providerOptions: ProviderOption[]
+  profileOnboarding?: ProfileOnboardingActionResult
 }
 
 export interface DesktopPetPayload {
@@ -1301,12 +1315,16 @@ type WsEventVariants =
       max?: number
       threshold?: number
       usage_type?: string
+      model_entry_id?: string
+      /** Historical replay compatibility only. */
       model_role?: string
       model?: string
       provider?: string
       route_reason?: string
       estimated_input_tokens?: number
+      /** Historical replay compatibility only. */
       used_fallback?: boolean
+      /** Historical replay compatibility only. */
       fallback_reason?: string
       provider_retry_count?: number
       provider_error_kind?: string

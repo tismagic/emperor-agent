@@ -21,11 +21,13 @@ describe('Python runtime data compatibility (MIG-REL-003)', () => {
 
     const model = await loadModelConfig(root, { create: false })
     expect(activeEntry(model)).toMatchObject({
-      name: 'python-deepseek',
+      displayName: 'Python DeepSeek',
       provider: 'deepseek',
-      mainModelId: 'deepseek-chat',
-      secondaryModelId: 'deepseek-chat',
+      protocol: 'openai',
+      modelId: 'deepseek-chat',
     })
+    expect(activeEntry(model)?.entryId).toMatch(/^model-/)
+    expect(model.activeModelId).toBe(activeEntry(model)?.entryId)
 
     const mcp = await loadMcpConfig(root, { PY_TOOL: '/usr/bin/python3' })
     expect(mcp.defaults).toMatchObject({ read_only: true, exclusive: false })

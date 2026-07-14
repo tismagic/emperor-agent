@@ -18,7 +18,10 @@ describe('useBootstrap IPC bootstrap (MIG-IPC-004)', () => {
           return {
             app: 'Emperor Agent',
             modelConfig: {
-              config: { agents: { defaults: { provider: 'fake' } } },
+              schemaVersion: 2,
+              activeModelId: 'entry-1',
+              models: [],
+              current: { entryId: 'entry-1', provider: 'fake' },
             },
           }
         },
@@ -32,10 +35,10 @@ describe('useBootstrap IPC bootstrap (MIG-IPC-004)', () => {
     expect(calls).toEqual([['bootstrap', { sessionId: 'session-1' }]])
     expect(fetchSpy).not.toHaveBeenCalled()
     expect(boot.boot.value?.app).toBe('Emperor Agent')
-    expect(boot.modelDraftProvider.value).toBe('fake')
+    expect(boot.boot.value?.modelConfig.activeModelId).toBe('entry-1')
   })
 
-  it('returns the profile onboarding action after saving the first model config', async () => {
+  it('does not expose the retired whole-config model mutation adapter', async () => {
     const calls: unknown[][] = []
     g.window = {
       emperor: {
@@ -44,7 +47,7 @@ describe('useBootstrap IPC bootstrap (MIG-IPC-004)', () => {
           if (args[0] === 'bootstrap') {
             return {
               app: 'Emperor Agent',
-              modelConfig: { config: {} },
+              modelConfig: { models: [] },
               profileOnboarding: {
                 status: 'pending',
                 sessionId: null,
@@ -56,35 +59,14 @@ describe('useBootstrap IPC bootstrap (MIG-IPC-004)', () => {
               },
             }
           }
-          return {
-            current: { model: 'fake-main', provider: 'fake' },
-            config: {},
-            profileOnboarding: {
-              started: true,
-              state: {
-                status: 'in_progress',
-                sessionId: 'default-session',
-                interactionId: 'ask_profile',
-                attemptCount: 1,
-                lastError: null,
-                canStart: false,
-                canSkip: true,
-              },
-            },
-          }
+          throw new Error(`unexpected operation: ${String(args[0])}`)
         },
       },
     }
     const boot = useBootstrap(() => {})
     await boot.loadBootstrap()
 
-    const action = await boot.saveModelConfig({})
-
-    expect(calls.at(-1)).toEqual(['model.saveConfig', { config: {} }])
-    expect(action).toMatchObject({
-      started: true,
-      state: { sessionId: 'default-session', interactionId: 'ask_profile' },
-    })
-    expect(boot.boot.value?.profileOnboarding.status).toBe('in_progress')
+    expect('saveModelConfig' in boot).toBe(false)
+    expect(calls).toEqual([['bootstrap', { sessionId: null }]])
   })
 })
