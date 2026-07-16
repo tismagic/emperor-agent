@@ -27,9 +27,20 @@ import { Tool } from '../tools/base'
 import { toolParamsSchema, S } from '../tools/schema'
 import { TodoStore } from '../tools/builtin'
 import { ToolRegistry } from '../tools/registry'
-import { makePlanRecord, PlanStatus } from '../plans/models'
+import {
+  makePlanRecord,
+  makeStep,
+  PlanStatus,
+  PlanStepStatus,
+} from '../plans/models'
 import { independentVerificationRiskSignals } from './plan-helpers'
 import { TaskManager } from '../tasks/manager'
+import { GoalContractValidator, newGoalRecord } from '../goals/validation'
+import type {
+  GoalPlanVerificationFact,
+  GoalPlanVerificationSource,
+} from '../goals/evidence'
+import type { GoalRecord } from '../goals/models'
 
 function tmp(prefix: string): string {
   return mkdtempSync(join(tmpdir(), prefix))
@@ -66,6 +77,41 @@ function makeRegistry(manager: ControlManager): ToolRegistry {
   registry.register(new ProposePlanTool(manager))
   registry.register(new RequestPlanModeTool(manager))
   return registry
+}
+
+function lockedGoal(
+  id: string,
+  scope: {
+    sessionId: string
+    mode: 'chat' | 'build'
+    projectId: string | null
+    workspaceRoot: string
+  },
+): GoalRecord {
+  const draft = newGoalRecord({
+    id,
+    outcome: 'Execute the approved Plan safely.',
+    scope,
+    now: '2026-07-15T14:00:00.000Z',
+  })
+  return GoalContractValidator.lock(
+    draft,
+    {
+      inScope: ['Task 4'],
+      outOfScope: [],
+      constraints: [],
+      acceptanceCriteria: [
+        {
+          id: 'AC-1',
+          description: 'Plan executes safely.',
+          required: true,
+          verification: { kind: 'command', requirement: 'npm test' },
+        },
+      ],
+      escalationConditions: [],
+    },
+    '2026-07-15T14:00:01.000Z',
+  )
 }
 
 // ── test_control.py (ControlManager-level) ──
@@ -262,6 +308,221 @@ describe('ControlManager (test_control.py)', () => {
       session_id: 'session_1',
       project_id: 'project_1',
       workspace_root: '/tmp/project_1',
+    })
+  })
+
+  it('Core injects the active Goal binding and preserves dependency input across revision', () => {
+    const manager = new ControlManager(tmp('emperor-ctrl-goal-plan-'))
+    const goal = lockedGoal('goal-plan-binding', {
+      sessionId: 'session-goal-plan-binding',
+      mode: 'build',
+      projectId: 'project-goal-plan-binding',
+      workspaceRoot: '/workspace/goal-plan-binding',
+    })
+    manager.setRuntimeScope({
+      sessionId: goal.scope.sessionId,
+      mode: goal.scope.mode,
+      projectId: goal.scope.projectId,
+      workspaceRoot: goal.scope.workspaceRoot,
+      projectFingerprint: goal.scope.projectFingerprint,
+    })
+    manager.setActiveGoalPlanContext(goal)
+    manager.setMode('plan')
+    const first = manager.createPlan({
+      title: 'Goal path',
+      summary: 'Bind only the Core-owned active Goal.',
+      planMarkdown: '# Plan\n\n- A\n- B',
+      meta: { goal_id: 'goal-forged-by-caller' },
+      steps: [
+        {
+          id: 'step_a',
+          title: 'A',
+          files: ['a.ts'],
+          acceptance: ['A done'],
+        },
+        {
+          id: 'step_b',
+          title: 'B',
+          files: ['b.ts'],
+          acceptance: ['B done'],
+          depends_on: ['step_a'],
+        },
+      ],
+    })
+    const firstPlanId = String(first.meta.plan_id)
+    expect(manager.planStore.get(firstPlanId)).toMatchObject({
+      goalId: goal.id,
+      supersedesPlanId: null,
+      steps: [
+        { id: 'step_a', dependsOn: [] },
+        { id: 'step_b', dependsOn: ['step_a'] },
+      ],
+    })
+
+    manager.comment(first.id, 'Keep the dependency chain.')
+    const revised = manager.createPlan({
+      title: 'Goal path revised',
+      summary: 'Keep the same Goal-bound waiting Plan.',
+      planMarkdown: '# Plan\n\n- A\n- B',
+      steps: [
+        {
+          id: 'step_a',
+          title: 'A',
+          files: ['a.ts'],
+          acceptance: ['A done'],
+        },
+        {
+          id: 'step_b',
+          title: 'B',
+          files: ['b.ts'],
+          acceptance: ['B done'],
+          depends_on: ['step_a'],
+        },
+      ],
+    })
+    expect(revised.meta.plan_id).toBe(firstPlanId)
+    expect(manager.planStore.get(firstPlanId)?.goalId).toBe(goal.id)
+
+    manager.setActiveGoalPlanContext(null)
+    manager.comment(revised.id, 'Create an ordinary Plan next.')
+    const ordinary = manager.createPlan({
+      title: 'Ordinary plan',
+      summary: 'No Goal binding outside active Goal context.',
+      planMarkdown: '# Plan\n\n- Work',
+      steps: [
+        {
+          id: 'step_1',
+          title: 'Work',
+          files: ['work.ts'],
+          acceptance: ['done'],
+        },
+      ],
+    })
+    expect(
+      manager.planStore.get(String(ordinary.meta.plan_id))?.goalId,
+    ).toBeNull()
+  })
+
+  it('matches portable Windows workspace paths at the active Goal entrypoint', () => {
+    const manager = new ControlManager(tmp('emperor-goal-windows-scope-'))
+    const base = lockedGoal('goal_windows_manager', {
+      sessionId: 'session-windows-manager',
+      mode: 'build',
+      projectId: 'project-windows-manager',
+      workspaceRoot: '/placeholder',
+    })
+    const goal = {
+      ...base,
+      scope: { ...base.scope, workspaceRoot: 'C:/Users/Alice/Emperor' },
+    }
+    manager.setRuntimeScope({
+      ...goal.scope,
+      workspaceRoot: 'c:\\users\\alice\\emperor',
+    })
+    manager.setActiveGoalPlanContext(goal)
+
+    expect(manager.activeGoalPlanContext()?.id).toBe(goal.id)
+  })
+
+  it('rejects approval when the pending Goal Plan is not the current approval generation', () => {
+    const manager = new ControlManager(
+      tmp('emperor-ctrl-goal-plan-generation-'),
+    )
+    const goal = lockedGoal('goal-plan-generation', {
+      sessionId: 'session-goal-plan-generation',
+      mode: 'build',
+      projectId: 'project-goal-plan-generation',
+      workspaceRoot: '/workspace/goal-plan-generation',
+    })
+    manager.setRuntimeScope({
+      sessionId: goal.scope.sessionId,
+      mode: goal.scope.mode,
+      projectId: goal.scope.projectId,
+      workspaceRoot: goal.scope.workspaceRoot,
+      projectFingerprint: goal.scope.projectFingerprint,
+    })
+    manager.setActiveGoalPlanContext(goal)
+    manager.setMode('plan')
+    const interaction = manager.createPlan({
+      title: 'Current approval generation',
+      summary: 'Only the exact pending generation may be approved.',
+      planMarkdown: '# Plan\n\n- Work',
+      steps: [
+        {
+          id: 'step_1',
+          title: 'Work',
+          files: ['work.ts'],
+          acceptance: ['done'],
+        },
+      ],
+    })
+    const planId = String(interaction.meta.plan_id)
+    const pending = manager.planStore.get(planId)!
+    manager.planStore.save({
+      ...pending,
+      metadata: {
+        ...pending.metadata,
+        approval_generation: Number(pending.metadata.approval_generation) + 1,
+      },
+    })
+
+    expect(() => manager.approve(interaction.id)).toThrow(
+      'pending Plan approval generation is stale',
+    )
+    expect(manager.planStore.get(planId)?.status).toBe(
+      PlanStatus.WAITING_APPROVAL,
+    )
+    expect((manager.payload().pending as Record<string, unknown>).id).toBe(
+      interaction.id,
+    )
+  })
+
+  it('normalizes all model-proposed verification state to a fresh pending requirement', () => {
+    const manager = new ControlManager(
+      tmp('emperor-ctrl-plan-verification-input-'),
+    )
+    manager.setMode('plan')
+    const interaction = manager.createPlan({
+      title: 'Untrusted verification state',
+      summary: 'The model may define checks but cannot claim their result.',
+      planMarkdown: '# Plan\n\n- Verify',
+      steps: [
+        {
+          id: 'step_1',
+          title: 'Verify',
+          files: ['src/a.ts'],
+          commands: ['npm test'],
+          verification: [
+            {
+              id: 'verify_1',
+              kind: 'command',
+              required: true,
+              command: 'npm test',
+              description: 'Run tests.',
+              status: 'passed',
+              reason: 'model says it passed',
+              evidence_refs: ['forged:receipt'],
+            },
+          ],
+          status: 'done',
+          evidence: [{ passed: true, command: 'npm test' }],
+        },
+      ],
+    })
+
+    expect(
+      manager.planStore.get(String(interaction.meta.plan_id))?.steps[0],
+    ).toMatchObject({
+      status: 'pending',
+      evidence: [],
+      verification: [
+        {
+          id: 'verify_1',
+          status: 'pending',
+          reason: '',
+          evidenceRefs: [],
+        },
+      ],
     })
   })
 
@@ -720,6 +981,11 @@ describe('Plan verification matrix integration (test_plan_verification_matrix.py
     extraStep: Record<string, unknown> = {},
   ): { manager: ControlManager; planId: string } {
     const manager = new ControlManager(tmp('emperor-vmatrix-'))
+    manager.setRuntimeScope({
+      sessionId: 'session-goal-plan',
+      projectId: 'project-goal-plan',
+      workspaceRoot: '/workspace/goal-plan',
+    })
     manager.setTodoStore(new TodoStore())
     manager.setMode('plan')
     new ProposePlanTool(manager).execute({
@@ -765,6 +1031,67 @@ describe('Plan verification matrix integration (test_plan_verification_matrix.py
     })
   })
 
+  it('appends late verification evidence to the current completed Plan without reopening it', () => {
+    const command = 'npm test'
+    const { manager, planId } = managerWithActiveStep([command])
+    const active = manager.planStore.get(planId)!
+    const completedAt = active.updatedAt + 1
+    manager.planStore.save({
+      ...active,
+      status: PlanStatus.COMPLETED,
+      completedAt,
+      updatedAt: completedAt,
+    })
+
+    const updated = manager.recordPlanVerificationResult({
+      planId,
+      stepId: 'step_1',
+      result: {
+        command,
+        passed: true,
+        exit_code: 0,
+        summary: 'late test result',
+      },
+    })
+
+    expect(updated).toMatchObject({
+      id: planId,
+      status: PlanStatus.COMPLETED,
+      completedAt,
+    })
+    expect(updated!.steps[0]!.evidence.at(-1)).toMatchObject({
+      summary: 'late test result',
+    })
+  })
+
+  it.each([
+    ['cancelled lifecycle', PlanStatus.CANCELLED, {}],
+    ['superseded metadata', PlanStatus.EXECUTING, { superseded_by: 'plan-b' }],
+    ['cancelled metadata', PlanStatus.EXECUTING, { cancelled_by: 'user' }],
+    ['rejected metadata', PlanStatus.EXECUTING, { rejected_by: 'reviewer' }],
+    ['deleted metadata', PlanStatus.EXECUTING, { deleted_at: 123 }],
+  ] as const)(
+    'does not mutate verification evidence for an invalidated source Plan: %s',
+    (_label, status, invalidation) => {
+      const { manager, planId } = managerWithActiveStep(['npm test'])
+      const current = manager.planStore.get(planId)!
+      const invalid = manager.planStore.save({
+        ...current,
+        status,
+        metadata: { ...current.metadata, ...invalidation },
+      })
+
+      expect(
+        manager.recordPlanVerificationResult({
+          planId,
+          stepId: 'step_1',
+          result: { command: 'npm test', passed: true, exit_code: 0 },
+        }),
+      ).toBeNull()
+      expect(manager.planStore.get(planId)).toEqual(invalid)
+    },
+  )
+
   it('matches explicit verification commands as evidence targets', () => {
     const command = 'npm --prefix desktop run test'
     const { manager } = managerWithActiveStep([], {
@@ -784,7 +1111,304 @@ describe('Plan verification matrix integration (test_plan_verification_matrix.py
       command,
       requirement_id: 'v1',
     })
+    expect(
+      manager.planVerificationTarget('npm   --prefix desktop run test'),
+    ).toBeNull()
   })
+
+  it('does not fold whitespace inside quoted Plan command arguments', () => {
+    const command = 'npm test -- --grep "a  b"'
+    const { manager } = managerWithActiveStep([], {
+      verification: [
+        {
+          id: 'v-quoted',
+          kind: 'command',
+          required: true,
+          command,
+          description: 'quoted filter',
+        },
+      ],
+    })
+
+    expect(manager.planVerificationTarget(command)).not.toBeNull()
+    expect(
+      manager.planVerificationTarget('npm test -- --grep "a b"'),
+    ).toBeNull()
+  })
+
+  it('resolves Goal Plan facts only for the current execution-trusted Plan in the same Goal scope', () => {
+    const command = 'npm test'
+    const { manager, planId } = managerWithActiveStep([command])
+    const target = manager.planVerificationTarget(command)!
+    manager.recordPlanVerificationResult({
+      planId,
+      stepId: 'step_1',
+      result: {
+        requirement_id: target.requirement_id,
+        tool_call_id: 'call-goal-plan',
+        command,
+        passed: true,
+        exit_code: 0,
+        summary: 'tests passed',
+      },
+    })
+    const source: GoalPlanVerificationSource = {
+      planId,
+      stepId: 'step_1',
+      requirementId: target.requirement_id!,
+      toolCallId: 'call-goal-plan',
+      sourceObservationId: 'obs-goal-plan',
+      approvedInputHash: target.approved_input_hash!,
+    }
+    const goal = planGoal('goal-current-plan')
+    const resolve = manager.resolveGoalPlanVerificationFact.bind(manager) as (
+      goalId: string,
+      goal: GoalRecord,
+      source: GoalPlanVerificationSource,
+    ) => GoalPlanVerificationFact | null
+
+    // A legacy Plan with only a similar scope is not Goal provenance.
+    expect(resolve(goal.id, goal, source)).toBeNull()
+    const legacy = manager.planStore.get(planId)!
+    const boundGoal = {
+      ...goal,
+      runtime: { ...goal.runtime, currentPlanId: planId },
+    }
+    manager.planStore.save({
+      ...legacy,
+      goalId: goal.id,
+      metadata: {
+        ...legacy.metadata,
+        scope: {
+          ...(legacy.metadata.scope as Record<string, unknown>),
+          mode: goal.scope.mode,
+          project_fingerprint: goal.scope.projectFingerprint,
+        },
+      },
+    })
+
+    expect(resolve(goal.id, boundGoal, source)).toMatchObject({
+      goalId: goal.id,
+      planId,
+      passed: true,
+    })
+    const current = manager.planStore.get(planId)!
+    const completed = manager.planStore.save({
+      ...current,
+      status: PlanStatus.COMPLETED,
+      completedAt: current.updatedAt,
+    })
+    expect(resolve(goal.id, boundGoal, source)).toMatchObject({
+      goalId: goal.id,
+      planId,
+      passed: true,
+    })
+    expect(
+      resolve(
+        goal.id,
+        {
+          ...boundGoal,
+          createdAt: new Date((completed.approvedAt! + 1) * 1000).toISOString(),
+        },
+        source,
+      ),
+    ).toBeNull()
+    expect(
+      resolve(
+        goal.id,
+        {
+          ...boundGoal,
+          scope: { ...goal.scope, sessionId: 'different-session' },
+        },
+        source,
+      ),
+    ).toBeNull()
+    expect(
+      resolve(
+        goal.id,
+        {
+          ...boundGoal,
+          runtime: { ...goal.runtime, currentPlanId: 'different-plan' },
+        },
+        source,
+      ),
+    ).toBeNull()
+  })
+
+  it('invalidates a Goal Plan fact after cancellation or replacement and never revives deleted history', () => {
+    const command = 'npm test'
+    const { manager, planId } = managerWithActiveStep([command])
+    const target = manager.planVerificationTarget(command)!
+    manager.recordPlanVerificationResult({
+      planId,
+      stepId: 'step_1',
+      result: {
+        requirement_id: target.requirement_id,
+        tool_call_id: 'call-stale-plan',
+        command,
+        passed: true,
+        exit_code: 0,
+        summary: 'tests passed',
+      },
+    })
+    const source: GoalPlanVerificationSource = {
+      planId,
+      stepId: 'step_1',
+      requirementId: target.requirement_id!,
+      toolCallId: 'call-stale-plan',
+      sourceObservationId: 'obs-stale-plan',
+      approvedInputHash: target.approved_input_hash!,
+    }
+    const goal = planGoal('goal-stale-plan')
+    const resolve = manager.resolveGoalPlanVerificationFact.bind(manager) as (
+      goalId: string,
+      goal: GoalRecord,
+      source: GoalPlanVerificationSource,
+    ) => GoalPlanVerificationFact | null
+
+    expect(resolve(goal.id, goal, source)).toBeNull()
+    const legacy = manager.planStore.get(planId)!
+    const boundGoal = {
+      ...goal,
+      runtime: { ...goal.runtime, currentPlanId: planId },
+    }
+    manager.planStore.save({
+      ...legacy,
+      goalId: goal.id,
+      metadata: {
+        ...legacy.metadata,
+        scope: {
+          ...(legacy.metadata.scope as Record<string, unknown>),
+          mode: goal.scope.mode,
+          project_fingerprint: goal.scope.projectFingerprint,
+        },
+      },
+    })
+
+    expect(resolve(goal.id, boundGoal, source)).not.toBeNull()
+    expect(resolve('different-goal', boundGoal, source)).toBeNull()
+
+    const record = manager.planStore.get(planId)!
+    manager.planStore.save(
+      makePlanRecord({
+        id: 'plan-successor',
+        title: 'Successor',
+        summary: 'New current Plan for the same Goal scope.',
+        status: PlanStatus.APPROVED,
+        createdAt: record.createdAt + 1,
+        updatedAt: record.updatedAt + 1,
+        approvedAt: record.approvedAt! + 1,
+        sessionId: record.sessionId,
+        goalId: goal.id,
+        metadata: { ...record.metadata },
+      }),
+    )
+    expect(resolve(goal.id, boundGoal, source)).toBeNull()
+
+    manager.planStore.save({
+      ...record,
+      status: PlanStatus.CANCELLED,
+      updatedAt: record.updatedAt + 2,
+      metadata: { ...record.metadata, superseded_by: 'plan-successor' },
+    })
+    expect(resolve(goal.id, boundGoal, source)).toBeNull()
+
+    manager.planStore.deleteBySession('session-goal-plan')
+    expect(manager.planStore.get(planId)).toBeNull()
+    expect(resolve(goal.id, boundGoal, source)).toBeNull()
+  })
+
+  it('selects current Plan by immutable approval generation instead of mutable updatedAt', () => {
+    const { manager, planId } = managerWithActiveStep(['npm test'])
+    const older = manager.planStore.get(planId)!
+    const newer = makePlanRecord({
+      id: 'plan-newer-generation',
+      title: 'Newer generation',
+      summary: 'Approved after the old completed Plan.',
+      status: PlanStatus.EXECUTING,
+      createdAt: older.createdAt + 10,
+      updatedAt: older.updatedAt + 10,
+      approvedAt: older.approvedAt! + 10,
+      sessionId: older.sessionId,
+      metadata: { ...older.metadata, permission_tokens: [] },
+    })
+    manager.planStore.save({
+      ...older,
+      status: PlanStatus.COMPLETED,
+      completedAt: older.updatedAt + 100,
+      updatedAt: older.updatedAt + 100,
+    })
+    manager.planStore.save(newer)
+
+    expect(manager.latestReviewablePlan()?.id).toBe(newer.id)
+    expect(manager.latestExecutablePlan()?.id).toBe(newer.id)
+  })
+
+  it('does not fall back to an older Plan or consume its token when the latest approval generation is invalid', () => {
+    const { manager, planId } = managerWithActiveStep(['npm test'])
+    const older = manager.planStore.get(planId)!
+    const originalTokens = older.metadata.permission_tokens
+    manager.planStore.save(
+      makePlanRecord({
+        id: 'plan-cancelled-successor',
+        title: 'Cancelled successor',
+        summary: 'Latest generation is invalid.',
+        status: PlanStatus.CANCELLED,
+        createdAt: older.createdAt + 10,
+        updatedAt: older.updatedAt + 10,
+        approvedAt: older.approvedAt! + 10,
+        sessionId: older.sessionId,
+        metadata: {
+          ...older.metadata,
+          permission_tokens: [],
+          cancelled_by: 'user',
+        },
+      }),
+    )
+
+    expect(
+      manager.consumePlanPermissionToken({
+        toolName: 'run_command',
+        arguments: { command: 'npm test' },
+      }),
+    ).toBeNull()
+    expect(manager.planStore.get(planId)!.metadata.permission_tokens).toEqual(
+      originalTokens,
+    )
+    expect(manager.latestExecutablePlan()).toBeNull()
+    expect(manager.latestReviewablePlan()).toBeNull()
+  })
+
+  function planGoal(id: string): GoalRecord {
+    return GoalContractValidator.lock(
+      newGoalRecord({
+        id,
+        outcome: 'Verify the current scoped Plan',
+        scope: {
+          sessionId: 'session-goal-plan',
+          mode: 'build',
+          projectId: 'project-goal-plan',
+          workspaceRoot: '/workspace/goal-plan',
+        },
+        now: '2025-01-01T00:00:00.000Z',
+      }),
+      {
+        inScope: ['core'],
+        outOfScope: [],
+        constraints: [],
+        acceptanceCriteria: [
+          {
+            id: 'AC-1',
+            description: 'Tests pass',
+            required: true,
+            verification: { kind: 'command', requirement: 'npm test' },
+          },
+        ],
+        escalationConditions: [],
+      },
+      '2025-01-01T00:00:01.000Z',
+    )
+  }
 })
 
 describe('Plan risk signals', () => {
@@ -818,18 +1442,25 @@ describe('TodoStore.syncFromPlanSteps (test_plan_execution_state.py)', () => {
       { id: 'step_1', title: 'Edit code', status: 'active' },
       { id: 'step_2', title: 'Run tests', status: 'pending' },
     ]
-    const result = store.syncFromPlanSteps(steps)
+    const result = store.syncFromPlanSteps(steps, {
+      planId: 'plan_1',
+      approvalGeneration: 3,
+    })
     expect(result).toContain('todos updated')
     expect(store.todos).toEqual([
       {
         id: 1,
+        plan_id: 'plan_1',
         plan_step_id: 'step_1',
+        approval_generation: 3,
         content: 'Edit code',
         status: 'in_progress',
       },
       {
         id: 2,
+        plan_id: 'plan_1',
         plan_step_id: 'step_2',
+        approval_generation: 3,
         content: 'Run tests',
         status: 'pending',
       },
@@ -844,6 +1475,13 @@ describe('Legacy plan completion projection via todo sync (2026-07-05 B1)', () =
     planId: string
   } {
     const manager = new ControlManager(tmp('emperor-b1-'))
+    manager.setRuntimeScope({
+      sessionId: 'session-b1',
+      mode: 'build',
+      projectId: 'project-b1',
+      workspaceRoot: '/workspace/b1',
+      projectFingerprint: 'fingerprint-b1',
+    })
     const todoStore = new TodoStore()
     manager.setTodoStore(todoStore)
     manager.setMode('plan')
@@ -933,6 +1571,123 @@ describe('Legacy plan completion projection via todo sync (2026-07-05 B1)', () =
     ])
   })
 
+  it('requires explicit plan_step_id bindings and rejects dependency bypass', () => {
+    const { manager, todoStore } = approvedManager()
+    todoStore.update([
+      { id: 1, content: 'Build it', status: 'completed' },
+      { id: 2, content: 'Verify it', status: 'completed' },
+    ])
+    expect(() => manager.syncPlanFromTodos(todoStore.todos)).toThrow(
+      /plan_step_id/i,
+    )
+
+    const current = manager.planStore.latest()!
+    manager.planStore.save({
+      ...current,
+      steps: [
+        { ...current.steps[0]!, status: PlanStepStatus.ACTIVE },
+        {
+          ...current.steps[1]!,
+          status: PlanStepStatus.PENDING,
+          dependsOn: [current.steps[0]!.id],
+        },
+      ],
+    })
+    todoStore.update([
+      {
+        id: 1,
+        content: 'Build it',
+        status: 'in_progress',
+        planStepId: 'step_1',
+      },
+      {
+        id: 2,
+        content: 'Verify it',
+        status: 'completed',
+        planStepId: 'step_2',
+      },
+    ])
+    expect(() => manager.syncPlanFromTodos(todoStore.todos)).toThrow(
+      /dependenc/i,
+    )
+    expect(
+      manager.planStore.latest()!.steps.map((step) => step.status),
+    ).toEqual([PlanStepStatus.ACTIVE, PlanStepStatus.PENDING])
+  })
+
+  it('requires exact current Goal Plan and approval-generation Todo bindings', () => {
+    const root = tmp('emperor-goal-todo-binding-')
+    const manager = new ControlManager(root)
+    const todoStore = new TodoStore()
+    const goal = lockedGoal('goal_todo_binding', {
+      sessionId: 'session_todo_binding',
+      mode: 'build',
+      projectId: 'project_todo_binding',
+      workspaceRoot: '/workspace/todo-binding',
+    })
+    manager.setRuntimeScope(goal.scope)
+    manager.setActiveGoalPlanContext(goal)
+    manager.setTodoStore(todoStore)
+    manager.setMode('plan')
+    new ProposePlanTool(manager).execute({
+      title: 'Goal Todo binding',
+      summary: 'Bind Todo projection to the exact approved Goal Plan.',
+      plan_markdown: '# Plan',
+      steps: [
+        {
+          id: 'step_1',
+          title: 'Bound work',
+          description: 'work',
+          files: [],
+          commands: [],
+          acceptance: ['done'],
+        },
+      ],
+      assumptions: [],
+      risk_level: 'low',
+    })
+    const pending = manager.payload().pending as Record<string, unknown>
+    manager.approve(String(pending.id))
+    const plan = manager.planStore.latest()!
+    const generation = Number(plan.metadata.approval_generation)
+
+    for (const binding of [
+      { plan_id: 'stale-plan', approval_generation: generation },
+      { plan_id: plan.id, approval_generation: generation - 1 },
+      { plan_id: plan.id },
+    ]) {
+      todoStore.update([
+        {
+          id: 1,
+          content: 'Bound work',
+          status: 'completed',
+          plan_step_id: 'step_1',
+          ...binding,
+        },
+      ])
+      expect(() => manager.syncPlanFromTodos(todoStore.todos)).toThrow(
+        /binding|generation/i,
+      )
+      expect(manager.planStore.get(plan.id)!.steps[0]!.status).toBe(
+        PlanStepStatus.ACTIVE,
+      )
+    }
+
+    todoStore.update([
+      {
+        id: 1,
+        content: 'Bound work',
+        status: 'completed',
+        plan_id: plan.id,
+        plan_step_id: 'step_1',
+        approval_generation: generation,
+      },
+    ])
+    expect(manager.syncPlanFromTodos(todoStore.todos)?.status).toBe(
+      PlanStatus.COMPLETED,
+    )
+  })
+
   it('supersedes stale executing plans when a new plan is approved', () => {
     const { manager, planId: firstPlanId } = approvedManager()
     manager.setMode('plan')
@@ -961,5 +1716,123 @@ describe('Legacy plan completion projection via todo sync (2026-07-05 B1)', () =
     expect(String(first!.metadata.superseded_by || '')).not.toBe('')
     const successor = manager.planStore.latest()
     expect(successor!.status).not.toBe(PlanStatus.CANCELLED)
+  })
+
+  it('supersedes only the same Goal and full runtime scope, revoking tasks and tokens', () => {
+    const root = tmp('emperor-goal-supersede-scope-')
+    const manager = new ControlManager(root)
+    const taskManager = new TaskManager(root)
+    const goal = lockedGoal('goal_supersede', {
+      sessionId: 'session_supersede',
+      mode: 'build',
+      projectId: 'project_supersede',
+      workspaceRoot: '/workspace/supersede',
+    })
+    manager.setRuntimeScope(goal.scope)
+    manager.setActiveGoalPlanContext(goal)
+    manager.setTodoStore(new TodoStore())
+    manager.setTaskManager(taskManager)
+    const scope = {
+      session_id: goal.scope.sessionId,
+      mode: goal.scope.mode,
+      project_id: goal.scope.projectId,
+      workspace_root: goal.scope.workspaceRoot,
+      project_fingerprint: goal.scope.projectFingerprint,
+    }
+    const oldTask = taskManager.startTask({
+      kind: 'plan_step',
+      title: 'Old step',
+      source: 'plan_step',
+      sessionId: goal.scope.sessionId,
+    })
+    const base = {
+      title: 'Old executable',
+      summary: 'Must be isolated by Goal and full scope.',
+      status: PlanStatus.EXECUTING,
+      createdAt: 1,
+      updatedAt: 1,
+      approvedAt: 1,
+      sessionId: goal.scope.sessionId,
+      steps: [
+        makeStep({
+          id: 'step_1',
+          title: 'Old step',
+          status: PlanStepStatus.ACTIVE,
+        }),
+      ],
+    }
+    manager.planStore.save(
+      makePlanRecord({
+        ...base,
+        id: 'plan_old_same_goal',
+        goalId: goal.id,
+        metadata: {
+          scope,
+          approval_generation: 1,
+          permission_tokens: [{ secret: 'must-be-revoked' }],
+          plan_step_tasks: { step_1: oldTask.id },
+        },
+      }),
+    )
+    manager.planStore.save(
+      makePlanRecord({
+        ...base,
+        id: 'plan_foreign_scope',
+        goalId: goal.id,
+        sessionId: 'foreign-session',
+        metadata: {
+          scope: { ...scope, session_id: 'foreign-session' },
+          approval_generation: 1,
+        },
+      }),
+    )
+    manager.planStore.save(
+      makePlanRecord({
+        ...base,
+        id: 'plan_foreign_goal',
+        goalId: 'goal_foreign',
+        metadata: { scope, approval_generation: 1 },
+      }),
+    )
+
+    manager.setMode('plan')
+    new ProposePlanTool(manager).execute({
+      title: 'Scoped successor',
+      summary: 'Only the exact Goal predecessor is superseded.',
+      plan_markdown: '# Plan',
+      steps: [
+        {
+          id: 'step_1',
+          title: 'New step',
+          description: 'new work',
+          files: [],
+          commands: [],
+          acceptance: ['done'],
+        },
+      ],
+      assumptions: [],
+      risk_level: 'low',
+    })
+    const pending = manager.payload().pending as Record<string, unknown>
+    manager.approve(String(pending.id))
+    const successorId = String(
+      pending.meta && (pending.meta as Record<string, unknown>).plan_id,
+    )
+
+    expect(manager.planStore.get('plan_old_same_goal')).toMatchObject({
+      status: PlanStatus.CANCELLED,
+      metadata: {
+        permission_tokens: [],
+        plan_step_tasks: {},
+        superseded_by: successorId,
+      },
+    })
+    expect(taskManager.store.get(oldTask.id)?.status).toBe('cancelled')
+    expect(manager.planStore.get('plan_foreign_scope')?.status).toBe(
+      PlanStatus.EXECUTING,
+    )
+    expect(manager.planStore.get('plan_foreign_goal')?.status).toBe(
+      PlanStatus.EXECUTING,
+    )
   })
 })

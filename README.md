@@ -1,259 +1,313 @@
 <p align="center">
-  <img src="assets/generated/emperoragent-wordmark.png" alt="Emperor Agent product logo" width="560" />
+  <img src="assets/generated/emperoragent-wordmark.png" alt="Emperor Agent 产品字标" width="560" />
 </p>
 
 <h1 align="center">Emperor Agent · 皇帝智能体</h1>
 
 <p align="center">
   <b>本地运行的个人 Agent 工作台</b><br/>
-  Chat / Build 多会话 · 项目级记忆 · 工具执行 · Agent Hooks · Scheduler · Electron 桌面端
+  日常对话 · 项目工作 · 先规划再执行 · 持续完成长任务
 </p>
 
-Emperor Agent 是一个面向个人长期使用的本地 Agent 系统。当前主线已经完成 Python → TypeScript 迁移：Electron main 进程内托管 `@emperor/core`，renderer 通过 preload IPC 调用 CoreApi，不再启动 Python CLI、HTTP server 或 WebSocket server。
+Emperor Agent 是一款面向个人长期使用的桌面 Agent。你可以用它处理日常问答，也可以绑定本地项目，让 Agent 在明确的权限和验收条件下读取文件、运行工具并持续推进任务。
+
+桌面端直接托管 TypeScript Core，界面通过 Electron IPC 与核心能力通信。已经退役的 Python CLI、HTTP server 和 WebSocket server 不再参与运行。
 
 <p align="center">
-  <img src="assets/generated/readme-product-hero.png" alt="Emperor Agent desktop workspace preview" width="920" />
+  <img src="assets/generated/readme-product-hero.png" alt="Emperor Agent 桌面工作区" width="920" />
 </p>
 
-## 产品定位
+## 导航
 
-| 模式      | 用途                             | 上下文来源                                             |
-| --------- | -------------------------------- | ------------------------------------------------------ |
-| `chat`    | 日常问答、资料整理、轻量任务     | 系统提示词、用户档案、全局长期记忆、项目索引短摘要     |
-| `build`   | 绑定本地文件夹，专注构建项目     | 系统提示词、用户档案、项目 `AGENTS.md`、当前项目工作区 |
-| Scheduler | 长期自动检查、定时运行、后台维护 | 当前配置、任务 payload、权限模式和运行记录             |
+- [认识 Emperor Agent](#overview)
+- [下载与首次使用](#download)
+- [Chat、Build、Plan 与 Goal](#workflows)
+- [功能与成熟度](#capabilities)
+- [数据、权限与安全](#data-security)
+- [当前边界](#boundaries)
+- [从源码运行](#source)
+- [文档导航](#docs)
 
-核心原则：
+<a id="overview"></a>
 
-- **本地优先**：模型配置、记忆、附件、任务和运行轨迹都落在本地文件系统。
-- **会话隔离**：每个 session 都有独立 `history.jsonl`、checkpoint 和 runtime events。
-- **桌面主链路**：Electron main 内创建 `CoreApi`，renderer 只通过 IPC 触达核心能力。
-- **可审计自动化**：Agent Hooks 在工具、权限、停止、压缩和配置变更等生命周期点执行确定性规则。
-- **可迁移数据**：TypeScript 版继续读取旧版磁盘布局；兼容性由 `packages/core/fixtures/python-runtime` 验证。
+## 认识 Emperor Agent
 
-## 快速开始
+Emperor Agent 里有几组名称看起来相似，实际处在不同层级：
 
-需要 Node.js 22 或更高版本。
+| 层级                      | 含义                                                   |
+| ------------------------- | ------------------------------------------------------ |
+| Chat / Build              | 会话和工作区类型：一个用于普通对话，一个绑定本地项目   |
+| Ask / Edits / Auto / Plan | 执行控制与权限模式：决定什么时候询问、什么时候只做规划 |
+| Goal                      | 跨多个模型回合持续推进的长任务生命周期                 |
+| Scheduler                 | 按时间或条件触发任务的机制                             |
+
+应用会把会话、记忆、配置、附件和运行轨迹保存在本机。Chat（普通对话）适合问答和轻量任务；Build（项目工作）会绑定本地目录，并读取项目的 `AGENTS.md` 和工作区上下文。
+
+Plan（规划模式）用于先探索、再提交方案。Goal（目标模式）则负责持续完成一个结果：它会锁定范围和验收条件，执行过程中可以重新规划，但只有证据和 Completion Gate 都通过后才能标记为完成。
+
+“本地优先”不等于完全离线。模型请求会发送给你配置的 Provider；调用网页、远程 MCP 或其他联网工具时，对应内容也会离开本机。Emperor Agent 负责把本地运行数据和项目数据边界分开，但无法替代外部服务自身的隐私政策。
+
+<a id="download"></a>
+
+## 下载与首次使用
+
+安装包适合直接使用，不要求目标机预装 Node.js、Python、Git 或 ripgrep。
+
+1. 打开 [GitHub Releases](https://github.com/TheSyart/emperor-agent/releases)。
+2. 根据设备选择 macOS、Windows 或 Linux 安装包。
+3. 当前公开安装包是未签名 Preview，不是 Stable。运行前请阅读[未签名预览版安全说明](docs/release/unsigned-preview-notice.md)。
+4. 第一次启动后进入设置页，添加模型 Provider、API Key 和模型 ID。
+5. 创建 Chat 开始普通对话，或者选择本地目录创建 Build 会话。
+
+启动过程不会强制要求你立刻配置模型。没有可用模型时，对话和模型测试会给出配置入口；已经熟悉配置文件的用户也可以参考 `model_config.example.json`。
+
+### 模型配置
+
+你可以保存多个标准接口模型，但全局只激活一个。当前激活项用于 Agent turn、压缩和其他需要模型的任务；切换模型后，新的请求使用新的激活项。旧版双角色字段只用于兼容迁移，不再是当前界面语义。
+
+模型配置、连接测试、视觉能力和数据边界见[模型、记忆与附件](docs/user/models-memory-attachments.md)。
+
+<a id="workflows"></a>
+
+## Chat、Build、Plan 与 Goal
+
+### Chat：普通对话
+
+Chat 适合日常问答、资料整理和一次性的工具任务。它会使用用户档案、全局长期记忆和当前会话历史，但不会自动绑定某个项目目录。
+
+一次请求通常在当前 Agent turn 内结束。最终回复表示这一轮已经停止生成，不代表系统做过 Goal 式验收。如果结果需要多轮修复、独立复核或可追溯的完成条件，应使用 Goal。
+
+### Build：项目工作
+
+Build 会话绑定一个本地文件夹，适合代码、文档和其他项目任务。Agent 可以读取项目 `AGENTS.md`、当前 workspace 和该项目的私有记忆。
+
+项目私有记忆保存在全局 `stateRoot`，不会自动改写项目中的 `AGENTS.md`。文件修改和命令执行仍受当前权限模式、workspace policy 和工具 schema 约束。
+
+### Plan：先规划再执行
+
+Plan 用于在动手前看清问题、确认方案。进入 Plan 后，Agent 只能进行只读探索、询问用户和提交计划；用户批准计划后，系统恢复进入 Plan 前的权限模式，再执行具体步骤。
+
+常用命令：
+
+```text
+/plan on
+/plan off
+/plan status
+```
+
+Plan 会记录步骤、依赖和验证要求，但它不是长期目标，也不会单独决定 Goal 是否完成。权限模式还可以通过下面的命令查看或切换：
+
+```text
+/mode ask
+/mode edits
+/mode auto
+/mode plan
+/mode status
+```
+
+### Goal：持续完成结果
+
+Goal 用于需要跨多个回合推进、修复和验收的任务。在 Chat 或 Build 会话输入：
+
+```text
+/goal 完成项目的 Goal 模式升级并通过全部验收
+```
+
+Goal 创建后会锁定 Outcome、范围、约束和 Acceptance Criteria。它通常会进入 Plan 阶段提出方案，等待批准后再由普通 Agent turns 和工具完成步骤。
+
+Plan 执行完不等于 Goal 已完成。系统还会检查每条必需的验收条件、真实工具 Observation、人工确认或 reviewer 结果。模型回复、Todo、Plan 状态和界面操作都不能直接把 Goal 写成 `completed`；最终状态由 Core 的 Completion Gate 决定。
+
+Goal 常用命令：
+
+| 命令                             | 作用                            |
+| -------------------------------- | ------------------------------- |
+| `/goal <outcome>`                | 创建当前会话的 Goal             |
+| `/goal status`                   | 查看当前 Goal                   |
+| `/goals`                         | 列出当前会话的 Goal             |
+| `/goal pause` 或 `/goal-pause`   | 安全暂停                        |
+| `/goal resume` 或 `/goal-resume` | 重新校验会话和 workspace 后继续 |
+| `/goal cancel` 或 `/goal-cancel` | 确认后永久取消                  |
+
+Stop 在 Goal 中表示可恢复的 Pause，不表示已经完成。Cancel 才是不可恢复的终态。应用重启也不会自动恢复写操作，必须由用户显式 Resume。
+
+Goal 不会提高当前权限。连续三个 cycle 没有产生可确认的 Goal、Plan、Observation、Evidence 或交互进展时，Coordinator 会安全暂停。默认不设置总 cycle、总时长或总成本上限；需要这些限制时，应显式配置 guard。
+
+### 怎么选择
+
+| 对比项       | 普通 Chat / Build                | Plan                         | Goal                                          |
+| ------------ | -------------------------------- | ---------------------------- | --------------------------------------------- |
+| 核心对象     | 当前请求                         | 一份待确认的执行方案         | 锁定的结果、范围和验收条件                    |
+| 是否先规划   | 可选                             | 必须先规划                   | 通常会使用 Plan，也允许后续 replan            |
+| 生命周期     | 通常是一个 Agent turn            | 提案、审批、分步执行         | 跨多个 turn、Plan 和应用重启                  |
+| 完成条件     | 当前回复结束                     | Plan 步骤与验证要求完成      | 必需 AC、Plan、Evidence、复核和 Gate 全部通过 |
+| 重启后的状态 | 恢复历史，不自动重跑未完成 turn  | 恢复 Plan 和交互状态         | 从持久账本恢复为安全状态，显式 Resume 后继续  |
+| 权限变化     | 使用当前模式                     | 规划阶段限制为只读和控制操作 | 沿用权限规则，不自动提权                      |
+| 适合场景     | 问答、轻量修改、明确的一次性任务 | 希望先审阅方案的复杂任务     | 多阶段开发、迁移、反复修复和严格验收          |
+
+### 其他常用命令
+
+| 命令                           | 作用                                             |
+| ------------------------------ | ------------------------------------------------ |
+| `/help`                        | 查看当前可用的 slash commands                    |
+| `/status`、`/model`、`/tokens` | 查看运行状态、模型配置摘要和 Token 消耗          |
+| `/tools`、`/skills`            | 查看当前会话可以使用的工具与 Skills              |
+| `/memory`、`/compact`          | 查看记忆状态或主动压缩当前会话                   |
+| `/stop`                        | 停止当前 turn；Goal 运行中会转成 Pause           |
+| `/reload`                      | 重新加载 bootstrap、模型、Skills、工具和记忆状态 |
+
+<a id="capabilities"></a>
+
+## 功能与成熟度
+
+下面的分级描述当前能力边界，不代表公开安装包已经进入 Stable。
+
+### 可直接使用
+
+| 能力                | 当前用途                                           |
+| ------------------- | -------------------------------------------------- |
+| Chat / Build        | 多会话对话和项目工作区隔离                         |
+| Ask / Plan          | 澄清问题、审批计划和恢复执行                       |
+| 模型配置            | 保存多个 Provider 模型、激活一个模型并标记视觉能力 |
+| 记忆                | 全局长期记忆、用户档案、项目私有记忆和版本恢复     |
+| 附件                | 保存图片、文本和受支持的文档，并传入模型上下文     |
+| 本地工具            | 文件读取与修改、搜索、命令执行和 Todo 更新         |
+| Skills / MCP        | 加载本地技能并接入已配置的 MCP server              |
+| Token / Diagnostics | 查看消耗、上下文、运行状态和环境问题               |
+
+### 预览能力
+
+| 能力           | 入口与限制                                                                |
+| -------------- | ------------------------------------------------------------------------- |
+| Goal           | 在 Chat 或 Build 中使用 `/goal`；当前按单 Core host 串行推进写任务        |
+| Scheduler      | Scheduler 面板和工具；任务仍受权限、控制交互和运行锁限制                  |
+| Team           | 已有成员、Inbox 和任务工具；独立 `/team` 页面尚未开放                     |
+| Agent Hooks    | Settings → Hooks；v1 支持 `command` 和 `http` handler，不能覆盖 Core deny |
+| 桌宠 companion | 设置页手动启用；默认关闭，由主 Electron 进程托管                          |
+
+### 基础设施
+
+| 能力            | 当前状态                                                          |
+| --------------- | ----------------------------------------------------------------- |
+| External Bridge | 已有 adapter、store 和 service 基础结构，但不内置具体平台 adapter |
+| Watchlist       | 已有检查和调度链路，主要供受控后台维护使用                        |
+
+<a id="data-security"></a>
+
+## 数据、权限与安全
+
+### 本地数据放在哪里
+
+Emperor Agent 把应用资源和用户私有数据分开：
+
+- `runtimeRoot` 保存内置模板、Skills 和静态资源。开发模式默认是仓库根，打包模式默认是 Electron `userData/runtime`。
+- `stateRoot` 保存会话、记忆、配置、附件和其他运行数据，默认是 `~/.emperor-agent`。
+
+可以通过 `EMPEROR_CONFIG_DIR` 覆盖 `stateRoot`。完整的解析优先级、迁移规则和目录说明见[全局私有存储根架构](docs/architecture/global-state-store.md)。
+
+常用私有路径都相对 `stateRoot`：
+
+| 数据            | 路径                                    |
+| --------------- | --------------------------------------- |
+| 模型配置        | `model_config.json`                     |
+| 会话历史与事件  | `sessions/<session-id>/`                |
+| 全局长期记忆    | `memory/MEMORY.local.md`                |
+| 项目私有记忆    | `projects/<project-id>/AGENTS.local.md` |
+| 附件            | `memory/attachments/`                   |
+| Goal 状态与证据 | `goals/<goal-id>/`                      |
+| Hooks 审计      | `hooks/audit.jsonl`                     |
+
+Build 项目目录不会承载私有 session、memory、attachments 或 Goal 数据。项目中允许存在协作文档 `AGENTS.md`，以及 `.emperor/settings*.json`、`rules/` 和项目级 Skills；这些内容与全局私有 store 不是一回事。
+
+### 权限模式
+
+| 内部模式          | 命令          | 行为                                                                           |
+| ----------------- | ------------- | ------------------------------------------------------------------------------ |
+| `ask_before_edit` | `/mode ask`   | 低风险读取、普通文件写入和低风险命令可继续；敏感路径、批量替换和高风险操作询问 |
+| `accept_edits`    | `/mode edits` | 普通文件编辑可以直接执行，shell、Team、Scheduler 和其他 mutation 仍需确认      |
+| `auto`            | `/mode auto`  | 在当前权限下自动推进；未证明只读的 shell 命令仍需确认                          |
+| `plan`            | `/mode plan`  | 只允许只读探索、`ask_user` 和 `propose_plan`，批准后恢复原模式                 |
+
+这些模式都不会关闭路径安全、schema 校验或 Core deny。存在未处理的 Ask 或 Plan 时，执行型 Scheduler、Team 和桌宠 mutation 会被 CoreApi guard 拒绝；Agent Hooks 也不能覆盖 workspace policy 或 Core deny。Goal 同样复用这套规则，不会因为运行时间更长而获得额外权限。
+
+MCP 工具结果、网页内容和外部消息都按不可信输入处理。涉及命令、文件、模型配置或外部服务时，仍应检查请求内容和授权范围。
+
+<a id="boundaries"></a>
+
+## 当前边界
+
+- 公开安装包目前是未签名 Preview，不是 Stable。
+- Emperor Agent 是本地单用户 Electron 应用，不提供多人服务端部署。
+- 桌面主链路必须经过 Electron IPC；普通浏览器不能直接运行完整产品。
+- Python runtime、Python CLI 和 HTTP/WS backend 已退役，不是备用执行路径。
+- Goal 的支持边界是单 Core host 串行 mutation owner，不允许两个写任务同时占用全局执行槽。
+- Goal 默认没有总 cycle、总时长或总成本上限；无进展暂停和显式 guard 负责控制长循环。
+- External Bridge 与 Watchlist 目前属于基础设施，不代表已经提供具体外部平台连接器。
+- 损坏或无法证明安全的中间状态会 fail closed。Goal 不会被隐式降级成普通 Chat 后继续写入。
+
+<a id="source"></a>
+
+## 从源码运行
+
+这一部分面向开发者。源码运行需要 Node.js 22 或更高版本；安装包用户不需要安装 Node.js。
 
 ```bash
 npm ci
 
 cd desktop
 npm ci
-npm run dev              # 开发模式：Electron + Vite HMR + 进程内 CoreApi
-npm run build            # 生产构建到 desktop/out/
-npm start                # 预览生产构建
-npm test                 # desktop vitest
-npm run package:dir      # electron-builder unpacked dry run
+npm run dev
 ```
 
-启动不会强制配置模型。需要配置时可在设置页主动打开模型配置向导，也可以手动复制 `model_config.example.json`；未配置模型时，对话或模型测试会给出配置提示。
+根目录和 `desktop/` 使用各自的 lockfile，因此需要分别安装依赖。`npm run dev` 会启动 Electron、Vite HMR 和进程内 CoreApi。
 
-打包：
-
-```bash
-cd desktop
-npm run dist:mac         # macOS dmg/zip
-npm run dist:linux       # Linux AppImage
-npm run dist:win         # Windows NSIS exe
-```
-
-安装包内含 Electron/Node runtime，不要求目标机预装 Node、npm、Python、pip、Git、ripgrep 或 `emperor-agent` 命令。只读 `runtime-defaults` 直接从应用资源目录加载，并通过 manifest、SHA-256 和发布 attestation 验证；模型配置、记忆、会话和用户安装的 Skill 只写入全局私有 `stateRoot`，升级应用不会覆盖用户内容。诊断页可探测项目或 Skill 缺失的开发工具，安装前必须展示固定 catalog 来源、许可、提权和依赖计划并由用户确认。
-
-## 安装包与未签名 Preview Release
-
-当前唯一公开发布通道是 `Unsigned Preview`，同批支持 macOS arm64/x64、Windows x64 和 Ubuntu x64。`.github/workflows/release-preview.yml` 只接受默认分支可达的 `v*-preview.*` annotated tag；各平台完成安装 smoke、资源检查、SHA-256、CycloneDX SBOM 和 GitHub attestation 后，最终 job 才会原子发布 GitHub Pre-release。任一平台失败都不会留下公开的半成品 Release。
-
-### 下载与安全提示
-
-当前公开版本是 [`v0.1.0-preview.1`](https://github.com/TheSyart/emperor-agent/releases/tag/v0.1.0-preview.1)。文件名、Release 标题、manifest 和说明均包含 `UNSIGNED-PREVIEW`；它是未签名测试版本，不是 Stable：macOS 未使用 Developer ID 且未经 Apple 公证，Windows 会显示 `Unknown publisher` 并可能触发 SmartScreen。
-
-下载后先在 Release 目录执行 `sha256sum --check SHA256SUMS.txt`，再用 `gh attestation verify <file> --repo TheSyart/emperor-agent` 验证 GitHub 构建来源。Attestation 证明来源与完整性，不代表 Apple/Microsoft 发布者签名。确认摘要后，macOS 仅使用 **System Settings → Privacy & Security → Open Anyway** 的单应用入口，详见 [Apple 官方说明](https://support.apple.com/en-us/102445)；Windows 仅在设备策略允许时使用 **More info → Run anyway**，详见 [Microsoft 官方说明](https://learn.microsoft.com/en-us/windows/apps/package-and-deploy/publish-first-app)。不要更改整机 Gatekeeper、Defender 或 SmartScreen 安全策略。
-
-`.github/workflows/release-internal.yml` 只允许手动生成保留 7 天的 `UNSIGNED-INTERNAL` 调试包，没有 Release 写权限，不能作为公开分发物。正式签名、Apple notarization 和 Windows publisher signing 已从当前计划取消；保留的 legacy `release.yml` 不是当前发布入口，维护者不创建无 prerelease suffix 的正式发布 tag。未来恢复签名发布时必须建立新的 Plan ID。当前策略见 [v2.2 Release 设计](docs/superpowers/specs/2026-07-10-cross-platform-environment-release-design.md)，环境工具 catalog 变更见 [`docs/release/tool-catalog-review.md`](docs/release/tool-catalog-review.md)。
-
-## 质量检查
+### 质量检查
 
 ```bash
 make check
 ```
 
-`make check` 会执行：
+`make check` 会检查公开文档边界、格式、Core/Desktop tests、typecheck、零 warning ESLint 和生产构建。
 
-- `git diff --check`
-- `npm run format:check`
-- `node scripts/check_migration_parity.mjs`
-- `npm test --workspace @emperor/core`
-- `npm run typecheck --workspace @emperor/core`
-- Core/Desktop 零 warning ESLint
-- `npm --prefix desktop run test` 与测试专用 typecheck
-- `npm --prefix desktop run typecheck`
-- `npm --prefix desktop run build`
-
-涉及 UI 的改动可额外运行：
+涉及界面时额外运行：
 
 ```bash
 npm --prefix desktop run screenshots
 ```
 
-视觉测试在 browser-only 环境中注入最小 Core bridge fixture；普通浏览器不再直连运行，也不依赖本地 HTTP/WS server。
+验证未打包目录和 packaged smoke：
 
-## 项目结构
-
-```text
-packages/core/                 TypeScript Agent 核心 runtime
-├── src/api/                    CoreApi 与 service 层
-├── src/agent/                  AgentLoop、AgentRunner、模型调用与上下文构建
-├── src/config/                 model/local config 读写和首启配置构造
-├── src/providers/              OpenAI-compatible / Anthropic / Bedrock provider
-├── src/tools/                  内建工具、工具协议、权限画像和执行器
-├── src/hooks/                  Agent Hooks schema、配置加载、匹配、执行、审计
-├── src/control/                Ask / Plan 控制流
-├── src/permissions/            ask_before_edit / auto / plan 权限策略
-├── src/plans/                  Plan 模型、质量门、证据门、执行态
-├── src/memory/                 记忆、压缩、版本、token 账本
-├── src/sessions/               多会话注册表和会话历史
-├── src/runtime/                runtime events、active task registry
-├── src/scheduler/              持久 Scheduler job store / executor / tool
-├── src/watchlist/              Watchlist heartbeat
-├── src/team/                   项目级内部 Team
-├── src/external/               External Bridge 基础设施
-├── src/mcp/                    MCP config / connection / adapter
-└── fixtures/python-runtime/    旧 Python 数据布局兼容 fixture
-
-desktop/                        Electron 桌面应用
-├── src/main/                   CoreApi host、app:// 协议、窗口和打包 runtime 初始化
-├── src/preload/                contextBridge 暴露 Core IPC / event bridge
-├── src/renderer/src/api/       renderer API 与 Core operation 映射
-├── src/renderer/src/runtime/   runtime event reducer / selectors / handlers
-├── src/renderer/src/views/     Chat、Settings、Scheduler、Plugins 等页面
-├── tests/visual/               Playwright 截图烟测
-└── electron-builder.yml        三平台打包配置
-
-desktop/src/pet/                主进程内托管的桌宠 companion 资源与逻辑
-templates/                      prompt 与初始化模板
-skills/                         项目技能包
-assets/                         品牌、桌宠和生成素材
-docs/migration/ts/              迁移状态、任务波次、parity 清单
-docs/architecture/              全局私有存储根等架构文档
-memory/                         旧版本地运行数据残留位置（gitignored）；当前默认写入 ~/.emperor-agent，见下方"数据存储位置"
+```bash
+npm --prefix desktop run package:verify
 ```
 
-## 数据存储位置
+分支、目录约定、不应提交的数据和扩展方式统一记录在 [`AGENTS.md`](AGENTS.md)，README 不重复维护这些规则。
 
-Emperor Agent 区分两个根目录（详见 `docs/architecture/global-state-store.md`）：
+<a id="docs"></a>
 
-- **Runtime resources root**（`runtimeRoot`）：内置技能、模板等只读应用资源。开发模式是仓库根；打包模式是 Electron `userData/runtime`。可用 `--root` / `EMPEROR_AGENT_ROOT` 覆盖。
-- **Global state root**（`stateRoot`）：会话、记忆、配置、附件等一切私有运行数据。**默认 `~/.emperor-agent`**，开发模式和打包模式一致（不再写入仓库或项目源码目录）。可用 `EMPEROR_CONFIG_DIR` 覆盖。
+## 文档导航
 
-用户在 UI 里选择的 build 项目目录只保留 `AGENTS.md`（协作文档）和 `.emperor/{settings.json,settings.local.json,rules/,skills/}`；私有的 session/memory/attachments 一律保存到全局 `stateRoot`，不写入项目源码目录。
+完整入口见[文档中心](docs/README.md)。公开文档按用户手册、当前架构、开发和发布说明分层维护。
 
-## 运行时机制
+| 想了解什么                   | 文档                                                          |
+| ---------------------------- | ------------------------------------------------------------- |
+| 从安装到完整界面能力         | [用户手册](docs/user/README.md)                               |
+| 当前系统边界和执行链路       | [架构总览](docs/architecture/overview.md)                     |
+| Goal 状态机、Evidence 和恢复 | [Goal 模式架构](docs/architecture/goal-mode.md)               |
+| 私有数据位置与旧数据迁移     | [全局私有存储根架构](docs/architecture/global-state-store.md) |
+| 源码开发和扩展清单           | [开发指南](docs/development/README.md)                        |
+| 未签名 Preview 的安装安全    | [未签名预览版说明](docs/release/unsigned-preview-notice.md)   |
+| 当前 Preview 构建与发布      | [Preview 发布手册](docs/release/preview-release-runbook.md)   |
+| 未来 Stable 发布边界         | [Stable 发布手册](docs/release/stable-release-runbook.md)     |
+| 环境工具 catalog 变更        | [工具 catalog 审查流程](docs/release/tool-catalog-review.md)  |
+| 安全边界与私密报告           | [Security Policy](SECURITY.md)                                |
+| 版本变化                     | [Changelog](CHANGELOG.md)                                     |
+| 文档维护机制                 | [文档维护规范](docs/DOCUMENTATION.md)                         |
+| 开发协作规范                 | [AGENTS.md](AGENTS.md)                                        |
 
-- Electron main 调用 `createCoreHost()` 初始化 `CoreApi`，并为全部 operation 注册 IPC channel。
-- Renderer 中 `api/http.ts` 把旧 HTTP 语义映射到 Core operation；无 Core bridge 时快速失败，提示必须在 Electron 桌面窗口中使用。
-- 附件原图通过 `app://attachments/{id}/raw` 读取，由 main process 安全解析 `stateRoot/memory/attachments` 下的真实文件（并对旧安装保留只读的 legacy 路径 fallback）。
-- 每个 session 独立保存 `stateRoot/sessions/<id>/history.jsonl`、`_checkpoint.json` 和 `runtime/events.jsonl`。
-- Runtime events 通过 Core event bridge 推送到 renderer，刷新后由 bootstrap replay 恢复未压缩 turn 的工具、Ask/Plan、Scheduler、Team 和标题更新细节。
-- Agent Hooks 由 `@emperor/core` 内的 `HookRuntime` 执行，支持全局私有可编辑配置和项目 `.emperor/settings*.json` 只读导入。
-- Scheduler、Watchlist、Team、External Bridge 都在 `@emperor/core` 内部运行，通过 CoreApi 暴露给桌面 UI。
+## License
 
-## 模型配置
-
-模型配置使用全局私有 `stateRoot/model_config.json`，该文件已加入 `.gitignore`。推荐用设置页的模型配置向导或模型面板编辑；`model_config.example.json` 是 `runtimeRoot` 下的只读模板资源，手动复制后仍兼容。
-
-一个模型 entry 共享 `provider / apiKey / apiBase / extraHeaders / extraBody`，但应同时配置：
-
-- `mainModelId`：主 Agent、复杂决策、写入型子代理/队友。
-- `secondaryModelId`：记忆压缩、轻量只读/核验任务。
-
-旧配置里的 `id` 会兼容读取为 `mainModelId`；再次保存时会补齐当前 schema。视觉测试通过后会持久化 `supportsVision=true`，Composer 会据此决定图片附件是否走视觉链路。
-
-## 记忆与会话
-
-以下路径均相对 `stateRoot`（默认 `~/.emperor-agent`，见"数据存储位置"）：
-
-| 层                     | 载体                                                                                   |
-| ---------------------- | -------------------------------------------------------------------------------------- |
-| 会话热历史             | `sessions/<id>/history.jsonl`                                                          |
-| 会话 checkpoint        | `sessions/<id>/_checkpoint.json`                                                       |
-| 会话 runtime events    | `sessions/<id>/runtime/events.jsonl`                                                   |
-| 全局长期记忆           | `memory/MEMORY.local.md`                                                               |
-| 用户档案               | `memory/profile/USER.local.md`                                                         |
-| 项目级记忆（全局私有） | `projects/<project-id>/AGENTS.local.md` 托管区块（不在项目源码目录里，见下方命名说明） |
-| 项目索引               | `projects/index.json`                                                                  |
-| 附件                   | `memory/attachments/YYYY-MM/{hash8}-{name}.{ext}`                                      |
-| token 账本             | `tokens/tokens.jsonl`                                                                  |
-| Agent Hooks 配置       | `hooks_config.json`                                                                    |
-| Agent Hooks 审计       | `hooks/audit.jsonl`                                                                    |
-
-Chat 压缩会更新全局长期记忆与用户档案；Build 压缩会更新项目私有记忆（`projects/<project-id>/AGENTS.local.md`）与项目索引摘要，**不会**改写项目源码目录里的 `AGENTS.md`（那个文件只被只读导入一次作为种子内容）。旧的单会话时代根级 `stateRoot/memory/history.jsonl`（如果存在且尚未有任何 session）会在启动时自动搬迁为一个新建的默认 session。
-
-> 命名提醒：项目源码里的 `<project>/AGENTS.md`（协作文档，可提交）和全局私有 store 下的 `AGENTS.local.md`（压缩算法维护，不在项目源码树里）只差一个 `.local` 后缀，语义完全不同，详见 `docs/architecture/global-state-store.md`。
-
-## 权限与控制流
-
-| 模式              | 行为                                                           |
-| ----------------- | -------------------------------------------------------------- |
-| `ask_before_edit` | 默认；读操作直接执行，危险或不确定动作先审批                   |
-| `auto`            | 工具层不主动审批，仍保留路径安全和 schema 校验                 |
-| `plan`            | 只允许只读探索、`ask_user` 和 `propose_plan`，批准后恢复原模式 |
-
-Ask / Plan 状态由 `packages/core/src/control/*` 管理，权限判断由 `packages/core/src/permissions/*` 管理。存在 pending Ask/Plan 时，执行型 Scheduler / Team / desktop-pet mutation 会被 CoreApi guard 拒绝，避免绕过计划门禁。
-
-## Agent Hooks
-
-Agent Hooks 提供本地生命周期自动化。v1 支持 `SessionStart`、`UserPromptSubmit`、`PreToolUse`、`PostToolUse`、`PostToolUseFailure`、`PermissionRequest`、`PermissionDenied`、`Stop`、`PreCompact`、`PostCompact` 和 `ConfigChange`。
-
-配置源：
-
-- 全局私有配置：`stateRoot/hooks_config.json`，可在 Settings → Hooks 面板编辑。
-- 项目只读导入：`<project>/.emperor/settings.json` 与 `<project>/.emperor/settings.local.json` 的 `hooks` block，仅在全局 `projectHooks.enabled` 开启后加载。
-
-handler 范围保持克制：v1 只支持 `command` 和 `http`。执行结果写入 `stateRoot/hooks/audit.jsonl`，并通过 runtime events 发出 `hook_run_started`、`hook_run_progress`、`hook_run_completed`、`hook_run_failed` 和 `hook_decision_applied`。决策聚合优先级固定为 `deny > ask > allow > passthrough`，且 hooks 不会覆盖 workspace policy 或核心 permission deny。
-
-## 工具与子系统
-
-内建工具包括 `run_command`、`web_fetch`、`read_file`、`write_file`、`edit_file`、`glob`、`grep`、`load_skill`、`update_todos`、`ask_user`、`propose_plan`、`scheduler`、`dispatch_subagent` 和 Team 工具。只读且非 exclusive 的工具可并发执行。
-
-MCP server 仍通过本地 `mcp_config.json` 配置，发现到的工具统一注册为 `mcp_{server}_{tool}`。External Bridge 当前只提供 adapter/store/service 基础设施，不内置具体平台实现。
-
-## 桌宠
-
-桌宠 companion 默认关闭。桌宠窗口由 Electron main 进程直接管理（不再是独立 Electron 进程），通过设置页的桌宠卡片一键启停。窗口位置写入 `stateRoot/memory/desktop_pet/window.json`，状态由 CoreApi desktop-pet service 管理。生产安装包会内嵌桌宠渲染资源。
-
-## 协作约定
-
-不要提交（运行态默认不落在项目目录里；以下条目主要针对旧数据残留或显式把 `EMPEROR_CONFIG_DIR` 指回仓库的开发场景）：
-
-- `memory/`
-- `sessions/`
-- `.emperor/`
-- `.team/`
-- `model_config.json`
-- `mcp_config.json`
-- `emperor.local.json`
-- `.env`
-- `desktop/node_modules/`
-- `desktop/out/`
-- `desktop/dist/`
-- `desktop/screenshots/`
-- `desktop/test-results/`
-- `desktop/.uiplan-progress.json`
-- 任何 `*.local.md`
-
-扩展路径：
-
-- 新 provider：`packages/core/src/providers/registry.ts` + `factory.ts` + provider 实现。
-- 新工具：`packages/core/src/tools/` + `packages/core/src/agent/loop.ts` 注册。
-- 新 CoreApi 能力：`packages/core/src/api/services/*` + `core-api.ts` + desktop IPC/renderer API 映射。
-- 新 runtime event：同步 core event 构造器、renderer `types.ts`、`runtime/*` reducer/handlers 和 `useRuntime.ts`。
-- 新 UI：遵循 `desktop/src/renderer/src/views`、`components`、`composables`、`runtime` 分层；图标优先用 `lucide-vue-next`。
-
-## 素材规范
-
-项目内位图素材生成/编辑统一使用 `$imagegen`。最终素材必须落在 `assets/` 下；分类明确则放现有分类，否则放 `assets/generated/`。每次生成/编辑完成后，把最终 prompt 记录到对应目录 `PROMPTS.md`，至少包含日期、输出文件名、工具模式和最终 prompt。
+Emperor Agent 使用 [MIT License](LICENSE)。
 
 <p align="center">
-  <img src="assets/generated/emperor-agent-logo-mark.png" alt="Emperor Agent mark" width="56" />
+  <img src="assets/generated/emperor-agent-logo-mark.png" alt="Emperor Agent 标志" width="56" />
 </p>

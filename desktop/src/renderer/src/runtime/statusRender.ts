@@ -10,6 +10,7 @@ import type {
   TokenStatsRow,
 } from '../types'
 import { formatNumber, usageTypeLabel } from '../utils/format'
+export { renderGoalStatus } from './goalRender'
 
 export function inlineCode(value: string) {
   return '`' + value + '`'

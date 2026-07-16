@@ -9,8 +9,13 @@ import {
   type PlanPermissionToken,
 } from '../permissions/models'
 import { isHighRiskCommand } from '../tools/resolvers'
-import { PlanStepStatus, type PlanRecord } from '../plans/models'
-import { metadataWithoutPlanPermissionTokens } from './plan-helpers'
+import { PlanStatus, PlanStepStatus, type PlanRecord } from '../plans/models'
+import { PlanStoreConflictError } from '../plans/store'
+import {
+  isPlanInvalidated,
+  latestApprovedPlanGeneration,
+  metadataWithoutPlanPermissionTokens,
+} from './plan-helpers'
 import type { ControlManagerHost } from './host'
 
 const PLAN_PERMISSION_TOKEN_TTL_SECONDS = 3600.0
@@ -64,7 +69,8 @@ export class PlanPermissionTokenManager {
     arguments: Record<string, unknown>
   }): PlanPermissionToken | null {
     const record = this.cm.latestExecutablePlan()
-    if (record === null) return null
+    if (record === null || !this.isCurrentExecutableGeneration(record))
+      return null
     const activeStepIds = new Set(
       record.steps
         .filter((s) => s.status === PlanStepStatus.ACTIVE)
@@ -107,11 +113,32 @@ export class PlanPermissionTokenManager {
       kept.push(tokenToDict(token))
     }
     if (changed) {
+      if (!this.isCurrentExecutableGeneration(record)) return null
       const metadata = { ...record.metadata }
       metadata.permission_tokens = kept
-      this.cm.planStore.save({ ...record, updatedAt: now, metadata })
+      try {
+        this.cm.planStore.save({ ...record, updatedAt: now, metadata })
+      } catch (error) {
+        if (error instanceof PlanStoreConflictError) return null
+        throw error
+      }
     }
     return consumed
+  }
+
+  private isCurrentExecutableGeneration(record: PlanRecord): boolean {
+    if (
+      this.cm.planStore.isExecutionBlocked(record.id) ||
+      isPlanInvalidated(record) ||
+      (record.status !== PlanStatus.APPROVED &&
+        record.status !== PlanStatus.EXECUTING)
+    )
+      return false
+    const current = latestApprovedPlanGeneration(
+      this.cm.planStore.list(),
+      (item) => this.cm.planMatchesCurrentScope(item),
+    )
+    return current?.id === record.id && !isPlanInvalidated(current)
   }
 
   revoke(opts?: {
@@ -131,7 +158,6 @@ export class PlanPermissionTokenManager {
       reason: opts?.reason ?? 'revoked',
     })
     const updated = { ...record, updatedAt: nowTs(), metadata }
-    this.cm.planStore.save(updated)
-    return updated
+    return this.cm.planStore.save(updated)
   }
 }

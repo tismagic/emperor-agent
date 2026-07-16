@@ -14,13 +14,15 @@ import { describe, expect, it, vi } from 'vitest'
 import type { ModelRoute, ProviderSnapshot } from '../model/router'
 import { LLMProvider, type ChatArgs, type LLMResponse } from '../providers/base'
 import { ExternalInbound } from '../external/models'
-import { makePlanRecord } from '../plans/models'
+import { makePlanRecord, PlanStatus } from '../plans/models'
 import { ToolResultStore } from '../context/tool-results'
 import { RuntimeEventStore } from '../runtime/store'
 import { SchedulerPayload, SchedulerSchedule } from '../scheduler/models'
 import { CoreApi, CORE_API_ROUTE_OPERATIONS } from './core-api'
 import { CoreMutationGuardError } from './mutation-guard'
 import { CoreSkillService } from './services/skill-service'
+import { GoalContractValidator, newGoalRecord } from '../goals/validation'
+import { ControlManager } from '../control/manager'
 
 const TEMPLATES_DIR = join(__dirname, '..', '..', '..', '..', 'templates')
 
@@ -47,6 +49,12 @@ const EXPECTED_OPERATIONS = [
   'environment.getStatus',
   'environment.install',
   'external.get',
+  'goals.cancel',
+  'goals.get',
+  'goals.list',
+  'goals.pause',
+  'goals.resume',
+  'goals.start',
   'hooks.cancelRun',
   'hooks.getAudit',
   'hooks.getConfig',
@@ -124,6 +132,378 @@ const EXPECTED_OPERATIONS = [
 ]
 
 describe('CoreApi (MIG-IPC-001)', () => {
+  it('binds an approved Goal Plan before resuming the control turn', async () => {
+    const root = tmp('emperor-core-api-goal-plan-')
+    const api = await CoreApi.create({
+      root,
+      stateRoot: join(root, '.emperor'),
+      templatesDir: TEMPLATES_DIR,
+      modelRouter: fakeRouter(new FakeProvider()),
+      initializeMcp: false,
+    })
+    const sessionId = api.loop.activeSessionId!
+    const created = await api.loop.goalStore.create(
+      newGoalRecord({
+        id: 'goal_core_api_plan',
+        outcome: 'Approve and bind a Plan.',
+        scope: {
+          sessionId,
+          mode: 'chat',
+          projectId: null,
+          workspaceRoot: root,
+        },
+        now: '2026-07-15T14:00:00.000Z',
+      }),
+    )
+    const active = GoalContractValidator.lock(
+      created,
+      {
+        inScope: ['Plan approval'],
+        outOfScope: [],
+        constraints: [],
+        acceptanceCriteria: [
+          {
+            id: 'AC-1',
+            description: 'Plan approved.',
+            required: true,
+            verification: { kind: 'command', requirement: 'npm test' },
+          },
+        ],
+        escalationConditions: [],
+      },
+      '2026-07-15T14:00:01.000Z',
+    )
+    const planning = await api.loop.goalStore.append(created.id, {
+      type: 'goal_updated',
+      record: active,
+      expectedLastEventSeq: created.lastEventSeq,
+    })
+    api.loop.controlManager.setActiveGoalPlanContext(planning)
+    api.control.setMode('plan')
+    const interaction = api.loop.controlManager.createPlan({
+      title: 'Approve Goal Plan',
+      summary: 'Approve the Core-bound Plan.',
+      planMarkdown: '# Plan\n\n- Run tests',
+      steps: [
+        {
+          id: 'step_1',
+          title: 'Run tests',
+          files: ['package.json'],
+          commands: ['npm test'],
+          acceptance: ['tests pass'],
+        },
+      ],
+    })
+
+    const planId = String(interaction.meta.plan_id)
+    const bridge = api.loop.goalPlanBridge
+    const originalBind = bridge.bindApprovedPlan.bind(bridge)
+    let observedPreparedQuarantine = false
+    bridge.bindApprovedPlan = async (input) => {
+      observedPreparedQuarantine = true
+      expect(api.loop.controlManager.planStore.isQuarantined(planId)).toBe(true)
+      expect(
+        api.loop.controlManager.consumePlanPermissionToken({
+          toolName: 'run_command',
+          arguments: { command: 'npm test' },
+        }),
+      ).toBeNull()
+      return originalBind(input)
+    }
+
+    await api.control.approvePlan(interaction.id, { uiHidden: true })
+
+    expect(observedPreparedQuarantine).toBe(true)
+    expect(api.loop.controlManager.planStore.isQuarantined(planId)).toBe(false)
+    expect(await api.loop.goalStore.get(created.id)).toMatchObject({
+      status: 'active',
+      runtime: {
+        phase: 'executing',
+        currentPlanId: interaction.meta.plan_id,
+      },
+    })
+    await api.close()
+  })
+
+  it('does not start Goal Plan approval when durable quarantine preparation fails', async () => {
+    const root = tmp('emperor-core-api-goal-plan-prepare-fault-')
+    const api = await CoreApi.create({
+      root,
+      stateRoot: join(root, '.emperor'),
+      templatesDir: TEMPLATES_DIR,
+      modelRouter: fakeRouter(new FakeProvider()),
+      initializeMcp: false,
+    })
+    const sessionId = api.loop.activeSessionId!
+    const created = await api.loop.goalStore.create(
+      newGoalRecord({
+        id: 'goal_core_api_prepare_fault',
+        outcome: 'Do not mutate approval without durable preparation.',
+        scope: {
+          sessionId,
+          mode: 'chat',
+          projectId: null,
+          workspaceRoot: root,
+        },
+        now: '2026-07-15T14:00:00.000Z',
+      }),
+    )
+    const planning = await api.loop.goalStore.append(created.id, {
+      type: 'goal_updated',
+      record: GoalContractValidator.lock(
+        created,
+        {
+          inScope: ['Approval preparation'],
+          outOfScope: [],
+          constraints: [],
+          acceptanceCriteria: [
+            {
+              id: 'AC-1',
+              description: 'Approval does not start.',
+              required: true,
+              verification: { kind: 'command', requirement: 'npm test' },
+            },
+          ],
+          escalationConditions: [],
+        },
+        '2026-07-15T14:00:01.000Z',
+      ),
+      expectedLastEventSeq: created.lastEventSeq,
+    })
+    api.loop.controlManager.setActiveGoalPlanContext(planning)
+    api.control.setMode('plan')
+    const interaction = api.loop.controlManager.createPlan({
+      title: 'Prepare fault',
+      summary: 'Preparation must precede approval.',
+      planMarkdown: '# Plan\n\n- Run tests',
+      steps: [
+        {
+          id: 'step_1',
+          title: 'Run tests',
+          commands: ['npm test'],
+          acceptance: ['tests pass'],
+        },
+      ],
+    })
+    const planId = String(interaction.meta.plan_id)
+    const planStore = api.loop.controlManager.planStore
+    const beforeTasks = readFileSync(
+      api.loop.taskManager.store.indexFile,
+      'utf8',
+    )
+    planStore.quarantine = (() => {
+      throw new Error('injected durable prepare failure')
+    }) as typeof planStore.quarantine
+
+    await expect(
+      api.control.approvePlan(interaction.id, { uiHidden: true }),
+    ).rejects.toThrow(/durable prepare failure/)
+    expect(planStore.get(planId)?.status).toBe(PlanStatus.WAITING_APPROVAL)
+    expect(planStore.get(planId)?.metadata.permission_tokens ?? []).toEqual([])
+    expect(readFileSync(api.loop.taskManager.store.indexFile, 'utf8')).toBe(
+      beforeTasks,
+    )
+    expect(api.loop.controlManager.payload().pending).not.toBeNull()
+    expect(
+      new ControlManager(api.loop.paths.stateRoot).planStore.isQuarantined(
+        planId,
+      ),
+    ).toBe(true)
+    await api.close()
+  })
+
+  it('aborts and compensates a Goal approval that fails inside approve()', async () => {
+    const root = tmp('emperor-core-api-goal-plan-approve-fault-')
+    const api = await CoreApi.create({
+      root,
+      stateRoot: join(root, '.emperor'),
+      templatesDir: TEMPLATES_DIR,
+      modelRouter: fakeRouter(new FakeProvider()),
+      initializeMcp: false,
+    })
+    const sessionId = api.loop.activeSessionId!
+    const created = await api.loop.goalStore.create(
+      newGoalRecord({
+        id: 'goal_core_api_approve_fault',
+        outcome: 'Fail closed during approval.',
+        scope: {
+          sessionId,
+          mode: 'chat',
+          projectId: null,
+          workspaceRoot: root,
+        },
+        now: '2026-07-15T14:00:00.000Z',
+      }),
+    )
+    const planning = await api.loop.goalStore.append(created.id, {
+      type: 'goal_updated',
+      record: GoalContractValidator.lock(
+        created,
+        {
+          inScope: ['Approval compensation'],
+          outOfScope: [],
+          constraints: [],
+          acceptanceCriteria: [
+            {
+              id: 'AC-1',
+              description: 'No execution authority survives.',
+              required: true,
+              verification: { kind: 'command', requirement: 'npm test' },
+            },
+          ],
+          escalationConditions: [],
+        },
+        '2026-07-15T14:00:01.000Z',
+      ),
+      expectedLastEventSeq: created.lastEventSeq,
+    })
+    api.loop.controlManager.setActiveGoalPlanContext(planning)
+    api.control.setMode('plan')
+    const interaction = api.loop.controlManager.createPlan({
+      title: 'Approval fault',
+      summary: 'Inject a failure after task/token preparation.',
+      planMarkdown: '# Plan\n\n- Run tests',
+      steps: [
+        {
+          id: 'step_1',
+          title: 'Run tests',
+          commands: ['npm test'],
+          acceptance: ['tests pass'],
+        },
+      ],
+    })
+    const planId = String(interaction.meta.plan_id)
+    const store = api.loop.controlManager.planStore
+    const originalSave = store.save.bind(store)
+    let injected = false
+    store.save = ((record) => {
+      if (!injected && record.status === PlanStatus.EXECUTING) {
+        injected = true
+        throw new Error('injected approve activation failure')
+      }
+      return originalSave(record)
+    }) as typeof store.save
+
+    await expect(
+      api.control.approvePlan(interaction.id, { uiHidden: true }),
+    ).rejects.toThrow(/activation failure/)
+    expect(await api.loop.goalStore.get(created.id)).toMatchObject({
+      runtime: { phase: 'planning', currentPlanId: null },
+    })
+    expect(store.get(planId)).toMatchObject({
+      status: PlanStatus.CANCELLED,
+      metadata: { permission_tokens: [] },
+    })
+    expect(store.isQuarantined(planId)).toBe(false)
+    expect(api.loop.controlManager.latestExecutablePlan()).toBeNull()
+    expect(
+      api.loop.taskManager.store
+        .list()
+        .filter((task) => task.metadata.plan_id === planId)
+        .map((task) => task.status),
+    ).not.toContain('running')
+    await api.close()
+  })
+
+  it('preflights a Goal Plan before approval can issue tokens or create step tasks', async () => {
+    const root = tmp('emperor-core-api-goal-plan-preflight-')
+    const api = await CoreApi.create({
+      root,
+      stateRoot: join(root, '.emperor'),
+      templatesDir: TEMPLATES_DIR,
+      modelRouter: fakeRouter(new FakeProvider()),
+      initializeMcp: false,
+    })
+    const sessionId = api.loop.activeSessionId!
+    const created = await api.loop.goalStore.create(
+      newGoalRecord({
+        id: 'goal_core_api_plan_preflight',
+        outcome: 'Reject stale approval before mutation.',
+        scope: {
+          sessionId,
+          mode: 'chat',
+          projectId: null,
+          workspaceRoot: root,
+        },
+        now: '2026-07-15T14:00:00.000Z',
+      }),
+    )
+    const planning = await api.loop.goalStore.append(created.id, {
+      type: 'goal_updated',
+      record: GoalContractValidator.lock(
+        created,
+        {
+          inScope: ['Plan approval'],
+          outOfScope: [],
+          constraints: [],
+          acceptanceCriteria: [
+            {
+              id: 'AC-1',
+              description: 'Plan remains unapproved.',
+              required: true,
+              verification: { kind: 'command', requirement: 'npm test' },
+            },
+          ],
+          escalationConditions: [],
+        },
+        '2026-07-15T14:00:01.000Z',
+      ),
+      expectedLastEventSeq: created.lastEventSeq,
+    })
+    api.loop.controlManager.setActiveGoalPlanContext(planning)
+    api.control.setMode('plan')
+    const interaction = api.loop.controlManager.createPlan({
+      title: 'Reject stale Goal Plan',
+      summary: 'Do not mutate before exact preflight.',
+      planMarkdown: '# Plan\n\n- Run tests',
+      steps: [
+        {
+          id: 'step_1',
+          title: 'Run tests',
+          files: ['package.json'],
+          commands: ['npm test'],
+          acceptance: ['tests pass'],
+        },
+      ],
+    })
+    const planId = String(interaction.meta.plan_id)
+    const plan = api.loop.controlManager.planStore.get(planId)!
+    api.loop.controlManager.planStore.save({
+      ...plan,
+      metadata: {
+        ...plan.metadata,
+        scope: {
+          ...(plan.metadata.scope as Record<string, unknown>),
+          workspace_root: '/forged/workspace',
+        },
+      },
+    })
+    const beforePlan = readFileSync(
+      api.loop.controlManager.planStore.indexFile,
+      'utf8',
+    )
+    const beforeTasks = readFileSync(
+      api.loop.taskManager.store.indexFile,
+      'utf8',
+    )
+
+    await expect(
+      api.control.approvePlan(interaction.id, { uiHidden: true }),
+    ).rejects.toThrow(/scope/i)
+
+    expect(
+      readFileSync(api.loop.controlManager.planStore.indexFile, 'utf8'),
+    ).toBe(beforePlan)
+    expect(readFileSync(api.loop.taskManager.store.indexFile, 'utf8')).toBe(
+      beforeTasks,
+    )
+    expect(api.loop.controlManager.planStore.get(planId)).toMatchObject({
+      status: 'waiting_approval',
+    })
+    expect(api.loop.controlManager.payload().pending).not.toBeNull()
+    await api.close()
+  })
+
   it('starts with recoverable defaults when Model and MCP configs are corrupt', async () => {
     const root = tmp('emperor-core-api-corrupt-config-')
     const stateRoot = tmp('emperor-core-api-corrupt-state-')
@@ -205,6 +585,105 @@ describe('CoreApi (MIG-IPC-001)', () => {
       ),
     ).toBe(true)
 
+    await api.close()
+  })
+
+  it('starts and controls a Goal through typed CoreApi operations and bootstrap', async () => {
+    const api = await CoreApi.create({
+      root: tmp('emperor-core-api-goals-'),
+      stateRoot: tmp('emperor-core-api-goals-state-'),
+      templatesDir: TEMPLATES_DIR,
+      modelRouter: fakeRouter(new FakeProvider()),
+    })
+    const session = api.sessions.create({
+      title: 'Goal owner',
+      mode: 'build',
+      project_path: process.cwd(),
+    })
+    api.sessions.activate(String(session.id))
+
+    const started = await api.goals.start({
+      outcome: 'Ship the typed Goal operations',
+      sessionId: String(session.id),
+    })
+    expect(started).toMatchObject({
+      accepted: true,
+      goal: {
+        sessionId: session.id,
+        outcome: 'Ship the typed Goal operations',
+      },
+      activeTask: { kind: 'goal', session_id: session.id },
+    })
+    expect((await api.bootstrap()).goals).toMatchObject({
+      active: { id: started.goal.id },
+      recent: [{ id: started.goal.id }],
+    })
+
+    const paused = await api.goals.pause(started.goal.id)
+    expect(paused.goal.phase).toBe('paused')
+    const resumed = await api.goals.resume(started.goal.id)
+    expect(resumed.accepted).toBe(true)
+    const cancelled = await api.goals.cancel(started.goal.id, 'user requested')
+    expect(cancelled.goal).toMatchObject({
+      status: 'cancelled',
+      phase: 'terminal',
+    })
+    await api.close()
+  })
+
+  it('materializes a draft before Goal creation and fences cross-session reads', async () => {
+    const events: Array<Record<string, unknown>> = []
+    const api = await CoreApi.create({
+      root: tmp('emperor-core-api-goal-draft-'),
+      stateRoot: tmp('emperor-core-api-goal-draft-state-'),
+      templatesDir: TEMPLATES_DIR,
+      modelRouter: fakeRouter(new FakeProvider()),
+      eventSink: async (event) => {
+        events.push(event)
+      },
+    })
+    const started = await api.goals.start({
+      outcome: 'Promote draft once',
+      sessionId: 'draft:goal-ui',
+      clientDraftId: 'draft:goal-ui',
+      draftSession: { mode: 'chat' },
+    })
+    expect(events.slice(0, 2).map((event) => event.event)).toEqual([
+      'session_created',
+      'goal_created',
+    ])
+    await api.goals.pause(started.goal.id)
+    const other = api.sessions.create({ title: 'Other session' })
+    api.sessions.activate(String(other.id))
+    await expect(api.goals.get(started.goal.id)).rejects.toMatchObject({
+      code: 'goal_session_mismatch',
+    })
+    api.sessions.activate(started.goal.sessionId)
+    await api.goals.cancel(started.goal.id)
+    await api.close()
+  })
+
+  it('pauses Goals before archive and cancels, settles, then deletes Goal state with the session', async () => {
+    const api = await CoreApi.create({
+      root: tmp('emperor-core-api-goal-session-lifecycle-'),
+      stateRoot: tmp('emperor-core-api-goal-session-lifecycle-state-'),
+      templatesDir: TEMPLATES_DIR,
+      modelRouter: fakeRouter(new FakeProvider()),
+    })
+    const session = api.sessions.create({ title: 'Disposable Goal session' })
+    api.sessions.activate(String(session.id))
+    const started = await api.goals.start({
+      outcome: 'Pause before archive',
+      sessionId: String(session.id),
+    })
+
+    await api.sessions.rename(String(session.id), { archived: true })
+    expect(await api.loop.goalStore.get(started.goal.id)).toMatchObject({
+      runtime: { phase: 'paused', pauseReason: 'session_archived' },
+    })
+    const deleted = await api.sessions.delete(String(session.id))
+    expect(deleted).toMatchObject({ deleted: true, removedGoals: 1 })
+    expect(await api.loop.goalStore.get(started.goal.id)).toBeNull()
     await api.close()
   })
 
@@ -1238,10 +1717,12 @@ describe('CoreApi (MIG-IPC-001)', () => {
 
     const created = api.sessions.create({ title: 'Work' })
     const items = api.sessions.list()
-    const renamed = api.sessions.rename(String(created.id), {
+    const renamed = await api.sessions.rename(String(created.id), {
       title: 'Renamed',
     })
-    const archived = api.sessions.rename(String(created.id), { archived: true })
+    const archived = await api.sessions.rename(String(created.id), {
+      archived: true,
+    })
     const all = api.sessions.list({ includeArchived: true })
     const activated = api.sessions.activate(String(api.loop.activeSessionId))
 

@@ -1,13 +1,10 @@
 # Environment / local config
-/.env
-/.env.*
-!/.env.example
-/model_config.json
-/mcp_config.json
-/emperor.local.json
-/packages/*/model_config.json
-/packages/*/mcp_config.json
-/packages/*/emperor.local.json
+.env
+.env.*
+!.env.example
+model_config.json
+mcp_config.json
+emperor.local.json
 /templates/USER.local.md
 /templates/*.local.md
 
@@ -23,6 +20,9 @@ __pycache__/
 
 # OS / editor noise
 .DS_Store
+.idea/
+.vscode/
+.history/
 *.swp
 *.swo
 *~
@@ -58,14 +58,33 @@ pnpm-debug.log*
 *.log
 /.superpowers/
 
+# Personal development documents (local-only; never publish)
+/private-docs/
+/docs/private/
+/docs/archive/
+/docs/superpowers/
+/docs/audit/
+/docs/diagnostics/
+/docs/research/
+/docs/roadmap/
+/docs/qa/
+/docs/plans/
+/docs/specs/
+/docs/design/
+/docs/tasks/
+/docs/migration/
+/PROJECT_AUDIT_REPORT.md
+
 # 运行期产生的私人数据（长期记忆 / 会话历史 / token 用量）
 # 规则必须锚定在仓库根目录，避免误忽略 packages/core/src/memory 等源码目录。
 /memory/
 /sessions/
-/.emperor/
+/desktop/memory/
+/desktop/sessions/
+.emperor/
 /packages/*/memory/
 /packages/*/sessions/
 
 # Agent Team 运行期状态（队友配置 / inbox / 独立 thread）
-/.team/
+.team/
 /packages/*/.team/

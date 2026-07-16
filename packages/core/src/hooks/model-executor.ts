@@ -274,6 +274,7 @@ export class SubmitHookResultTool extends Tool {
     required: ['ok'],
   }
   override readOnly = true
+  override evidencePolicy = 'forbidden' as const
   output: Record<string, unknown> | null = null
   reason = ''
 

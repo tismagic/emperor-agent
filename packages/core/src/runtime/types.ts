@@ -1,4 +1,24 @@
+import type { GoalGateReasonCode, GoalSummary } from '../goals/models'
+
 export type RuntimeEventPayload = Record<string, unknown>
+
+export interface RuntimeGoalSummary extends GoalSummary {
+  readonly lastEventSeq: number
+}
+
+export interface GoalRuntimePlanCounts {
+  readonly completed: number
+  readonly failed: number
+  readonly blocked: number
+  readonly total: number
+}
+
+export interface GoalRuntimeEventBase {
+  goal_id: string
+  session_id: string
+  last_event_seq: number
+  updated_at: string
+}
 
 export interface RuntimeEventEnvelope {
   seq?: number
@@ -296,6 +316,58 @@ export type RuntimeEvent = RuntimeEventEnvelope &
         step_id?: string
         result?: RuntimeEventPayload
       }
+    | (GoalRuntimeEventBase & {
+        event: 'goal_created'
+        goal: RuntimeGoalSummary
+      })
+    | (GoalRuntimeEventBase & {
+        event: 'goal_runtime_update'
+        goal: RuntimeGoalSummary
+        plan?: GoalRuntimePlanCounts
+      })
+    | (GoalRuntimeEventBase & {
+        event: 'goal_evidence_recorded'
+        goal?: RuntimeGoalSummary
+        criterion_id: string
+        verdict: 'pass' | 'fail'
+        source_count: number
+        summary: string
+      })
+    | (GoalRuntimeEventBase & {
+        event: 'goal_gate_evaluated'
+        passed: boolean
+        reason_codes: GoalGateReasonCode[]
+        reason_count: number
+      })
+    | (GoalRuntimeEventBase & {
+        event: 'goal_completed'
+        goal: RuntimeGoalSummary
+        summary?: string
+      })
+    | (GoalRuntimeEventBase & {
+        event: 'goal_blocked'
+        goal: RuntimeGoalSummary
+        reason?: string
+      })
+    | (GoalRuntimeEventBase & {
+        event: 'goal_paused'
+        goal: RuntimeGoalSummary
+        reason?: string
+      })
+    | (GoalRuntimeEventBase & {
+        event: 'goal_resumed'
+        goal: RuntimeGoalSummary
+      })
+    | (GoalRuntimeEventBase & {
+        event: 'goal_cancelled'
+        goal: RuntimeGoalSummary
+        reason?: string
+      })
+    | (GoalRuntimeEventBase & {
+        event: 'goal_policy_stopped'
+        goal: RuntimeGoalSummary
+        reason?: string
+      })
     | { event: 'task_started'; task?: RuntimeEventPayload }
     | {
         event: 'task_progress'

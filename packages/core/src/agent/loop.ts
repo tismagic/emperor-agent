@@ -30,6 +30,7 @@ import {
   type CompactorLike,
 } from './runner'
 import { buildRoutedRunner } from './runner-factory'
+import { RunnerGoalRecordingService } from './runner-goal-recording'
 import { dispatchControlHost, permissionOnlyControlHost } from './control-hosts'
 import { loadLocalConfig, type PromptProfile } from '../config/local-config'
 import type { PermissionRuleInput } from '../permissions/rules'
@@ -69,6 +70,17 @@ import {
 import { WorkspacePolicy } from '../permissions/workspace-policy'
 import { ProjectStore } from '../projects/store'
 import { ActiveTaskRegistry, TurnBusyError } from '../runtime/active'
+import { GoalCoordinator } from '../goals/coordinator'
+import { GoalContextBuilder } from '../goals/context'
+import {
+  BlockGoalTool,
+  CompleteGoalTool,
+  DefineGoalContractTool,
+  GetGoalTool,
+  GoalToolHost,
+  RecordGoalEvidenceTool,
+} from '../goals/tools'
+import { GoalRecoveryService } from '../goals/recovery'
 import {
   loadBundledToolCatalog,
   type LoadedToolCatalog,
@@ -148,6 +160,43 @@ import { EditFileTool, ReadFileTool, WriteFileTool } from '../tools/filesystem'
 import { ToolRegistry } from '../tools/registry'
 import { WebSearchTool } from '../tools/web-search'
 import * as runtimeEvents from '../runtime/events'
+import {
+  GoalEvidenceLedger,
+  GoalObservationRecorder,
+  type GoalUserManualSource,
+} from '../goals/evidence'
+import { GoalStore, type GoalCommitContext } from '../goals/store'
+import { goalSummary, type GoalRecord } from '../goals/models'
+import { GoalPlanBridge } from '../goals/plan-bridge'
+import { portableGoalWorkspace } from '../goals/scope'
+import { stableEnvironmentHash } from '../environment/models'
+import { GoalGateFactStore } from '../goals/gate-facts'
+import {
+  GoalGateCoreFactAdapters,
+  type GoalCoreFactRefreshInput,
+} from '../goals/gate-fact-adapters'
+import { GoalGateMutationLedger } from '../goals/mutation-ledger'
+import {
+  GoalReviewerCoreRiskAdapter,
+  GoalReviewerLedger,
+  GoalReviewerPolicy,
+} from '../goals/reviewer'
+import {
+  GoalReviewerExecutor,
+  type ExecuteGoalReviewerInput,
+} from '../goals/reviewer-executor'
+import {
+  GoalCompletionGate,
+  type GoalBlockInput,
+} from '../goals/completion-gate'
+import { GoalBlockerFactStore } from '../goals/blocker-facts'
+import { GoalBlockerCauseLedger } from '../goals/blocker-cause-ledger'
+import { createAuthorizedGoalCompletionGate } from './goal-completion-gate-internal'
+import { CoreGoalBlockerFactIssuer } from './goal-blocker-fact-internal'
+import {
+  CoreGoalBlockerCauseWriter,
+  CoreGoalBlockerControlAdapter,
+} from './goal-blocker-cause-writer-internal'
 
 type StreamEmitter = (event: Record<string, unknown>) => void | Promise<void>
 type Msg = Record<string, unknown>
@@ -215,6 +264,7 @@ export interface RunUserTurnOptions {
   memoryExtra?: Record<string, unknown> | null
   attachmentIds?: string[] | null
   requestedSkills?: Array<{ name: string; source?: string }> | null
+  signal?: AbortSignal | null
 }
 
 export interface CompactionHookScope {
@@ -255,6 +305,23 @@ export class AgentLoop {
   readonly subagentRegistry: SubagentRegistry
   readonly teamManager: TeamManager
   readonly mcpClient: MCPClient
+  readonly goalStore: GoalStore
+  readonly goalPlanBridge: GoalPlanBridge
+  readonly goalObservationRecorder: GoalObservationRecorder
+  readonly goalEvidenceLedger: GoalEvidenceLedger
+  readonly goalGateFactStore: GoalGateFactStore
+  readonly goalGateFactAdapters: GoalGateCoreFactAdapters
+  readonly goalReviewerRiskAdapter: GoalReviewerCoreRiskAdapter
+  readonly goalReviewerLedger: GoalReviewerLedger
+  readonly goalReviewerExecutor: GoalReviewerExecutor
+  private readonly goalCompletionGate: GoalCompletionGate
+  readonly goalToolHost: GoalToolHost
+  readonly goalCoordinator: GoalCoordinator
+  readonly goalBlockerFactStore: GoalBlockerFactStore
+  readonly goalBlockerCauseLedger: GoalBlockerCauseLedger
+  readonly goalBlockerFactIssuer: CoreGoalBlockerFactIssuer
+  private readonly goalBlockerControlAdapter: CoreGoalBlockerControlAdapter
+  readonly goalRecordingService: RunnerGoalRecordingService
   readonly legacyStateMigration: LegacyStateMigrationResult
   modelRouter: LoopModelRouter
   readonly eventSink: StreamEmitter | null
@@ -278,6 +345,11 @@ export class AgentLoop {
   >()
   private readonly teamManagersByProject = new Map<string, TeamManager>()
   private readonly sessionStartHooksRun = new Set<string>()
+  private readonly goalGateRefreshInputs = new Map<
+    string,
+    Omit<GoalCoreFactRefreshInput, 'currentScope'>
+  >()
+  private readonly goalGateMutations: GoalGateMutationLedger
 
   private constructor(
     opts: AgentLoopCreateOptions,
@@ -306,6 +378,83 @@ export class AgentLoop {
     this.eventSink = opts.eventSink ?? null
 
     this.sessionStore = new SessionStore(this.paths.stateRoot)
+    this.goalStore = new GoalStore(this.paths.stateRoot, {
+      hooks: {
+        afterCommit: async (context) => await this.projectGoalCommit(context),
+      },
+    })
+    this.goalGateMutations = new GoalGateMutationLedger(this.paths.stateRoot)
+    this.goalGateFactStore = new GoalGateFactStore(this.paths.stateRoot)
+    this.goalBlockerFactStore = new GoalBlockerFactStore(this.paths.stateRoot)
+    this.goalBlockerCauseLedger = new GoalBlockerCauseLedger(
+      this.paths.stateRoot,
+    )
+    this.goalObservationRecorder = new GoalObservationRecorder(this.goalStore, {
+      isTrustedTaskTranscriptRef: (ref) => this.isTrustedTaskTranscriptRef(ref),
+    })
+    this.goalEvidenceLedger = new GoalEvidenceLedger(this.goalStore, {
+      factResolvers: {
+        resolveIndependentReviewer: async (goalId, source) =>
+          await this.goalReviewerLedger.resolveIndependentReviewerFact(
+            goalId,
+            source,
+          ),
+        resolveUserManual: async (goalId, source) => {
+          const inspection = await this.goalStore.inspect(goalId)
+          if (!inspection.record || inspection.issue) return null
+          const current = this.controlManager.goalManualEvidence.resolve(
+            inspection.record,
+            source,
+            { allowHistoricalReceipt: true },
+          )
+          if (current) return current
+          const events = await this.goalStore.readEventsReadonly(goalId)
+          let durableAction: unknown = null
+          for (const event of events) {
+            const receipt = event.payload.receipt
+            if (
+              !receipt ||
+              typeof receipt !== 'object' ||
+              Array.isArray(receipt)
+            )
+              continue
+            const record = receipt as Record<string, unknown>
+            const storedSource = record.source
+            if (
+              record.kind === 'user_manual' &&
+              storedSource &&
+              typeof storedSource === 'object' &&
+              !Array.isArray(storedSource) &&
+              (storedSource as Record<string, unknown>).interactionId ===
+                source.interactionId &&
+              (storedSource as Record<string, unknown>).criterionId ===
+                source.criterionId &&
+              (storedSource as Record<string, unknown>).verdict ===
+                source.verdict
+            )
+              durableAction = record.actionReceipt
+          }
+          return this.controlManager.goalManualEvidence.verifyDurableAction(
+            inspection.record,
+            source,
+            durableAction,
+          )
+        },
+        resolvePlanVerification: async (goalId, source) => {
+          const inspection = await this.goalStore.inspect(goalId)
+          if (!inspection.record || inspection.issue) return null
+          return this.controlManager.resolveGoalPlanVerificationFact(
+            goalId,
+            inspection.record,
+            source,
+          )
+        },
+      },
+    })
+    this.goalRecordingService = new RunnerGoalRecordingService(
+      this.goalObservationRecorder,
+      this.goalEvidenceLedger,
+    )
     this.tokenTracker = new TokenTracker(this.paths.tokensFile)
     this.environmentCatalog = loadBundledToolCatalog()
     this.environmentProbe = new EnvironmentProbe({
@@ -349,7 +498,65 @@ export class AgentLoop {
     this.controlManager = new ControlManager(this.paths.stateRoot, {
       permissionRules: opts.permissionRules ?? [],
     })
+    this.goalBlockerControlAdapter = CoreGoalBlockerControlAdapter.create(
+      CoreGoalBlockerCauseWriter.create(this.goalBlockerCauseLedger),
+      this.controlManager,
+    )
+    this.goalBlockerFactIssuer = CoreGoalBlockerFactIssuer.create({
+      store: this.goalBlockerFactStore,
+      causeLedger: this.goalBlockerCauseLedger,
+    })
+    this.goalGateFactAdapters = new GoalGateCoreFactAdapters(
+      this.goalGateFactStore,
+      this.goalStore,
+      this.controlManager.store,
+    )
+    this.goalReviewerRiskAdapter = new GoalReviewerCoreRiskAdapter(
+      this.controlManager.planStore,
+      this.goalStore,
+      this.taskManager.store,
+    )
+    this.goalReviewerLedger = new GoalReviewerLedger({
+      goalStore: this.goalStore,
+      planStore: this.controlManager.planStore,
+      taskManager: this.taskManager,
+      evidenceLedger: this.goalEvidenceLedger,
+      resolveRiskFact: (context) =>
+        this.goalReviewerRiskAdapter.resolve(context),
+      resolveWaiverAction: async (context) => {
+        const goal = await this.goalStore.get(context.goalId)
+        return goal
+          ? this.controlManager.resolveGoalReviewerWaiverAction(goal, context)
+          : null
+      },
+    })
     this.todoStore = new TodoStore()
+    this.goalPlanBridge = new GoalPlanBridge({
+      goalStore: this.goalStore,
+      planStore: this.controlManager.planStore,
+      taskManager: this.taskManager,
+      todoStore: this.todoStore,
+      resolveStepWaiver: (context, snapshot) =>
+        this.controlManager.resolvePlanStepWaiverFact(
+          snapshot.goal,
+          context,
+          snapshot.plan,
+        ),
+      resolveStepVerification: (context, snapshot) =>
+        this.controlManager.resolvePlanStepVerificationFact(
+          snapshot.goal,
+          context,
+          snapshot.plan,
+        ),
+      resolveReviewer: async (context) => {
+        return await this.goalReviewerLedger.resolvePlanReviewerFact(
+          context.goalId,
+          context,
+        )
+      },
+      resolveReviewerRiskFact: (context) =>
+        this.goalReviewerRiskAdapter.resolve(context),
+    })
     this.schedulerStore = new SchedulerStore(this.paths.stateRoot)
     this.schedulerService = new SchedulerService(this.schedulerStore, {
       eventSink: async (event) => {
@@ -380,6 +587,135 @@ export class AgentLoop {
       this.skillsLoader,
     )
     this.contextBuilder.setSubagentRegistry(this.subagentRegistry)
+    this.goalReviewerExecutor = new GoalReviewerExecutor({
+      ledger: this.goalReviewerLedger,
+      goalStore: this.goalStore,
+      taskManager: this.taskManager,
+      evidenceLedger: this.goalEvidenceLedger,
+      baseGoalRecording: this.goalRecordingService,
+      parentRegistry: this.registry,
+      subagentRegistry: this.subagentRegistry,
+      runnerFactory: buildDispatchRunnerFactory({
+        modelRouter: this.modelRouter,
+        tokenTracker: this.tokenTracker,
+        memoryStore: null,
+        compactor: null,
+        todoStore: null,
+        controlManager: permissionOnlyControlHost(this.controlManager),
+        hooks: (args) =>
+          args.agentId
+            ? this.scopedAgentRunnerHooks(args.agentId, 'SubagentStop')
+            : null,
+        goalObservationRecorder: this.goalRecordingService,
+      }),
+    })
+    this.goalCompletionGate = createAuthorizedGoalCompletionGate({
+      goalStore: this.goalStore,
+      planBridge: this.goalPlanBridge,
+      evidenceLedger: this.goalEvidenceLedger,
+      reviewerLedger: this.goalReviewerLedger,
+      factStore: this.goalGateFactStore,
+      blockerFactStore: this.goalBlockerFactStore,
+      inspectLiveFacts: async (goal) => {
+        return await this.inspectGoalGateFactsTrusted(goal)
+      },
+      cleanup: {
+        revokePlanTokens: (planId) => {
+          this.controlManager.revokePlanPermissionTokens({
+            planId,
+            reason: 'Goal reached a terminal state',
+          })
+        },
+        clearActiveRun: (_goal, runId) => {
+          this.activeTasks.cancel({ taskId: runId })
+        },
+        clearPendingInteraction: (goal, interactionId) => {
+          this.controlManager.clearPendingInteractionForGoal(interactionId)
+          this.controlManager.clearPendingInteractionForGoal(goal.id)
+        },
+      },
+    })
+    this.goalToolHost = new GoalToolHost({
+      goalStore: this.goalStore,
+      evidenceLedger: this.goalEvidenceLedger,
+      completionGate: this.goalCompletionGate,
+      blockGoal: async (goal, input) => {
+        const fact = this.goalBlockerFactIssuer.issue(goal, input)
+        return await this.goalCompletionGate.blockGoal(
+          goal.id,
+          input,
+          fact.version,
+        )
+      },
+      requestPermissionBlockerResolution: (goal, reason) =>
+        this.controlManager.goalBlocker.requestPermissionResolution(
+          goal,
+          reason,
+        ),
+      hasAnswerableInteraction: (goal) => {
+        const pending = this.controlManager.store.load().pending
+        return Boolean(
+          pending &&
+          this.controlPendingOwnerSessionId(pending.id) ===
+            goal.scope.sessionId,
+        )
+      },
+      enterPlanMode: (goal) => {
+        this.controlManager.setRuntimeScope(goal.scope)
+        this.controlManager.setActiveGoalPlanContext(goal)
+        this.controlManager.setMode('plan')
+      },
+    })
+    this.goalCoordinator = new GoalCoordinator({
+      goalStore: this.goalStore,
+      activeTasks: this.activeTasks,
+      evaluateGate: (goalId) => this.evaluateGoal(goalId),
+      prepareVerification: (goal) => this.prepareGoalVerification(goal),
+      pendingInteractionId: (goal) => {
+        const pending = this.controlManager.store.load().pending
+        if (!pending) return null
+        const owner = this.findControlPendingSessionId(pending.id)
+        const goalId = interactionGoalId(pending)
+        return owner === goal.scope.sessionId || goalId === goal.id
+          ? pending.id
+          : null
+      },
+      planStatus: (planId) =>
+        this.controlManager.planStore.get(planId)?.status ?? null,
+      validateScope: (goal) => {
+        const session = this.sessionStore.get(goal.scope.sessionId)
+        if (!session) return false
+        const current = this.controlRuntimeScopeForSession(session)
+        return (
+          current.mode === goal.scope.mode &&
+          current.projectId === goal.scope.projectId &&
+          current.workspaceRoot === goal.scope.workspaceRoot &&
+          current.projectFingerprint === goal.scope.projectFingerprint
+        )
+      },
+      progressSnapshot: async (goal) => {
+        const plan = goal.runtime.currentPlanId
+          ? this.controlManager.planStore.get(goal.runtime.currentPlanId)
+          : null
+        const activeStep = plan?.steps.find(
+          (step) => step.status === 'active' || step.status === 'blocked',
+        )
+        const observations = await this.goalStore.readObservationsReadonly(
+          goal.id,
+        )
+        return {
+          lastEventSeq: goal.lastEventSeq,
+          planUpdatedAt: plan
+            ? new Date(plan.updatedAt * 1000).toISOString()
+            : null,
+          activePlanStepId: activeStep?.id ?? null,
+          activePlanStepStatus: activeStep?.status ?? null,
+          evidenceIds: Object.values(goal.latestEvidenceByCriterion),
+          observationCount: observations.records.length,
+          pendingInteractionId: goal.runtime.pendingInteractionId,
+        }
+      },
+    })
     this.teamManager = this.createTeamManager(null)
     this.mcpClient = new MCPClient(this.paths.stateRoot)
 
@@ -387,14 +723,23 @@ export class AgentLoop {
     this.controlManager.setTaskManager(this.taskManager)
     this.controlManager.setAskMetaProvider(() => {
       const state = this.profileOnboarding.payload()
-      if (
+      const profileMeta =
         state.status !== 'in_progress' ||
         state.sessionId !== this.activeSessionId
-      )
-        return null
+          ? {}
+          : {
+              profileOnboardingVersion: PROFILE_ONBOARDING_VERSION,
+              profileOnboardingMode: 'agent',
+            }
+      const goalHandle = this.goalCoordinator.listActive()[0]
       return {
-        profileOnboardingVersion: PROFILE_ONBOARDING_VERSION,
-        profileOnboardingMode: 'agent',
+        ...profileMeta,
+        ...(goalHandle
+          ? {
+              goal_id: goalHandle.goalId,
+              goal_session_id: goalHandle.sessionId,
+            }
+          : {}),
       }
     })
     this.controlManager.setPendingObserver({
@@ -463,6 +808,32 @@ export class AgentLoop {
       sharedMemory,
       legacyStateMigration,
     )
+    await loop.goalCompletionGate.recoverPostCommitCleanup()
+    await loop.goalPlanBridge.recoverQuarantinedApprovals()
+    const recoveredSkips = await loop.goalPlanBridge.recoverIncompleteSkips()
+    await loop.goalPlanBridge.recoverIncompleteReplans()
+    // Finish already-persisted Goal/Plan transactions before the generic
+    // restart policy pauses orphaned execution. Pausing first would make the
+    // bridge correctly reject the executing-only recovery receipts and strand
+    // their durable intents halfway through replay.
+    await new GoalRecoveryService(loop.goalStore, {
+      hasActiveRuntime: (goal) => loop.goalCoordinator.active(goal.id) !== null,
+      validateScope: (goal) => ({
+        valid:
+          loop.sessionStore.get(goal.scope.sessionId) !== null &&
+          existsSync(goal.scope.workspaceRoot),
+        reason: loop.sessionStore.get(goal.scope.sessionId)
+          ? 'workspace_missing'
+          : 'session_missing',
+      }),
+    }).recoverOnStartup()
+    for (const projection of recoveredSkips.todoProjections) {
+      if (!loop.sessionStore.get(projection.sessionId)) continue
+      loop.todosBySession.set(
+        projection.sessionId,
+        cloneTodoItems(projection.todos),
+      )
+    }
     const session = loop.ensureActiveSession()
     if (opts.initializeMcp !== false) {
       const executionEnvironment = await loop.createExecutionEnvironment(
@@ -476,6 +847,333 @@ export class AgentLoop {
     if (opts.enableFirstRunOnboarding)
       await loop.startProfileInterview({ manual: false })
     return loop
+  }
+
+  async refreshGoalGateFacts(
+    goalId: string,
+    input: GoalCoreFactRefreshInput = {},
+  ) {
+    const inspection = await this.goalStore.inspect(goalId)
+    if (!inspection.record || inspection.issue)
+      throw new Error('Goal is unavailable for Gate fact refresh.')
+    const goal = inspection.record
+    return await this.goalGateMutations.guard.runExclusive(
+      'mutation',
+      async (lease) => {
+        const previous = this.goalGateRefreshInputs.get(goalId) ?? {}
+        const merged = {
+          ...previous,
+          ...(input.hardConstraintsSatisfied !== undefined
+            ? { hardConstraintsSatisfied: input.hardConstraintsSatisfied }
+            : {}),
+          ...(input.estimatedCostUsd !== undefined
+            ? { estimatedCostUsd: input.estimatedCostUsd }
+            : {}),
+        }
+        if (JSON.stringify(previous) !== JSON.stringify(merged)) {
+          this.goalGateMutations.recordUnderLease(
+            lease,
+            'hard_constraints',
+            `goal-gate-source:${goalId}:${JSON.stringify(merged)}`,
+          )
+          this.goalGateRefreshInputs.set(goalId, merged)
+        }
+        return await this.goalGateFactAdapters.refreshUnderLease(lease, goal, {
+          ...merged,
+          currentScope:
+            input.currentScope === undefined
+              ? this.liveGoalScope(goal)
+              : input.currentScope,
+        })
+      },
+    )
+  }
+
+  private async inspectGoalGateFactsTrusted(
+    goal: import('../goals/models').GoalRecord,
+  ) {
+    return await this.goalGateFactAdapters.inspectLiveBundle(goal, {
+      ...(this.goalGateRefreshInputs.get(goal.id) ?? {}),
+      currentScope: this.liveGoalScope(goal),
+    })
+  }
+
+  private liveGoalScope(goal: GoalRecord) {
+    const session = this.sessionStore.get(goal.scope.sessionId)
+    return session ? this.controlRuntimeScopeForSession(session) : null
+  }
+
+  private async prepareGoalVerification(
+    goal: GoalRecord,
+  ): Promise<string | null> {
+    await this.refreshGoalGateFacts(goal.id, {
+      hardConstraintsSatisfied: this.goalConstraintPolicySatisfied(goal),
+      currentScope: this.liveGoalScope(goal),
+    })
+
+    for (const criterion of goal.contract.acceptanceCriteria) {
+      if (criterion.verification.kind !== 'manual') continue
+      const latest = await this.goalEvidenceLedger.latestEvidenceForCriterion(
+        goal.id,
+        criterion.id,
+      )
+      if (latest?.verdict === 'pass') continue
+      const interaction = this.controlManager.goalManualEvidence.request(
+        goal,
+        criterion.id,
+      )
+      return interaction.id
+    }
+
+    const planId = goal.runtime.currentPlanId
+    const plan = planId ? this.controlManager.planStore.get(planId) : null
+    if (!plan || plan.status !== 'completed') return null
+    const riskFact = await this.goalReviewerRiskAdapter.resolve({
+      goalId: goal.id,
+      planId: plan.id,
+      planEventSeq: plan.eventSeq,
+      currentReviewer: null,
+    })
+    const requirement = new GoalReviewerPolicy().requirementFor(plan, riskFact)
+    const reviewerCriterion = goal.contract.acceptanceCriteria.some(
+      (criterion) => criterion.verification.kind === 'reviewer',
+    )
+    if (!reviewerCriterion && !requirement.required) return null
+    const currentDecision =
+      await this.goalReviewerLedger.latestReviewerDecision(goal.id, goal)
+    if (currentDecision) return null
+    await this.runGoalReviewer({
+      goalId: goal.id,
+      planId: plan.id,
+      planEventSeq: plan.eventSeq,
+      workspaceRoot: goal.scope.workspaceRoot,
+      sessionId: goal.scope.sessionId,
+      executionEnvironment: await this.createExecutionEnvironment(
+        goal.scope.workspaceRoot,
+      ),
+    })
+    return null
+  }
+
+  private goalConstraintPolicySatisfied(goal: GoalRecord): boolean {
+    if (goal.status !== 'active' || !goal.contract.lockedAt) return false
+    if (!this.liveGoalScope(goal)) return false
+    if (
+      goal.guardPolicy.maxCycles !== null &&
+      goal.runtime.cyclesUsed >= goal.guardPolicy.maxCycles
+    )
+      return false
+    if (
+      goal.guardPolicy.deadlineAt !== null &&
+      Date.now() >= Date.parse(goal.guardPolicy.deadlineAt)
+    )
+      return false
+    return true
+  }
+
+  async evaluateGoal(goalId: string) {
+    const gate = await this.goalCompletionGate.evaluate(goalId)
+    const inspection = await this.goalStore.inspect(goalId)
+    if (inspection.record && !inspection.issue) {
+      await this.emit(
+        runtimeEvents.goalGateEvaluated(
+          {
+            goalId: inspection.record.id,
+            sessionId: inspection.record.scope.sessionId,
+            lastEventSeq: inspection.record.lastEventSeq,
+            updatedAt: inspection.record.updatedAt,
+          },
+          {
+            passed: gate.pass,
+            reasonCodes: gate.reasons.map((reason) => reason.code),
+          },
+        ),
+      )
+    }
+    return gate
+  }
+
+  completeGoal(goalId: string) {
+    return this.goalCompletionGate.complete(goalId)
+  }
+
+  async issueGoalBlockerFact(goalId: string, input: GoalBlockInput) {
+    const inspection = await this.goalStore.inspect(goalId)
+    if (!inspection.record || inspection.issue)
+      throw new Error('Goal is unavailable for blocker fact issuance.')
+    return this.goalBlockerFactIssuer.issue(inspection.record, input)
+  }
+
+  async requestGoalPermissionBlockerResolution(goalId: string, reason: string) {
+    const inspection = await this.goalStore.inspect(goalId)
+    if (!inspection.record || inspection.issue)
+      throw new Error('Goal is unavailable for blocker resolution.')
+    return this.controlManager.goalBlocker.requestPermissionResolution(
+      inspection.record,
+      reason,
+    )
+  }
+
+  async requestGoalManualVerification(goalId: string, criterionId: string) {
+    const inspection = await this.goalStore.inspect(goalId)
+    if (!inspection.record || inspection.issue)
+      throw new Error('Goal is unavailable for manual verification.')
+    return this.controlManager.goalManualEvidence.request(
+      inspection.record,
+      criterionId,
+    )
+  }
+
+  async recordGoalManualVerification(
+    goalId: string,
+    source: GoalUserManualSource,
+  ) {
+    const receipt = await this.goalEvidenceLedger.issueUserManualReceipt(
+      goalId,
+      source,
+    )
+    return await this.goalEvidenceLedger.record(
+      goalId,
+      {
+        criterionId: source.criterionId,
+        verdict: source.verdict,
+        check: 'Explicit persisted user manual verification.',
+        summary: receipt.summary,
+        sourceObservationIds: [],
+        sourceReceiptIds: [receipt.id],
+      },
+      { recorder: 'user' },
+    )
+  }
+
+  async blockGoalFromControlPermissionDenial(
+    goalId: string,
+    input: GoalBlockInput & { readonly code: 'missing_permission' },
+    interactionId: string,
+  ) {
+    const inspection = await this.goalStore.inspect(goalId)
+    if (!inspection.record || inspection.issue)
+      throw new Error('Goal is unavailable for blocker resolution.')
+    this.goalBlockerControlAdapter.recordPermissionDenial(
+      inspection.record,
+      interactionId,
+    )
+    const fact = this.goalBlockerFactIssuer.issue(inspection.record, input)
+    return await this.goalCompletionGate.blockGoal(goalId, input, fact.version)
+  }
+
+  async blockGoal(
+    goalId: string,
+    input: GoalBlockInput,
+    blockerFactVersion: string,
+  ) {
+    return await this.goalCompletionGate.blockGoal(
+      goalId,
+      input,
+      blockerFactVersion,
+    )
+  }
+
+  runGoalReviewer(input: ExecuteGoalReviewerInput) {
+    return this.goalReviewerExecutor.execute(input)
+  }
+
+  private async projectGoalCommit(context: GoalCommitContext): Promise<void> {
+    const goal = context.record
+    const evidence = await this.goalEvidenceLedger.listEvidence(goal.id)
+    const summary = goalSummary(
+      goal,
+      Object.fromEntries(
+        evidence.map((item) => [
+          item.id,
+          { verdict: item.verdict, summary: item.summary },
+        ]),
+      ),
+    )
+    const payload = context.event.payload
+    const identity = {
+      goalId: goal.id,
+      sessionId: goal.scope.sessionId,
+      lastEventSeq: goal.lastEventSeq,
+      updatedAt: goal.updatedAt,
+    }
+    let event: Record<string, unknown>
+    if (context.type === 'goal_created') {
+      event = runtimeEvents.goalCreated(summary, {
+        lastEventSeq: goal.lastEventSeq,
+      })
+    } else if (context.type === 'goal_completed') {
+      event = runtimeEvents.goalCompleted(summary, {
+        lastEventSeq: goal.lastEventSeq,
+        summary: 'Goal Completion Gate passed.',
+      })
+    } else if (context.type === 'goal_blocked') {
+      const blocker = isRecord(payload.blockerReceipt)
+        ? payload.blockerReceipt
+        : null
+      event = runtimeEvents.goalBlocked(summary, {
+        lastEventSeq: goal.lastEventSeq,
+        reason: blocker ? String(blocker.reason ?? '') : null,
+      })
+    } else if (isRecord(payload.evidence)) {
+      const item = payload.evidence
+      event = runtimeEvents.goalEvidenceRecorded(summary, identity, {
+        criterionId: String(item.criterionId ?? ''),
+        verdict: item.verdict === 'pass' ? 'pass' : 'fail',
+        sourceCount:
+          (Array.isArray(item.sourceObservationIds)
+            ? item.sourceObservationIds.length
+            : 0) +
+          (Array.isArray(item.sourceReceiptIds)
+            ? item.sourceReceiptIds.length
+            : 0),
+        summary: String(item.summary ?? ''),
+      })
+    } else if (goal.status === 'cancelled') {
+      event = runtimeEvents.goalCancelled(summary, {
+        lastEventSeq: goal.lastEventSeq,
+        reason: goal.runtime.pauseReason,
+      })
+    } else if (goal.status === 'stopped_by_policy') {
+      event = runtimeEvents.goalPolicyStopped(summary, {
+        lastEventSeq: goal.lastEventSeq,
+        reason: goal.runtime.pauseReason,
+      })
+    } else if (
+      goal.runtime.phase === 'paused' &&
+      context.previous?.runtime.phase !== 'paused'
+    ) {
+      event = runtimeEvents.goalPaused(summary, {
+        lastEventSeq: goal.lastEventSeq,
+        reason: goal.runtime.pauseReason,
+      })
+    } else if (
+      context.previous?.runtime.phase === 'paused' &&
+      goal.runtime.phase !== 'paused'
+    ) {
+      event = runtimeEvents.goalResumed(summary, {
+        lastEventSeq: goal.lastEventSeq,
+      })
+    } else {
+      const plan = goal.runtime.currentPlanId
+        ? this.controlManager.planStore.get(goal.runtime.currentPlanId)
+        : null
+      event = runtimeEvents.goalRuntimeUpdate(summary, {
+        lastEventSeq: goal.lastEventSeq,
+        plan: plan
+          ? {
+              completed: plan.steps.filter((step) => step.status === 'done')
+                .length,
+              failed: plan.steps.filter((step) => step.status === 'failed')
+                .length,
+              blocked: plan.steps.filter((step) => step.status === 'blocked')
+                .length,
+              total: plan.steps.length,
+            }
+          : null,
+      })
+    }
+    await this.emit(event)
   }
 
   profileOnboardingPayload(): ProfileOnboardingPayload {
@@ -705,13 +1403,29 @@ export class AgentLoop {
     return this.findControlPendingSessionId(interactionId)
   }
 
+  goalScopeForSession(session: SessionEntry): {
+    sessionId: string
+    mode: 'chat' | 'build'
+    projectId: string | null
+    workspaceRoot: string
+  } {
+    const scope = this.controlRuntimeScopeForSession(session)
+    return {
+      sessionId: scope.sessionId,
+      mode: scope.mode,
+      projectId: scope.projectId,
+      workspaceRoot: scope.workspaceRoot,
+    }
+  }
+
   async runUserTurn(
     content: string,
     opts: RunUserTurnOptions = {},
   ): Promise<string> {
     if (
-      opts.useActiveTask !== false &&
-      this.activeTasks.hasActiveKind('turn')
+      opts.source !== 'goal' &&
+      (this.activeTasks.hasActiveKind('turn') ||
+        this.activeTasks.hasActiveKind('goal'))
     ) {
       throw new TurnBusyError()
     }
@@ -723,7 +1437,16 @@ export class AgentLoop {
       if (!opts.restoreActiveSessionAfterTurn) return
       if (!previousSessionId || previousSessionId === this.activeSessionId)
         return
-      if (targetSessionId && this.activeSessionId !== targetSessionId) return
+      if (targetSessionId && this.activeSessionId !== targetSessionId) {
+        const current = this.activeSessionId
+          ? this.sessionStore.get(this.activeSessionId)
+          : null
+        if (current)
+          this.controlManager.setRuntimeScope(
+            this.controlRuntimeScopeForSession(current),
+          )
+        return
+      }
       try {
         this.activateSession(previousSessionId)
       } catch {
@@ -752,14 +1475,10 @@ export class AgentLoop {
     }
     const turnId = opts.turnId || randomUUID().replace(/-/g, '').slice(0, 16)
     const taskId = opts.taskId || `turn:${turnId}`
-    const abortController = new AbortController()
+    const abortController = opts.signal ? null : new AbortController()
+    const signal = opts.signal ?? abortController?.signal ?? null
     const execute = () =>
-      this.runUserTurnInner(
-        content,
-        turnId,
-        opts,
-        abortController.signal,
-      ).finally(() => {
+      this.runUserTurnInner(content, turnId, opts, signal).finally(() => {
         this.hookService.endTurn(turnId)
         restorePreviousSession()
       })
@@ -771,7 +1490,7 @@ export class AgentLoop {
       execute,
       turnId,
       sessionId: this.activeSessionId,
-      abort: () => abortController.abort(),
+      abort: () => abortController?.abort(),
     })
   }
 
@@ -782,6 +1501,7 @@ export class AgentLoop {
   }
 
   async close(): Promise<void> {
+    await this.goalCoordinator.shutdown()
     this.schedulerService.stop()
     const session =
       this.activeSession ??
@@ -969,6 +1689,9 @@ export class AgentLoop {
       throw new Error('active session is not initialized')
     this.controlManager.setRuntimeScope(
       this.controlRuntimeScopeForSession(session),
+    )
+    this.controlManager.setActiveGoalPlanContext(
+      await this.goalStore.findActiveBySession(session.id),
     )
     const scope = this.turnScope(session, turnId)
     const executionEnvironment = await this.createExecutionEnvironment(
@@ -1174,6 +1897,38 @@ export class AgentLoop {
     if (session) this.contextBuilder.setSessionScope(this.sessionScope(session))
     const projection = this.contextBuilder.buildProjection()
     const memoryStore = this.activeMemoryStore
+    const goalContext = session
+      ? new GoalContextBuilder({
+          goalStore: this.goalStore,
+          evidenceLedger: this.goalEvidenceLedger,
+          planProvider: (goal) => {
+            const planId = goal.runtime.currentPlanId
+            const plan = planId
+              ? this.controlManager.planStore.get(planId)
+              : null
+            if (!plan) return null
+            const activeStep = plan.steps.find(
+              (step) => step.status === 'active' || step.status === 'blocked',
+            )
+            return {
+              id: plan.id,
+              status: plan.status,
+              updatedAt: plan.updatedAt,
+              activeStep: activeStep
+                ? `${activeStep.id} ${activeStep.title}`
+                : null,
+            }
+          },
+          gateEvaluator: (goalId) => this.goalCompletionGate.evaluate(goalId),
+          pendingInteractionId: (sessionId) => {
+            const pending = this.controlManager.store.load().pending
+            return pending &&
+              this.controlPendingOwnerSessionId(pending.id) === sessionId
+              ? pending.id
+              : null
+          },
+        })
+      : null
     return buildRoutedRunner({
       route,
       registry: this.registry,
@@ -1198,6 +1953,20 @@ export class AgentLoop {
           )
         : null,
       sessionId: this.activeSessionId,
+      goalObservationRecorder: this.goalRecordingService,
+      goalToolHost: this.goalToolHost,
+      goalContextProvider: goalContext
+        ? async (history) => {
+            const attachment = await goalContext.build(session!.id, { history })
+            return attachment
+              ? { role: 'system', content: attachment.content }
+              : null
+          }
+        : null,
+      goalContextHint: goalContext ? () => goalContext.hint(session!.id) : null,
+      onGoalCompacted: goalContext
+        ? () => goalContext.markCompacted(session!.id)
+        : null,
       // Wave5 灰度开关：默认关闭，行为与批式逐字节一致
       streamingToolExecution: process.env.EMPEROR_STREAMING_TOOLS === '1',
       hooks: session
@@ -1250,6 +2019,21 @@ export class AgentLoop {
       skillRequirements: collectSkillEnvironmentRequirements(this.skillManager),
       ...(signal ? { signal } : {}),
     })
+  }
+
+  private isTrustedTaskTranscriptRef(ref: string): boolean {
+    const match = /^task:(.+):transcript$/.exec(ref)
+    if (!match) return false
+    const task = this.taskManager.store.get(match[1]!)
+    if (!task?.transcript_path) return false
+    try {
+      const transcript = this.taskManager.readSidechain(task.id)
+      const tasksRoot = resolve(this.paths.stateRoot, 'tasks')
+      const rel = relative(tasksRoot, transcript.path)
+      return rel !== '..' && !rel.startsWith(`..${sep}`) && !isAbsolute(rel)
+    } catch {
+      return false
+    }
   }
 
   private environmentProbeRoot(projectRoot: string): string {
@@ -1370,6 +2154,11 @@ export class AgentLoop {
     this.registry.register(new AskUserTool(this.controlManager))
     this.registry.register(new ProposePlanTool(this.controlManager))
     this.registry.register(new RequestPlanModeTool(this.controlManager))
+    this.registry.register(new GetGoalTool(this.goalToolHost))
+    this.registry.register(new DefineGoalContractTool(this.goalToolHost))
+    this.registry.register(new RecordGoalEvidenceTool(this.goalToolHost))
+    this.registry.register(new CompleteGoalTool(this.goalToolHost))
+    this.registry.register(new BlockGoalTool(this.goalToolHost))
     this.registry.register(new UpdateTodos(this.todoStore))
     this.registry.register(
       new SaveUserProfileTool(
@@ -1400,6 +2189,7 @@ export class AgentLoop {
             args.agentId
               ? this.scopedAgentRunnerHooks(args.agentId, 'SubagentStop')
               : null,
+          goalObservationRecorder: this.goalRecordingService,
         }),
         taskManager: this.taskManager,
         controlManager: controlHost,
@@ -1516,7 +2306,13 @@ export class AgentLoop {
   }
 
   private setActiveSessionControlPending(interaction: Interaction): void {
-    const sessionId = this.activeSessionId
+    const goalId = interactionGoalId(interaction)
+    const sessionId =
+      String(interaction.meta.goal_session_id ?? '').trim() ||
+      (goalId
+        ? (this.goalCoordinator.active(goalId)?.sessionId ?? null)
+        : null) ||
+      this.activeSessionId
     if (!sessionId) return
     const pending = this.sessionControlPending(interaction)
     if (!pending) return
@@ -1739,13 +2535,25 @@ export class AgentLoop {
 
   private controlRuntimeScopeForSession(session: SessionEntry): {
     sessionId: string
+    mode: 'chat' | 'build'
     projectId: string | null
     workspaceRoot: string
+    projectFingerprint: string
   } {
+    const projectId = session.project_id ?? null
+    const workspaceRoot = portableGoalWorkspace(
+      this.workspaceRootForSession(session),
+    )
     return {
       sessionId: session.id,
-      projectId: session.project_id ?? null,
-      workspaceRoot: this.workspaceRootForSession(session),
+      mode: session.mode,
+      projectId,
+      workspaceRoot,
+      projectFingerprint: stableEnvironmentHash(
+        session.mode === 'chat'
+          ? { mode: session.mode, workspaceRoot }
+          : { mode: session.mode, projectId, workspaceRoot },
+      ),
     }
   }
 
@@ -2070,6 +2878,28 @@ function withTurnScope(
     project_id: event.project_id ?? scope.projectId,
     project_state_root: event.project_state_root ?? scope.projectStateRoot,
   }
+}
+
+function interactionGoalId(interaction: Interaction): string | null {
+  const direct = String(interaction.meta.goal_id ?? '').trim()
+  if (direct) return direct
+  for (const key of [
+    'goal_manual_evidence_request',
+    'goal_permission_blocker_request',
+    'goal_reviewer_waiver_request',
+  ]) {
+    const value = interaction.meta[key]
+    if (!value || typeof value !== 'object' || Array.isArray(value)) continue
+    const goalId = String(
+      (value as Record<string, unknown>).goal_id ?? '',
+    ).trim()
+    if (goalId) return goalId
+  }
+  return null
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value && typeof value === 'object' && !Array.isArray(value))
 }
 
 function eventOwnerSessionId(event: Record<string, unknown>): string {

@@ -3,6 +3,7 @@
  * 对齐 Python `agent/tools/registry.py`：注册、生成 definitions、参数校验/转型、执行。
  */
 import {
+  isToolErrorText,
   ToolResultObj,
   type Tool,
   type ToolDefinition,
@@ -111,9 +112,13 @@ export class ToolRegistry {
     if (typeof raw === 'string') {
       const capped = capText(raw, tool.maxResultChars)
       mapped = tool.mapResult(capped, execCtx)
-      // 约定：字符串结果以 'Error:' 开头即失败（与 execution.coerceToolResult 一致）。
-      // 默认 mapResult 不设 isError，缺了这步 deny/非零退出会被当成 tool_run_completed（B4.3 实测）。
-      if (!mapped.isError && capped.startsWith('Error:'))
+      // 约定：内建字符串错误前缀统一标为失败（与 execution.coerceToolResult 一致）。
+      // 默认 mapResult 不设 isError，缺了这步会被当成 tool_run_completed。
+      if (
+        !mapped.isError &&
+        !tool.classifiesStringErrors &&
+        isToolErrorText(capped)
+      )
         mapped = { ...mapped, isError: true }
       if (capped !== raw) attachFullOutputRef(mapped, execCtx, name, raw)
     } else {
@@ -295,6 +300,11 @@ function validateValue(
       !Array.isArray(schema.properties)
         ? (schema.properties as Record<string, Record<string, unknown>>)
         : {}
+    if (schema.additionalProperties === false) {
+      for (const name of Object.keys(record)) {
+        if (!(name in properties)) return `${path} has unknown field ${name}`
+      }
+    }
     for (const [name, childSchema] of Object.entries(properties)) {
       if (
         !(name in record) ||

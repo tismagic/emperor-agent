@@ -12,6 +12,16 @@ describe('desktop CoreApi host (MIG-IPC-002)', () => {
 
     expect(coreOperationKeys()).toContain('bootstrap')
     expect(coreOperationKeys()).toContain('control.answerInteraction')
+    expect(coreOperationKeys()).toEqual(
+      expect.arrayContaining([
+        'goals.start',
+        'goals.list',
+        'goals.get',
+        'goals.pause',
+        'goals.resume',
+        'goals.cancel',
+      ]),
+    )
     expect(ipc.channels()).toContain(channelForCoreOperation('bootstrap'))
     expect(ipc.channels()).toContain(
       channelForCoreOperation('control.answerInteraction'),
@@ -38,6 +48,29 @@ describe('desktop CoreApi host (MIG-IPC-002)', () => {
       ]),
     )
   })
+
+  it('returns the standard safe error envelope for Goal operation failures', async () => {
+    const ipc = new FakeIpcMain()
+    registerCoreHostIpc(ipc, {
+      goals: {
+        get: async () => {
+          throw {
+            toSafe: () => ({
+              code: 'goal_not_found',
+              message: 'Goal does not exist.',
+            }),
+          }
+        },
+      },
+    } as unknown as CoreApiLike)
+
+    await expect(
+      ipc.invoke(channelForCoreOperation('goals.get'), 'goal_missing'),
+    ).resolves.toEqual({
+      ok: false,
+      error: { code: 'goal_not_found', message: 'Goal does not exist.' },
+    })
+  })
 })
 
 type Handler = (_event: unknown, ...args: unknown[]) => unknown
@@ -51,5 +84,11 @@ class FakeIpcMain {
 
   channels(): string[] {
     return [...this.handlers.keys()].sort()
+  }
+
+  async invoke(channel: string, ...args: unknown[]): Promise<unknown> {
+    const handler = this.handlers.get(channel)
+    if (!handler) throw new Error(`missing handler: ${channel}`)
+    return await handler({}, ...args)
   }
 }

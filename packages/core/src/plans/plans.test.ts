@@ -12,7 +12,7 @@ import { describe, expect, it } from 'vitest'
 import { mkdtempSync, readFileSync, writeFileSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
-import { PlanStore } from './store'
+import { PlanStore, PlanStoreConflictError } from './store'
 import { PlanExecutionState } from './execution-state'
 import { assessStepVerification } from './evidence'
 import { parseReviewerVerdict } from './reviewer'
@@ -25,6 +25,7 @@ import {
   makePlanRecord,
   makeStep,
   planFromDict,
+  planToDict,
   type PlanRecord,
 } from './models'
 
@@ -73,9 +74,10 @@ describe('PlanStore (test_plan_store.py)', () => {
         }),
       ],
     })
-    store.save(record)
-    expect(store.get('plan_1')).toEqual(record)
-    expect(store.latest()).toEqual(record)
+    const saved = store.save(record)
+    expect(saved.eventSeq).toBe(1)
+    expect(store.get('plan_1')).toEqual(saved)
+    expect(store.latest()).toEqual(saved)
   })
 
   it('round-trips session ownership and tolerates legacy plans without it', () => {
@@ -102,6 +104,468 @@ describe('PlanStore (test_plan_store.py)', () => {
       updated_at: 1,
     })
     expect(legacy.sessionId).toBeNull()
+  })
+
+  it('round-trips Goal binding and step dependencies with legacy-safe defaults', () => {
+    const bound = makePlanRecord({
+      id: 'plan_goal_bound',
+      title: 'Goal-bound plan',
+      summary: 'Execute the current Goal path.',
+      status: PlanStatus.DRAFT,
+      createdAt: 1,
+      updatedAt: 1,
+      goalId: 'goal_1',
+      supersedesPlanId: 'plan_old',
+      steps: [
+        makeStep({ id: 'step_a', title: 'A' }),
+        makeStep({ id: 'step_b', title: 'B', dependsOn: ['step_a'] }),
+      ],
+    })
+
+    const disk = planToDict(bound)
+    expect(disk.goal_id).toBe('goal_1')
+    expect(disk.supersedes_plan_id).toBe('plan_old')
+    expect(disk.event_seq).toBe(0)
+    expect(
+      (disk.steps as Array<Record<string, unknown>>)[1]!.depends_on,
+    ).toEqual(['step_a'])
+    expect(planFromDict(disk)).toEqual(bound)
+
+    const legacy = planFromDict({
+      id: 'plan_legacy_goal_fields',
+      title: 'Legacy',
+      summary: 'No Goal fields existed on disk.',
+      status: PlanStatus.DRAFT,
+      created_at: 1,
+      updated_at: 1,
+      steps: [{ id: 'step_1', title: 'Old step' }],
+    })
+    expect(legacy.goalId).toBeNull()
+    expect(legacy.supersedesPlanId).toBeNull()
+    expect(legacy.eventSeq).toBe(0)
+    expect(legacy.steps[0]!.dependsOn).toEqual([])
+  })
+
+  it('returns the saved snapshot and advances event sequence for every mutation', () => {
+    const store = new PlanStore(tmp('emperor-plan-event-seq-'))
+    const bound = makePlanRecord({
+      id: 'plan_goal_seq',
+      title: 'Goal-bound plan',
+      summary: 'Auditable mutations.',
+      status: PlanStatus.DRAFT,
+      createdAt: 1,
+      updatedAt: 1,
+      goalId: 'goal_seq',
+    })
+
+    const first = store.save(bound)
+    expect(first.eventSeq).toBe(1)
+    const second = store.save({ ...first, summary: 'Second mutation.' })
+    expect(second.eventSeq).toBe(2)
+    expect(store.get(bound.id)).toEqual(second)
+
+    const legacy = makePlanRecord({
+      id: 'plan_legacy_seq',
+      title: 'Legacy plan',
+      summary: 'No implicit rewrite semantics.',
+      status: PlanStatus.DRAFT,
+      createdAt: 1,
+      updatedAt: 1,
+    })
+    expect(store.save(legacy).eventSeq).toBe(1)
+  })
+
+  it('rejects stale writers across PlanStore instances without reverting newer state', () => {
+    const root = tmp('emperor-plan-cas-')
+    const firstStore = new PlanStore(root)
+    const secondStore = new PlanStore(root)
+    const created = firstStore.save(
+      makePlanRecord({
+        id: 'plan_cas',
+        title: 'CAS Plan',
+        summary: 'Initial',
+        status: PlanStatus.WAITING_APPROVAL,
+        createdAt: 1,
+        updatedAt: 1,
+        goalId: 'goal_cas',
+      }),
+    )
+    const stale = secondStore.get(created.id)!
+    const approved = firstStore.save({
+      ...created,
+      status: PlanStatus.APPROVED,
+      approvedAt: 2,
+      updatedAt: 2,
+      metadata: { ...created.metadata, approval_generation: 1 },
+    })
+
+    expect(() =>
+      secondStore.save({
+        ...stale,
+        status: PlanStatus.DRAFT,
+        updatedAt: 3,
+      }),
+    ).toThrow(PlanStoreConflictError)
+    expect(firstStore.get(created.id)).toEqual(approved)
+  })
+
+  it('rejects terminal, approval, and revoked-token rollback even from a fresh snapshot', () => {
+    const store = new PlanStore(tmp('emperor-plan-monotonic-'))
+    const approved = store.save(
+      makePlanRecord({
+        id: 'plan_monotonic',
+        title: 'Monotonic Plan',
+        summary: 'Approved',
+        status: PlanStatus.APPROVED,
+        createdAt: 1,
+        updatedAt: 2,
+        approvedAt: 2,
+        metadata: {
+          approval_generation: 1,
+          permission_tokens: [],
+          permission_tokens_revoked: { reason: 'test' },
+        },
+      }),
+    )
+    const cancelled = store.save({
+      ...approved,
+      status: PlanStatus.CANCELLED,
+      updatedAt: 3,
+    })
+
+    expect(() =>
+      store.save({
+        ...cancelled,
+        status: PlanStatus.EXECUTING,
+        approvedAt: null,
+        metadata: {
+          ...cancelled.metadata,
+          permission_tokens: [{ plan_id: cancelled.id }],
+        },
+      }),
+    ).toThrow(PlanStoreConflictError)
+
+    expect(() =>
+      store.save({
+        ...cancelled,
+        metadata: {
+          ...cancelled.metadata,
+          permission_tokens_revoked: undefined,
+        },
+      }),
+    ).toThrow(/revocation/i)
+    expect(() =>
+      store.save({
+        ...cancelled,
+        steps: [makeStep({ id: 'forged', title: 'forged terminal step' })],
+      }),
+    ).toThrow(/terminal/i)
+
+    const draft = store.save(
+      makePlanRecord({
+        id: 'plan_forged_approval',
+        title: 'Draft',
+        summary: '',
+        status: PlanStatus.DRAFT,
+        createdAt: 1,
+        updatedAt: 1,
+      }),
+    )
+    expect(() => store.save({ ...draft, approvedAt: 2 })).toThrow(/approval/i)
+  })
+
+  it('keeps durable skip intents monotonic and blocks execution until completed', () => {
+    const store = new PlanStore(tmp('emperor-plan-skip-intent-'))
+    const beforeIllegalCreate = readFileSync(store.indexFile, 'utf8')
+    expect(() =>
+      store.save(
+        makePlanRecord({
+          id: 'plan_skip_illegal_create',
+          title: 'Illegal skip creation',
+          summary: 'A new Plan cannot start from a later skip stage.',
+          status: PlanStatus.EXECUTING,
+          createdAt: 1,
+          updatedAt: 1,
+          goalId: 'goal_skip_illegal_create',
+          metadata: {
+            approval_generation: 1,
+            goal_skip_intent: {
+              version: 1,
+              goal_id: 'goal_skip_illegal_create',
+              plan_id: 'plan_skip_illegal_create',
+              approval_generation: 1,
+              step_id: 'step_1',
+              receipt_id: 'waiver_skip_illegal_create',
+              started_at: 1,
+              stage: 'completed',
+            },
+          },
+        }),
+      ),
+    ).toThrow(/skip intent/i)
+    expect(readFileSync(store.indexFile, 'utf8')).toBe(beforeIllegalCreate)
+    const created = store.save(
+      makePlanRecord({
+        id: 'plan_skip_intent',
+        title: 'Durable skip',
+        summary: 'Recover a skipped step forward only.',
+        status: PlanStatus.EXECUTING,
+        createdAt: 1,
+        updatedAt: 2,
+        approvedAt: 2,
+        goalId: 'goal_skip_intent',
+        metadata: { approval_generation: 1 },
+        steps: [
+          makeStep({
+            id: 'step_1',
+            title: 'Skip me',
+            status: PlanStepStatus.ACTIVE,
+          }),
+          makeStep({ id: 'step_2', title: 'Continue' }),
+        ],
+      }),
+    )
+    const intent = {
+      version: 1,
+      goal_id: 'goal_skip_intent',
+      plan_id: created.id,
+      approval_generation: 1,
+      step_id: 'step_1',
+      receipt_id: 'waiver_skip_intent_1',
+      started_at: 3,
+      stage: 'intent_persisted',
+    }
+    const persisted = store.save({
+      ...created,
+      metadata: { ...created.metadata, goal_skip_intent: intent },
+    })
+    const expectRejectedWithoutWrite = (candidate: PlanRecord): void => {
+      const before = readFileSync(store.indexFile, 'utf8')
+      expect(() => store.save(candidate)).toThrow(/skip intent/i)
+      expect(readFileSync(store.indexFile, 'utf8')).toBe(before)
+    }
+
+    expect(store.isExecutionBlocked(created.id)).toBe(true)
+    expectRejectedWithoutWrite({
+      ...persisted,
+      metadata: { ...persisted.metadata, goal_skip_intent: undefined },
+    })
+    expectRejectedWithoutWrite({
+      ...persisted,
+      metadata: {
+        ...persisted.metadata,
+        goal_skip_intent: { ...intent, receipt_id: 'forged' },
+      },
+    })
+    expectRejectedWithoutWrite({
+      ...persisted,
+      metadata: {
+        ...persisted.metadata,
+        goal_skip_intent: { ...intent, stage: 'completed' },
+      },
+    })
+
+    const retried = store.save({
+      ...persisted,
+      metadata: {
+        ...persisted.metadata,
+        goal_skip_intent: { ...intent },
+      },
+    })
+
+    const planSkipped = store.save({
+      ...retried,
+      metadata: {
+        ...retried.metadata,
+        goal_skip_intent: { ...intent, stage: 'plan_skipped' },
+      },
+    })
+    expectRejectedWithoutWrite({
+      ...planSkipped,
+      metadata: {
+        ...planSkipped.metadata,
+        goal_skip_intent: { ...intent, stage: 'intent_persisted' },
+      },
+    })
+    expectRejectedWithoutWrite({
+      ...planSkipped,
+      metadata: {
+        ...planSkipped.metadata,
+        goal_skip_intent: { ...intent, stage: 'todo_synced' },
+      },
+    })
+
+    let completed = planSkipped
+    for (const stage of ['tasks_synced', 'todo_synced', 'completed'] as const) {
+      completed = store.save({
+        ...completed,
+        metadata: {
+          ...completed.metadata,
+          goal_skip_intent: { ...intent, stage },
+        },
+      })
+    }
+    expect(store.isExecutionBlocked(created.id)).toBe(false)
+    expectRejectedWithoutWrite({
+      ...completed,
+      metadata: {
+        ...completed.metadata,
+        goal_skip_intent: { ...intent, stage: 'todo_synced' },
+      },
+    })
+
+    const next = store.save({
+      ...completed,
+      metadata: {
+        ...completed.metadata,
+        goal_skip_intent: {
+          ...intent,
+          step_id: 'step_2',
+          receipt_id: 'waiver_skip_intent_2',
+          started_at: 4,
+          stage: 'intent_persisted',
+        },
+      },
+    })
+    expect(store.isExecutionBlocked(next.id)).toBe(true)
+  })
+
+  it('fails closed for an invalid skip intent and keeps incomplete terminal recovery hot', () => {
+    const store = new PlanStore(tmp('emperor-plan-skip-intent-hot-'), {
+      maxTerminal: 1,
+    })
+    const incompleteIntent = {
+      version: 1,
+      goal_id: 'goal_skip_hot',
+      plan_id: 'plan_skip_incomplete_terminal',
+      approval_generation: 1,
+      step_id: 'step_1',
+      receipt_id: 'waiver_skip_hot',
+      started_at: 1,
+      stage: 'intent_persisted',
+    }
+    let incomplete = store.save(
+      makePlanRecord({
+        id: 'plan_skip_incomplete_terminal',
+        title: 'Incomplete terminal skip',
+        summary: 'Must remain startup-visible.',
+        status: PlanStatus.COMPLETED,
+        createdAt: 1,
+        updatedAt: 1,
+        approvedAt: 1,
+        completedAt: 1,
+        goalId: 'goal_skip_hot',
+        metadata: {
+          approval_generation: 1,
+          goal_skip_intent: incompleteIntent,
+        },
+      }),
+    )
+    for (const stage of ['plan_skipped', 'tasks_synced'] as const) {
+      incomplete = store.save({
+        ...incomplete,
+        metadata: {
+          ...incomplete.metadata,
+          goal_skip_intent: { ...incompleteIntent, stage },
+        },
+      })
+    }
+    const injectLegacyPlan = (record: PlanRecord): PlanRecord => {
+      const data = JSON.parse(readFileSync(store.indexFile, 'utf8')) as Record<
+        string,
+        unknown
+      >
+      data[record.id] = planToDict(record)
+      writeFileSync(store.indexFile, JSON.stringify(data, null, 2), 'utf8')
+      return store.get(record.id)!
+    }
+    const invalid = injectLegacyPlan(
+      makePlanRecord({
+        id: 'plan_skip_invalid_intent',
+        title: 'Invalid skip intent',
+        summary: 'Malformed recovery metadata must block.',
+        status: PlanStatus.EXECUTING,
+        createdAt: 2,
+        updatedAt: 2,
+        metadata: { goal_skip_intent: { version: 999 } },
+      }),
+    )
+    const unknownStage = injectLegacyPlan(
+      makePlanRecord({
+        id: 'plan_skip_unknown_stage',
+        title: 'Unknown skip stage',
+        summary: 'Legacy or unknown stages must remain blocked.',
+        status: PlanStatus.EXECUTING,
+        createdAt: 3,
+        updatedAt: 3,
+        metadata: {
+          goal_skip_intent: {
+            version: 1,
+            goal_id: 'goal_skip_unknown_stage',
+            plan_id: 'plan_skip_unknown_stage',
+            approval_generation: 1,
+            step_id: 'step_1',
+            receipt_id: 'waiver_skip_unknown_stage',
+            started_at: 1,
+            stage: 'legacy_todo_synced',
+          },
+        },
+      }),
+    )
+    for (let index = 0; index < 2; index += 1) {
+      store.save(
+        makePlanRecord({
+          id: `plan_terminal_${index}`,
+          title: 'Terminal',
+          summary: '',
+          status: PlanStatus.COMPLETED,
+          createdAt: 10 + index,
+          updatedAt: 10 + index,
+          completedAt: 10 + index,
+        }),
+      )
+    }
+
+    expect(store.isExecutionBlocked(invalid.id)).toBe(true)
+    expect(store.isExecutionBlocked(unknownStage.id)).toBe(true)
+    expect(store.list().map((plan) => plan.id)).toContain(incomplete.id)
+    expect(store.get(incomplete.id)?.metadata.goal_skip_intent).toMatchObject({
+      stage: 'tasks_synced',
+    })
+  })
+
+  it('persists Plan quarantine across store instances', () => {
+    const root = tmp('emperor-plan-quarantine-')
+    const first = new PlanStore(root)
+    first.quarantine('plan_quarantined')
+    expect(new PlanStore(root).isQuarantined('plan_quarantined')).toBe(true)
+    first.clearQuarantine('plan_quarantined')
+    expect(new PlanStore(root).isQuarantined('plan_quarantined')).toBe(false)
+  })
+
+  it('retries quarantine writes and reports persistent failure', () => {
+    const store = new PlanStore(tmp('emperor-plan-quarantine-retry-'))
+    const internal = store as unknown as {
+      writeAt(path: string, data: Record<string, unknown>): void
+    }
+    const originalWrite = internal.writeAt.bind(store)
+    let attempts = 0
+    internal.writeAt = (path, data) => {
+      attempts += 1
+      if (attempts < 3) throw new Error('transient quarantine failure')
+      originalWrite(path, data)
+    }
+
+    store.quarantine('plan_retry')
+    expect(attempts).toBe(3)
+    expect(new PlanStore(store.root).isQuarantined('plan_retry')).toBe(true)
+
+    internal.writeAt = () => {
+      throw new Error('persistent quarantine failure')
+    }
+    expect(() => store.quarantine('plan_persistent')).toThrow(
+      /persistent quarantine failure/,
+    )
   })
 
   it('backs up corrupt index', () => {
@@ -181,6 +645,23 @@ describe('PlanStore (test_plan_store.py)', () => {
     // 归档的旧计划仍然可以按 id 查到，只是不出现在 list() 的热索引里。
     expect(hotIds.has('done_0')).toBe(false)
     expect(store.get('done_0')?.status).toBe(PlanStatus.COMPLETED)
+    const archiveBefore = readdirSync(store.archiveDir)
+      .sort()
+      .map((name) => [name, readFileSync(join(store.archiveDir, name), 'utf8')])
+    const indexBefore = readFileSync(store.indexFile, 'utf8')
+    expect(store.inspectIncludingArchive('done_0')).toMatchObject({
+      record: { id: 'done_0', status: PlanStatus.COMPLETED },
+      issue: null,
+    })
+    expect(readFileSync(store.indexFile, 'utf8')).toBe(indexBefore)
+    expect(
+      readdirSync(store.archiveDir)
+        .sort()
+        .map((name) => [
+          name,
+          readFileSync(join(store.archiveDir, name), 'utf8'),
+        ]),
+    ).toEqual(archiveBefore)
   })
 })
 
@@ -195,7 +676,9 @@ describe('PlanExecutionState (test_plan_execution_state.py)', () => {
   })
 
   it('complete active step moves to next', () => {
-    const running = new PlanExecutionState(samplePlan()).startNextStep()
+    const running = new PlanExecutionState(
+      makePlanRecord({ ...samplePlan(), goalId: 'goal_1' }),
+    ).startNextStep()
     const completed = new PlanExecutionState(running).completeStep('step_1', {
       evidence: { command: 'pytest', exit_code: 0 },
     })
@@ -208,7 +691,9 @@ describe('PlanExecutionState (test_plan_execution_state.py)', () => {
   })
 
   it('fail step records failed status and evidence', () => {
-    const running = new PlanExecutionState(samplePlan()).startNextStep()
+    const running = new PlanExecutionState(
+      makePlanRecord({ ...samplePlan(), goalId: 'goal_1' }),
+    ).startNextStep()
     const failed = new PlanExecutionState(running).failStep('step_1', {
       evidence: { command: 'pytest', passed: false },
     })
@@ -226,6 +711,195 @@ describe('PlanExecutionState (test_plan_execution_state.py)', () => {
     plan = new PlanExecutionState(plan).completeStep('step_2', { evidence: {} })
     expect(plan.status).toBe(PlanStatus.COMPLETED)
     expect(plan.completedAt).not.toBeNull()
+  })
+
+  it('skips forward only with an exact typed Core user-waiver fact', () => {
+    const running = new PlanExecutionState(
+      makePlanRecord({ ...samplePlan(), goalId: 'goal_1' }),
+    ).startNextStep()
+    const forged = {
+      kind: 'explicit_user_plan_step_waiver',
+      issuedBy: 'model',
+      approvedBy: 'user',
+      receiptId: 'waiver_1',
+      goalId: 'goal_1',
+      planId: running.id,
+      stepId: 'step_1',
+    } as const
+    expect(() =>
+      new PlanExecutionState(running).skipStepWithWaiver(
+        'step_1',
+        forged as never,
+      ),
+    ).toThrow(/waiver/i)
+    expect(running.steps[0]!.status).toBe(PlanStepStatus.ACTIVE)
+
+    const skipped = new PlanExecutionState(running).skipStepWithWaiver(
+      'step_1',
+      {
+        ...forged,
+        issuedBy: 'core',
+      },
+    )
+    expect(skipped.steps[0]).toMatchObject({
+      status: PlanStepStatus.SKIPPED,
+      evidence: [
+        {
+          source: 'goal_plan_step_waiver',
+          issued_by: 'core',
+          approved_by: 'user',
+          receipt_id: 'waiver_1',
+        },
+      ],
+    })
+    expect(skipped.status).toBe(PlanStatus.EXECUTING)
+  })
+
+  it('rejects skip waivers for a different Plan or non-active step', () => {
+    const running = new PlanExecutionState(
+      makePlanRecord({ ...samplePlan(), goalId: 'goal_1' }),
+    ).startNextStep()
+    const fact = {
+      kind: 'explicit_user_plan_step_waiver' as const,
+      issuedBy: 'core' as const,
+      approvedBy: 'user' as const,
+      receiptId: 'waiver_2',
+      goalId: 'goal_1',
+      planId: 'different-plan',
+      stepId: 'step_1',
+    }
+    expect(() =>
+      new PlanExecutionState(running).skipStepWithWaiver('step_1', fact),
+    ).toThrow(/waiver/i)
+    expect(() =>
+      new PlanExecutionState(running).skipStepWithWaiver('step_2', {
+        ...fact,
+        planId: running.id,
+        stepId: 'step_2',
+      }),
+    ).toThrow(/active/i)
+  })
+
+  it('activates only a dependency-ready step', () => {
+    const plan = makePlanRecord({
+      ...samplePlan(),
+      steps: [
+        makeStep({
+          id: 'step_a',
+          title: 'A',
+          status: PlanStepStatus.DONE,
+        }),
+        makeStep({
+          id: 'step_b',
+          title: 'B',
+          dependsOn: ['step_a'],
+        }),
+        makeStep({
+          id: 'step_c',
+          title: 'C',
+          dependsOn: ['step_b'],
+        }),
+      ],
+    })
+
+    const started = new PlanExecutionState(plan).startNextStep()
+    expect(started.steps.map((step) => step.status)).toEqual([
+      PlanStepStatus.DONE,
+      PlanStepStatus.ACTIVE,
+      PlanStepStatus.PENDING,
+    ])
+  })
+
+  it('rejects dependency bypass and multiple active steps', () => {
+    const dependencyBypass = makePlanRecord({
+      ...samplePlan(),
+      status: PlanStatus.EXECUTING,
+      steps: [
+        makeStep({
+          id: 'step_a',
+          title: 'A',
+          status: PlanStepStatus.ACTIVE,
+        }),
+        makeStep({
+          id: 'step_b',
+          title: 'B',
+          dependsOn: ['step_a'],
+        }),
+      ],
+    })
+    expect(() =>
+      new PlanExecutionState(dependencyBypass).completeStep('step_b', {
+        evidence: { source: 'todo' },
+      }),
+    ).toThrow(/dependenc/i)
+
+    const twoActive = makePlanRecord({
+      ...samplePlan(),
+      status: PlanStatus.EXECUTING,
+      steps: [
+        makeStep({
+          id: 'step_a',
+          title: 'A',
+          status: PlanStepStatus.ACTIVE,
+        }),
+        makeStep({
+          id: 'step_b',
+          title: 'B',
+          status: PlanStepStatus.ACTIVE,
+        }),
+      ],
+    })
+    expect(() => new PlanExecutionState(twoActive).startNextStep()).toThrow(
+      /active/i,
+    )
+  })
+})
+
+describe('Plan dependency quality', () => {
+  const draft = {
+    ...emptyDraft(),
+    verificationStrategy: ['npm test'],
+  }
+
+  it.each([
+    {
+      name: 'unknown dependency',
+      steps: [makeStep({ id: 'step_a', title: 'A', dependsOn: ['missing'] })],
+      message: /unknown dependenc/i,
+    },
+    {
+      name: 'self dependency',
+      steps: [makeStep({ id: 'step_a', title: 'A', dependsOn: ['step_a'] })],
+      message: /depend on itself/i,
+    },
+    {
+      name: 'dependency cycle',
+      steps: [
+        makeStep({ id: 'step_a', title: 'A', dependsOn: ['step_b'] }),
+        makeStep({ id: 'step_b', title: 'B', dependsOn: ['step_a'] }),
+      ],
+      message: /cycle/i,
+    },
+    {
+      name: 'two active steps',
+      steps: [
+        makeStep({
+          id: 'step_a',
+          title: 'A',
+          status: PlanStepStatus.ACTIVE,
+        }),
+        makeStep({
+          id: 'step_b',
+          title: 'B',
+          status: PlanStepStatus.ACTIVE,
+        }),
+      ],
+      message: /active/i,
+    },
+  ])('rejects $name', ({ steps, message }) => {
+    const result = new PlanQualityGate().assess({ steps, draft })
+    expect(result.ok).toBe(false)
+    expect(result.errors.join('\n')).toMatch(message)
   })
 })
 

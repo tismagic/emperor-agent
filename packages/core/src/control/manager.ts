@@ -15,6 +15,10 @@ import {
 import { PlanStore } from '../plans/store'
 import type { ToolRegistry } from '../tools/registry'
 import type { ToolDefinition } from '../tools/base'
+import type { GoalRecord } from '../goals/models'
+import { goalScopesEqual } from '../goals/scope'
+import { GoalGateMutationLedger } from '../goals/mutation-ledger'
+import { canonicalJson } from '../goals/events'
 import {
   ClarificationPolicy,
   type ClarificationAssessment,
@@ -35,12 +39,19 @@ import {
 } from './models'
 import { PlanDraftingManager } from './plan-drafting'
 import { PlanExecutionManager } from './plan-execution'
-import { planStepsFinished, stepVerificationStatus } from './plan-helpers'
+import {
+  isPlanInvalidated,
+  latestApprovedPlanGeneration,
+  planStepsFinished,
+  stepVerificationStatus,
+} from './plan-helpers'
 import { PlanPermissionTokenManager } from './plan-permissions'
 import { PlanDecision, PlanDecisionPolicy } from './plan-policy'
 import { PlanVerificationManager } from './plan-verification'
 import { ControlPolicy } from './policy'
 import { ControlStore } from './store'
+import { GoalBlockerControlManager } from './goal-blocker'
+import { GoalManualEvidenceControlManager } from './goal-manual-evidence'
 import type {
   ControlManagerHost,
   ControlRuntimeScope,
@@ -78,17 +89,22 @@ export class ControlManager implements ControlManagerHost, ToolManagerHost {
   readonly verification: PlanVerificationManager
   readonly drafting: PlanDraftingManager
   readonly execution: PlanExecutionManager
+  readonly goalBlocker: GoalBlockerControlManager
+  readonly goalManualEvidence: GoalManualEvidenceControlManager
   todoStore: TodoStoreLike | null = null
   taskManager: TaskManagerLike | null = null
   private pendingObserver: ControlPendingObserver | null = null
   private askMetaProvider: AskMetaProvider | null = null
   private runtimeScope: Required<ControlRuntimeScope> | null = null
+  private goalPlanContext: GoalRecord | null = null
+  private readonly goalMutations: GoalGateMutationLedger
 
   constructor(
     root: string,
     opts: { permissionRules?: PermissionRuleInput[] | null } = {},
   ) {
     this.store = new ControlStore(root)
+    this.goalMutations = new GoalGateMutationLedger(root)
     this.planStore = new PlanStore(root)
     this.policy = new ControlPolicy(this)
     this.clarificationPolicy = new ClarificationPolicy()
@@ -101,6 +117,8 @@ export class ControlManager implements ControlManagerHost, ToolManagerHost {
     this.verification = new PlanVerificationManager(this)
     this.drafting = new PlanDraftingManager(this)
     this.execution = new PlanExecutionManager(this)
+    this.goalBlocker = new GoalBlockerControlManager(this)
+    this.goalManualEvidence = new GoalManualEvidenceControlManager(this)
   }
 
   setTodoStore(todoStore: TodoStoreLike | null): void {
@@ -112,7 +130,34 @@ export class ControlManager implements ControlManagerHost, ToolManagerHost {
   }
 
   setRuntimeScope(scope: ControlRuntimeScope | null): void {
-    this.runtimeScope = normalizeRuntimeScope(scope)
+    const next = normalizeRuntimeScope(scope)
+    if (canonicalJson(next) === canonicalJson(this.runtimeScope)) return
+    this.goalMutations.withSynchronousMutation(
+      'scope',
+      `runtime-scope:${canonicalJson(next)}`,
+      () => {
+        this.runtimeScope = next
+      },
+    )
+  }
+
+  runtimeScopeSnapshot(): Required<ControlRuntimeScope> | null {
+    return this.runtimeScope ? Object.freeze({ ...this.runtimeScope }) : null
+  }
+
+  setActiveGoalPlanContext(goal: GoalRecord | null): void {
+    this.goalPlanContext = goal
+  }
+
+  activeGoalPlanContext(): GoalRecord | null {
+    const goal = this.goalPlanContext
+    if (goal === null) return null
+    if (goal.status !== 'active' || goal.runtime.phase !== 'planning')
+      throw new Error('active Goal must be in planning phase to propose a Plan')
+    const current = this.runtimeScope
+    if (current === null || !goalScopesEqual(current, goal.scope))
+      throw new Error('active Goal scope does not match the current Plan scope')
+    return goal
   }
 
   setPendingObserver(observer: ControlPendingObserver | null): void {
@@ -339,6 +384,23 @@ export class ControlManager implements ControlManagerHost, ToolManagerHost {
 
   approve(interactionId: string): ControlResume {
     const interaction = this.requirePending(interactionId, InteractionKind.PLAN)
+    const pendingPlanId = String(interaction.meta.plan_id ?? '').trim()
+    const pendingPlan = pendingPlanId ? this.planStore.get(pendingPlanId) : null
+    const interactionGeneration = Number(
+      interaction.meta.approval_generation ?? 0,
+    )
+    const persistedGeneration = Number(
+      pendingPlan?.metadata.approval_generation ?? 0,
+    )
+    if (
+      pendingPlan === null ||
+      pendingPlan.status !== PlanStatus.WAITING_APPROVAL ||
+      pendingPlan.sourceInteractionId !== interaction.id ||
+      !Number.isInteger(interactionGeneration) ||
+      interactionGeneration < 1 ||
+      interactionGeneration !== persistedGeneration
+    )
+      throw new Error('pending Plan approval generation is stale')
     const updated = touchInteraction(interaction, {
       status: InteractionStatus.APPROVED,
     })
@@ -447,8 +509,7 @@ export class ControlManager implements ControlManagerHost, ToolManagerHost {
       steps,
       metadata,
     }
-    this.planStore.save(updated)
-    return updated
+    return this.planStore.save(updated)
   }
 
   private notifyPendingSet(interaction: Interaction): void {
@@ -460,10 +521,13 @@ export class ControlManager implements ControlManagerHost, ToolManagerHost {
     const scope: Record<string, unknown> = {}
     if (this.runtimeScope.sessionId)
       scope.session_id = this.runtimeScope.sessionId
+    if (this.runtimeScope.mode) scope.mode = this.runtimeScope.mode
     if (this.runtimeScope.projectId)
       scope.project_id = this.runtimeScope.projectId
     if (this.runtimeScope.workspaceRoot)
       scope.workspace_root = this.runtimeScope.workspaceRoot
+    if (this.runtimeScope.projectFingerprint)
+      scope.project_fingerprint = this.runtimeScope.projectFingerprint
     return Object.keys(scope).length ? scope : null
   }
 
@@ -677,6 +741,63 @@ export class ControlManager implements ControlManagerHost, ToolManagerHost {
     return this.verification.planVerificationTarget(command)
   }
 
+  resolveGoalPlanVerificationFact(
+    goalId: string,
+    goal: import('../goals/models').GoalRecord,
+    source: import('../goals/evidence').GoalPlanVerificationSource,
+  ): import('../goals/evidence').GoalPlanVerificationFact | null {
+    return this.verification.resolveGoalPlanVerificationFact(
+      goalId,
+      goal,
+      source,
+    )
+  }
+
+  resolvePlanStepVerificationFact(
+    goal: import('../goals/models').GoalRecord,
+    context: import('../goals/plan-bridge').PlanStepVerificationContext,
+    knownPlan?: import('../plans/models').PlanRecord,
+  ): import('../goals/plan-bridge').PlanStepVerificationFact | null {
+    return this.verification.resolvePlanStepVerificationFact(
+      goal,
+      context,
+      knownPlan,
+    )
+  }
+
+  resolvePlanStepWaiverFact(
+    goal: import('../goals/models').GoalRecord,
+    context: import('../goals/plan-bridge').PlanStepWaiverContext,
+    knownPlan?: import('../plans/models').PlanRecord,
+  ): import('../goals/plan-bridge').PlanStepWaiverFact | null {
+    return this.verification.resolvePlanStepWaiverFact(goal, context, knownPlan)
+  }
+
+  resolvePlanReviewerFact(
+    goal: import('../goals/models').GoalRecord,
+    context: import('../goals/plan-bridge').PlanReviewerContext,
+  ): import('../goals/plan-bridge').PlanReviewerFact | null {
+    return this.verification.resolvePlanReviewerFact(goal, context)
+  }
+
+  requestGoalReviewerWaiver(opts: {
+    goal: import('../goals/models').GoalRecord
+    planId: string
+    planEventSeq: number
+    riskSignals: readonly string[]
+    riskFactVersion: string | null
+    reason: string
+  }): Interaction {
+    return this.verification.requestGoalReviewerWaiver(opts)
+  }
+
+  resolveGoalReviewerWaiverAction(
+    goal: import('../goals/models').GoalRecord,
+    context: import('../goals/reviewer').GoalReviewerWaiverActionContext,
+  ): import('../goals/reviewer').GoalReviewerWaiverActionFact | null {
+    return this.verification.resolveGoalReviewerWaiverAction(goal, context)
+  }
+
   recordPlanDiscovery(opts: {
     source: string
     summary: string
@@ -726,6 +847,48 @@ export class ControlManager implements ControlManagerHost, ToolManagerHost {
     return this.permissionTokens.revoke(opts)
   }
 
+  clearPendingInteractionForGoal(targetId: string): boolean {
+    const target = String(targetId ?? '').trim()
+    if (!target) return false
+    const state = this.store.load()
+    const pending = state.pending
+    if (
+      !pending ||
+      (pending.id !== target &&
+        String(pending.meta.goal_id ?? '').trim() !== target)
+    )
+      return false
+    state.pending = null
+    state.lastInteraction = pending
+    state.updatedAt = nowTs()
+    this.store.save(state)
+    this.notifyPendingCleared(pending)
+    return true
+  }
+
+  /** Returns the durable Goal binding for a resolved control interaction. */
+  goalIdForInteraction(interactionId: string): string | null {
+    const target = String(interactionId ?? '').trim()
+    if (!target) return null
+    const interaction = this.store.load().lastInteraction
+    if (!interaction || interaction.id !== target) return null
+    const direct = String(interaction.meta.goal_id ?? '').trim()
+    if (direct) return direct
+    for (const key of [
+      'goal_manual_evidence_request',
+      'goal_permission_blocker_request',
+      'goal_reviewer_waiver_request',
+    ]) {
+      const value = interaction.meta[key]
+      if (!value || typeof value !== 'object' || Array.isArray(value)) continue
+      const goalId = String(
+        (value as Record<string, unknown>).goal_id ?? '',
+      ).trim()
+      if (goalId) return goalId
+    }
+    return null
+  }
+
   recordIndependentVerificationResult(opts: {
     planId: string
     result: Record<string, unknown>
@@ -747,16 +910,19 @@ export class ControlManager implements ControlManagerHost, ToolManagerHost {
   }
 
   latestExecutablePlan(): PlanRecord | null {
-    const plans = this.planStore
-      .list()
-      .filter(
-        (p) =>
-          (p.status === PlanStatus.APPROVED ||
-            p.status === PlanStatus.EXECUTING) &&
-          this.planMatchesCurrentScope(p),
-      )
-    if (!plans.length) return null
-    return plans.reduce((a, b) => (b.updatedAt > a.updatedAt ? b : a))
+    const current = latestApprovedPlanGeneration(
+      this.planStore.list(),
+      (record) => this.planMatchesCurrentScope(record),
+    )
+    if (
+      current === null ||
+      this.planStore.isExecutionBlocked(current.id) ||
+      isPlanInvalidated(current) ||
+      (current.status !== PlanStatus.APPROVED &&
+        current.status !== PlanStatus.EXECUTING)
+    )
+      return null
+    return current
   }
 
   reviewablePlanId(): string | null {
@@ -798,17 +964,20 @@ export class ControlManager implements ControlManagerHost, ToolManagerHost {
   }
 
   latestReviewablePlan(): PlanRecord | null {
-    const plans = this.planStore
-      .list()
-      .filter(
-        (p) =>
-          (p.status === PlanStatus.APPROVED ||
-            p.status === PlanStatus.EXECUTING ||
-            p.status === PlanStatus.COMPLETED) &&
-          this.planMatchesCurrentScope(p),
-      )
-    if (!plans.length) return null
-    return plans.reduce((a, b) => (b.updatedAt > a.updatedAt ? b : a))
+    const current = latestApprovedPlanGeneration(
+      this.planStore.list(),
+      (record) => this.planMatchesCurrentScope(record),
+    )
+    if (
+      current === null ||
+      this.planStore.isExecutionBlocked(current.id) ||
+      isPlanInvalidated(current) ||
+      (current.status !== PlanStatus.APPROVED &&
+        current.status !== PlanStatus.EXECUTING &&
+        current.status !== PlanStatus.COMPLETED)
+    )
+      return null
+    return current
   }
 
   static restoreMode(state: ControlState): string {
@@ -851,12 +1020,16 @@ function normalizeRuntimeScope(
   if (!scope) return null
   const normalized = {
     sessionId: cleanScopeValue(scope.sessionId),
+    mode: cleanScopeValue(scope.mode) as 'chat' | 'build',
     projectId: cleanScopeValue(scope.projectId),
     workspaceRoot: cleanScopeValue(scope.workspaceRoot),
+    projectFingerprint: cleanScopeValue(scope.projectFingerprint),
   }
   return normalized.sessionId ||
+    normalized.mode ||
     normalized.projectId ||
-    normalized.workspaceRoot
+    normalized.workspaceRoot ||
+    normalized.projectFingerprint
     ? normalized
     : null
 }
@@ -872,8 +1045,14 @@ function planMatchesScope(
   if (current === null) return true
   const saved = planRuntimeScope(record)
   if (saved === null) return false
+  if (record.goalId !== null) return goalScopesEqual(saved, current)
   let compared = false
-  for (const key of ['sessionId', 'projectId', 'workspaceRoot'] as const) {
+  const keys: Array<keyof Required<ControlRuntimeScope>> = [
+    'sessionId',
+    'projectId',
+    'workspaceRoot',
+  ]
+  for (const key of keys) {
     const currentValue = current[key]
     const savedValue = saved[key]
     if (!currentValue && !savedValue) continue
@@ -910,6 +1089,13 @@ function planRuntimeScope(
         scope.workspaceRoot ??
         metadata.workspace_root ??
         metadata.workspaceRoot,
+    ),
+    mode: cleanScopeValue(scope.mode ?? metadata.mode) as 'chat' | 'build',
+    projectFingerprint: cleanScopeValue(
+      scope.project_fingerprint ??
+        scope.projectFingerprint ??
+        metadata.project_fingerprint ??
+        metadata.projectFingerprint,
     ),
   })
   return normalized

@@ -162,14 +162,21 @@ describe('unsigned preview release channel', () => {
 
   it('documents the public Preview channel without weakening system security', () => {
     const readme = fs.readFileSync(path.join(repoRoot, 'README.md'), 'utf8')
-    const runbook = fs.readFileSync(
-      path.join(repoRoot, 'docs', 'release', 'trusted-release-runbook.md'),
+    const notice = fs.readFileSync(
+      path.join(repoRoot, 'docs', 'release', 'unsigned-preview-notice.md'),
+      'utf8',
+    )
+    const previewRunbook = fs.readFileSync(
+      path.join(repoRoot, 'docs', 'release', 'preview-release-runbook.md'),
+      'utf8',
+    )
+    const stableRunbook = fs.readFileSync(
+      path.join(repoRoot, 'docs', 'release', 'stable-release-runbook.md'),
       'utf8',
     )
 
-    for (const document of [readme, runbook]) {
+    for (const document of [notice, previewRunbook]) {
       expect(document).toContain('UNSIGNED-PREVIEW')
-      expect(document).toContain('v0.1.0-preview.1')
       expect(document).toContain('SHA256SUMS.txt')
       expect(document).toContain('gh attestation verify')
       expect(document).toContain('https://support.apple.com/en-us/102445')
@@ -181,10 +188,18 @@ describe('unsigned preview release channel', () => {
         /disable\s+(Gatekeeper|SmartScreen|Defender)/i,
       )
     }
-    expect(readme).toContain('.github/workflows/release-preview.yml')
+    expect(notice).toContain('{{tag}}')
+    expect(previewRunbook).toContain('v<version>-preview.<n>')
+    expect(readme).toContain('docs/release/unsigned-preview-notice.md')
+    expect(readme).toContain('docs/README.md')
     expect(readme).toContain('不是 Stable')
-    expect(runbook).toContain('默认分支')
-    expect(runbook).toContain('annotated tag')
+    expect(readme).not.toContain('v0.1.0-preview.1')
+    expect(readme).not.toContain('SHA256SUMS.txt')
+    expect(readme).not.toContain('.github/workflows/release-preview.yml')
+    expect(previewRunbook).toContain('默认分支')
+    expect(previewRunbook).toContain('annotated tag')
+    expect(stableRunbook).toContain('Frozen')
+    expect(stableRunbook).toContain('.github/workflows/release.yml')
   })
 
   it('strictly classifies Stable, Preview and unsupported tags', () => {

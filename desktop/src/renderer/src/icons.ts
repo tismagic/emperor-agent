@@ -48,6 +48,11 @@ import {
   User,
   X,
   Cat,
+  Target,
+  Pause,
+  Play,
+  Ban,
+  ArrowDownToLine,
 } from 'lucide-vue-next'
 import type { Component } from 'vue'
 
@@ -91,6 +96,19 @@ export const actionIcons = {
   statusBusy: LoaderCircle,
   statusError: CircleAlert,
   statusOnline: Circle,
+} satisfies Record<string, IconComponent>
+
+export const goalIcons = {
+  goal: Target,
+  plan: ClipboardList,
+  focus: ArrowDownToLine,
+  pause: Pause,
+  resume: Play,
+  cancel: Ban,
+  pass: CircleCheck,
+  fail: CircleX,
+  missing: CircleAlert,
+  notice: CircleAlert,
 } satisfies Record<string, IconComponent>
 
 export function modeIcon(mode: string): IconComponent {

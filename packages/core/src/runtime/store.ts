@@ -34,12 +34,21 @@ export interface RuntimeReplayOptions {
  * replay 读取侧压缩（P1-5）：磁盘 events.jsonl 不变，只收敛回放流里的高频中间态。
  * - 连续的同流 plan_draft_delta 只保留最后一条（终态草稿覆盖前序增量）。
  * - 连续的同 turn message_delta 合并为一条（保留首个 seq，文本拼接）。
+ * - 连续的同 Goal goal_runtime_update 只保留最后一条。
  * 任何其他事件都会打断 run，保证投影出的消息结构与不压缩时一致。
  */
 export function compactReplayEvents(rows: Row[]): Row[] {
   const out: Row[] = []
   for (const row of rows) {
     const prev = out[out.length - 1]
+    if (
+      row.event === 'goal_runtime_update' &&
+      prev?.event === 'goal_runtime_update' &&
+      cleanString(prev.goal_id) === cleanString(row.goal_id)
+    ) {
+      out[out.length - 1] = row
+      continue
+    }
     if (
       row.event === 'plan_draft_delta' &&
       prev?.event === 'plan_draft_delta' &&
@@ -114,6 +123,12 @@ const INDEX_FORCE_WRITE_EVENTS = new Set([
   'environment_install_failed',
   'environment_changed',
   'profile_onboarding_status_changed',
+  'goal_created',
+  'goal_completed',
+  'goal_blocked',
+  'goal_paused',
+  'goal_cancelled',
+  'goal_policy_stopped',
 ])
 
 export class RuntimeEventStore {

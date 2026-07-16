@@ -17,6 +17,7 @@ import {
 import { homedir, userInfo } from 'node:os'
 import { isAbsolute, join, relative, resolve, sep } from 'node:path'
 import type { z } from 'zod'
+import { redactSensitiveOutput, redactSensitiveValue } from '../util/redaction'
 import {
   environmentIdSchema,
   environmentJobRecordSchema,
@@ -186,12 +187,15 @@ export class EnvironmentStore {
       jobId: safeJobId,
       level: parsed.level,
       kind: parsed.kind,
-      message: redactString(parsed.message, this.homeDir, this.username).slice(
-        0,
-        MAX_LOG_MESSAGE_CHARS,
-      ),
+      message: redactSensitiveOutput(parsed.message, {
+        home: this.homeDir,
+        username: this.username,
+      }).slice(0, MAX_LOG_MESSAGE_CHARS),
       details: boundedDetails(
-        redactValue(parsed.details, this.homeDir, this.username),
+        redactSensitiveValue(parsed.details, {
+          home: this.homeDir,
+          username: this.username,
+        }),
       ),
     })
     this.ensureLayout()
@@ -248,10 +252,10 @@ export class EnvironmentStore {
         } catch {
           badLines.push({
             line: index + 1,
-            raw: redactString(line, this.homeDir, this.username).slice(
-              0,
-              2_000,
-            ),
+            raw: redactSensitiveOutput(line, {
+              home: this.homeDir,
+              username: this.username,
+            }).slice(0, 2_000),
           })
         }
       })
@@ -424,76 +428,6 @@ function boundedDetails(value: unknown): Record<string, unknown> {
   return JSON.stringify(details).length <= MAX_LOG_DETAILS_CHARS
     ? details
     : { truncated: true }
-}
-
-function redactValue(
-  value: unknown,
-  home: string,
-  username: string,
-  seen = new WeakSet<object>(),
-  depth = 0,
-): unknown {
-  if (depth > 8) return '[TRUNCATED]'
-  if (typeof value === 'string') return redactString(value, home, username)
-  if (Array.isArray(value))
-    return value
-      .slice(0, 100)
-      .map((item) => redactValue(item, home, username, seen, depth + 1))
-  if (!value || typeof value !== 'object') return value
-  if (seen.has(value)) return '[CIRCULAR]'
-  seen.add(value)
-  const output: Record<string, unknown> = {}
-  for (const [key, child] of Object.entries(value as Record<string, unknown>)) {
-    output[key] = isSensitiveKey(key)
-      ? '[REDACTED]'
-      : redactValue(child, home, username, seen, depth + 1)
-  }
-  seen.delete(value)
-  return output
-}
-
-function redactString(value: string, home: string, username: string): string {
-  let output = value
-  if (home) output = output.replaceAll(home, '[HOME]')
-  if (username) output = output.replaceAll(username, '[USER]')
-  output = output.replace(
-    /\b(proxy-authorization|authorization)\s*:[^\r\n]*/gi,
-    '$1: [REDACTED]',
-  )
-  output = output.replace(
-    /\b(set-cookie|cookie)\s*:[^\r\n]*/gi,
-    '$1: [REDACTED]',
-  )
-  output = output.replace(/\bBearer\s+[^\s,;]+/gi, 'Bearer [REDACTED]')
-  output = output.replace(
-    /\b(token|api[_-]?key|password|secret)=(?:"[^"\r\n]*(?:"|$)|'[^'\r\n]*(?:'|$)|[^\s,;]+)/gi,
-    '$1=[REDACTED]',
-  )
-  output = output.replace(
-    /(--(?:api[-_]?key|token|password|secret))(?:=|\s+)(?:"[^"\r\n]*(?:"|$)|'[^'\r\n]*(?:'|$)|[^\s,;]+)/gi,
-    '$1 [REDACTED]',
-  )
-  output = output.replace(/https?:\/\/[^\s"']+/gi, redactUrl)
-  return output
-}
-
-function redactUrl(value: string): string {
-  try {
-    const url = new URL(value)
-    if (url.username) url.username = '[REDACTED]'
-    if (url.password) url.password = '[REDACTED]'
-    url.search = ''
-    url.hash = ''
-    return url.toString()
-  } catch {
-    return '[REDACTED_URL]'
-  }
-}
-
-function isSensitiveKey(key: string): boolean {
-  return /token|secret|password|authorization|cookie|proxy.*(?:user|pass|auth)/i.test(
-    key,
-  )
 }
 
 function assertSafeLogTarget(path: string): void {

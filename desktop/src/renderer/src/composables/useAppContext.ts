@@ -14,11 +14,14 @@ import type {
   DesktopPetPayload,
   PendingState,
   RuntimeStatus,
+  GoalProjectionState,
+  GoalOperationResult,
   TokensPayload,
   WatchlistDecision,
 } from '../types'
 import type { SlashPaletteItem } from '../commands'
 import type { PlanProjection } from '../runtime/handlers/plans'
+import type { GoalCardAction } from '../runtime/goalRender'
 
 export interface AppContext {
   boot: Ref<BootstrapPayload | null>
@@ -33,6 +36,8 @@ export interface AppContext {
   status: Ref<RuntimeStatus>
   pending: PendingState
   planProjection: PlanProjection
+  goalProjection: GoalProjectionState
+  sessionId: Ref<string>
   sessionRuntimeStates: Record<string, { running: boolean; attention: boolean }>
   runtimeText: () => string
   eventTransportText: () => string
@@ -78,6 +83,10 @@ export interface AppContext {
   approvePlan: (interactionId: string) => boolean
   cancelInteraction: (interactionId: string) => boolean
   stopActive: () => Promise<boolean>
+  runGoalAction: (
+    goalId: string,
+    action: GoalCardAction,
+  ) => Promise<GoalOperationResult>
   clearChat: () => void
   submitFromComposer: (payload: string | ChatSendPayload) => void
 

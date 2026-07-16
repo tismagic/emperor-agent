@@ -19,6 +19,7 @@ export enum TaskStatus {
 
 export interface TaskRecordPayload {
   id: string
+  revision?: number
   kind: string
   status: string
   title: string
@@ -37,6 +38,7 @@ export interface TaskRecordPayload {
 
 export class TaskRecord {
   id: string
+  revision: number
   kind: string
   status: string
   title: string
@@ -54,6 +56,7 @@ export class TaskRecord {
 
   constructor(payload: TaskRecordPayload) {
     this.id = String(payload.id)
+    this.revision = Math.max(0, Math.trunc(Number(payload.revision ?? 0)))
     this.kind = String(payload.kind)
     this.status = String(payload.status)
     this.title = String(payload.title)
@@ -76,6 +79,7 @@ export class TaskRecord {
   toDict(): TaskRecordPayload {
     return {
       id: this.id,
+      revision: this.revision,
       kind: this.kind,
       status: this.status,
       title: this.title,
@@ -96,6 +100,7 @@ export class TaskRecord {
   toRuntimeDict(): Record<string, unknown> {
     return {
       id: this.id,
+      revision: this.revision,
       kind: this.kind,
       status: this.status,
       title: this.title,
@@ -116,6 +121,7 @@ export class TaskRecord {
   static fromDict(payload: Record<string, any>): TaskRecord {
     return new TaskRecord({
       id: String(payload.id),
+      revision: Number(payload.revision ?? 0),
       kind: String(payload.kind),
       status: String(payload.status),
       title: String(payload.title),

@@ -8,6 +8,16 @@ import { DRAFT_SESSION_PREFIX } from '../sessions/constants'
 import { dirname, join, resolve } from 'node:path'
 import { AttachmentStore } from '../attachments/store'
 import type { ControlResume } from '../control/manager'
+import {
+  GOAL_MANUAL_EVIDENCE_DECLINE_LABEL,
+  GOAL_MANUAL_EVIDENCE_FAIL_LABEL,
+  GOAL_MANUAL_EVIDENCE_PASS_LABEL,
+  GOAL_MANUAL_EVIDENCE_QUESTION_ID,
+} from '../control/goal-manual-evidence'
+import {
+  GOAL_PERMISSION_BLOCKER_DENIED_LABEL,
+  GOAL_PERMISSION_BLOCKER_QUESTION_ID,
+} from '../control/goal-blocker'
 import { ExternalBridgeService } from '../external/service'
 import {
   AgentLoop,
@@ -35,6 +45,8 @@ import { CoreMemoryService } from './services/memory-service'
 import { CoreModelService } from './services/model-service'
 import { CoreSkillService } from './services/skill-service'
 import { CoreTeamService } from './services/team-service'
+import { GoalService } from './services/goal-service'
+import { goalSummary, type GoalRecord } from '../goals/models'
 import { planToDict } from '../plans/models'
 import { SidechainTranscript } from '../tasks/sidechain'
 import { ToolResultStore } from '../context/tool-results'
@@ -111,6 +123,12 @@ const CORE_API_ROUTE_OPERATION_LIST = [
     'POST',
     '/api/control/interactions/{id}/cancel',
   ),
+  op('goals.start', 'IPC', 'goals.start'),
+  op('goals.list', 'IPC', 'goals.list'),
+  op('goals.get', 'IPC', 'goals.get'),
+  op('goals.pause', 'IPC', 'goals.pause'),
+  op('goals.resume', 'IPC', 'goals.resume'),
+  op('goals.cancel', 'IPC', 'goals.cancel'),
   op('plans.list', 'GET', '/api/plans'),
   op('plans.get', 'GET', '/api/plans/{plan_id}'),
   op('scheduler.get', 'GET', '/api/scheduler'),
@@ -213,6 +231,7 @@ export class CoreApi {
   readonly modelService: CoreModelService
   readonly skillService: CoreSkillService
   readonly teamService: CoreTeamService
+  readonly goalService: GoalService
 
   private constructor(
     root: string,
@@ -322,6 +341,24 @@ export class CoreApi {
     })
     this.mainline = new MainlineTurnService(this.loop)
     this.chatService = new ChatService(this.mainline)
+    this.goalService = new GoalService({
+      goalStore: this.loop.goalStore,
+      coordinator: this.loop.goalCoordinator,
+      activeTasks: this.loop.activeTasks,
+      materializeSession: async (input) =>
+        (
+          await this.mainline.materializeSession(
+            { ...input, emit: null },
+            'goals.start',
+          )
+        ).session,
+      requireReadableSession: (sessionId, operation) =>
+        this.requireReadableSession(sessionId, operation) as never,
+      scopeForSession: (session) =>
+        this.loop.goalScopeForSession(session as never),
+      activeSessionId: () => this.loop.activeSessionId,
+      summarize: async (goal) => await this.goalSummary(goal),
+    })
     this.loop.setSchedulerAgentTurnSubmitter((payload) =>
       this.mainline.submitSchedulerTurn(payload),
     )
@@ -410,6 +447,7 @@ export class CoreApi {
       afterSeq: 0,
       limit: 5000,
     })
+    const goals = await this.goalService.bootstrap(this.loop.activeSessionId)
     return {
       app: 'Emperor Agent',
       sessionIndexSource: sessionDiagnostics.sessionIndexSource,
@@ -425,6 +463,7 @@ export class CoreApi {
       team: this.team.get(),
       scheduler: this.scheduler.get(),
       control: this.control.get(),
+      goals,
       hooks: await this.hooks.getConfig(),
       desktopPet: await this.desktopPet.get(),
       context_used: this.loop.tokenTracker.lastInputTokensValue(),
@@ -470,12 +509,27 @@ export class CoreApi {
       })
       return result
     },
-    stopRuntime: (
+    stopRuntime: async (
       opts: {
         taskId?: string | null
-        kind?: 'turn' | 'scheduler' | 'team' | 'watchlist' | null
+        kind?: 'turn' | 'scheduler' | 'team' | 'watchlist' | 'goal' | null
       } = {},
     ) => {
+      const goalTasks = this.loop.activeTasks
+        .list()
+        .filter(
+          (task) =>
+            task.kind === 'goal' &&
+            (!opts.taskId || task.id === opts.taskId) &&
+            (!opts.kind || opts.kind === 'goal'),
+        )
+      for (const task of goalTasks) {
+        await this.goalService.pause(
+          task.id.replace(/^goal:/, ''),
+          task.session_id,
+          'user_stop',
+        )
+      }
       const cancelled = this.loop.activeTasks.cancel({
         taskId: opts.taskId ?? null,
         kind: opts.kind ?? null,
@@ -663,7 +717,75 @@ export class CoreApi {
     ): Promise<Dict> => {
       const ownerSessionId = this.loop.controlPendingOwnerSessionId(id)
       const isProfileOnboarding = this.loop.isProfileOnboardingInteraction(id)
+      const pending = this.loop.controlManager.store.load().pending
       const resume = this.loop.controlManager.answer(id, answers)
+      const answered = this.loop.controlManager.store.load().lastInteraction
+      const manualRequest =
+        pending?.id === id &&
+        isRecord(pending.meta.goal_manual_evidence_request)
+          ? pending.meta.goal_manual_evidence_request
+          : null
+      const permissionRequest =
+        pending?.id === id &&
+        isRecord(pending.meta.goal_permission_blocker_request)
+          ? pending.meta.goal_permission_blocker_request
+          : null
+
+      if (manualRequest) {
+        const goalId = String(manualRequest.goal_id ?? '').trim()
+        const criterionId = String(manualRequest.criterion_id ?? '').trim()
+        const choice = interactionAnswerChoice(
+          answered,
+          GOAL_MANUAL_EVIDENCE_QUESTION_ID,
+        )
+        const verdict =
+          choice === GOAL_MANUAL_EVIDENCE_PASS_LABEL
+            ? 'pass'
+            : choice === GOAL_MANUAL_EVIDENCE_FAIL_LABEL
+              ? 'fail'
+              : null
+        if (goalId && criterionId && verdict) {
+          await this.loop.recordGoalManualVerification(goalId, {
+            interactionId: id,
+            criterionId,
+            verdict,
+          })
+        } else if (goalId && choice === GOAL_MANUAL_EVIDENCE_DECLINE_LABEL) {
+          await this.loop.goalCoordinator.pause(
+            goalId,
+            'manual_verification_declined',
+          )
+          return await this.resumeControl(
+            { ...resume, resume: false },
+            opts,
+            ownerSessionId,
+          )
+        }
+      }
+
+      if (permissionRequest) {
+        const goalId = String(permissionRequest.goal_id ?? '').trim()
+        const choice = interactionAnswerChoice(
+          answered,
+          GOAL_PERMISSION_BLOCKER_QUESTION_ID,
+        )
+        if (goalId && choice === GOAL_PERMISSION_BLOCKER_DENIED_LABEL) {
+          await this.loop.goalCoordinator.settleControl(goalId, id)
+          await this.loop.blockGoalFromControlPermissionDenial(
+            goalId,
+            {
+              code: 'missing_permission',
+              reason: String(pending?.context ?? 'Required permission denied.'),
+            },
+            id,
+          )
+          return await this.resumeControl(
+            { ...resume, resume: false },
+            opts,
+            ownerSessionId,
+          )
+        }
+      }
       const result = await this.resumeControl(resume, opts, ownerSessionId)
       if (isProfileOnboarding) {
         return {
@@ -685,16 +807,59 @@ export class CoreApi {
         ownerSessionId,
       )
     },
-    approvePlan: (
+    approvePlan: async (
       id: string,
       opts: ControlResumeOptions = {},
     ): Promise<Dict> => {
       const ownerSessionId = this.loop.controlPendingOwnerSessionId(id)
-      return this.resumeControl(
-        this.loop.controlManager.approve(id),
-        opts,
-        ownerSessionId,
-      )
+      const pending = this.loop.controlManager.payload().pending
+      const pendingMeta =
+        isRecord(pending) && isRecord(pending.meta) ? pending.meta : null
+      const pendingPlanId = String(pendingMeta?.plan_id ?? '').trim()
+      const pendingPlan = pendingPlanId
+        ? this.loop.controlManager.planStore.get(pendingPlanId)
+        : null
+      if (pendingPlan?.goalId) {
+        const approvalInput = {
+          goalId: pendingPlan.goalId,
+          planId: pendingPlan.id,
+          interactionId: id,
+          approvalGeneration: Number(
+            pendingMeta?.approval_generation ?? Number.NaN,
+          ),
+        }
+        await this.loop.goalPlanBridge.preflightApproval(approvalInput)
+        await this.loop.goalPlanBridge.prepareApproval(approvalInput)
+      }
+      const resume = await (async () => {
+        try {
+          const approval = this.loop.controlManager.approve(id)
+          const planPayload = isRecord(approval.event.plan)
+            ? approval.event.plan
+            : null
+          const planId = String(planPayload?.id ?? '').trim()
+          if (planId) {
+            const plan = this.loop.controlManager.planStore.get(planId)
+            if (plan?.goalId) {
+              await this.loop.goalPlanBridge.bindApprovedPlan({
+                goalId: plan.goalId,
+                planId,
+              })
+              const rebound = this.loop.controlManager.planStore.get(planId)
+              if (rebound) approval.event.plan = planToDict(rebound)
+            }
+          }
+          return approval
+        } catch (cause) {
+          if (pendingPlan?.goalId)
+            this.loop.goalPlanBridge.abortFailedApproval({
+              goalId: pendingPlan.goalId,
+              planId: pendingPlan.id,
+            })
+          throw cause
+        }
+      })()
+      return this.resumeControl(resume, opts, ownerSessionId)
     },
     cancelInteraction: async (id: string): Promise<Dict> => {
       const ownerSessionId = this.loop.controlPendingOwnerSessionId(id)
@@ -713,6 +878,18 @@ export class CoreApi {
       const plan = this.loop.controlManager.planStore.get(planId)
       return plan ? planToDict(plan) : null
     },
+  }
+
+  readonly goals = {
+    start: (input: Parameters<GoalService['start']>[0]) =>
+      this.goalService.start(input),
+    list: (input: { sessionId?: string | null } = {}) =>
+      this.goalService.list(input),
+    get: (goalId: string) => this.goalService.get(goalId),
+    pause: (goalId: string) => this.goalService.pause(goalId),
+    resume: (goalId: string) => this.goalService.resume(goalId),
+    cancel: (goalId: string, reason?: string | null) =>
+      this.goalService.cancel(goalId, reason),
   }
 
   readonly scheduler = {
@@ -830,11 +1007,13 @@ export class CoreApi {
         project,
       })
     },
-    rename: (
+    rename: async (
       sessionId: string,
       patch: string | { title?: string | null; archived?: boolean | null },
     ) => {
       if (typeof patch === 'object' && patch !== null && 'archived' in patch) {
+        if (patch.archived)
+          await this.goalService.pauseBySession(sessionId, 'session_archived')
         const entry = patch.archived
           ? this.loop.sessionStore.archive(sessionId)
           : this.loop.sessionStore.restore(sessionId)
@@ -851,6 +1030,13 @@ export class CoreApi {
       return entry
     },
     delete: async (sessionId: string): Promise<Dict> => {
+      if (!this.loop.sessionStore.get(sessionId))
+        throw new Error('cannot delete session')
+      await this.goalService.cancelAndSettleBySession(
+        sessionId,
+        'session_deleted',
+      )
+      const removedGoals = await this.loop.goalStore.deleteBySession(sessionId)
       await this.loop.endSession(sessionId, 'deleted')
       if (!this.loop.sessionStore.delete(sessionId))
         throw new Error('cannot delete session')
@@ -858,7 +1044,7 @@ export class CoreApi {
         this.loop.taskManager.store.deleteBySession(sessionId)
       const removedPlans =
         this.loop.controlManager.planStore.deleteBySession(sessionId)
-      return { deleted: true, removedTasks, removedPlans }
+      return { deleted: true, removedGoals, removedTasks, removedPlans }
     },
     activate: (sessionId: string) => {
       this.loop.activateSession(sessionId)
@@ -1023,6 +1209,19 @@ export class CoreApi {
       this.desktopPetService.setEnabled(enabled),
   }
 
+  private async goalSummary(goal: GoalRecord) {
+    const evidence = await this.loop.goalEvidenceLedger.listEvidence(goal.id)
+    return goalSummary(
+      goal,
+      Object.fromEntries(
+        evidence.map((item) => [
+          item.id,
+          { verdict: item.verdict, summary: item.summary },
+        ]),
+      ),
+    )
+  }
+
   private assertMutation(area: string, action: string): void {
     assertCoreMutationAllowed(this.loop.controlManager.payload(), {
       area,
@@ -1045,6 +1244,29 @@ export class CoreApi {
       })
     let result: Dict | null = null
     if (resume.resume === true) {
+      const interactionId = String(resume.interaction.id ?? '')
+      const explicitGoalId =
+        this.loop.controlManager.goalIdForInteraction(interactionId)
+      const sessionGoal = ownerSessionId
+        ? await this.loop.goalStore.findActiveBySession(ownerSessionId)
+        : null
+      const goal = explicitGoalId
+        ? await this.loop.goalStore.get(explicitGoalId)
+        : sessionGoal
+      if (
+        goal?.runtime.phase === 'awaiting_user' &&
+        goal.runtime.pendingInteractionId === interactionId
+      ) {
+        await this.loop.goalCoordinator.resumeAfterControl(
+          goal.id,
+          interactionId,
+        )
+        return {
+          ...(resume as unknown as Dict),
+          event: event ?? resume.event,
+          result: null,
+        }
+      }
       const uiHidden = opts.uiHidden ?? false
       try {
         result = (await this.mainline.submit({
@@ -1239,6 +1461,15 @@ function runtimeEventSessionId(event: unknown): string {
   return isRecord(owner)
     ? String(owner.session_id ?? owner.sessionId ?? '').trim()
     : ''
+}
+
+function interactionAnswerChoice(
+  interaction: unknown,
+  questionId: string,
+): string {
+  if (!isRecord(interaction) || !isRecord(interaction.answers)) return ''
+  const answer = interaction.answers[questionId]
+  return isRecord(answer) ? String(answer.choice ?? '') : ''
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

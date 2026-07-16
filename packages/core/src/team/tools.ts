@@ -12,6 +12,7 @@ type TeamManagerProvider = TeamManager | (() => TeamManager | null)
 
 export class TeamTool extends Tool {
   override requiresRuntimeContext = true
+  override evidencePolicy = 'forbidden' as const
   protected readonly managerProvider: TeamManagerProvider
   protected readonly sender: string
   protected readonly actor: string

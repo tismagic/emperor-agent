@@ -12,6 +12,7 @@ export class MCPToolAdapter extends Tool {
   private readonly serverName: string
   private readonly toolName: string
   private readonly connection: MCPConnection
+  override evidencePolicy = 'eligible' as const
 
   constructor(opts: {
     serverName: string

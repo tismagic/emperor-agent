@@ -27,6 +27,7 @@ export class SchedulerTool extends Tool {
   override description =
     '管理本地持久定时任务：查看、创建、更新、暂停、恢复、删除或手动运行。只读检查使用 list；只有用户明确要求长期、未来或周期性自动执行时，才使用 add/update/remove/run。不要把一次性普通任务伪装成定时任务；调度器失败时报告调度器错误，不要改用系统 cron 或 crontab。'
   override requiresRuntimeContext = true
+  override evidencePolicy = 'forbidden' as const
   override parameters = toolParamsSchema(
     {
       action: {

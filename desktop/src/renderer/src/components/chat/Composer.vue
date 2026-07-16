@@ -23,6 +23,7 @@ import CapabilityPicker from './CapabilityPicker.vue'
 import {
   composerModeOptions,
   composerSendDisabled,
+  composerStopPresentation,
   currentComposerMode,
   type ControlModeValue,
 } from './composerControls'
@@ -40,6 +41,7 @@ const props = defineProps<{
   modelEntries: ModelEntry[]
   supportsVision?: boolean
   sendBlockedReason?: string | null
+  goalActive?: boolean
 }>()
 const emit = defineEmits<{
   send: [payload: ChatSendPayload]
@@ -588,6 +590,9 @@ const sendDisabled = computed(() =>
     sendBlockedReason: props.sendBlockedReason || null,
   }),
 )
+const stopPresentation = computed(() =>
+  composerStopPresentation(Boolean(props.goalActive)),
+)
 
 onBeforeUnmount(() => {
   closeAddMenu()
@@ -805,8 +810,11 @@ onBeforeUnmount(() => {
             class="send-button"
             :disabled="sendDisabled"
             :title="
-              props.busy ? '停止当前任务' : props.sendBlockedReason || '发送'
+              props.busy
+                ? stopPresentation.title
+                : props.sendBlockedReason || '发送'
             "
+            :aria-label="props.busy ? stopPresentation.label : '发送'"
             :type="props.busy ? 'button' : 'submit'"
             @click="props.busy ? emit('stop') : undefined"
           >
@@ -816,7 +824,9 @@ onBeforeUnmount(() => {
               :class="{ 'animate-spin': props.busy }"
               :size="18"
             />
-            <span class="sr-only">{{ props.busy ? '停止' : '发送' }}</span>
+            <span class="sr-only">{{
+              props.busy ? stopPresentation.label : '发送'
+            }}</span>
           </button>
         </div>
       </div>

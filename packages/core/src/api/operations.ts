@@ -170,6 +170,25 @@ const draftSessionSchema = z
   })
   .strict()
 
+const goalGuardPolicySchema = z
+  .object({
+    maxCycles: z.number().int().positive().nullable().optional(),
+    deadlineAt: z.string().datetime().nullable().optional(),
+    maxEstimatedCostUsd: z.number().positive().nullable().optional(),
+    noEvidencePauseAfterCycles: z.number().int().min(1).max(20).optional(),
+  })
+  .strict()
+
+const goalStartSchema = z
+  .object({
+    outcome: z.string().trim().min(1).max(4_000),
+    sessionId: idSchema,
+    clientDraftId: nullableStringSchema,
+    draftSession: draftSessionSchema.nullable().optional(),
+    guardPolicy: goalGuardPolicySchema.nullable().optional(),
+  })
+  .strict()
+
 const chatSubmitSchema = z
   .object({
     content: z.string(),
@@ -311,7 +330,7 @@ export const CORE_OPERATION_REGISTRY = {
         .object({
           taskId: nullableStringSchema,
           kind: z
-            .enum(['turn', 'scheduler', 'team', 'watchlist'])
+            .enum(['turn', 'scheduler', 'team', 'watchlist', 'goal'])
             .nullable()
             .optional(),
         })
@@ -380,6 +399,26 @@ export const CORE_OPERATION_REGISTRY = {
   'environment.install': operation(
     z.tuple([environmentInstallSchema]),
     (api, [input]) => api.environment.install(input),
+  ),
+  'goals.cancel': operation(
+    z.tuple([idSchema, z.string().max(2_000).nullable().optional()]),
+    (api, [id, reason]) => api.goals.cancel(id, reason),
+  ),
+  'goals.get': operation(z.tuple([idSchema]), (api, [id]) => api.goals.get(id)),
+  'goals.list': operation(
+    z.tuple([
+      z.object({ sessionId: nullableStringSchema }).strict().optional(),
+    ]),
+    (api, [input]) => api.goals.list(input),
+  ),
+  'goals.pause': operation(z.tuple([idSchema]), (api, [id]) =>
+    api.goals.pause(id),
+  ),
+  'goals.resume': operation(z.tuple([idSchema]), (api, [id]) =>
+    api.goals.resume(id),
+  ),
+  'goals.start': operation(z.tuple([goalStartSchema]), (api, [input]) =>
+    api.goals.start(input),
   ),
   'external.get': operation(z.tuple([]), (api) => api.external.get()),
   'hooks.cancelRun': operation(z.tuple([dictSchema]), (api, [input]) =>

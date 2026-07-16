@@ -23,6 +23,29 @@ import {
   SchedulerPayload,
   SchedulerSchedule,
 } from '../scheduler/models'
+import type { GoalObservation } from '../goals/evidence'
+import {
+  GoalContractValidator,
+  assertGoalTransition,
+  newGoalRecord,
+} from '../goals/validation'
+import { GoalPlanBridge } from '../goals/plan-bridge'
+import { GoalReviewerPolicy } from '../goals/reviewer'
+import { GoalGateMutationLedger } from '../goals/mutation-ledger'
+import { PlanStatus, PlanStepStatus } from '../plans/models'
+import { ToolResultObj } from '../tools/base'
+import { GOAL_REVIEWER_WAIVER_APPROVE_LABEL } from '../control/plan-verification'
+import {
+  GOAL_PERMISSION_BLOCKER_DENIED_LABEL,
+  GOAL_PERMISSION_BLOCKER_QUESTION_ID,
+  GOAL_PERMISSION_BLOCKER_RETRY_LABEL,
+} from '../control/goal-blocker'
+import {
+  GOAL_MANUAL_EVIDENCE_DECLINE_LABEL,
+  GOAL_MANUAL_EVIDENCE_FAIL_LABEL,
+  GOAL_MANUAL_EVIDENCE_PASS_LABEL,
+  GOAL_MANUAL_EVIDENCE_QUESTION_ID,
+} from '../control/goal-manual-evidence'
 
 const TEMPLATES_DIR = join(__dirname, '..', '..', '..', '..', 'templates')
 
@@ -74,6 +97,119 @@ class FakeProvider extends LLMProvider {
       })
     }
     return response('读完了。')
+  }
+}
+
+async function createInterruptedSkip(
+  loop: AgentLoop,
+  sessionId: string,
+  label: string,
+): Promise<{ planId: string; approvalGeneration: number }> {
+  const session = loop.sessionStore.get(sessionId)
+  if (!session) throw new Error(`missing test session: ${sessionId}`)
+  const created = await loop.goalStore.create(
+    newGoalRecord({
+      id: `goal_loop_skip_${label}`,
+      outcome: `Recover the durable Plan skip for session ${label}.`,
+      scope: {
+        sessionId,
+        mode: session.mode,
+        projectId: session.project_id,
+        workspaceRoot: session.project_path ?? loop.root,
+      },
+      now: '2026-07-16T00:00:00.000Z',
+    }),
+  )
+  const planning = await loop.goalStore.append(created.id, {
+    type: 'goal_updated',
+    record: GoalContractValidator.lock(
+      created,
+      {
+        inScope: [`durable skip ${label}`],
+        outOfScope: [],
+        constraints: [],
+        acceptanceCriteria: [
+          {
+            id: 'AC-1',
+            description: `Session ${label} successor step is active.`,
+            required: true,
+            verification: { kind: 'command', requirement: 'npm test' },
+          },
+        ],
+        escalationConditions: [],
+      },
+      '2026-07-16T00:00:01.000Z',
+    ),
+    expectedLastEventSeq: created.lastEventSeq,
+  })
+  const manager = loop.controlManager
+  manager.setRuntimeScope({
+    sessionId,
+    mode: planning.scope.mode,
+    projectId: planning.scope.projectId,
+    workspaceRoot: planning.scope.workspaceRoot,
+    projectFingerprint: planning.scope.projectFingerprint,
+  })
+  manager.setActiveGoalPlanContext(planning)
+  manager.setMode('plan')
+  const interaction = manager.createPlan({
+    title: `Startup skip recovery ${label}`,
+    summary: `Create an interrupted durable skip for ${label}.`,
+    planMarkdown: '# Plan\n\n- First\n- Second',
+    steps: [
+      {
+        id: 'step_1',
+        title: `First ${label}`,
+        commands: ['npm test'],
+        acceptance: ['first handled'],
+      },
+      {
+        id: 'step_2',
+        title: `Second ${label}`,
+        commands: ['npm test'],
+        acceptance: ['second active'],
+        depends_on: ['step_1'],
+      },
+    ],
+  })
+  manager.approve(interaction.id)
+  const planId = String(interaction.meta.plan_id)
+  await loop.goalPlanBridge.bindApprovedPlan({
+    goalId: planning.id,
+    planId,
+  })
+  const interrupted = new GoalPlanBridge({
+    goalStore: loop.goalStore,
+    planStore: manager.planStore,
+    taskManager: loop.taskManager,
+    todoStore: {
+      todos: [],
+      syncFromPlanSteps(): string {
+        throw new Error(`injected startup Todo interruption ${label}`)
+      },
+    },
+    resolveStepWaiver: ({ goalId, planId: sourcePlanId, stepId }) => ({
+      kind: 'explicit_user_plan_step_waiver',
+      issuedBy: 'core',
+      approvedBy: 'user',
+      receiptId: `waiver_startup_recovery_${label}`,
+      goalId,
+      planId: sourcePlanId,
+      stepId,
+    }),
+  })
+  await expect(
+    interrupted.skipStepWithWaiver({
+      goalId: planning.id,
+      planId,
+      stepId: 'step_1',
+    }),
+  ).rejects.toThrow(`startup Todo interruption ${label}`)
+  return {
+    planId,
+    approvalGeneration: Number(
+      manager.planStore.get(planId)?.metadata.approval_generation,
+    ),
   }
 }
 
@@ -135,6 +271,1065 @@ describe('AgentLoop (MIG-CORE-011)', () => {
         ),
       ),
     ).toBe(true)
+  })
+
+  it('wires active Goal observation recording into the mainline runner', async () => {
+    const root = tmp('emperor-agent-loop-goal-recording-')
+    writeFileSync(join(root, 'hello.txt'), 'hello from workspace\n', 'utf8')
+    const loop = await AgentLoop.create({
+      root,
+      stateRoot: join(root, '.emperor'),
+      templatesDir: TEMPLATES_DIR,
+      modelRouter: fakeRouter(new FakeProvider()),
+      initializeMcp: false,
+    })
+    const sessionId = loop.activeSessionId!
+    const created = await loop.goalStore.create(
+      newGoalRecord({
+        id: 'goal_loop_recording',
+        outcome: 'Record a real mainline tool result',
+        scope: {
+          sessionId,
+          mode: 'chat',
+          projectId: null,
+          workspaceRoot: root,
+        },
+        now: '2026-07-15T10:00:00.000Z',
+      }),
+    )
+    const active = GoalContractValidator.lock(
+      created,
+      {
+        inScope: ['mainline runner'],
+        outOfScope: [],
+        constraints: [],
+        acceptanceCriteria: [
+          {
+            id: 'AC-1',
+            description: 'A real file read is observed',
+            required: true,
+            verification: { kind: 'artifact', requirement: 'Read hello.txt' },
+          },
+        ],
+        escalationConditions: [],
+      },
+      '2026-07-15T10:01:00.000Z',
+    )
+    await loop.goalStore.append(created.id, {
+      type: 'goal_updated',
+      record: active,
+      createdAt: active.updatedAt,
+    })
+
+    await loop.runUserTurn('读取 hello.txt', { turnId: 'turn_goal_recording' })
+
+    expect(loop.controlManager.activeGoalPlanContext()?.id).toBe(created.id)
+
+    expect(
+      (await loop.goalStore.readObservations<GoalObservation>(created.id))
+        .records,
+    ).toEqual([
+      expect.objectContaining({
+        goalId: created.id,
+        turnId: 'turn_goal_recording',
+        toolName: 'read_file',
+        evidencePolicy: 'eligible',
+        eligible: true,
+      }),
+    ])
+  })
+
+  it('completes a real command plus waived Plan through pure production Goal resolvers', async () => {
+    const root = tmp('emperor-agent-loop-goal-terminal-composition-')
+    const stateRoot = join(root, '.emperor')
+    const loop = await AgentLoop.create({
+      root,
+      stateRoot,
+      templatesDir: TEMPLATES_DIR,
+      modelRouter: fakeRouter(new FakeProvider()),
+      initializeMcp: false,
+    })
+    const sessionId = loop.activeSessionId!
+    const created = await loop.goalStore.create(
+      newGoalRecord({
+        id: 'goal_loop_terminal_composition',
+        outcome: 'Complete through the production AgentLoop Goal Gate.',
+        scope: {
+          sessionId,
+          mode: 'chat',
+          projectId: null,
+          workspaceRoot: root,
+        },
+        guardPolicy: { maxEstimatedCostUsd: 1 },
+        now: '2020-01-01T08:00:00.000Z',
+      }),
+    )
+    const locked = await loop.goalStore.append(created.id, {
+      type: 'goal_updated',
+      expectedLastEventSeq: created.lastEventSeq,
+      record: GoalContractValidator.lock(
+        created,
+        {
+          inScope: ['production completion composition'],
+          outOfScope: [],
+          constraints: [],
+          acceptanceCriteria: [
+            {
+              id: 'AC-1',
+              description: 'The production verification command passes.',
+              required: true,
+              verification: { kind: 'command', requirement: 'npm test' },
+            },
+          ],
+          escalationConditions: [],
+        },
+        '2020-01-01T08:01:00.000Z',
+      ),
+    })
+    loop.controlManager.setRuntimeScope({
+      sessionId,
+      mode: locked.scope.mode,
+      projectId: locked.scope.projectId,
+      workspaceRoot: locked.scope.workspaceRoot,
+      projectFingerprint: locked.scope.projectFingerprint,
+    })
+    loop.controlManager.setActiveGoalPlanContext(locked)
+    loop.controlManager.setMode('plan')
+    const interaction = loop.controlManager.createPlan({
+      title: 'Production completion composition',
+      summary: 'Verify one command and explicitly waive one step.',
+      planMarkdown: '# Plan\n\n- Verify\n- Waive',
+      steps: [
+        {
+          id: 'step_command',
+          title: 'Verify command',
+          commands: ['npm test'],
+          acceptance: ['tests pass'],
+        },
+        {
+          id: 'step_waived',
+          title: 'Explicitly waived work',
+          commands: [],
+          acceptance: ['user waiver is persisted'],
+          depends_on: ['step_command'],
+        },
+      ],
+    })
+    loop.controlManager.approve(interaction.id)
+    const planId = String(interaction.meta.plan_id)
+    const { goal: executing } = await loop.goalPlanBridge.bindApprovedPlan({
+      goalId: locked.id,
+      planId,
+    })
+    const plan = loop.controlManager.planStore.get(planId)!
+    const commandCallId = 'call_loop_terminal_command'
+    const completedPlan = loop.controlManager.planStore.save({
+      ...plan,
+      status: PlanStatus.COMPLETED,
+      completedAt: plan.updatedAt + 1,
+      steps: plan.steps.map((step) =>
+        step.id === 'step_command'
+          ? {
+              ...step,
+              status: PlanStepStatus.DONE,
+              evidence: [
+                {
+                  source: 'core_plan_step_verification',
+                  issued_by: 'core',
+                  plan_id: plan.id,
+                  plan_step_id: step.id,
+                  requirement_id: 'cmd_1',
+                  command: 'npm test',
+                  tool_call_id: commandCallId,
+                  passed: true,
+                  exit_code: 0,
+                },
+              ],
+            }
+          : {
+              ...step,
+              status: PlanStepStatus.SKIPPED,
+              evidence: [
+                {
+                  source: 'goal_plan_step_waiver',
+                  issued_by: 'core',
+                  approved_by: 'user',
+                  goal_id: executing.id,
+                  plan_id: plan.id,
+                  plan_step_id: step.id,
+                  receipt_id: 'waiver_loop_terminal_step',
+                },
+              ],
+            },
+      ),
+    })
+    const verifying = await loop.goalStore.append(executing.id, {
+      type: 'goal_updated',
+      expectedLastEventSeq: executing.lastEventSeq,
+      record: assertGoalTransition(executing, {
+        ...executing,
+        runtime: { ...executing.runtime, phase: 'verifying' },
+        updatedAt: '2020-01-01T08:02:00.000Z',
+      }),
+    })
+    const observation = await loop.goalObservationRecorder.recordToolResult({
+      expectedGoalId: verifying.id,
+      sessionId,
+      turnId: 'turn_loop_terminal_composition',
+      toolCallId: commandCallId,
+      toolName: 'run_command',
+      arguments: { command: 'npm test' },
+      evidencePolicy: 'eligible',
+      executed: true,
+      result: new ToolResultObj({
+        modelContent: 'tests passed',
+        displaySummary: 'tests passed',
+        metadata: { exitCode: 0 },
+      }),
+    })
+    const planVerification =
+      await loop.goalEvidenceLedger.issuePlanVerificationReceipt(verifying.id, {
+        planId,
+        stepId: 'step_command',
+        requirementId: 'cmd_1',
+        toolCallId: commandCallId,
+        sourceObservationId: observation!.id,
+        approvedInputHash: observation!.toolInput.inputSha256,
+      })
+    await loop.goalEvidenceLedger.record(verifying.id, {
+      criterionId: 'AC-1',
+      verdict: 'pass',
+      check: 'npm test',
+      summary: 'tests passed',
+      sourceObservationIds: [],
+      sourceReceiptIds: [planVerification.id],
+    })
+    const waiverRisk = await loop.goalReviewerRiskAdapter.resolve({
+      goalId: verifying.id,
+      planId,
+      planEventSeq: completedPlan.eventSeq,
+    })
+    const reviewerWaiver = loop.controlManager.requestGoalReviewerWaiver({
+      goal: verifying,
+      planId,
+      planEventSeq: completedPlan.eventSeq,
+      riskSignals: new GoalReviewerPolicy().requirementFor(
+        completedPlan,
+        waiverRisk,
+      ).riskSignals,
+      riskFactVersion: waiverRisk?.version ?? null,
+      reason: 'Exercise the production explicit-user waiver composition.',
+    })
+    loop.controlManager.answer(reviewerWaiver.id, {
+      goal_reviewer_waiver: {
+        choice: GOAL_REVIEWER_WAIVER_APPROVE_LABEL,
+        freeform: '',
+      },
+    })
+    await loop.goalReviewerLedger.recordReviewerWaiver({
+      goalId: verifying.id,
+      planId,
+      planEventSeq: completedPlan.eventSeq,
+      interactionId: reviewerWaiver.id,
+    })
+    const currentGoal = (await loop.goalStore.inspect(verifying.id)).record!
+    await loop.refreshGoalGateFacts(currentGoal.id, {
+      currentScope: currentGoal.scope,
+      hardConstraintsSatisfied: true,
+      estimatedCostUsd: 0,
+    })
+    const mutationLedger = new GoalGateMutationLedger(stateRoot)
+    const epochBefore = mutationLedger.inspect().epoch
+    const bytesBefore = {
+      goal: readFileSync(join(stateRoot, 'goals', currentGoal.id, 'goal.json')),
+      plan: readFileSync(loop.controlManager.planStore.indexFile),
+      facts: readFileSync(loop.goalGateFactStore.path),
+    }
+    const productionReceipt = await loop.goalPlanBridge.planCompletionReceipt(
+      currentGoal.id,
+      currentGoal,
+    )
+    expect(productionReceipt.completed, JSON.stringify(productionReceipt)).toBe(
+      true,
+    )
+    const repairingGet = vi
+      .spyOn(loop.goalStore, 'get')
+      .mockRejectedValue(new Error('repairing GoalStore.get is forbidden'))
+    const repairingList = vi
+      .spyOn(loop.goalStore, 'list')
+      .mockRejectedValue(new Error('repairing GoalStore.list is forbidden'))
+    await expect(
+      loop.goalEvidenceLedger.validatedEvidenceById(
+        currentGoal.id,
+        currentGoal.latestEvidenceByCriterion['AC-1']!,
+      ),
+    ).resolves.toMatchObject({ criterionId: 'AC-1', verdict: 'pass' })
+
+    const evaluation = await loop.evaluateGoal(currentGoal.id)
+
+    expect(evaluation.pass, JSON.stringify(evaluation.reasons)).toBe(true)
+    expect(repairingGet).not.toHaveBeenCalled()
+    expect(repairingList).not.toHaveBeenCalled()
+    expect(mutationLedger.inspect().epoch).toBe(epochBefore)
+    expect(
+      readFileSync(join(stateRoot, 'goals', currentGoal.id, 'goal.json')),
+    ).toEqual(bytesBefore.goal)
+    expect(readFileSync(loop.controlManager.planStore.indexFile)).toEqual(
+      bytesBefore.plan,
+    )
+    expect(readFileSync(loop.goalGateFactStore.path)).toEqual(bytesBefore.facts)
+    repairingGet.mockRestore()
+    repairingList.mockRestore()
+
+    const pending = loop.controlManager.createAsk({
+      questions: [
+        {
+          id: 'terminal_scope',
+          header: 'Scope',
+          question: 'Should terminal completion continue?',
+          options: [
+            { label: 'Continue', description: 'Resolve the pending action.' },
+            { label: 'Pause', description: 'Keep the Goal active.' },
+          ],
+        },
+      ],
+      context: 'A concrete pending Control interaction must block terminal.',
+    })
+    expect(loop.controlManager.store.load().pending?.id).toBe(pending.id)
+    expect(
+      (await loop.evaluateGoal(currentGoal.id)).reasons.map(
+        (reason) => reason.code,
+      ),
+    ).toContain('pending_interaction')
+    expect(loop.controlManager.store.load().pending?.id).toBe(pending.id)
+    await expect(loop.completeGoal(currentGoal.id)).rejects.toMatchObject({
+      code: 'goal_completion_gate_failed',
+    })
+    loop.controlManager.answer(pending.id, {
+      terminal_scope: { choice: 'Continue', freeform: '' },
+    })
+    await loop.refreshGoalGateFacts(currentGoal.id, {
+      currentScope: {
+        ...currentGoal.scope,
+        workspaceRoot: join(root, 'stale-scope'),
+      },
+    })
+    const trustedScopeEvaluation = await loop.evaluateGoal(currentGoal.id)
+    expect(trustedScopeEvaluation.pass).toBe(true)
+    expect(
+      trustedScopeEvaluation.reasons.map((reason) => reason.code),
+    ).not.toContain('scope_mismatch')
+    await loop.refreshGoalGateFacts(currentGoal.id, {
+      currentScope: currentGoal.scope,
+      estimatedCostUsd: 2,
+    })
+    await expect(loop.completeGoal(currentGoal.id)).rejects.toMatchObject({
+      code: 'goal_completion_gate_failed',
+    })
+    await loop.refreshGoalGateFacts(currentGoal.id, {
+      estimatedCostUsd: 0,
+    })
+
+    const outcome = await Promise.race([
+      loop.completeGoal(currentGoal.id),
+      new Promise<never>((_, reject) =>
+        setTimeout(
+          () => reject(new Error('production Goal Gate timed out')),
+          5_000,
+        ),
+      ),
+    ])
+    expect(outcome.goal.status).toBe('completed')
+  }, 10_000)
+
+  it('blocks a real Goal from an exact persisted Control permission denial', async () => {
+    const root = tmp('emperor-agent-loop-goal-control-blocker-')
+    const loop = await AgentLoop.create({
+      root,
+      stateRoot: join(root, '.emperor'),
+      templatesDir: TEMPLATES_DIR,
+      modelRouter: fakeRouter(new FakeProvider()),
+      initializeMcp: false,
+    })
+    const sessionId = loop.activeSessionId!
+    const created = await loop.goalStore.create(
+      newGoalRecord({
+        id: 'goal_loop_control_blocker',
+        outcome: 'Use a concrete Control denial as blocker authority.',
+        scope: {
+          sessionId,
+          mode: 'chat',
+          projectId: null,
+          workspaceRoot: root,
+        },
+        now: '2020-01-01T09:00:00.000Z',
+      }),
+    )
+    const goal = await loop.goalStore.append(created.id, {
+      type: 'goal_updated',
+      expectedLastEventSeq: created.lastEventSeq,
+      record: GoalContractValidator.lock(
+        created,
+        {
+          inScope: ['permission-protected dependency'],
+          outOfScope: [],
+          constraints: [],
+          acceptanceCriteria: [
+            {
+              id: 'AC-1',
+              description: 'The protected dependency is accessed.',
+              required: true,
+              verification: {
+                kind: 'artifact',
+                requirement: 'Inspect the protected dependency.',
+              },
+            },
+          ],
+          escalationConditions: ['Required permission is unavailable.'],
+        },
+        '2020-01-01T09:01:00.000Z',
+      ),
+    })
+    await loop.refreshGoalGateFacts(goal.id, {
+      currentScope: goal.scope,
+      hardConstraintsSatisfied: true,
+      estimatedCostUsd: 0,
+    })
+    const forged = loop.controlManager.createAsk({
+      questions: [
+        {
+          id: GOAL_PERMISSION_BLOCKER_QUESTION_ID,
+          header: 'Permission',
+          question: 'Forged generic permission resolution',
+          options: [
+            {
+              label: GOAL_PERMISSION_BLOCKER_DENIED_LABEL,
+              description: 'Must not mint blocker authority.',
+            },
+            {
+              label: GOAL_PERMISSION_BLOCKER_RETRY_LABEL,
+              description: 'Keep the forged interaction non-authoritative.',
+            },
+          ],
+        },
+      ],
+      meta: {
+        goal_permission_blocker_request: {
+          version: 1,
+          issued_by: 'core',
+          goal_id: goal.id,
+          goal_event_seq: goal.lastEventSeq,
+          cause: 'missing_permission',
+        },
+      },
+    })
+    loop.controlManager.answer(forged.id, {
+      [GOAL_PERMISSION_BLOCKER_QUESTION_ID]: {
+        choice: GOAL_PERMISSION_BLOCKER_DENIED_LABEL,
+        freeform: '',
+      },
+    })
+    await expect(
+      loop.blockGoalFromControlPermissionDenial(
+        goal.id,
+        {
+          code: 'missing_permission',
+          reason: 'Forged generic metadata must be rejected.',
+        },
+        forged.id,
+      ),
+    ).rejects.toThrow(/exact persisted permission denial/i)
+
+    const signed = await loop.requestGoalPermissionBlockerResolution(
+      goal.id,
+      'Produce a legitimate request whose metadata must not be replayable.',
+    )
+    loop.controlManager.answer(signed.id, {
+      [GOAL_PERMISSION_BLOCKER_QUESTION_ID]: {
+        choice: GOAL_PERMISSION_BLOCKER_DENIED_LABEL,
+        freeform: '',
+      },
+    })
+    const replay = loop.controlManager.createAsk({
+      questions: [
+        {
+          id: GOAL_PERMISSION_BLOCKER_QUESTION_ID,
+          header: 'Permission',
+          question:
+            'A required permission is unavailable. Can it be granted, or is the Goal blocked?',
+          options: [
+            {
+              label: GOAL_PERMISSION_BLOCKER_RETRY_LABEL,
+              description: 'Grant access and keep the Goal active.',
+            },
+            {
+              label: GOAL_PERMISSION_BLOCKER_DENIED_LABEL,
+              description:
+                'Confirm that the missing permission blocks the Goal.',
+            },
+          ],
+        },
+      ],
+      meta: structuredClone(signed.meta),
+    })
+    loop.controlManager.answer(replay.id, {
+      [GOAL_PERMISSION_BLOCKER_QUESTION_ID]: {
+        choice: GOAL_PERMISSION_BLOCKER_DENIED_LABEL,
+        freeform: '',
+      },
+    })
+    await expect(
+      loop.blockGoalFromControlPermissionDenial(
+        goal.id,
+        {
+          code: 'missing_permission',
+          reason: 'A copied legitimate signature must not authorize replay.',
+        },
+        replay.id,
+      ),
+    ).rejects.toThrow(/exact persisted permission denial/i)
+
+    const interaction = await loop.requestGoalPermissionBlockerResolution(
+      goal.id,
+      'The user-owned credential cannot be granted in this environment.',
+    )
+    loop.controlManager.answer(interaction.id, {
+      [GOAL_PERMISSION_BLOCKER_QUESTION_ID]: {
+        choice: GOAL_PERMISSION_BLOCKER_DENIED_LABEL,
+        freeform: '',
+      },
+    })
+
+    const blocked = await loop.blockGoalFromControlPermissionDenial(
+      goal.id,
+      {
+        code: 'missing_permission',
+        reason: 'The required user-owned credential is unavailable.',
+      },
+      interaction.id,
+    )
+
+    expect(blocked.status).toBe('blocked')
+    expect(loop.goalBlockerCauseLedger.inspect(goal)).toMatchObject({
+      cause: 'missing_permission',
+      receiptId: interaction.id,
+    })
+  })
+
+  it('records only exact persisted Control manual answers and keeps the latest FAIL→PASS→FAIL', async () => {
+    const root = tmp('emperor-agent-loop-goal-manual-evidence-')
+    const loop = await AgentLoop.create({
+      root,
+      stateRoot: join(root, '.emperor'),
+      templatesDir: TEMPLATES_DIR,
+      modelRouter: fakeRouter(new FakeProvider()),
+      initializeMcp: false,
+    })
+    const created = await loop.goalStore.create(
+      newGoalRecord({
+        id: 'goal_loop_manual_evidence',
+        outcome: 'Bind manual evidence to exact persisted Control answers.',
+        scope: {
+          sessionId: loop.activeSessionId!,
+          mode: 'chat',
+          projectId: null,
+          workspaceRoot: root,
+        },
+        now: '2020-01-01T10:00:00.000Z',
+      }),
+    )
+    const goal = await loop.goalStore.append(created.id, {
+      type: 'goal_updated',
+      expectedLastEventSeq: created.lastEventSeq,
+      record: GoalContractValidator.lock(
+        created,
+        {
+          inScope: ['manual verification'],
+          outOfScope: [],
+          constraints: [],
+          acceptanceCriteria: [
+            {
+              id: 'AC-1',
+              description: 'The user inspects the rendered result.',
+              required: true,
+              verification: {
+                kind: 'manual',
+                requirement: 'Inspect the exact rendered result.',
+              },
+            },
+          ],
+          escalationConditions: [],
+        },
+        '2020-01-01T10:01:00.000Z',
+      ),
+    })
+    const record = async (choice: string, verdict: 'pass' | 'fail') => {
+      const interaction = await loop.requestGoalManualVerification(
+        goal.id,
+        'AC-1',
+      )
+      loop.controlManager.answer(interaction.id, {
+        [GOAL_MANUAL_EVIDENCE_QUESTION_ID]: { choice, freeform: '' },
+      })
+      return await loop.recordGoalManualVerification(goal.id, {
+        interactionId: interaction.id,
+        criterionId: 'AC-1',
+        verdict,
+      })
+    }
+
+    const signed = await loop.requestGoalManualVerification(goal.id, 'AC-1')
+    loop.controlManager.answer(signed.id, {
+      [GOAL_MANUAL_EVIDENCE_QUESTION_ID]: {
+        choice: GOAL_MANUAL_EVIDENCE_PASS_LABEL,
+        freeform: '',
+      },
+    })
+    const replay = loop.controlManager.createAsk({
+      questions: signed.questions.map((question) => ({
+        id: question.id,
+        header: question.header,
+        question: question.question,
+        options: question.options.map((option) => ({ ...option })),
+      })),
+      context: signed.context,
+      meta: structuredClone(signed.meta),
+    })
+    loop.controlManager.answer(replay.id, {
+      [GOAL_MANUAL_EVIDENCE_QUESTION_ID]: {
+        choice: GOAL_MANUAL_EVIDENCE_PASS_LABEL,
+        freeform: '',
+      },
+    })
+    await expect(
+      loop.goalEvidenceLedger.issueUserManualReceipt(goal.id, {
+        interactionId: replay.id,
+        criterionId: 'AC-1',
+        verdict: 'pass',
+      }),
+    ).rejects.toThrow(/unavailable or no longer trusted/i)
+
+    const failed = await record(GOAL_MANUAL_EVIDENCE_FAIL_LABEL, 'fail')
+    const passed = await record(GOAL_MANUAL_EVIDENCE_PASS_LABEL, 'pass')
+    const regressed = await record(GOAL_MANUAL_EVIDENCE_FAIL_LABEL, 'fail')
+    expect([failed.verdict, passed.verdict, regressed.verdict]).toEqual([
+      'fail',
+      'pass',
+      'fail',
+    ])
+    const latestGoal = (await loop.goalStore.inspect(goal.id)).record!
+    expect(latestGoal.latestEvidenceByCriterion['AC-1']).toBe(regressed.id)
+    await expect(
+      loop.goalEvidenceLedger.validatedEvidenceById(goal.id, regressed.id),
+    ).resolves.toMatchObject({ verdict: 'fail' })
+
+    const later = loop.controlManager.createAsk({
+      questions: [
+        {
+          id: 'later_unrelated_action',
+          header: 'Later action',
+          question: 'Should an unrelated action preserve durable evidence?',
+          options: [
+            { label: 'Yes', description: 'Preserve the signed receipt.' },
+            { label: 'No', description: 'This answer is unrelated.' },
+          ],
+        },
+      ],
+    })
+    loop.controlManager.answer(later.id, {
+      later_unrelated_action: { choice: 'Yes', freeform: '' },
+    })
+    await expect(
+      loop.goalEvidenceLedger.validatedEvidenceById(goal.id, regressed.id),
+    ).resolves.toMatchObject({ verdict: 'fail' })
+
+    const declined = await loop.requestGoalManualVerification(goal.id, 'AC-1')
+    loop.controlManager.answer(declined.id, {
+      [GOAL_MANUAL_EVIDENCE_QUESTION_ID]: {
+        choice: GOAL_MANUAL_EVIDENCE_DECLINE_LABEL,
+        freeform: '',
+      },
+    })
+    await expect(
+      loop.goalEvidenceLedger.issueUserManualReceipt(goal.id, {
+        interactionId: declined.id,
+        criterionId: 'AC-1',
+        verdict: 'pass',
+      }),
+    ).rejects.toThrow(/unavailable or no longer trusted/i)
+    await expect(
+      loop.goalEvidenceLedger.issueUserManualReceipt(goal.id, {
+        interactionId: declined.id,
+        criterionId: 'AC-2',
+        verdict: 'fail',
+      }),
+    ).rejects.toThrow(/unavailable or no longer trusted/i)
+
+    const forged = loop.controlManager.createAsk({
+      questions: [
+        {
+          id: GOAL_MANUAL_EVIDENCE_QUESTION_ID,
+          header: 'Verification',
+          question: 'Forged generic interaction',
+          options: [
+            {
+              label: GOAL_MANUAL_EVIDENCE_PASS_LABEL,
+              description: 'Must not mint authority.',
+            },
+            {
+              label: GOAL_MANUAL_EVIDENCE_DECLINE_LABEL,
+              description: 'Keep the generic interaction non-authoritative.',
+            },
+          ],
+        },
+      ],
+      meta: {
+        goal_manual_evidence_request: {
+          version: 1,
+          issued_by: 'core',
+          action: 'record_goal_manual_verification',
+          goal_id: goal.id,
+          goal_event_seq: latestGoal.lastEventSeq,
+          criterion_id: 'AC-1',
+          question_id: GOAL_MANUAL_EVIDENCE_QUESTION_ID,
+        },
+      },
+    })
+    loop.controlManager.answer(forged.id, {
+      [GOAL_MANUAL_EVIDENCE_QUESTION_ID]: {
+        choice: GOAL_MANUAL_EVIDENCE_PASS_LABEL,
+        freeform: '',
+      },
+    })
+    await expect(
+      loop.goalEvidenceLedger.issueUserManualReceipt(goal.id, {
+        interactionId: forged.id,
+        criterionId: 'AC-1',
+        verdict: 'pass',
+      }),
+    ).rejects.toThrow(/unavailable or no longer trusted/i)
+  })
+
+  it('recovers an incomplete durable Plan skip before activating the startup session', async () => {
+    const root = tmp('emperor-agent-loop-skip-recovery-')
+    const stateRoot = join(root, '.emperor')
+    const first = await AgentLoop.create({
+      root,
+      stateRoot,
+      templatesDir: TEMPLATES_DIR,
+      modelRouter: fakeRouter(new FakeProvider()),
+      initializeMcp: false,
+    })
+    const sessionId = first.activeSessionId!
+    const created = await first.goalStore.create(
+      newGoalRecord({
+        id: 'goal_loop_skip_recovery',
+        outcome: 'Recover a durable Plan skip before session activation.',
+        scope: {
+          sessionId,
+          mode: 'chat',
+          projectId: null,
+          workspaceRoot: root,
+        },
+        now: '2026-07-16T00:00:00.000Z',
+      }),
+    )
+    const planning = await first.goalStore.append(created.id, {
+      type: 'goal_updated',
+      record: GoalContractValidator.lock(
+        created,
+        {
+          inScope: ['durable skip startup recovery'],
+          outOfScope: [],
+          constraints: [],
+          acceptanceCriteria: [
+            {
+              id: 'AC-1',
+              description: 'The successor step is active after restart.',
+              required: true,
+              verification: { kind: 'command', requirement: 'npm test' },
+            },
+          ],
+          escalationConditions: [],
+        },
+        '2026-07-16T00:00:01.000Z',
+      ),
+      expectedLastEventSeq: created.lastEventSeq,
+    })
+    const manager = first.controlManager
+    manager.setRuntimeScope({
+      sessionId,
+      mode: planning.scope.mode,
+      projectId: planning.scope.projectId,
+      workspaceRoot: planning.scope.workspaceRoot,
+      projectFingerprint: planning.scope.projectFingerprint,
+    })
+    manager.setActiveGoalPlanContext(planning)
+    manager.setMode('plan')
+    const interaction = manager.createPlan({
+      title: 'Startup skip recovery',
+      summary: 'Create an interrupted durable skip.',
+      planMarkdown: '# Plan\n\n- First\n- Second',
+      steps: [
+        {
+          id: 'step_1',
+          title: 'First',
+          commands: ['npm test'],
+          acceptance: ['first handled'],
+        },
+        {
+          id: 'step_2',
+          title: 'Second',
+          commands: ['npm test'],
+          acceptance: ['second active'],
+          depends_on: ['step_1'],
+        },
+      ],
+    })
+    manager.approve(interaction.id)
+    const planId = String(interaction.meta.plan_id)
+    await first.goalPlanBridge.bindApprovedPlan({
+      goalId: planning.id,
+      planId,
+    })
+    const interrupted = new GoalPlanBridge({
+      goalStore: first.goalStore,
+      planStore: manager.planStore,
+      taskManager: first.taskManager,
+      todoStore: {
+        todos: [],
+        syncFromPlanSteps(): string {
+          throw new Error('injected startup Todo interruption')
+        },
+      },
+      resolveStepWaiver: ({ goalId, planId: sourcePlanId, stepId }) => ({
+        kind: 'explicit_user_plan_step_waiver',
+        issuedBy: 'core',
+        approvedBy: 'user',
+        receiptId: 'waiver_startup_recovery',
+        goalId,
+        planId: sourcePlanId,
+        stepId,
+      }),
+    })
+    await expect(
+      interrupted.skipStepWithWaiver({
+        goalId: planning.id,
+        planId,
+        stepId: 'step_1',
+      }),
+    ).rejects.toThrow(/startup Todo/)
+
+    const restarted = await AgentLoop.create({
+      root,
+      stateRoot,
+      templatesDir: TEMPLATES_DIR,
+      modelRouter: fakeRouter(new FakeProvider()),
+      initializeMcp: false,
+    })
+
+    expect(restarted.activeSessionId).toBe(sessionId)
+    expect(
+      (
+        restarted.controlManager.planStore.get(planId)?.metadata
+          .goal_skip_intent as Record<string, unknown>
+      ).stage,
+    ).toBe('completed')
+    expect(restarted.todoStore.todos).toMatchObject([
+      { plan_id: planId, plan_step_id: 'step_1', status: 'completed' },
+      { plan_id: planId, plan_step_id: 'step_2', status: 'in_progress' },
+    ])
+    const planTasks = restarted.taskManager.store
+      .list()
+      .filter((task) => task.metadata.plan_id === planId)
+    expect(
+      planTasks.find((task) => task.metadata.plan_step_id === 'step_1')?.status,
+    ).not.toBe('running')
+    expect(
+      planTasks.filter(
+        (task) =>
+          task.metadata.plan_step_id === 'step_2' && task.status === 'running',
+      ),
+    ).toHaveLength(1)
+  })
+
+  it('routes a non-current session skip recovery only to that session Todo cache', async () => {
+    const root = tmp('emperor-agent-loop-skip-recovery-background-')
+    const stateRoot = join(root, '.emperor')
+    const first = await AgentLoop.create({
+      root,
+      stateRoot,
+      templatesDir: TEMPLATES_DIR,
+      modelRouter: fakeRouter(new FakeProvider()),
+      initializeMcp: false,
+    })
+    const sessionA = first.activeSessionId!
+    const sessionB = first.sessionStore.create('Background B')
+    const recoveredB = await createInterruptedSkip(
+      first,
+      sessionB.id,
+      'background_b',
+    )
+    await new Promise<void>((resolve) => setTimeout(resolve, 5))
+    first.sessionStore.touch(sessionA, 'Keep A current at restart')
+    first.sessionStore.archive(sessionB.id)
+
+    const restarted = await AgentLoop.create({
+      root,
+      stateRoot,
+      templatesDir: TEMPLATES_DIR,
+      modelRouter: fakeRouter(new FakeProvider()),
+      initializeMcp: false,
+    })
+
+    expect(restarted.activeSessionId).toBe(sessionA)
+    expect(restarted.todoStore.todos).toEqual([])
+    restarted.activateSession(sessionB.id)
+    expect(restarted.todoStore.todos).toMatchObject([
+      {
+        plan_id: recoveredB.planId,
+        plan_step_id: 'step_1',
+        approval_generation: recoveredB.approvalGeneration,
+        status: 'completed',
+      },
+      {
+        plan_id: recoveredB.planId,
+        plan_step_id: 'step_2',
+        approval_generation: recoveredB.approvalGeneration,
+        status: 'in_progress',
+      },
+    ])
+    restarted.activateSession(sessionA)
+    expect(restarted.todoStore.todos).toEqual([])
+  })
+
+  it('drops a recovered Todo projection when its session was deleted', async () => {
+    const root = tmp('emperor-agent-loop-skip-recovery-deleted-session-')
+    const stateRoot = join(root, '.emperor')
+    const first = await AgentLoop.create({
+      root,
+      stateRoot,
+      templatesDir: TEMPLATES_DIR,
+      modelRouter: fakeRouter(new FakeProvider()),
+      initializeMcp: false,
+    })
+    const sessionA = first.activeSessionId!
+    const sessionB = first.sessionStore.create('Deleted B')
+    const recoveredB = await createInterruptedSkip(
+      first,
+      sessionB.id,
+      'deleted_b',
+    )
+    expect(first.sessionStore.delete(sessionB.id)).toBe(true)
+
+    const restarted = await AgentLoop.create({
+      root,
+      stateRoot,
+      templatesDir: TEMPLATES_DIR,
+      modelRouter: fakeRouter(new FakeProvider()),
+      initializeMcp: false,
+    })
+
+    expect(restarted.activeSessionId).toBe(sessionA)
+    expect(restarted.todoStore.todos).toEqual([])
+    expect(() => restarted.activateSession(sessionB.id)).toThrow(
+      /unknown session/,
+    )
+    expect(
+      (
+        restarted.controlManager.planStore.get(recoveredB.planId)?.metadata
+          .goal_skip_intent as Record<string, unknown>
+      ).stage,
+    ).toBe('completed')
+  })
+
+  it('restores exact Todo projections for every recovered session and preserves them on a no-op replay', async () => {
+    const root = tmp('emperor-agent-loop-skip-recovery-multi-session-')
+    const stateRoot = join(root, '.emperor')
+    const first = await AgentLoop.create({
+      root,
+      stateRoot,
+      templatesDir: TEMPLATES_DIR,
+      modelRouter: fakeRouter(new FakeProvider()),
+      initializeMcp: false,
+    })
+    const sessionA = first.activeSessionId!
+    const recoveredA = await createInterruptedSkip(first, sessionA, 'multi_a')
+    const sessionB = first.sessionStore.create('Recovered B')
+    const recoveredB = await createInterruptedSkip(
+      first,
+      sessionB.id,
+      'multi_b',
+    )
+    await new Promise<void>((resolve) => setTimeout(resolve, 5))
+    first.sessionStore.touch(sessionA, 'Keep A current at restart')
+    first.sessionStore.archive(sessionB.id)
+
+    const restarted = await AgentLoop.create({
+      root,
+      stateRoot,
+      templatesDir: TEMPLATES_DIR,
+      modelRouter: fakeRouter(new FakeProvider()),
+      initializeMcp: false,
+    })
+
+    expect(restarted.activeSessionId).toBe(sessionA)
+    expect(restarted.todoStore.todos).toMatchObject([
+      {
+        plan_id: recoveredA.planId,
+        plan_step_id: 'step_1',
+        approval_generation: recoveredA.approvalGeneration,
+      },
+      {
+        plan_id: recoveredA.planId,
+        plan_step_id: 'step_2',
+        approval_generation: recoveredA.approvalGeneration,
+      },
+    ])
+    restarted.activateSession(sessionB.id)
+    expect(restarted.todoStore.todos).toMatchObject([
+      {
+        plan_id: recoveredB.planId,
+        plan_step_id: 'step_1',
+        approval_generation: recoveredB.approvalGeneration,
+      },
+      {
+        plan_id: recoveredB.planId,
+        plan_step_id: 'step_2',
+        approval_generation: recoveredB.approvalGeneration,
+      },
+    ])
+
+    expect(await restarted.goalPlanBridge.recoverIncompleteSkips()).toEqual({
+      count: 0,
+      todoProjections: [],
+    })
+    restarted.activateSession(sessionA)
+    expect(restarted.todoStore.todos).toMatchObject([
+      {
+        plan_id: recoveredA.planId,
+        plan_step_id: 'step_1',
+        approval_generation: recoveredA.approvalGeneration,
+      },
+      {
+        plan_id: recoveredA.planId,
+        plan_step_id: 'step_2',
+        approval_generation: recoveredA.approvalGeneration,
+      },
+    ])
+    restarted.activateSession(sessionB.id)
+    expect(restarted.todoStore.todos).toMatchObject([
+      {
+        plan_id: recoveredB.planId,
+        plan_step_id: 'step_1',
+        approval_generation: recoveredB.approvalGeneration,
+      },
+      {
+        plan_id: recoveredB.planId,
+        plan_step_id: 'step_2',
+        approval_generation: recoveredB.approvalGeneration,
+      },
+    ])
   })
 
   it('creates a fresh execution snapshot per turn while keeping each turn fixed', async () => {

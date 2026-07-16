@@ -5,6 +5,8 @@
 import type { ToolParamsSchema } from './schema'
 import type { ExecutionEnvironment } from '../environment/snapshot'
 
+export type ToolEvidencePolicy = 'eligible' | 'context_only' | 'forbidden'
+
 // ── results ──
 
 export interface ToolArtifact {
@@ -54,6 +56,16 @@ export function errResult(
   opts?: { meta?: Record<string, unknown> },
 ): ToolResult {
   return { ...okResult(content, opts), isError: true }
+}
+
+/** Conventional string error forms returned by legacy and rich built-in tools. */
+export function isToolErrorText(value: unknown): boolean {
+  const text = String(value ?? '')
+  return (
+    text.startsWith('Error:') ||
+    text.startsWith('[ERR]') ||
+    /^Error \(exit \d+\):/.test(text)
+  )
 }
 
 /**
@@ -145,6 +157,8 @@ export abstract class Tool {
   requiresRuntimeContext = false
   maxResultChars = 12_000
   concurrencySafe = false
+  evidencePolicy: ToolEvidencePolicy = 'context_only'
+  classifiesStringErrors = false
 
   /** 子类可覆写以提供运行时参数感知的只读判定。对齐 `is_read_only(arguments)`。 */
   isReadOnly(_args: Record<string, unknown>): boolean {

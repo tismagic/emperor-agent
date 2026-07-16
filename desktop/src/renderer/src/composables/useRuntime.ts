@@ -25,7 +25,7 @@ import {
   isChatProjectionEvent,
   type ChatProjectionState,
 } from '../runtime/chatProjection'
-import { sortRuntimeEvents } from '../runtime/events'
+import { isGoalRuntimeEvent, sortRuntimeEvents } from '../runtime/events'
 import { replayRuntimeEvents } from '../runtime/reducer'
 import {
   findSubagent,
@@ -33,6 +33,11 @@ import {
   findToolSegment,
 } from '../runtime/selectors'
 import { applyPlanEvent, type PlanProjection } from '../runtime/handlers/plans'
+import {
+  applyGoalEvent,
+  createGoalProjectionState,
+  type GoalProjectionState,
+} from '../runtime/handlers/goals'
 import { applySchedulerEventToBootstrap } from '../runtime/handlers/scheduler'
 import { applyTaskEvent, type TaskProjection } from '../runtime/handlers/tasks'
 import { hasCoreBridge, invokeCore, onCoreEvent } from '../api/backend'
@@ -81,6 +86,9 @@ export function useRuntime(options: {
     entryDecisions: [],
   })
   const taskProjection = reactive<TaskProjection>({ tasks: [] })
+  const goalProjection = reactive<GoalProjectionState>(
+    createGoalProjectionState(),
+  )
   // P1-7：per-session 瞬态运行/提醒状态，不落盘
   const sessionRuntimeStates = reactive<
     Record<string, { running: boolean; attention: boolean }>
@@ -946,6 +954,11 @@ export function useRuntime(options: {
       return
     }
 
+    if (isGoalRuntimeEvent(data)) {
+      Object.assign(goalProjection, applyGoalEvent(goalProjection, data))
+      return
+    }
+
     if (
       data.event === 'plan_entry_decision' ||
       data.event === 'plan_runtime_update' ||
@@ -1800,6 +1813,7 @@ export function useRuntime(options: {
     pending,
     planProjection,
     taskProjection,
+    goalProjection,
     sessionRuntimeStates,
     clearSessionAttention,
     runtimeText,
@@ -1812,6 +1826,7 @@ export function useRuntime(options: {
       busy.value = false
       lastSeq.value = 0
       projectionRuntime = createProjectionRuntime()
+      Object.assign(goalProjection, createGoalProjectionState())
       updatePending()
       if (coreUnsubscribe) {
         coreUnsubscribe()

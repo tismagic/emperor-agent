@@ -37,6 +37,7 @@ export interface CoreDiagnosticsServiceDeps {
   desktopPetPayload?: () =>
     Partial<CoreDesktopPetPayload> | Promise<Partial<CoreDesktopPetPayload>>
   environmentSummary?: () => Dict | Promise<Dict>
+  goalDiagnostics?: () => Dict | Promise<Dict>
 }
 
 export interface CoreDiagnosticsPayload {
@@ -54,6 +55,7 @@ export interface CoreDiagnosticsPayload {
   activeTasks: ActiveTaskInfo[]
   desktopPet: CoreDesktopPetPayload
   environment: Dict
+  goals: Dict
   dependencies: Dict
 }
 
@@ -82,6 +84,7 @@ export class CoreDiagnosticsService {
       activeTasks: activeTasksPayload(this.deps.activeTasks?.()),
       desktopPet: desktopPetPayload(await this.deps.desktopPetPayload?.()),
       environment: await this.environmentSummaryPayload(),
+      goals: await this.goalDiagnosticsPayload(),
       dependencies: this.dependencies(),
     }
   }
@@ -173,6 +176,15 @@ export class CoreDiagnosticsService {
     if (!this.deps.environmentSummary) return {}
     try {
       return await this.deps.environmentSummary()
+    } catch (error) {
+      return { status: 'unavailable', error: toSafeError(error) }
+    }
+  }
+
+  private async goalDiagnosticsPayload(): Promise<Dict> {
+    if (!this.deps.goalDiagnostics) return {}
+    try {
+      return await this.deps.goalDiagnostics()
     } catch (error) {
       return { status: 'unavailable', error: toSafeError(error) }
     }

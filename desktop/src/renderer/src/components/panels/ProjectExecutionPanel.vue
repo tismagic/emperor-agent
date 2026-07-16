@@ -7,6 +7,12 @@ import {
   reviewerTaskId,
 } from '../../runtime/projectExecution'
 import ReviewerTranscriptDrawer from './ReviewerTranscriptDrawer.vue'
+import GoalCard from '../chat/GoalCard.vue'
+import { activeGoalForSession } from '../../runtime/selectors'
+import {
+  toGoalCardViewModel,
+  type GoalCardAction,
+} from '../../runtime/goalRender'
 
 const ctx = useAppContext()
 const plans = computed(() => ctx.planProjection.plans || [])
@@ -15,18 +21,76 @@ const summary = computed(() => planExecutionSummary(plan.value))
 const reviewerTask = computed(() => reviewerTaskId(plan.value))
 const steps = computed(() => plan.value?.steps || [])
 const drawerOpen = ref(false)
+const goal = computed(() => {
+  const projected = activeGoalForSession(
+    ctx.goalProjection,
+    ctx.sessionId.value,
+  )
+  if (projected) return projected
+  const candidates = [
+    ...Object.values(ctx.goalProjection.byId),
+    ...(ctx.boot.value?.goals?.recent || []),
+  ]
+    .filter((item) => item.sessionId === ctx.sessionId.value)
+    .sort(
+      (a, b) =>
+        Date.parse(b.updatedAt || '') - Date.parse(a.updatedAt || '') ||
+        b.lastEventSeq - a.lastEventSeq,
+    )
+  return candidates[0] || null
+})
+const goalModel = computed(() => {
+  if (!goal.value) return null
+  return toGoalCardViewModel({
+    goal: goal.value,
+    plan:
+      plans.value.find((item) => item.id === goal.value?.currentPlanId) || null,
+    evidence: ctx.goalProjection.latestEvidenceByGoal[goal.value.id],
+    gate: ctx.goalProjection.latestGateByGoal[goal.value.id],
+  })
+})
+
+function focusPlan(planId: string) {
+  const target = document.querySelector<HTMLElement>(
+    `[data-plan-id="${CSS.escape(planId)}"]`,
+  )
+  if (!target) return
+  target.focus({ preventScroll: true })
+  const scroller = target.parentElement
+  if (scroller) scroller.scrollTop = Math.max(0, target.offsetTop - 12)
+}
+
+function runGoalAction(payload: { goalId: string; action: GoalCardAction }) {
+  void ctx.runSafely(async () => {
+    await ctx.runGoalAction(payload.goalId, payload.action)
+  })
+}
 </script>
 
 <template>
   <div class="panel project-execution-panel">
-    <div v-if="!plan" class="panel-empty">暂无进行中的项目执行计划</div>
+    <GoalCard
+      v-if="goalModel"
+      :key="goalModel.id"
+      :model="goalModel"
+      @action="runGoalAction"
+      @focus-plan="focusPlan"
+    />
+    <div v-if="!plan && !goalModel" class="panel-empty">
+      暂无进行中的 Goal 或项目执行计划
+    </div>
     <template v-else>
-      <section class="pe-section pe-plan-head">
+      <section
+        v-if="plan"
+        class="pe-section pe-plan-head"
+        :data-plan-id="plan.id"
+        tabindex="-1"
+      >
         <h3>{{ plan.title }}</h3>
         <span class="pe-status">{{ plan.status }}</span>
       </section>
 
-      <section class="pe-section pe-steps">
+      <section v-if="plan" class="pe-section pe-steps">
         <h3>计划步骤</h3>
         <ol class="pe-step-list">
           <li v-for="step in steps" :key="step.id" :data-status="step.status">
@@ -37,6 +101,7 @@ const drawerOpen = ref(false)
       </section>
 
       <section
+        v-if="plan"
         class="pe-section pe-verification"
         :data-status="summary.independentVerificationStatus"
       >
@@ -62,20 +127,23 @@ const drawerOpen = ref(false)
       </section>
 
       <section
-        v-if="summary.failedVerificationSummary"
+        v-if="plan && summary.failedVerificationSummary"
         class="pe-section pe-failed"
       >
         <h3>验证失败</h3>
         <p>{{ summary.failedVerificationSummary }}</p>
       </section>
 
-      <section v-if="summary.blockedReason" class="pe-section pe-blocked">
+      <section
+        v-if="plan && summary.blockedReason"
+        class="pe-section pe-blocked"
+      >
         <h3>阻塞原因</h3>
         <p>{{ summary.blockedReason }}</p>
       </section>
 
       <section
-        v-if="summary.openQuestionsCount"
+        v-if="plan && summary.openQuestionsCount"
         class="pe-section pe-questions"
       >
         <h3>待答问题：{{ summary.openQuestionsCount }}</h3>

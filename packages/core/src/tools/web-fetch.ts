@@ -24,6 +24,7 @@ export class WebFetch extends Tool {
     ['url'],
   )
   override readOnly = true
+  override evidencePolicy = 'eligible' as const
   override maxResultChars = 30_000
 
   constructor(

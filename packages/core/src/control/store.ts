@@ -19,42 +19,89 @@ import {
   defaultControlState,
   type ControlState,
 } from './models'
+import { GoalGateMutationLedger } from '../goals/mutation-ledger'
+
+export interface ControlStoreInspection {
+  readonly record: ControlState | null
+  readonly issue: {
+    readonly code: 'control_state_missing' | 'control_state_corrupt'
+    readonly path: string
+  } | null
+}
 
 export class ControlStore {
   readonly root: string
   readonly controlDir: string
   readonly stateFile: string
+  private readonly goalMutations: GoalGateMutationLedger
 
   constructor(root: string) {
     this.root = resolve(root)
     this.controlDir = join(this.root, 'control')
     this.stateFile = join(this.controlDir, 'state.json')
+    this.goalMutations = new GoalGateMutationLedger(this.root)
     this.ensure()
   }
 
   private ensure(): void {
-    mkdirSync(this.controlDir, { recursive: true })
-    this.copyLegacyStateIfNeeded()
-    if (!existsSync(this.stateFile)) this.save(defaultControlState())
+    if (existsSync(this.stateFile)) return
+    this.goalMutations.withSynchronousMutation(
+      'control',
+      'control-store:init',
+      () => {
+        mkdirSync(this.controlDir, { recursive: true })
+        this.copyLegacyStateIfNeeded()
+        if (!existsSync(this.stateFile)) {
+          const payload = controlStateToDict(defaultControlState())
+          payload.version = SCHEMA_VERSION
+          this.atomicWriteJson(this.stateFile, payload)
+        }
+      },
+    )
   }
 
   load(): ControlState {
-    let raw: unknown
+    return this.inspect().record ?? defaultControlState()
+  }
+
+  /** Pure fail-closed read for completion-sensitive callers. */
+  inspect(): ControlStoreInspection {
+    if (!existsSync(this.stateFile))
+      return {
+        record: null,
+        issue: { code: 'control_state_missing', path: this.stateFile },
+      }
     try {
-      raw = JSON.parse(readFileSync(this.stateFile, 'utf8') || '{}')
+      const raw = JSON.parse(readFileSync(this.stateFile, 'utf8') || '{}')
+      if (!isValidControlDocument(raw)) throw new Error('invalid Control state')
+      const record = controlStateFromDict(raw)
+      if (
+        (raw.pending !== null &&
+          raw.pending !== undefined &&
+          !record.pending) ||
+        (raw.last_interaction !== null &&
+          raw.last_interaction !== undefined &&
+          !record.lastInteraction)
+      )
+        throw new Error('invalid Control interaction')
+      return { record, issue: null }
     } catch {
-      return defaultControlState()
+      return {
+        record: null,
+        issue: { code: 'control_state_corrupt', path: this.stateFile },
+      }
     }
-    if (!raw || typeof raw !== 'object' || Array.isArray(raw))
-      return defaultControlState()
-    return controlStateFromDict(raw as Record<string, unknown>)
   }
 
   save(state: ControlState): void {
     const payload = controlStateToDict(state)
     payload.version =
       Number(payload.version ?? SCHEMA_VERSION) || SCHEMA_VERSION
-    this.atomicWriteJson(this.stateFile, payload)
+    this.goalMutations.withSynchronousMutation(
+      'control',
+      `control:${String(payload.pending?.id ?? payload.last_interaction?.id ?? 'idle')}:${Date.now()}`,
+      () => this.atomicWriteJson(this.stateFile, payload),
+    )
   }
 
   private atomicWriteJson(
@@ -79,4 +126,16 @@ export class ControlStore {
       /* non-destructive best effort */
     }
   }
+}
+
+function isValidControlDocument(
+  value: unknown,
+): value is Record<string, unknown> {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false
+  const raw = value as Record<string, unknown>
+  return (
+    Number.isFinite(raw.version) &&
+    typeof raw.mode === 'string' &&
+    Number.isFinite(raw.updated_at ?? raw.updatedAt)
+  )
 }

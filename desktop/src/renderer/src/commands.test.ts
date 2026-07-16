@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest'
 import {
   buildSlashPaletteItems,
   isPathLikeSlashToken,
+  parseGoalSlashCommand,
   parseSkillSlashCommand,
   parseSlashCommand,
 } from './commands'
@@ -17,6 +18,29 @@ const skills: SkillInfo[] = [
 ]
 
 describe('slash command parsing', () => {
+  it('parses the strict Goal command grammar without prefix collisions', () => {
+    expect(parseGoalSlashCommand('/goals')).toEqual({ kind: 'list' })
+    expect(parseGoalSlashCommand('/goal')).toEqual({ kind: 'missing' })
+    expect(parseGoalSlashCommand('/goal status')).toEqual({ kind: 'status' })
+    expect(parseGoalSlashCommand('/goal pause')).toEqual({ kind: 'pause' })
+    expect(parseGoalSlashCommand('/goal resume')).toEqual({ kind: 'resume' })
+    expect(parseGoalSlashCommand('/goal cancel')).toEqual({ kind: 'cancel' })
+    expect(parseGoalSlashCommand('/goal start 完成迁移')).toEqual({
+      kind: 'start',
+      outcome: '完成迁移',
+    })
+    expect(parseGoalSlashCommand('/goal start status')).toEqual({
+      kind: 'start',
+      outcome: 'status',
+    })
+    expect(parseGoalSlashCommand('/goal 完成迁移')).toEqual({
+      kind: 'start',
+      outcome: '完成迁移',
+    })
+    expect(parseGoalSlashCommand('/goalxxx')).toBeNull()
+    expect(parseGoalSlashCommand('/plan status')).toBeNull()
+  })
+
   it('does not treat absolute filesystem paths as slash commands', () => {
     const input =
       '/Users/anhuike/Documents/workspace/claude-code-source-code/给你源码 你去看看'

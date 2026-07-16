@@ -75,6 +75,7 @@ export class AskUserTool extends Tool {
   override name = 'ask_user'
   override exclusive = true
   override requiresRuntimeContext = true
+  override evidencePolicy = 'forbidden' as const
   override description =
     '向用户提出结构化澄清问题并暂停当前回合。' +
     '仅用于目标、范围、取舍、验收、安全、权限或成本边界会改变实现路径的关键不确定点；' +
@@ -135,6 +136,7 @@ export class RequestPlanModeTool extends Tool {
   override name = 'request_plan_mode'
   override exclusive = true
   override requiresRuntimeContext = true
+  override evidencePolicy = 'forbidden' as const
   override description =
     '当任务属于高影响改动（多文件重构、后端/权限/调度变更等）且当前不在计划模式时，' +
     '用此工具请求用户切换到计划模式并暂停当前回合；用户一键同意后即可开始只读探索并用 propose_plan 提交计划。' +
@@ -183,6 +185,7 @@ export class ProposePlanTool extends Tool {
   override name = 'propose_plan'
   override exclusive = true
   override requiresRuntimeContext = true
+  override evidencePolicy = 'forbidden' as const
   override description =
     '提交等待用户预览、评论或批准的计划，并暂停当前回合。' +
     '只在计划模式中使用；计划必须完整、可执行、决策明确，并写清验证方式、风险和假设。' +
@@ -207,6 +210,10 @@ export class ProposePlanTool extends Tool {
             commands: arr('验证或执行命令', S('命令')),
             acceptance: arr('验收条件', S('验收条件')),
             discovery_refs: arr('引用的 PlanDiscovery id', S('discovery id')),
+            depends_on: arr(
+              '前置步骤 id；所有依赖完成后才能激活本步骤',
+              S('step id'),
+            ),
             verification: arr(
               '验证矩阵；required/optional/manual/reviewer/smoke',
               obj(
@@ -217,8 +224,6 @@ export class ProposePlanTool extends Tool {
                   required: B('是否为阻塞性必需验证'),
                   command: S('命令型验证的命令'),
                   description: S('验证说明'),
-                  status: S('当前状态 pending/passed/failed/skipped'),
-                  reason: S('跳过或失败原因'),
                 },
                 ['id', 'kind'],
               ),

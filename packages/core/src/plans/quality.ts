@@ -28,6 +28,7 @@ export class PlanQualityGate {
       errors.push('plan has no structured steps')
       return { ok: false, errors }
     }
+    errors.push(...planTopologyErrors(opts.steps))
     const discoveryIds = new Set<string>()
     for (const item of opts.draft.discoveries) {
       if (item && typeof item === 'object') {
@@ -46,6 +47,66 @@ export class PlanQualityGate {
     const result = this.assess(opts)
     if (!result.ok) throw new PlanQualityError(result.errors)
   }
+}
+
+export function planTopologyErrors(
+  steps: readonly PlanStep[],
+  isSkippedDependencyWaived: (step: PlanStep) => boolean = () => false,
+): string[] {
+  const errors: string[] = []
+  const byId = new Map<string, PlanStep>()
+  for (const step of steps) {
+    if (byId.has(step.id)) errors.push(`duplicate plan step id: ${step.id}`)
+    else byId.set(step.id, step)
+  }
+  const active = steps.filter((step) => step.status === 'active')
+  if (active.length > 1)
+    errors.push('plan must contain at most one active step')
+  for (const step of steps) {
+    for (const dependencyId of step.dependsOn) {
+      if (dependencyId === step.id) {
+        errors.push(`${step.id} cannot depend on itself`)
+        continue
+      }
+      if (!byId.has(dependencyId))
+        errors.push(`${step.id} references unknown dependency: ${dependencyId}`)
+    }
+  }
+  const visiting = new Set<string>()
+  const visited = new Set<string>()
+  const visit = (stepId: string): void => {
+    if (visiting.has(stepId)) {
+      errors.push(`plan dependency cycle includes ${stepId}`)
+      return
+    }
+    if (visited.has(stepId)) return
+    visiting.add(stepId)
+    for (const dependencyId of byId.get(stepId)?.dependsOn ?? []) {
+      if (byId.has(dependencyId)) visit(dependencyId)
+    }
+    visiting.delete(stepId)
+    visited.add(stepId)
+  }
+  for (const step of steps) visit(step.id)
+  for (const step of steps) {
+    if (step.status !== 'active' && step.status !== 'done') continue
+    for (const dependencyId of step.dependsOn) {
+      const dependency = byId.get(dependencyId)
+      if (
+        dependency &&
+        dependency.status !== 'done' &&
+        !(
+          dependency.status === 'skipped' &&
+          isSkippedDependencyWaived(dependency)
+        )
+      ) {
+        errors.push(
+          `${step.id} dependency ${dependencyId} is not done or explicitly waived`,
+        )
+      }
+    }
+  }
+  return [...new Set(errors)]
 }
 
 export function formatPlanQualityError(errors: string[]): string {

@@ -10,6 +10,8 @@ import Composer from '../components/chat/Composer.vue'
 import MessageList from '../components/chat/MessageList.vue'
 import PendingBar from '../components/chat/PendingBar.vue'
 import type { ModelConfigPayload } from '../types'
+import { activeGoalForSession } from '../runtime/selectors'
+import { isTerminalGoal } from '../runtime/goalRender'
 
 const ctx = useAppContext()
 const sessionStore = useSession()
@@ -34,6 +36,28 @@ const showProfileOnboardingPrompt = computed(
     ctx.boot.value?.profileOnboarding?.status === 'pending' &&
     !activeBottomControl.value,
 )
+const activeGoal = computed(() => {
+  const projected = activeGoalForSession(
+    ctx.goalProjection,
+    ctx.sessionId.value,
+  )
+  if (projected) return projected
+  const bootstrapActive = ctx.boot.value?.goals?.active
+  return bootstrapActive?.sessionId === ctx.sessionId.value &&
+    !ctx.goalProjection.byId[bootstrapActive.id]
+    ? bootstrapActive
+    : null
+})
+const goalMutationLocked = computed(() => {
+  const goal = activeGoal.value
+  return Boolean(
+    goal &&
+    !isTerminalGoal(goal) &&
+    goal.phase !== 'paused' &&
+    goal.phase !== 'awaiting_user',
+  )
+})
+const composerBusy = computed(() => ctx.busy.value || goalMutationLocked.value)
 
 async function applyModelConfig(payload: ModelConfigPayload): Promise<void> {
   if (!ctx.boot.value) return
@@ -142,7 +166,8 @@ function normalizeReasoningEffort(value?: string | null) {
         <PendingBar v-if="!activeBottomControl" :pending="ctx.pending" />
         <div v-if="!activeBottomControl" class="composer-wrap">
           <Composer
-            :busy="ctx.busy.value"
+            :busy="composerBusy"
+            :goal-active="goalMutationLocked"
             :commands="ctx.commands.value"
             :tools="ctx.boot.value?.tools || []"
             :mcp-content="ctx.mcpContent.value"

@@ -149,6 +149,12 @@ describe('DispatchSubagentTool (W04-014/W08)', () => {
       subagentRegistry: subagents,
       runnerFactory: (args) => {
         captured.task = args.task
+        captured.taskId = args.taskId
+        captured.agentId = args.agentId
+        captured.turnId = args.turnId
+        captured.precreated = Boolean(
+          args.taskId && manager.store.inspect(args.taskId).record,
+        )
         captured.tools = args.subRegistry
           .getDefinitions()
           .map((def) => def.name)
@@ -178,6 +184,12 @@ describe('DispatchSubagentTool (W04-014/W08)', () => {
 
     expect(result).toContain('结论: done')
     expect(captured.task).toContain('期望产物: 结论/证据')
+    expect(captured).toMatchObject({
+      taskId: expect.any(String),
+      agentId: expect.any(String),
+      turnId: expect.any(String),
+      precreated: true,
+    })
     expect(captured.tools).toEqual(['read_file'])
     expect(captured.executionEnvironment).toBe(executionEnvironment)
     const [record] = manager.store.list()

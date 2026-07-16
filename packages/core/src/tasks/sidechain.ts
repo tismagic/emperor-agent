@@ -10,6 +10,7 @@ import {
   realpathSync,
 } from 'node:fs'
 import { dirname, isAbsolute, relative, resolve, sep } from 'node:path'
+import { GoalGateMutationLedger } from '../goals/mutation-ledger'
 
 export class SidechainTranscript {
   readonly root: string
@@ -17,6 +18,7 @@ export class SidechainTranscript {
   readonly path: string
   private readonly tasksRoot: string
   private readonly taskRoot: string
+  private readonly goalMutations: GoalGateMutationLedger
 
   constructor(root: string, taskId: string) {
     this.root = resolve(root)
@@ -25,31 +27,38 @@ export class SidechainTranscript {
     this.taskRoot = resolve(this.tasksRoot, this.taskId)
     assertContainedPath(this.tasksRoot, this.taskRoot)
     this.path = resolve(this.taskRoot, 'transcript.jsonl')
+    this.goalMutations = new GoalGateMutationLedger(this.root)
     assertContainedPath(this.tasksRoot, this.path)
   }
 
   append(message: Record<string, unknown>): void {
-    mkdirSync(dirname(this.path), { recursive: true })
-    this.assertExistingPathBoundary()
-    const payload = {
-      ...message,
-      task_id: message.task_id ?? this.taskId,
-      sidechain: message.sidechain ?? true,
-      ts: message.ts ?? Date.now() / 1000,
-    }
-    const descriptor = openSync(
-      this.path,
-      constants.O_APPEND |
-        constants.O_CREAT |
-        constants.O_WRONLY |
-        noFollowFlag(),
-      0o600,
+    this.goalMutations.withSynchronousMutation(
+      'transcript',
+      `${this.taskId}:${String(message.turn_id ?? message.turnId ?? 'turn')}:${Date.now()}`,
+      () => {
+        mkdirSync(dirname(this.path), { recursive: true })
+        this.assertExistingPathBoundary()
+        const payload = {
+          ...message,
+          task_id: message.task_id ?? this.taskId,
+          sidechain: message.sidechain ?? true,
+          ts: message.ts ?? Date.now() / 1000,
+        }
+        const descriptor = openSync(
+          this.path,
+          constants.O_APPEND |
+            constants.O_CREAT |
+            constants.O_WRONLY |
+            noFollowFlag(),
+          0o600,
+        )
+        try {
+          appendFileSync(descriptor, JSON.stringify(payload) + '\n', 'utf8')
+        } finally {
+          closeSync(descriptor)
+        }
+      },
     )
-    try {
-      appendFileSync(descriptor, JSON.stringify(payload) + '\n', 'utf8')
-    } finally {
-      closeSync(descriptor)
-    }
   }
 
   extend(messages: Array<Record<string, unknown>>): void {
@@ -95,6 +104,62 @@ export class SidechainTranscript {
       nextOffset: Math.min(nextOffset, offset + messages.length),
       path: this.path,
     }
+  }
+
+  inspectAll(opts: { maxBytes: number; maxMessages: number }): {
+    messages: Array<Record<string, unknown>>
+    issue: {
+      code: 'task_transcript_malformed' | 'task_transcript_limit_exceeded'
+      path: string
+    } | null
+    path: string
+  } {
+    const maxBytes = Math.max(1, Math.trunc(opts.maxBytes))
+    const maxMessages = Math.max(1, Math.trunc(opts.maxMessages))
+    if (!existsSync(this.path))
+      return { messages: [], issue: null, path: this.path }
+    this.assertExistingPathBoundary()
+    if (lstatSync(this.path).size > maxBytes)
+      return {
+        messages: [],
+        issue: { code: 'task_transcript_limit_exceeded', path: this.path },
+        path: this.path,
+      }
+    const descriptor = openSync(this.path, constants.O_RDONLY | noFollowFlag())
+    let text = ''
+    try {
+      text = readFileSync(descriptor, 'utf8')
+    } finally {
+      closeSync(descriptor)
+    }
+    const messages: Array<Record<string, unknown>> = []
+    for (const line of text.split(/\r?\n/)) {
+      if (!line) continue
+      let payload: unknown
+      try {
+        payload = JSON.parse(line)
+      } catch {
+        return {
+          messages: [],
+          issue: { code: 'task_transcript_malformed', path: this.path },
+          path: this.path,
+        }
+      }
+      if (!payload || typeof payload !== 'object' || Array.isArray(payload))
+        return {
+          messages: [],
+          issue: { code: 'task_transcript_malformed', path: this.path },
+          path: this.path,
+        }
+      messages.push(payload as Record<string, unknown>)
+      if (messages.length > maxMessages)
+        return {
+          messages: [],
+          issue: { code: 'task_transcript_limit_exceeded', path: this.path },
+          path: this.path,
+        }
+    }
+    return { messages, issue: null, path: this.path }
   }
 
   private assertExistingPathBoundary(): void {

@@ -156,6 +156,100 @@ describe('runtime events (test_runtime_events.py)', () => {
     })
     expect(JSON.stringify(event)).not.toContain('token=secret')
   })
+
+  it('builds all bounded Goal events without exposing raw content or paths', () => {
+    const goal = {
+      id: 'goal_1',
+      status: 'active' as const,
+      phase: 'executing' as const,
+      outcome: 'Ship Goal mode',
+      sessionId: 'session_1',
+      currentPlanId: 'plan_1',
+      cyclesUsed: 2,
+      acceptance: { passed: 1, failed: 0, missing: 1, total: 2 },
+      updatedAt: '2026-07-16T01:02:03.000Z',
+      lastEventSeq: 3,
+      workspaceRoot: '/private/workspace',
+      rawContent: 'secret tool output',
+    }
+    const identity = {
+      goalId: goal.id,
+      sessionId: goal.sessionId,
+      lastEventSeq: 3,
+      updatedAt: goal.updatedAt,
+    }
+    const lifecycle = [
+      runtimeEvents.goalCreated(goal, { lastEventSeq: 1 }),
+      runtimeEvents.goalRuntimeUpdate(goal, {
+        lastEventSeq: 2,
+        plan: { completed: 1, failed: 0, blocked: 0, total: 2 },
+      }),
+      runtimeEvents.goalPaused(goal, { lastEventSeq: 4, reason: 'review' }),
+      runtimeEvents.goalResumed(goal, { lastEventSeq: 5 }),
+      runtimeEvents.goalCompleted(
+        { ...goal, status: 'completed' as const, phase: 'terminal' as const },
+        { lastEventSeq: 6, summary: 'verified' },
+      ),
+      runtimeEvents.goalBlocked(
+        { ...goal, status: 'blocked' as const, phase: 'terminal' as const },
+        { lastEventSeq: 6, reason: 'external dependency' },
+      ),
+      runtimeEvents.goalCancelled(
+        { ...goal, status: 'cancelled' as const, phase: 'terminal' as const },
+        { lastEventSeq: 6, reason: 'user request' },
+      ),
+      runtimeEvents.goalPolicyStopped(
+        {
+          ...goal,
+          status: 'stopped_by_policy' as const,
+          phase: 'terminal' as const,
+        },
+        { lastEventSeq: 6, reason: 'cycle limit' },
+      ),
+    ]
+    const evidence = runtimeEvents.goalEvidenceRecorded(goal, identity, {
+      criterionId: 'ac_1',
+      verdict: 'pass',
+      sourceCount: 2,
+      summary: 'focused tests passed',
+      rawContent: 'must be ignored',
+    } as Parameters<typeof runtimeEvents.goalEvidenceRecorded>[2])
+    const gate = runtimeEvents.goalGateEvaluated(identity, {
+      passed: false,
+      reasonCodes: Array.from(
+        { length: 25 },
+        () => 'criterion_missing_evidence' as const,
+      ),
+      rawContent: 'must be ignored',
+    } as Parameters<typeof runtimeEvents.goalGateEvaluated>[1])
+
+    expect(lifecycle.map((event) => event.event)).toEqual([
+      'goal_created',
+      'goal_runtime_update',
+      'goal_paused',
+      'goal_resumed',
+      'goal_completed',
+      'goal_blocked',
+      'goal_cancelled',
+      'goal_policy_stopped',
+    ])
+    expect(evidence).toMatchObject({
+      event: 'goal_evidence_recorded',
+      goal_id: 'goal_1',
+      criterion_id: 'ac_1',
+      verdict: 'pass',
+      source_count: 2,
+    })
+    expect(gate.reason_codes).toHaveLength(20)
+    expect(gate.reason_count).toBe(25)
+    for (const event of [...lifecycle, evidence, gate]) {
+      const wire = JSON.stringify(event)
+      expect(wire).not.toContain('workspaceRoot')
+      expect(wire).not.toContain('/private/workspace')
+      expect(wire).not.toContain('rawContent')
+      expect(wire).not.toContain('secret tool output')
+    }
+  })
 })
 
 describe('RuntimeEventStore (test_runtime_events.py)', () => {
@@ -394,6 +488,34 @@ describe('ActiveTaskRegistry (test_active_tasks.py)', () => {
 })
 
 describe('compactReplayEvents (P1-5 replay compaction)', () => {
+  it('only collapses adjacent updates for the same Goal and preserves audit events', () => {
+    const rows = [
+      { event: 'goal_runtime_update', goal_id: 'g1', last_event_seq: 1 },
+      { event: 'goal_runtime_update', goal_id: 'g1', last_event_seq: 2 },
+      { event: 'goal_evidence_recorded', goal_id: 'g1', last_event_seq: 3 },
+      { event: 'goal_runtime_update', goal_id: 'g1', last_event_seq: 4 },
+      { event: 'goal_runtime_update', goal_id: 'g2', last_event_seq: 1 },
+      {
+        event: 'goal_gate_evaluated',
+        goal_id: 'g1',
+        last_event_seq: 5,
+        passed: false,
+      },
+      { event: 'goal_paused', goal_id: 'g1', last_event_seq: 6 },
+      { event: 'goal_completed', goal_id: 'g1', last_event_seq: 7 },
+    ]
+
+    expect(compactReplayEvents(rows)).toEqual([
+      rows[1],
+      rows[2],
+      rows[3],
+      rows[4],
+      rows[5],
+      rows[6],
+      rows[7],
+    ])
+  })
+
   it('collapses contiguous plan_draft_delta runs to the last event per stream', () => {
     const rows = [
       { event: 'user_message', seq: 1, turn_id: 't1', content: 'go' },

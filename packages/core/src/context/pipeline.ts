@@ -34,6 +34,9 @@ export const DEFAULT_MICROCOMPACT_HEAD_CHARS = 1200
 export const DEFAULT_MICROCOMPACT_TAIL_CHARS = 600
 
 export type PlanContextProvider = (history: OpenAiMsg[]) => OpenAiMsg | null
+export type GoalContextProvider = (
+  history: OpenAiMsg[],
+) => OpenAiMsg | null | Promise<OpenAiMsg | null>
 
 export interface Projection {
   messages: OpenAiMsg[]
@@ -53,6 +56,7 @@ export class ContextPipeline {
   readonly toolResultStore: ToolResultStore | null
   readonly toolResultLimits: Record<string, number>
   readonly planContextProvider: PlanContextProvider | null
+  readonly goalContextProvider: GoalContextProvider | null
   readonly microcompactKeepRecent: number
   readonly microcompactMinChars: number
   readonly microcompactHeadChars: number
@@ -67,6 +71,7 @@ export class ContextPipeline {
     aggregateToolResultBudget?: number
     toolResultLimits?: Record<string, number> | null
     planContextProvider?: PlanContextProvider | null
+    goalContextProvider?: GoalContextProvider | null
     microcompactKeepRecent?: number
     microcompactMinChars?: number
     microcompactHeadChars?: number
@@ -82,6 +87,7 @@ export class ContextPipeline {
       opts?.aggregateToolResultBudget ?? DEFAULT_AGGREGATE_TOOL_RESULT_BUDGET
     this.toolResultLimits = { ...(opts?.toolResultLimits ?? {}) }
     this.planContextProvider = opts?.planContextProvider ?? null
+    this.goalContextProvider = opts?.goalContextProvider ?? null
     this.microcompactKeepRecent =
       opts?.microcompactKeepRecent ?? DEFAULT_MICROCOMPACT_KEEP_RECENT
     this.microcompactMinChars =
@@ -174,6 +180,36 @@ export class ContextPipeline {
       shrunk: shrunkCount,
     }
     return { messages, filled, dropped, cappedCount, shrunkCount, report }
+  }
+
+  async projectAsync(
+    history: OpenAiMsg[],
+    opts?: { stableBoundary?: number; turnId?: string | null },
+  ): Promise<Projection> {
+    const projection = this.project(history, opts)
+    if (!this.goalContextProvider) return projection
+    const goalContext = await this.goalContextProvider(history)
+    if (!goalContext)
+      return {
+        ...projection,
+        report: { ...projection.report, goal_context_attached: 0 },
+      }
+    const planAttached = Number(projection.report.plan_context_attached) === 1
+    const planContext = planAttached
+      ? (projection.messages.at(-1) ?? null)
+      : null
+    const historyMessages = planAttached
+      ? projection.messages.slice(0, -1)
+      : projection.messages
+    return {
+      ...projection,
+      messages: [
+        goalContext,
+        ...(planContext ? [planContext] : []),
+        ...historyMessages,
+      ],
+      report: { ...projection.report, goal_context_attached: 1 },
+    }
   }
 
   /** 超阈值时压缩更早历史。对齐 `microcompact`。 */

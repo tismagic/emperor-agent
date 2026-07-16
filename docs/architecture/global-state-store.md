@@ -1,6 +1,9 @@
 # 全局私有存储根架构
 
-对应实施计划：`docs/superpowers/plans/2026-07-06-global-state-store-claude-code-alignment.md`。
+> 文档状态：Active<br>
+> 面向读者：用户、维护者、数据与迁移开发者<br>
+> 最后核验：2026-07-16<br>
+> 事实源：`packages/core/src/runtime/paths.ts`、`packages/core/src/runtime/migrate-state-root.ts`、各领域 Store
 
 ## 两个根的区分
 
@@ -23,14 +26,25 @@ Emperor Agent 区分两个互不重叠的根目录概念：
 ```text
 ~/.emperor-agent/
   emperor.local.json
-  model_config.json
+  model_config.json       # schemaVersion 2；保存多个模型，全局激活一个
   mcp_config.json
-  templates/            # 内置只读种子模板副本，不承载任何持续改写的活文件
+  hooks_config.json
+  onboarding.json
   skills/                # 用户全局技能（Skill API 的写入目标）
   memory/
     profile/
       USER.local.md      # 用户偏好档案；由 ensureUserProfileFile() 播种/维护
     MEMORY.local.md      # 全局长期记忆；保留旧 MemoryStore 相对路径以便兼容迁移
+    YYYY-MM-DD.md        # 按日情景记忆
+    history.jsonl
+    history_archive/
+    history_index.json
+    versions/
+    plans/
+    compaction/
+    watchlist.md
+    watchlist_state.json
+    patch-ledger.jsonl
     attachments/<month>/
     media/<month>/
     desktop/window.json
@@ -38,6 +52,7 @@ Emperor Agent 区分两个互不重叠的根目录概念：
   sessions/
     index.json
     <session-id>/
+      meta.jsonl
       history.jsonl
       runtime/events.jsonl
       _checkpoint.json
@@ -48,11 +63,37 @@ Emperor Agent 区分两个互不重叠的根目录概念：
       project.json
       AGENTS.local.md     # 全局私有项目记忆（见下方"命名易混淆点"）
       prompt-overlay.md
+      team/               # 绑定项目的 Team 私有状态
   tasks/
+  tokens/
+    tokens.jsonl
+    tokens_archive/
   scheduler/
+    jobs.json
+    action.jsonl
   team/
   external/
   control/
+    state.json
+    core-action.key
+  hooks/
+    audit.jsonl
+    audit/
+    project-trust.json
+  goals/
+    index.json
+    diagnostics.json
+    gate-facts.json
+    gate-mutations.json
+    blocker-causes.json
+    blocker-facts.json
+    post-commit-cleanup-acks.jsonl
+    post-commit-cleanup-claims/
+    post-commit-diagnostics.jsonl
+    <goal-id>/
+      events.jsonl        # hash-chained 权威事件账本
+      goal.json           # 可从 events 重建的 snapshot
+      observations.jsonl  # Core 捕获的工具 observation
   migrations/
     state-root-migration.json
 ```
@@ -69,7 +110,13 @@ Emperor Agent 区分两个互不重叠的根目录概念：
     skills/                # 项目级技能，只读，不由 Skill API 写入
 ```
 
-Core **不会**在项目源码目录下自动创建 `.emperor/sessions`、`.emperor/memory`、`.emperor/runtime`、`.emperor/attachments`、`.emperor/media`。如果这些目录已经因为旧版本或其他工具而存在，diagnostics 只会提示"检测到旧私有数据"，不会自动删除或搬移。
+Core **不会**在项目源码目录下自动创建 `.emperor/sessions`、`.emperor/memory`、`.emperor/runtime`、`.emperor/attachments`、`.emperor/media` 或 `.emperor/goals`。如果这些目录已经因为旧版本或其他工具而存在，diagnostics 只会提示"检测到旧私有数据"，不会自动删除或搬移。
+
+## Goal 私有状态
+
+Goal 是 TypeScript-only 的新能力，所有持续状态位于 `stateRoot/goals/`。`<goal-id>/events.jsonl` 是权威源，`goal.json` 与根级 `index.json` 是可重建投影；Evidence、Plan binding、cycle/terminal receipt 通过 typed event payload 保存，工具观察写入独立 `observations.jsonl`。Gate facts、mutation epoch、typed blocker 与 post-commit cleanup 使用根级账本，防止模型、renderer 或崩溃恢复路径绕过完成门禁。
+
+Goal store 不搬移或批量改写既有 `sessions/`、`plans/`、`control/` 与 runtime log。Session 删除时 Core 会先取消并 settle 对应 Goal，再删除 Goal 目录；删除失败会记入 Goal diagnostics 并 fail closed。完整状态机与恢复协议见 [`goal-mode.md`](goal-mode.md)。
 
 ## 命名易混淆点：两个 `AGENTS` 系文件
 

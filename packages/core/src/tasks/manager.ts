@@ -6,6 +6,7 @@ import type { HookAggregateDecision, HookEventName } from '../hooks/models'
 import { relativePortable } from '../util/paths'
 
 export interface TaskStartOptions {
+  taskId?: string
   kind: string
   title: string
   source: string
@@ -39,17 +40,40 @@ export class TaskManager {
   readonly store: TaskStore
 
   private readonly hooks: TaskHookHost | null
+  readonly #reviewerCapability = Object.freeze({
+    kind: 'core_goal_reviewer_task_writer',
+  })
 
-  constructor(root: string, opts: { hooks?: TaskHookHost | null } = {}) {
+  constructor(
+    root: string,
+    opts: { hooks?: TaskHookHost | null; maxTerminal?: number } = {},
+  ) {
     this.root = root
-    this.store = new TaskStore(root)
+    this.store = new TaskStore(root, {
+      reviewerCapability: this.#reviewerCapability,
+      maxTerminal: opts.maxTerminal,
+    })
     this.hooks = opts.hooks ?? null
   }
 
   startTask(opts: TaskStartOptions): TaskRecord {
+    if (opts.source === 'goal_reviewer_dispatch')
+      throw new Error(
+        'Goal reviewer Tasks must use the Core reviewer Task factory.',
+      )
     const record = this.taskCandidate(opts)
-    this.store.upsert(record)
-    return record
+    return this.store.upsert(record, { expectedRevision: null })
+  }
+
+  startGoalReviewerTask(opts: Omit<TaskStartOptions, 'source'>): TaskRecord {
+    const record = this.taskCandidate({
+      ...opts,
+      source: 'goal_reviewer_dispatch',
+    })
+    return this.store.upsert(record, {
+      expectedRevision: null,
+      reviewerCapability: this.#reviewerCapability,
+    })
   }
 
   async startTaskWithHooks(opts: TaskStartOptions): Promise<TaskRecord | null> {
@@ -63,12 +87,13 @@ export class TaskManager {
       if (decision.decision === 'deny' || decision.decision === 'ask')
         return null
     }
-    this.store.upsert(record)
-    return record
+    return this.store.upsert(record, { expectedRevision: null })
   }
 
   private taskCandidate(opts: TaskStartOptions): TaskRecord {
-    const taskId = `${TaskManager.prefix(opts.kind)}_${randomUUID().replace(/-/g, '').slice(0, 12)}`
+    const taskId =
+      opts.taskId ??
+      `${TaskManager.prefix(opts.kind)}_${randomUUID().replace(/-/g, '').slice(0, 12)}`
     const transcript = new SidechainTranscript(this.root, taskId)
     const record = new TaskRecord({
       id: taskId,
@@ -93,6 +118,8 @@ export class TaskManager {
   ): TaskRecord | null {
     const record = this.store.get(taskId)
     if (!record) return null
+    const immutableReviewerProvenance =
+      record.source === 'goal_reviewer_dispatch'
     const payload: Record<string, unknown> = { ...record.toDict() }
     const map: Record<string, string> = {
       turnId: 'turn_id',
@@ -115,11 +142,19 @@ export class TaskManager {
     ])
     for (const [key, value] of Object.entries(fields)) {
       const target = map[key] ?? key
-      if (allowed.has(target)) payload[target] = value
+      if (
+        allowed.has(target) &&
+        !(
+          immutableReviewerProvenance &&
+          ['source', 'transcript_path', 'metadata'].includes(target)
+        )
+      )
+        payload[target] = value
     }
     const updated = TaskRecord.fromDict(payload)
-    this.store.upsert(updated)
-    return updated
+    return this.store.upsert(updated, {
+      expectedRevision: record.revision,
+    })
   }
 
   appendSidechain(taskId: string, message: Record<string, unknown>): void {
@@ -163,14 +198,61 @@ export class TaskManager {
         return { committed: false, record, reason: decision.reason }
       }
     }
-    this.store.upsert(candidate)
-    return { committed: true, record: candidate, reason: '' }
+    const saved = this.store.upsert(candidate, {
+      expectedRevision: record.revision,
+    })
+    return { committed: true, record: saved, reason: '' }
   }
 
   failTask(taskId: string, opts: { error: string }): TaskRecord | null {
     const record = this.store.get(taskId)
     if (!record) return null
     return this.finish(record, TaskStatus.FAILED, { error: opts.error })
+  }
+
+  completeGoalReviewerTask(
+    taskId: string,
+    opts: { summary?: string } = {},
+  ): TaskRecord | null {
+    const record = this.store.get(taskId)
+    if (!record) return null
+    return this.finishGoalReviewer(record, TaskStatus.COMPLETED, {
+      summary: opts.summary ?? '',
+    })
+  }
+
+  failGoalReviewerTask(
+    taskId: string,
+    opts: { error: string },
+  ): TaskRecord | null {
+    const record = this.store.get(taskId)
+    if (!record) return null
+    return this.finishGoalReviewer(record, TaskStatus.FAILED, {
+      error: opts.error,
+    })
+  }
+
+  deleteGoalReviewerTask(taskId: string): boolean {
+    return this.store.delete(taskId, {
+      reviewerCapability: this.#reviewerCapability,
+    })
+  }
+
+  deleteGoalReviewerTaskIncludingArchive(taskId: string): boolean {
+    return this.store.deleteIncludingArchive(taskId, {
+      reviewerCapability: this.#reviewerCapability,
+    })
+  }
+
+  failCompletedGoalReviewerTaskIncludingArchive(
+    taskId: string,
+    opts: { error: string },
+  ): TaskRecord | null {
+    return this.store.failCompletedReviewerIncludingArchive(
+      taskId,
+      opts.error,
+      { reviewerCapability: this.#reviewerCapability },
+    )
   }
 
   cancelTask(
@@ -190,8 +272,23 @@ export class TaskManager {
     progress: Record<string, unknown>,
   ): TaskRecord {
     const updated = this.finishedCandidate(record, status, progress)
-    this.store.upsert(updated)
-    return updated
+    return this.store.upsert(updated, {
+      expectedRevision: record.revision,
+    })
+  }
+
+  private finishGoalReviewer(
+    record: TaskRecord,
+    status: string,
+    progress: Record<string, unknown>,
+  ): TaskRecord {
+    if (record.source !== 'goal_reviewer_dispatch')
+      throw new Error('Task is not a Core Goal reviewer Task.')
+    const updated = this.finishedCandidate(record, status, progress)
+    return this.store.upsert(updated, {
+      expectedRevision: record.revision,
+      reviewerCapability: this.#reviewerCapability,
+    })
   }
 
   private finishedCandidate(

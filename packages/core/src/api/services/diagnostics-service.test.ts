@@ -37,6 +37,11 @@ describe('CoreDiagnosticsService (MIG-IPC-007 / MIG-APP-002)', () => {
         ready: 3,
         activeJob: null,
       }),
+      goalDiagnostics: () => ({
+        root: join(root, '.emperor', 'goals'),
+        recoveryRequired: 1,
+        issues: [{ goalId: 'goal_1', code: 'event_corrupt' }],
+      }),
     })
 
     const payload = await service.payload()
@@ -71,6 +76,11 @@ describe('CoreDiagnosticsService (MIG-IPC-007 / MIG-APP-002)', () => {
       required: 4,
       ready: 3,
       activeJob: null,
+    })
+    expect(payload.goals).toEqual({
+      root: join(root, '.emperor', 'goals'),
+      recoveryRequired: 1,
+      issues: [{ goalId: 'goal_1', code: 'event_corrupt' }],
     })
     expect(payload.environment).not.toHaveProperty('logs')
     expect(payload.dependencies).toMatchObject({

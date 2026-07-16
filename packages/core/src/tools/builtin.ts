@@ -32,6 +32,7 @@ export class LoadSkill extends Tool {
     '加载失败时报告缺失或名称不匹配，不要编造 Skill 内容。'
   override parameters = toolParamsSchema({ name: S('Skill 名称') }, ['name'])
   override readOnly = true
+  override evidencePolicy = 'forbidden' as const
 
   private readonly loader: SkillsLoader | null
 
@@ -97,8 +98,15 @@ export class TodoStore {
       let status = String(t.status ?? 'pending')
       if (!TODO_VALID_STATUS.includes(status)) status = 'pending'
       const item: Record<string, unknown> = { id: t.id ?? i, content, status }
+      const planId = String(t.plan_id ?? t.planId ?? '').trim()
+      if (planId) item.plan_id = planId.slice(0, 96)
       const planStepId = String(t.plan_step_id ?? t.planStepId ?? '').trim()
       if (planStepId) item.plan_step_id = planStepId.slice(0, 64)
+      const approvalGeneration = Number(
+        t.approval_generation ?? t.approvalGeneration,
+      )
+      if (Number.isInteger(approvalGeneration) && approvalGeneration > 0)
+        item.approval_generation = approvalGeneration
       const activeForm = String(t.active_form ?? t.activeForm ?? '').trim()
       if (activeForm) item.active_form = activeForm.slice(0, 240)
       const blockedReason = String(
@@ -123,7 +131,10 @@ export class TodoStore {
   }
 
   /** Legacy projection helper for old tests/importers only; runner mainline must not call this. */
-  syncFromPlanSteps(steps: Array<Record<string, unknown>>): string {
+  syncFromPlanSteps(
+    steps: Array<Record<string, unknown>>,
+    binding?: { planId: string; approvalGeneration: number },
+  ): string {
     const statusMap: Record<string, string> = {
       pending: 'pending',
       active: 'in_progress',
@@ -139,7 +150,9 @@ export class TodoStore {
       if (!title) return
       const item: Record<string, unknown> = {
         id: index,
+        ...(binding ? { plan_id: binding.planId } : {}),
         plan_step_id: String(step.id ?? '').trim() || null,
+        ...(binding ? { approval_generation: binding.approvalGeneration } : {}),
         content: title,
         status: statusMap[String(step.status ?? 'pending')] ?? 'pending',
       }
@@ -188,6 +201,7 @@ export class SaveUserProfileTool extends Tool {
     ['content'],
   )
   override readOnly = false
+  override evidencePolicy = 'forbidden' as const
 
   private readonly writer: UserProfileWriter
   private readonly onSaved: (() => void) | null
@@ -254,7 +268,12 @@ export class UpdateTodos extends Tool {
             content: S('任务内容'),
             status: S('pending|in_progress|completed|blocked'),
             activeForm: S('进行时标签'),
-            planStepId: S('关联计划步骤'),
+            planId: S('关联计划；Goal Plan 投影时必填'),
+            planStepId: S('关联计划步骤；Goal Plan 投影时必填'),
+            approvalGeneration: {
+              type: 'integer',
+              description: '关联计划的审批代次；Goal Plan 投影时必填',
+            },
           },
           description: '任务项',
         },
@@ -264,6 +283,7 @@ export class UpdateTodos extends Tool {
     ['todos'],
   )
   override readOnly = false
+  override evidencePolicy = 'forbidden' as const
   override exclusive = true
 
   private readonly store: TodoStore
@@ -304,6 +324,23 @@ const DENY_PATTERNS = [
 
 const MAX_OUTPUT_CHARS = 20_000
 
+interface RunCommandExecutionOutcome {
+  stdout: string
+  stderr: string
+  error:
+    | (Error & {
+        code?: string | number | null
+        signal?: string | null
+        killed?: boolean
+      })
+    | null
+}
+
+type RunCommandExecutor = (
+  command: string,
+  options: ExecOptions & { encoding: BufferEncoding },
+) => Promise<RunCommandExecutionOutcome>
+
 export class RunCommand extends Tool {
   override name = 'run_command'
   override description =
@@ -316,19 +353,25 @@ export class RunCommand extends Tool {
     ['command'],
   )
   override exclusive = true
+  override evidencePolicy = 'eligible' as const
   override maxResultChars = 12_000
 
   private readonly workspace: string
+  private readonly executor: RunCommandExecutor
 
-  constructor(root: string) {
+  constructor(
+    root: string,
+    options: { readonly executor?: RunCommandExecutor } = {},
+  ) {
     super()
     this.workspace = root
+    this.executor = options.executor ?? execCommand
   }
 
   async execute(
     args: Record<string, unknown>,
     ctx?: ToolExecutionContext,
-  ): Promise<string> {
+  ): Promise<ToolResult> {
     const command = String(args.command ?? '')
     const workspace = ctx?.workspaceRoot ?? ctx?.root ?? this.workspace
     const cwdDecision = workspacePolicyForTool(ctx, this.workspace).resolvePath(
@@ -336,19 +379,22 @@ export class RunCommand extends Tool {
       'execute',
       { baseRoot: workspace },
     )
-    if (!cwdDecision.allowed)
-      return `Error: command cwd blocked by workspace policy: ${formatWorkspacePolicyError(cwdDecision)}`
+    if (!cwdDecision.allowed) {
+      const content = `Error: command cwd blocked by workspace policy: ${formatWorkspacePolicyError(cwdDecision)}`
+      return this.policyFailureResult(command, content)
+    }
     for (const pat of DENY_PATTERNS) {
       if (pat.test(command)) {
-        return (
+        const content =
           `${SAFETY_REFUSAL_PREFIX} (matches dangerous pattern: ${pat})\n` +
           '替代方案：改用具备明确安全边界的专用工具；若确需执行，请说明影响并请求用户明确批准。不要重试同类命令或尝试绕过安全检查。'
-        )
+        return this.policyFailureResult(command, content)
       }
     }
+    let outcome: RunCommandExecutionOutcome
     try {
       const snapshotEnv = ctx?.executionEnvironment?.env
-      const { stdout } = await execCommand(command, {
+      outcome = await this.executor(command, {
         encoding: 'utf8',
         timeout: 120_000,
         cwd: workspace || process.cwd(),
@@ -367,20 +413,22 @@ export class RunCommand extends Tool {
             },
         signal: ctx?.signal ?? undefined,
       })
-      return stdout.trim() || '(command completed with no output)'
-    } catch (e: any) {
-      const stderr = e.stderr ?? ''
-      const stdout = e.stdout ?? ''
-      const body = stdout || stderr
-      if (e.name === 'AbortError' || ctx?.signal?.aborted)
-        return 'Error: command cancelled'
-      if (e.code === 'ETIMEDOUT' || e.killed)
-        return 'Error: command timed out after 120 seconds'
-      const msg = body
-        ? `Error (exit ${e.status ?? 1}):\n${body}`.trim()
-        : `Error: ${e.message}`
-      return msg.slice(0, MAX_OUTPUT_CHARS)
+    } catch (error) {
+      outcome = {
+        stdout: '',
+        stderr: '',
+        error:
+          error instanceof Error
+            ? error
+            : new Error('command execution failed'),
+      }
     }
+    if (outcome.error === null)
+      return this.successResult(
+        command,
+        outcome.stdout.trim() || '(command completed with no output)',
+      )
+    return this.failedProcessResult(command, outcome, ctx)
   }
 
   override isReadOnly(args: Record<string, unknown>): boolean {
@@ -388,22 +436,81 @@ export class RunCommand extends Tool {
   }
 
   override mapResult(raw: string, ctx: ToolExecutionContext): ToolResult {
-    const timedOut = raw.includes('timed out')
-    const isErr = raw.startsWith('Error:')
+    return this.successResult(String(ctx.arguments?.command ?? ''), raw)
+  }
+
+  private successResult(command: string, content: string): ToolResult {
     return {
-      modelContent: raw,
-      displaySummary: timedOut
-        ? `run_command timed out: ${String(ctx.arguments?.command ?? '').slice(0, 120)}`
-        : `run_command exit ${isErr ? 'non-zero' : '0'}: ${String(ctx.arguments?.command ?? '').slice(0, 120)}`,
-      rawContent: raw,
+      modelContent: content,
+      displaySummary: `run_command exit 0: ${command.slice(0, 120)}`,
+      rawContent: content,
       artifacts: [],
       metadata: {
         tool: 'run_command',
-        command: ctx.arguments?.command ?? '',
-        exitCode: isErr ? 1 : 0,
+        command,
+        exitCode: 0,
+        signal: null,
+        timedOut: false,
+      },
+      isError: false,
+    }
+  }
+
+  private policyFailureResult(command: string, content: string): ToolResult {
+    return {
+      modelContent: content,
+      displaySummary: `run_command exit non-zero: ${command.slice(0, 120)}`,
+      rawContent: content,
+      artifacts: [],
+      metadata: {
+        tool: 'run_command',
+        command,
+        exitCode: null,
+        signal: null,
+        timedOut: false,
+      },
+      isError: true,
+    }
+  }
+
+  private failedProcessResult(
+    command: string,
+    outcome: RunCommandExecutionOutcome,
+    ctx?: ToolExecutionContext,
+  ): ToolResult {
+    const error = outcome.error!
+    const cancelled = error.name === 'AbortError' || ctx?.signal?.aborted
+    const timedOut = error.code === 'ETIMEDOUT' || error.killed === true
+    const exitCode =
+      typeof error.code === 'number' &&
+      Number.isInteger(error.code) &&
+      error.code >= 0
+        ? error.code
+        : null
+    const signal = typeof error.signal === 'string' ? error.signal : null
+    const body = outcome.stdout || outcome.stderr
+    let content: string
+    if (cancelled) content = 'Error: command cancelled'
+    else if (timedOut) content = 'Error: command timed out after 120 seconds'
+    else if (body && exitCode !== null)
+      content = `Error (exit ${exitCode}):\n${body}`.trim()
+    else if (body) content = `Error: ${error.message}\n${body}`.trim()
+    else content = `Error: ${error.message}`
+    return {
+      modelContent: content.slice(0, MAX_OUTPUT_CHARS),
+      displaySummary: timedOut
+        ? `run_command timed out: ${command.slice(0, 120)}`
+        : `run_command failed: ${content.slice(0, 160)}`,
+      rawContent: content.slice(0, MAX_OUTPUT_CHARS),
+      artifacts: [],
+      metadata: {
+        tool: 'run_command',
+        command,
+        exitCode,
+        signal,
         timedOut,
       },
-      isError: isErr,
+      isError: true,
     }
   }
 }
@@ -411,26 +518,10 @@ export class RunCommand extends Tool {
 function execCommand(
   command: string,
   options: ExecOptions & { encoding: BufferEncoding },
-): Promise<{ stdout: string; stderr: string }> {
-  return new Promise((resolve, reject) => {
+): Promise<RunCommandExecutionOutcome> {
+  return new Promise((resolve) => {
     exec(command, options, (error, stdout, stderr) => {
-      if (error) {
-        ;(
-          error as unknown as NodeJS.ErrnoException & {
-            stdout?: string
-            stderr?: string
-          }
-        ).stdout = stdout
-        ;(
-          error as unknown as NodeJS.ErrnoException & {
-            stdout?: string
-            stderr?: string
-          }
-        ).stderr = stderr
-        reject(error)
-        return
-      }
-      resolve({ stdout, stderr })
+      resolve({ stdout, stderr, error })
     })
   })
 }

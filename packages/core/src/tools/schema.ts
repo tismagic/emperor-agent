@@ -28,6 +28,7 @@ export interface ObjectSchema {
   properties: Record<string, ParamSchema>
   required?: string[]
   description: string
+  additionalProperties?: false
 }
 export interface ScalarUnionSchema {
   type: Array<'string' | 'integer' | 'number' | 'boolean' | 'null'>
@@ -46,6 +47,7 @@ export interface ToolParamsSchema {
   type: 'object'
   properties: Record<string, ParamSchema>
   required: string[]
+  additionalProperties?: false
 }
 
 export function S(description: string): StringSchema {

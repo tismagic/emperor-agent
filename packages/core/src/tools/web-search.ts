@@ -40,6 +40,7 @@ export class WebSearchTool extends Tool {
     ['query'],
   )
   override readOnly = true
+  override evidencePolicy = 'eligible' as const
   override maxResultChars = 12_000
 
   private readonly adapter: WebSearchAdapter | null

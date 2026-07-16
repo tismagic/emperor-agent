@@ -17,12 +17,14 @@ import {
 import {
   ContextPipeline,
   ToolResultStore,
+  type GoalContextProvider,
   type PlanContextProvider,
 } from '../context/pipeline'
 import type { ToolRegistry } from '../tools/registry'
 import { ToolResultObj, type ToolDefinition } from '../tools/base'
 import { ToolExecutionEngine } from '../tools/execution'
 import { TurnPaused } from '../control/exceptions'
+import { parsePauseResult } from '../control/tools'
 import type { Interaction } from '../control/models'
 import { PlanContextBuilder } from '../plans/context'
 import { PlanStatus, type PlanRecord } from '../plans/models'
@@ -94,6 +96,12 @@ import {
   unverifiedPlanHonestyFollowup,
 } from './runner-plan-recording'
 import type { ExecutionEnvironment } from '../environment/snapshot'
+import {
+  recordRunnerGoalToolResult,
+  recordRunnerPlanVerificationReceipt,
+  type RunnerGoalRecordingHost,
+} from './runner-goal-recording'
+import { filterGoalToolDefinitions, type GoalToolHost } from '../goals/tools'
 
 type StreamEmitter = (event: Record<string, unknown>) => void | Promise<void>
 type Msg = Record<string, unknown>
@@ -136,6 +144,10 @@ export interface CompactorLike {
     turnId: string | null
     currentTokens: number
     maxContext: number
+    goalHint?: {
+      readonly goalId: string
+      readonly lastEventSeq: number
+    } | null
   }): Promise<unknown> | unknown
   compactAsync?(history: Msg[]): Promise<Msg[]>
   compact?(history: Msg[]): Msg[]
@@ -248,6 +260,16 @@ export interface AgentRunnerOptions {
   sessionId?: string | null
   streamingToolExecution?: boolean
   hooks?: AgentRunnerHookHost | null
+  goalObservationRecorder?: RunnerGoalRecordingHost | null
+  goalToolHost?: Pick<GoalToolHost, 'visibleToolNames'> | null
+  goalContextProvider?: GoalContextProvider | null
+  goalContextHint?:
+    | (() => Promise<{
+        readonly goalId: string
+        readonly lastEventSeq: number
+      } | null>)
+    | null
+  onGoalCompacted?: (() => void) | null
 }
 
 export interface AgentRunnerHookHost {
@@ -291,6 +313,16 @@ export class AgentRunner implements RunnerModelHost {
   sessionId: string | null
   streamingToolExecution: boolean
   hooks: AgentRunnerHookHost | null
+  goalObservationRecorder: RunnerGoalRecordingHost | null
+  goalToolHost: Pick<GoalToolHost, 'visibleToolNames'> | null
+  goalContextProvider: GoalContextProvider | null
+  goalContextHint:
+    | (() => Promise<{
+        readonly goalId: string
+        readonly lastEventSeq: number
+      } | null>)
+    | null
+  onGoalCompacted: (() => void) | null
   lastEstimatedInputTokens: number | null = null
   lastContextProjectionReport: Record<string, unknown> | null = null
   lastModelCall: ModelCallMeta
@@ -328,6 +360,11 @@ export class AgentRunner implements RunnerModelHost {
     this.sessionId = opts.sessionId ?? null
     this.streamingToolExecution = opts.streamingToolExecution ?? false
     this.hooks = opts.hooks ?? null
+    this.goalObservationRecorder = opts.goalObservationRecorder ?? null
+    this.goalToolHost = opts.goalToolHost ?? null
+    this.goalContextProvider = opts.goalContextProvider ?? null
+    this.goalContextHint = opts.goalContextHint ?? null
+    this.onGoalCompacted = opts.onGoalCompacted ?? null
     this.lastModelCall = {
       model: this.model,
       provider: this.providerName,
@@ -450,6 +487,7 @@ export class AgentRunner implements RunnerModelHost {
             signal,
             entryPlanDecision,
             executionEnvironment,
+            turnId,
           )
         : null
       const response = await this.askModel(
@@ -589,6 +627,7 @@ export class AgentRunner implements RunnerModelHost {
                 planDecision,
                 signal,
                 executionEnvironment,
+                turnId,
               )
           throwIfAborted(signal)
         } catch (pause) {
@@ -807,6 +846,9 @@ export class AgentRunner implements RunnerModelHost {
       await this.emitTurnPhase(turnState, TurnPhase.COMPLETED, emit, {
         content_chars: finalReply.length,
       })
+      // COMPLETED here is a single model turn. Goal terminal truth is owned
+      // exclusively by GoalCompletionGate.complete(), never by final prose or
+      // a permissive Stop hook.
       return finalReply
     }
   }
@@ -941,11 +983,11 @@ export class AgentRunner implements RunnerModelHost {
     const pipeline = emergencyShrink
       ? this.emergencyContextPipeline()
       : this.contextPipeline
-    const projection = pipeline.project(history as never, {
+    const projection = await pipeline.projectAsync(history as never, {
       stableBoundary,
       turnId,
     })
-    const governed = projection.messages
+    let governed = projection.messages
     const report = emergencyShrink
       ? {
           ...projection.report,
@@ -975,6 +1017,29 @@ export class AgentRunner implements RunnerModelHost {
             version: null,
           },
         ]
+    const durableContext: Array<Record<string, unknown>> = []
+    while (
+      governed.length &&
+      governed[0]?.role === 'system' &&
+      /^\[(?:GOAL|PLAN)_/.test(String(governed[0]?.content ?? ''))
+    ) {
+      durableContext.push(governed[0] as unknown as Record<string, unknown>)
+      governed = governed.slice(1)
+    }
+    for (const message of durableContext) {
+      const content = String(message.content ?? '')
+      systemPrompt = `${systemPrompt}\n\n---\n\n${content}`
+      promptSections.push({
+        name: content.startsWith('[GOAL_') ? 'goal' : 'plan',
+        content,
+        source: content.startsWith('[GOAL_')
+          ? 'GoalContextBuilder.build()'
+          : 'PlanContextBuilder.messageFor()',
+        priority: content.startsWith('[GOAL_') ? 70 : 60,
+        budgetChars: null,
+        version: null,
+      })
+    }
     let toolDefinitions: ToolDefinition[]
     if (this.controlManager !== null) {
       const controlPrompt = this.controlManager.systemPrompt()
@@ -1003,6 +1068,13 @@ export class AgentRunner implements RunnerModelHost {
     } else {
       toolDefinitions = this.registry.getDefinitions()
     }
+    const visibleGoalTools = this.goalToolHost
+      ? await this.goalToolHost.visibleToolNames(this.sessionId)
+      : []
+    toolDefinitions = filterGoalToolDefinitions(
+      toolDefinitions,
+      visibleGoalTools,
+    )
     const snapshotMessages = [
       { role: 'system', content: systemPrompt },
       ...(governed as Array<Record<string, unknown>>),
@@ -1096,6 +1168,7 @@ export class AgentRunner implements RunnerModelHost {
     clarification: Clarification | null
     signal: AbortSignal | null
     executionEnvironment: ExecutionEnvironment | null
+    turnId: string | null
   }): {
     runOne: (call: ToolCallRequest) => Promise<ToolResultObj>
     resultsById: Map<string, ToolResultObj>
@@ -1108,20 +1181,7 @@ export class AgentRunner implements RunnerModelHost {
     const runOne = async (call: ToolCallRequest): Promise<ToolResultObj> => {
       throwIfAborted(signal)
       await this.emitToolCall(call, emit)
-      const verificationTarget = planVerificationTarget(
-        this.controlManager,
-        call,
-      )
-      if (verificationTarget !== null && emit) {
-        await emit(
-          runtimeEvents.planVerificationStart({
-            planId: verificationTarget.plan_id!,
-            stepId: verificationTarget.step_id!,
-            command: verificationTarget.command!,
-          }),
-        )
-      }
-      const result = await this.executeToolWithHooks(
+      const outcome = await this.executeToolWithHooks(
         call,
         emit,
         clarification,
@@ -1129,17 +1189,62 @@ export class AgentRunner implements RunnerModelHost {
         signal,
         executionEnvironment,
       )
+      const result = outcome.result
+      const executedCall = outcome.executedCall ?? call
+      const verificationTarget = outcome.verificationTarget ?? null
       throwIfAborted(signal)
       applyRepeatedRefusalNudge(this.denyRefusalCounts, result)
       recordPlanDiscovery(this.controlManager, call, result)
       recordPlanStepToolOutput(this.controlManager, call, result)
       const content = result.modelContent
       resultsById.set(call.id, result)
+      const recordGoalResult = async (
+        verificationUpdate: ReturnType<typeof recordPlanVerification>,
+      ): Promise<void> => {
+        try {
+          const observation = await recordRunnerGoalToolResult(
+            this.goalObservationRecorder,
+            this.registry,
+            {
+              expectedGoalId: outcome.expectedGoalId,
+              sessionId: this.sessionId ?? '',
+              turnId: ctx.turnId ?? '',
+              toolCallId: call.id,
+              toolName: executedCall.name,
+              arguments: executedCall.arguments,
+              executed: outcome.executed,
+              result,
+            },
+          )
+          await recordRunnerPlanVerificationReceipt(
+            this.goalObservationRecorder,
+            observation,
+            verificationUpdate,
+          )
+        } catch {
+          try {
+            if (emit) {
+              await emit({
+                event: 'record_degraded',
+                kind: 'goal_observation',
+                reason:
+                  'Goal observation could not be persisted; completion evidence was not recorded.',
+                taskId: ctx.turnId ?? undefined,
+              })
+            }
+          } catch {
+            // Persistence diagnostics are best-effort and never replace a tool result.
+          }
+        }
+      }
+      if (parsePauseResult(content) !== null) {
+        await recordGoalResult(null)
+      }
       maybePauseForControl(content, ctx.toolCallsRef.current, resultsById)
       const verificationUpdate = recordPlanVerification(
         this.controlManager,
-        call,
-        content,
+        executedCall,
+        result,
         verificationTarget,
       )
       if (verificationUpdate !== null && emit) {
@@ -1157,6 +1262,7 @@ export class AgentRunner implements RunnerModelHost {
         if (followup !== null) planFollowups.push(followup)
       }
       await this.emitToolResult(call, result, emit)
+      await recordGoalResult(verificationUpdate)
       return result
     }
 
@@ -1204,6 +1310,7 @@ export class AgentRunner implements RunnerModelHost {
     signal: AbortSignal | null,
     entryPlanDecision: unknown,
     executionEnvironment: ExecutionEnvironment | null,
+    turnId: string | null,
   ): {
     onToolCallComplete: (call: ToolCallRequest) => void
     finish: (
@@ -1220,6 +1327,7 @@ export class AgentRunner implements RunnerModelHost {
       clarification,
       signal,
       executionEnvironment,
+      turnId,
     })
     const run = this.toolExecutionEngine.createStreamingRun({
       emit,
@@ -1249,6 +1357,7 @@ export class AgentRunner implements RunnerModelHost {
     planDecision: unknown,
     signal: AbortSignal | null,
     executionEnvironment: ExecutionEnvironment | null,
+    turnId: string | null,
   ): Promise<Msg[]> {
     const toolCallsRef = { current: toolCalls }
     const planDecisionRef = { current: planDecision }
@@ -1259,6 +1368,7 @@ export class AgentRunner implements RunnerModelHost {
       clarification,
       signal,
       executionEnvironment,
+      turnId,
     })
     const toolMessages = await this.toolExecutionEngine.runBatch(toolCalls, {
       emit,
@@ -1278,7 +1388,13 @@ export class AgentRunner implements RunnerModelHost {
     planDecision: unknown,
     signal: AbortSignal | null,
     executionEnvironment: ExecutionEnvironment | null,
-  ): Promise<ToolResultObj> {
+  ): Promise<{
+    result: ToolResultObj
+    executed: boolean
+    executedCall?: ToolCallRequest
+    expectedGoalId?: string | null
+    verificationTarget?: Record<string, string> | null
+  }> {
     throwIfAborted(signal)
     let effectiveCall: ToolCallRequest
     try {
@@ -1287,14 +1403,14 @@ export class AgentRunner implements RunnerModelHost {
         arguments: this.registry.prepareCall(call.name, call.arguments),
       }
     } catch (error) {
-      return toolPreparationError(error)
+      return { result: toolPreparationError(error), executed: false }
     }
     const initialGuard = this.toolGuardResult(
       effectiveCall,
       clarification,
       planDecision,
     )
-    if (initialGuard) return initialGuard
+    if (initialGuard) return { result: initialGuard, executed: false }
 
     let transformCount = 0
     const preTool = await this.runHookEvent(
@@ -1304,10 +1420,13 @@ export class AgentRunner implements RunnerModelHost {
     )
     throwIfAborted(signal)
     if (preTool.decision === 'deny') {
-      return ToolResultObj.fromText(
-        `Error: hook denied ${call.name}: ${preTool.reason}`,
-        { isError: true, meta: { hook_decision: preTool.decision } },
-      )
+      return {
+        result: ToolResultObj.fromText(
+          `Error: hook denied ${call.name}: ${preTool.reason}`,
+          { isError: true, meta: { hook_decision: preTool.decision } },
+        ),
+        executed: false,
+      }
     }
     if (preTool.updatedInput) {
       transformCount += 1
@@ -1320,14 +1439,14 @@ export class AgentRunner implements RunnerModelHost {
           ),
         }
       } catch (error) {
-        return toolPreparationError(error)
+        return { result: toolPreparationError(error), executed: false }
       }
       const transformedGuard = this.toolGuardResult(
         effectiveCall,
         clarification,
         planDecision,
       )
-      if (transformedGuard) return transformedGuard
+      if (transformedGuard) return { result: transformedGuard, executed: false }
     }
 
     if (this.controlManager !== null) {
@@ -1345,10 +1464,13 @@ export class AgentRunner implements RunnerModelHost {
           },
           emit,
         )
-        return ToolResultObj.fromText(
-          `Error: permission denied for ${effectiveCall.name}: ${permission.reason}`,
-          { isError: true },
-        )
+        return {
+          result: ToolResultObj.fromText(
+            `Error: permission denied for ${effectiveCall.name}: ${permission.reason}`,
+            { isError: true },
+          ),
+          executed: false,
+        }
       }
       if (permission.requiresApproval) {
         const hookDecision = await this.runHookEvent(
@@ -1361,18 +1483,24 @@ export class AgentRunner implements RunnerModelHost {
         )
         throwIfAborted(signal)
         if (hookDecision.decision === 'deny') {
-          return ToolResultObj.fromText(
-            `Error: hook denied permission for ${effectiveCall.name}: ${hookDecision.reason}`,
-            { isError: true, meta: { hook_decision: hookDecision.decision } },
-          )
+          return {
+            result: ToolResultObj.fromText(
+              `Error: hook denied permission for ${effectiveCall.name}: ${hookDecision.reason}`,
+              { isError: true, meta: { hook_decision: hookDecision.decision } },
+            ),
+            executed: false,
+          }
         }
         if (hookDecision.updatedInput) {
           transformCount += 1
           if (transformCount > 2) {
-            return ToolResultObj.fromText(
-              'Error: hook input transform limit exceeded',
-              { isError: true },
-            )
+            return {
+              result: ToolResultObj.fromText(
+                'Error: hook input transform limit exceeded',
+                { isError: true },
+              ),
+              executed: false,
+            }
           }
           try {
             effectiveCall = {
@@ -1383,14 +1511,15 @@ export class AgentRunner implements RunnerModelHost {
               ),
             }
           } catch (error) {
-            return toolPreparationError(error)
+            return { result: toolPreparationError(error), executed: false }
           }
           const transformedGuard = this.toolGuardResult(
             effectiveCall,
             clarification,
             planDecision,
           )
-          if (transformedGuard) return transformedGuard
+          if (transformedGuard)
+            return { result: transformedGuard, executed: false }
           const replayPre = await this.runHookEvent(
             'PreToolUse',
             this.toolHookInput(effectiveCall, signal),
@@ -1398,16 +1527,22 @@ export class AgentRunner implements RunnerModelHost {
           )
           throwIfAborted(signal)
           if (replayPre.decision === 'deny') {
-            return ToolResultObj.fromText(
-              `Error: hook denied transformed ${effectiveCall.name}: ${replayPre.reason}`,
-              { isError: true },
-            )
+            return {
+              result: ToolResultObj.fromText(
+                `Error: hook denied transformed ${effectiveCall.name}: ${replayPre.reason}`,
+                { isError: true },
+              ),
+              executed: false,
+            }
           }
           if (replayPre.updatedInput) {
-            return ToolResultObj.fromText(
-              'Error: hook input transform limit exceeded during permission recheck',
-              { isError: true },
-            )
+            return {
+              result: ToolResultObj.fromText(
+                'Error: hook input transform limit exceeded during permission recheck',
+                { isError: true },
+              ),
+              executed: false,
+            }
           }
           permission = this.controlManager.assessPermission(
             effectiveCall.name,
@@ -1423,18 +1558,24 @@ export class AgentRunner implements RunnerModelHost {
               },
               emit,
             )
-            return ToolResultObj.fromText(
-              `Error: permission denied for ${effectiveCall.name}: ${permission.reason}`,
-              { isError: true },
-            )
+            return {
+              result: ToolResultObj.fromText(
+                `Error: permission denied for ${effectiveCall.name}: ${permission.reason}`,
+                { isError: true },
+              ),
+              executed: false,
+            }
           }
         }
         if (permission.requiresApproval && hookDecision.decision !== 'allow') {
-          return ToolResultObj.fromText(
-            this.controlManager.permissionApprovalResult(permission, {
-              parentCallId: call.id,
-            }),
-          )
+          return {
+            result: ToolResultObj.fromText(
+              this.controlManager.permissionApprovalResult(permission, {
+                parentCallId: call.id,
+              }),
+            ),
+            executed: false,
+          }
         }
       }
     }
@@ -1447,11 +1588,45 @@ export class AgentRunner implements RunnerModelHost {
       signal,
       executionEnvironment,
     }
-    let result = await this.registry.executeResult(
-      effectiveCall.name,
-      effectiveCall.arguments,
-      ctx,
+    let expectedGoalId: string | null | undefined
+    if (this.goalObservationRecorder?.captureExpectedGoalId) {
+      try {
+        expectedGoalId =
+          await this.goalObservationRecorder.captureExpectedGoalId(
+            this.sessionId ?? '',
+          )
+      } catch {
+        expectedGoalId = null
+      }
+    }
+    const verificationTarget = planVerificationTarget(
+      this.controlManager,
+      effectiveCall,
     )
+    if (verificationTarget !== null && emit) {
+      await emit(
+        runtimeEvents.planVerificationStart({
+          planId: verificationTarget.plan_id!,
+          stepId: verificationTarget.step_id!,
+          command: verificationTarget.command!,
+        }),
+      )
+    }
+    throwIfAborted(signal)
+    let result: ToolResultObj
+    try {
+      result = await this.registry.executeResult(
+        effectiveCall.name,
+        effectiveCall.arguments,
+        ctx,
+      )
+    } catch (error) {
+      throwIfAborted(signal)
+      if (error instanceof TurnPaused || error instanceof CancelledTaskError)
+        throw error
+      const message = error instanceof Error ? error.message : String(error)
+      result = ToolResultObj.fromText(`Error: ${message}`, { isError: true })
+    }
     const postInput: HookRuntimeRunOptions = result.isError
       ? {
           ...this.toolHookInput(effectiveCall, signal),
@@ -1479,9 +1654,15 @@ export class AgentRunner implements RunnerModelHost {
     ) {
       result = replaceHookToolOutput(result, postDecision.updatedToolOutput)
     }
-    return postDecision.additionalContext
-      ? appendHookContext(result, postDecision.additionalContext)
-      : result
+    return {
+      result: postDecision.additionalContext
+        ? appendHookContext(result, postDecision.additionalContext)
+        : result,
+      executed: true,
+      executedCall: effectiveCall,
+      expectedGoalId,
+      verificationTarget,
+    }
   }
 
   private toolGuardResult(
@@ -1677,7 +1858,11 @@ export class AgentRunner implements RunnerModelHost {
     if (call.name === 'update_todos' && this.todoStore !== null) {
       payload.todos = this.todoStore.todos.map((t) => ({
         id: t.id,
+        ...(t.plan_id ? { plan_id: t.plan_id } : {}),
         ...(t.plan_step_id ? { plan_step_id: t.plan_step_id } : {}),
+        ...(t.approval_generation
+          ? { approval_generation: t.approval_generation }
+          : {}),
         content: t.content,
         status: t.status,
         ...(t.blocked_reason ? { blocked_reason: t.blocked_reason } : {}),
@@ -1718,11 +1903,15 @@ export class AgentRunner implements RunnerModelHost {
     }
     try {
       if (typeof this.compactor.compactAfterTurn === 'function') {
+        const goalHint = this.goalContextHint
+          ? await this.goalContextHint()
+          : null
         const result = await this.compactor.compactAfterTurn({
           history: history.map((message) => ({ ...message })),
           turnId,
           currentTokens: this.tokenTracker.lastInputTokensValue?.() ?? 0,
           maxContext,
+          goalHint,
         })
         const resultRecord = isRecord(result) ? result : null
         const status = resultRecord ? String(resultRecord.status || '') : ''
@@ -1741,14 +1930,17 @@ export class AgentRunner implements RunnerModelHost {
             ...retainedHistory.map((message) => ({ ...message })),
           )
         this.compactionFailureStreak = 0
+        this.onGoalCompacted?.()
       } else if (typeof this.compactor.compactAsync === 'function') {
         const out = await this.compactor.compactAsync(history)
         history.splice(0, history.length, ...out)
         this.compactionFailureStreak = 0
+        this.onGoalCompacted?.()
       } else if (typeof this.compactor.compact === 'function') {
         const out = this.compactor.compact(history)
         history.splice(0, history.length, ...out)
         this.compactionFailureStreak = 0
+        this.onGoalCompacted?.()
       }
     } catch (exc) {
       this.compactionFailureStreak++
@@ -1769,17 +1961,24 @@ export class AgentRunner implements RunnerModelHost {
   private defaultContextPipeline(): ContextPipeline {
     const planContextProvider = this.defaultPlanContextProvider()
     if (!this.memoryStore?.memoryDir)
-      return new ContextPipeline({ planContextProvider })
+      return new ContextPipeline({
+        goalContextProvider: this.goalContextProvider,
+        planContextProvider,
+      })
     try {
       return new ContextPipeline({
         toolResultStore: new ToolResultStore(
           dirname(this.memoryStore.memoryDir),
         ),
         toolResultLimits: this.registry.toolResultLimits(),
+        goalContextProvider: this.goalContextProvider,
         planContextProvider,
       })
     } catch {
-      return new ContextPipeline({ planContextProvider })
+      return new ContextPipeline({
+        goalContextProvider: this.goalContextProvider,
+        planContextProvider,
+      })
     }
   }
 
@@ -1791,6 +1990,7 @@ export class AgentRunner implements RunnerModelHost {
       replacementMinBytes: 1200,
       replacementPreviewChars: 200,
       aggregateToolResultBudget: 6000,
+      goalContextProvider: this.goalContextProvider,
       planContextProvider,
       microcompactKeepRecent: 0,
       microcompactMinChars: 1500,

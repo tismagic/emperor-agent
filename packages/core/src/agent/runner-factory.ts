@@ -15,6 +15,9 @@ import {
   type TodoStoreLike,
   type TokenTrackerLike,
 } from './runner'
+import type { RunnerGoalRecordingHost } from './runner-goal-recording'
+import type { GoalContextProvider } from '../context/pipeline'
+import type { GoalToolHost } from '../goals/tools'
 
 export function buildRoutedRunner(opts: {
   route: ModelRoute
@@ -36,6 +39,16 @@ export function buildRoutedRunner(opts: {
   sessionId?: string | null
   streamingToolExecution?: boolean
   hooks?: AgentRunnerHookHost | null
+  goalObservationRecorder?: RunnerGoalRecordingHost | null
+  goalToolHost?: Pick<GoalToolHost, 'visibleToolNames'> | null
+  goalContextProvider?: GoalContextProvider | null
+  goalContextHint?:
+    | (() => Promise<{
+        readonly goalId: string
+        readonly lastEventSeq: number
+      } | null>)
+    | null
+  onGoalCompacted?: (() => void) | null
 }): AgentRunner {
   const snapshot = opts.route.snapshot
   let maxTokens = snapshot.generation.maxTokens
@@ -73,5 +86,10 @@ export function buildRoutedRunner(opts: {
     sessionId: opts.sessionId ?? null,
     streamingToolExecution: opts.streamingToolExecution ?? false,
     hooks: opts.hooks ?? null,
+    goalObservationRecorder: opts.goalObservationRecorder ?? null,
+    goalToolHost: opts.goalToolHost ?? null,
+    goalContextProvider: opts.goalContextProvider ?? null,
+    goalContextHint: opts.goalContextHint ?? null,
+    onGoalCompacted: opts.onGoalCompacted ?? null,
   })
 }

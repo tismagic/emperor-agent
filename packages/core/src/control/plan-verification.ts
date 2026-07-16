@@ -4,13 +4,38 @@
  */
 import { nowTs } from '../util/time'
 import {
+  computeGoalToolInputSha256,
+  type GoalPlanVerificationFact,
+  type GoalPlanVerificationSource,
+} from '../goals/evidence'
+import type { GoalRecord } from '../goals/models'
+import { planMatchesGoalScope } from '../goals/scope'
+import type {
+  PlanReviewerContext,
+  PlanReviewerFact,
+  PlanStepVerificationContext,
+  PlanStepVerificationFact,
+  PlanStepWaiverContext,
+  PlanStepWaiverFact,
+} from '../goals/plan-bridge'
+import type {
+  GoalReviewerWaiverActionContext,
+  GoalReviewerWaiverActionFact,
+} from '../goals/reviewer'
+import {
   PlanStatus,
   PlanStepStatus,
   planToDict,
   type PlanRecord,
 } from '../plans/models'
 import { requirementsForStep } from '../plans/verification'
-import { ControlMode, InteractionStatus } from './models'
+import {
+  ControlMode,
+  InteractionStatus,
+  makeAsk,
+  questionFromDict,
+  type Interaction,
+} from './models'
 import {
   INDEPENDENT_VERIFICATION_SOURCE,
   INDEPENDENT_VERIFICATION_WAIVER_SOURCE,
@@ -18,12 +43,15 @@ import {
   hasCommandEvidence,
   independentVerificationRiskSignals,
   latestIndependentVerificationEvidence,
-  normalizeCommand,
+  isPlanInvalidated,
+  latestApprovedPlanGeneration,
   planChangedFiles,
   planCommands,
   planStepsFinished,
 } from './plan-helpers'
 import type { ControlManagerHost } from './host'
+import { CoreControlActionSigner } from './core-action-signature'
+import { canonicalJson } from '../goals/events'
 
 interface ReviewRequest {
   planId: string
@@ -33,6 +61,11 @@ interface ReviewRequest {
   createdAt: number
   reason: string
 }
+
+export const GOAL_REVIEWER_WAIVER_QUESTION_ID = 'goal_reviewer_waiver'
+export const GOAL_REVIEWER_WAIVER_APPROVE_LABEL =
+  'Waive independent verification'
+export const GOAL_REVIEWER_WAIVER_DECLINE_LABEL = 'Keep verification required'
 
 function reviewRequestToDict(r: ReviewRequest): Record<string, unknown> {
   return {
@@ -47,24 +80,29 @@ function reviewRequestToDict(r: ReviewRequest): Record<string, unknown> {
 
 export class PlanVerificationManager {
   private readonly cm: ControlManagerHost
+  private readonly signer: CoreControlActionSigner
   constructor(cm: ControlManagerHost) {
     this.cm = cm
+    this.signer = new CoreControlActionSigner(cm.store.root)
   }
 
   planVerificationTarget(command: string): Record<string, string> | null {
     const record = this.cm.latestExecutablePlan()
     if (record === null) return null
-    const requested = normalizeCommand(command)
+    const requested = String(command ?? '')
     for (const step of record.steps) {
       if (step.status !== PlanStepStatus.ACTIVE) continue
       for (const requirement of requirementsForStep(step)) {
         if (requirement.kind !== 'command' || !requirement.command) continue
-        if (normalizeCommand(requirement.command) === requested) {
+        if (requirement.command === requested) {
           return {
             plan_id: record.id,
             step_id: step.id,
             command: requirement.command,
             requirement_id: requirement.id,
+            approved_input_hash: computeGoalToolInputSha256('run_command', {
+              command: requirement.command,
+            }).inputSha256,
           }
         }
       }
@@ -72,33 +110,352 @@ export class PlanVerificationManager {
     return null
   }
 
+  resolveGoalPlanVerificationFact(
+    goalId: string,
+    goal: GoalRecord,
+    source: GoalPlanVerificationSource,
+  ): GoalPlanVerificationFact | null {
+    if (goal.id !== goalId || goal.status !== 'active') return null
+    const record = this.currentGoalPlan(goal, source.planId)
+    if (!record || goal.runtime.currentPlanId !== record.id) return null
+    const step = record.steps.find((item) => item.id === source.stepId)
+    if (!step) return null
+    const requirement = requirementsForStep(step).find(
+      (item) =>
+        item.id === source.requirementId &&
+        item.kind === 'command' &&
+        typeof item.command === 'string',
+    )
+    if (!requirement?.command) return null
+    const approvedInputHash = computeGoalToolInputSha256('run_command', {
+      command: requirement.command,
+    }).inputSha256
+    if (approvedInputHash !== source.approvedInputHash) return null
+    const evidence = [...step.evidence]
+      .reverse()
+      .find(
+        (item) =>
+          String(item.requirement_id ?? item.verification_id ?? '') ===
+            source.requirementId &&
+          String(item.tool_call_id ?? '') === source.toolCallId &&
+          String(item.command ?? '') === requirement.command &&
+          item.passed === true &&
+          Number(item.exit_code) === 0,
+      )
+    if (!evidence) return null
+    return {
+      ...source,
+      goalId,
+      passed: true,
+      summary: String(evidence.summary ?? 'Plan command verification'),
+    }
+  }
+
+  resolvePlanStepVerificationFact(
+    goal: GoalRecord,
+    context: PlanStepVerificationContext,
+    knownPlan?: PlanRecord,
+  ): PlanStepVerificationFact | null {
+    const record = knownPlan
+      ? this.validateKnownGoalPlan(goal, context.planId, knownPlan)
+      : this.currentGoalPlan(goal, context.planId)
+    if (!record || record.eventSeq !== context.planEventSeq) return null
+    const step = record.steps.find((item) => item.id === context.stepId)
+    const requirement = step
+      ? requirementsForStep(step).find(
+          (item) =>
+            item.id === context.requirementId &&
+            item.kind === context.requirementKind &&
+            item.command === context.command,
+        )
+      : null
+    if (!step || !requirement) return null
+    const evidence = [...step.evidence]
+      .reverse()
+      .find(
+        (item) =>
+          item.source === 'core_plan_step_verification' &&
+          item.issued_by === 'core' &&
+          item.plan_id === record.id &&
+          item.plan_step_id === step.id &&
+          String(item.requirement_id ?? item.verification_id ?? '') ===
+            requirement.id &&
+          String(item.command ?? '') === requirement.command &&
+          String(item.tool_call_id ?? '').trim(),
+      )
+    if (
+      !evidence ||
+      evidence.passed !== true ||
+      Number(evidence.exit_code) !== 0
+    )
+      return null
+    return {
+      ...context,
+      kind: 'core_plan_step_verification',
+      issuedBy: 'core',
+      verdict: 'pass',
+      receiptId: String(evidence.tool_call_id),
+    }
+  }
+
+  resolvePlanStepWaiverFact(
+    goal: GoalRecord,
+    context: PlanStepWaiverContext,
+    knownPlan?: PlanRecord,
+  ): PlanStepWaiverFact | null {
+    const record = knownPlan
+      ? this.validateKnownGoalPlan(goal, context.planId, knownPlan)
+      : this.currentGoalPlan(goal, context.planId)
+    const step = record?.steps.find((item) => item.id === context.stepId)
+    if (!record || !step || step.status !== PlanStepStatus.SKIPPED) return null
+    const evidence = [...step.evidence]
+      .reverse()
+      .find(
+        (item) =>
+          item.source === 'goal_plan_step_waiver' &&
+          item.issued_by === 'core' &&
+          item.approved_by === 'user' &&
+          item.goal_id === goal.id &&
+          item.plan_id === record.id &&
+          item.plan_step_id === step.id &&
+          String(item.receipt_id ?? '').trim(),
+      )
+    if (!evidence) return null
+    return {
+      ...context,
+      kind: 'explicit_user_plan_step_waiver',
+      issuedBy: 'core',
+      approvedBy: 'user',
+      receiptId: String(evidence.receipt_id),
+    }
+  }
+
+  resolvePlanReviewerFact(
+    goal: GoalRecord,
+    context: PlanReviewerContext,
+  ): PlanReviewerFact | null {
+    const record = this.currentGoalPlan(goal, context.planId)
+    if (!record || record.eventSeq !== context.planEventSeq) return null
+    const latest = latestIndependentVerificationEvidence(record)
+    if (!latest || latest.issued_by !== 'core') return null
+    const receiptId = String(latest.receipt_id ?? '').trim()
+    if (!receiptId) return null
+    if (
+      latest.source === INDEPENDENT_VERIFICATION_WAIVER_SOURCE &&
+      latest.waived === true &&
+      latest.passed === true &&
+      latest.approved_by === 'user'
+    )
+      return {
+        ...context,
+        kind: 'core_independent_plan_review',
+        issuedBy: 'core',
+        verdict: 'waived',
+        receiptId,
+        commandEvidenceRefs: [],
+      }
+    if (
+      latest.source !== INDEPENDENT_VERIFICATION_SOURCE ||
+      latest.passed !== true ||
+      !hasCommandEvidence(latest)
+    )
+      return null
+    return {
+      ...context,
+      kind: 'core_independent_plan_review',
+      issuedBy: 'core',
+      verdict: 'pass',
+      receiptId,
+      commandEvidenceRefs: dedupeStrings(
+        ((latest.commands as unknown[]) ?? []).map(
+          (_command, index) => `${receiptId}:command:${index + 1}`,
+        ),
+      ),
+    }
+  }
+
+  requestGoalReviewerWaiver(opts: {
+    goal: GoalRecord
+    planId: string
+    planEventSeq: number
+    riskSignals: readonly string[]
+    riskFactVersion: string | null
+    reason: string
+  }): Interaction {
+    const reason = String(opts.reason ?? '').trim()
+    if (!reason) throw new Error('reviewer waiver reason is required')
+    const plan = this.currentGoalPlan(opts.goal, String(opts.planId ?? ''))
+    if (!plan || plan.eventSeq !== Number(opts.planEventSeq))
+      throw new Error('Goal reviewer waiver Plan generation is stale')
+    const riskSignals = normalizeRiskSignals(opts.riskSignals)
+    if (riskSignals.length === 0)
+      throw new Error('reviewer waiver risk disclosure is required')
+    this.cm.ensureNoPending()
+    const interaction = makeAsk({
+      questions: [
+        questionFromDict({
+          id: GOAL_REVIEWER_WAIVER_QUESTION_ID,
+          header: 'Verification',
+          question:
+            'Independent verification is required. Do you explicitly accept the disclosed verification risk?',
+          options: [
+            {
+              label: GOAL_REVIEWER_WAIVER_APPROVE_LABEL,
+              description:
+                'Complete without independent verification and disclose the waiver in the receipt.',
+            },
+            {
+              label: GOAL_REVIEWER_WAIVER_DECLINE_LABEL,
+              description:
+                'Keep the Goal blocked until a reviewer is available.',
+            },
+          ],
+        }),
+      ],
+      context: [
+        `Reason: ${reason}`,
+        `Core risk signals: ${riskSignals.join(', ')}`,
+        `Core risk frontier: ${normalizeRiskFactVersion(opts.riskFactVersion) ?? 'unavailable'}`,
+      ].join('\n'),
+      meta: {},
+    })
+    const request = {
+      version: 1,
+      issued_by: 'core',
+      action: 'waive_goal_independent_verification',
+      interaction_id: interaction.id,
+      goal_id: opts.goal.id,
+      plan_id: plan.id,
+      plan_event_seq: plan.eventSeq,
+      risk_signals: riskSignals,
+      risk_fact_version: normalizeRiskFactVersion(opts.riskFactVersion),
+      question: reviewerWaiverQuestionIdentity(interaction),
+    }
+    interaction.meta = {
+      goal_reviewer_waiver_request: {
+        ...request,
+        core_signature: this.signer.sign(request),
+      },
+    }
+    this.cm.setPending(interaction)
+    return interaction
+  }
+
+  resolveGoalReviewerWaiverAction(
+    goal: GoalRecord,
+    context: GoalReviewerWaiverActionContext,
+  ): GoalReviewerWaiverActionFact | null {
+    const plan = this.currentGoalPlan(goal, context.planId)
+    if (!plan || plan.eventSeq !== context.planEventSeq) return null
+    const interaction = this.cm.store.load().lastInteraction
+    if (
+      !interaction ||
+      interaction.id !== context.interactionId ||
+      interaction.kind !== 'ask' ||
+      interaction.status !== InteractionStatus.ANSWERED
+    )
+      return null
+    const request = interaction.meta.goal_reviewer_waiver_request
+    if (!request || typeof request !== 'object' || Array.isArray(request))
+      return null
+    const stamped = request as Record<string, unknown>
+    const signed = {
+      version: stamped.version,
+      issued_by: stamped.issued_by,
+      action: stamped.action,
+      interaction_id: stamped.interaction_id,
+      goal_id: stamped.goal_id,
+      plan_id: stamped.plan_id,
+      plan_event_seq: stamped.plan_event_seq,
+      risk_signals: stamped.risk_signals,
+      risk_fact_version: stamped.risk_fact_version,
+      question: stamped.question,
+    }
+    if (
+      stamped.version !== 1 ||
+      stamped.issued_by !== 'core' ||
+      stamped.action !== 'waive_goal_independent_verification' ||
+      stamped.interaction_id !== interaction.id ||
+      stamped.goal_id !== context.goalId ||
+      stamped.plan_id !== context.planId ||
+      Number(stamped.plan_event_seq) !== context.planEventSeq ||
+      canonicalJson(stamped.risk_signals as never) !==
+        canonicalJson(context.riskSignals as never) ||
+      normalizeRiskFactVersion(stamped.risk_fact_version) !==
+        context.riskFactVersion ||
+      canonicalJson(stamped.question as never) !==
+        canonicalJson(reviewerWaiverQuestionIdentity(interaction) as never) ||
+      !this.signer.verify(signed, stamped.core_signature)
+    )
+      return null
+    const answer = interaction.answers[GOAL_REVIEWER_WAIVER_QUESTION_ID]
+    if (
+      !answer ||
+      typeof answer !== 'object' ||
+      Array.isArray(answer) ||
+      String((answer as Record<string, unknown>).choice ?? '') !==
+        GOAL_REVIEWER_WAIVER_APPROVE_LABEL
+    )
+      return null
+    return {
+      ...context,
+      kind: 'explicit_user_goal_reviewer_waiver_action',
+      issuedBy: 'core',
+      approvedBy: 'user',
+      verdict: 'waived',
+      riskSignals: [...context.riskSignals],
+      riskFactVersion: context.riskFactVersion,
+    }
+  }
+
   recordPlanVerificationResult(opts: {
     planId: string
     stepId: string
     result: Record<string, unknown>
   }): PlanRecord | null {
-    const record = this.cm.planStore.get(opts.planId)
-    if (record === null) return null
+    const record = this.cm.planStore
+      .list()
+      .find((item) => item.id === opts.planId)
+    if (
+      record === undefined ||
+      isPlanInvalidated(record) ||
+      (record.status !== PlanStatus.APPROVED &&
+        record.status !== PlanStatus.EXECUTING &&
+        record.status !== PlanStatus.COMPLETED)
+    )
+      return null
+    if (this.cm.latestReviewablePlan()?.id !== record.id) return null
+    if (!record.steps.some((step) => step.id === opts.stepId)) return null
     const now = nowTs()
+    const trustedResult = {
+      ...opts.result,
+      source: 'core_plan_step_verification',
+      issued_by: 'core',
+      plan_id: record.id,
+      plan_step_id: opts.stepId,
+    }
     const steps = record.steps.map((step) =>
       step.id === opts.stepId
-        ? { ...step, evidence: [...step.evidence, opts.result] }
+        ? { ...step, evidence: [...step.evidence, trustedResult] }
         : step,
     )
     const metadata = { ...record.metadata }
     const updated = {
       ...record,
-      status: PlanStatus.EXECUTING,
+      status:
+        record.status === PlanStatus.COMPLETED
+          ? PlanStatus.COMPLETED
+          : PlanStatus.EXECUTING,
       updatedAt: now,
       steps,
       metadata,
     }
-    this.cm.planStore.save(updated)
-    this.cm.appendPlanStepVerification(updated, {
+    const saved = this.cm.planStore.save(updated)
+    this.cm.appendPlanStepVerification(saved, {
       stepId: opts.stepId,
-      result: opts.result,
+      result: trustedResult,
     })
-    return updated
+    return saved
   }
 
   recordIndependentVerificationResult(opts: {
@@ -109,7 +466,9 @@ export class PlanVerificationManager {
     if (record === null) return null
     const now = nowTs()
     const payload = { ...(opts.result ?? {}) }
-    payload.source = String(payload.source ?? INDEPENDENT_VERIFICATION_SOURCE)
+    payload.source = INDEPENDENT_VERIFICATION_SOURCE
+    delete payload.issued_by
+    delete payload.receipt_id
     payload.checked_at = Number(payload.checked_at ?? now) || now
     if ('commands' in payload) {
       payload.commands = dedupeStrings(
@@ -124,8 +483,7 @@ export class PlanVerificationManager {
       verification: [...record.verification, payload],
       metadata,
     }
-    this.cm.planStore.save(updated)
-    return updated
+    return this.cm.planStore.save(updated)
   }
 
   waiveIndependentVerification(opts: {
@@ -143,6 +501,8 @@ export class PlanVerificationManager {
       passed: true,
       reason: text.slice(0, 1000),
       approved_by: 'user',
+      issued_by: 'core',
+      receipt_id: `review_waiver_${record.id}_${record.eventSeq + 1}`,
       checked_at: now,
     }
     const metadata = { ...record.metadata }
@@ -153,8 +513,41 @@ export class PlanVerificationManager {
       verification: [...record.verification, payload],
       metadata,
     }
-    this.cm.planStore.save(updated)
-    return updated
+    return this.cm.planStore.save(updated)
+  }
+
+  private currentGoalPlan(goal: GoalRecord, planId: string): PlanRecord | null {
+    if (goal.status !== 'active' || goal.runtime.currentPlanId !== planId)
+      return null
+    const catalog = this.cm.planStore.inspectAllIncludingArchives()
+    const quarantine = this.cm.planStore.inspectQuarantine(planId)
+    if (catalog.issue || quarantine.issue || quarantine.quarantined) return null
+    const record = latestApprovedPlanGeneration([...catalog.records], (item) =>
+      planBelongsToGoal(item, goal),
+    )
+    return record &&
+      record.id === planId &&
+      isExecutionTrustedPlan(record) &&
+      planWasApprovedForGoal(record, goal)
+      ? record
+      : null
+  }
+
+  private validateKnownGoalPlan(
+    goal: GoalRecord,
+    planId: string,
+    record: PlanRecord,
+  ): PlanRecord | null {
+    if (
+      goal.status !== 'active' ||
+      goal.runtime.currentPlanId !== planId ||
+      record.id !== planId ||
+      !planBelongsToGoal(record, goal) ||
+      !isExecutionTrustedPlan(record) ||
+      !planWasApprovedForGoal(record, goal)
+    )
+      return null
+    return record
   }
 
   planIndependentVerificationFollowup(opts?: {
@@ -235,8 +628,7 @@ export class PlanVerificationManager {
     const metadata = { ...record.metadata }
     metadata.independent_verification_request = payload
     const updated = { ...record, updatedAt: nowTs(), metadata }
-    this.cm.planStore.save(updated)
-    return updated
+    return this.cm.planStore.save(updated)
   }
 
   private independentVerificationRequiredMessage(
@@ -312,5 +704,65 @@ export class PlanVerificationManager {
       for (const command of commands.slice(0, 8)) lines.push(`- ${command}`)
     }
     return lines.join('\n')
+  }
+}
+
+function isExecutionTrustedPlan(record: PlanRecord): boolean {
+  if (
+    record.status !== PlanStatus.APPROVED &&
+    record.status !== PlanStatus.EXECUTING &&
+    record.status !== PlanStatus.COMPLETED
+  )
+    return false
+  if (!Number.isFinite(record.approvedAt) || record.approvedAt === null)
+    return false
+  return !isPlanInvalidated(record)
+}
+
+function planBelongsToGoal(record: PlanRecord, goal: GoalRecord): boolean {
+  return record.goalId === goal.id && planMatchesGoalScope(record, goal)
+}
+
+function planWasApprovedForGoal(record: PlanRecord, goal: GoalRecord): boolean {
+  const goalCreatedAt = Date.parse(goal.createdAt) / 1000
+  return (
+    Number.isFinite(goalCreatedAt) &&
+    record.approvedAt !== null &&
+    record.approvedAt >= goalCreatedAt
+  )
+}
+
+function normalizeRiskFactVersion(value: unknown): string | null {
+  if (value === null) return null
+  const version = String(value ?? '').trim()
+  if (!version) throw new Error('reviewer waiver risk frontier is invalid')
+  return version
+}
+
+function normalizeRiskSignals(values: readonly string[]): string[] {
+  if (!Array.isArray(values)) return []
+  const output: string[] = []
+  for (const value of values) {
+    const signal = String(value ?? '').trim()
+    if (signal && !output.includes(signal)) output.push(signal)
+  }
+  return output
+}
+
+function reviewerWaiverQuestionIdentity(
+  interaction: Interaction,
+): Record<string, unknown> {
+  if (interaction.questions.length !== 1)
+    return { invalid_question_count: interaction.questions.length }
+  const question = interaction.questions[0]!
+  return {
+    id: question.id,
+    header: question.header,
+    question: question.question,
+    options: question.options.map((option) => ({
+      label: option.label,
+      description: option.description,
+    })),
+    context: interaction.context,
   }
 }

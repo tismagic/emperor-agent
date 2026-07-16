@@ -34,8 +34,7 @@ function seedPlan(
       }),
     ],
   })
-  store.save(record)
-  return record
+  return store.save(record)
 }
 
 describe('PlanContextBuilder throttling (Wave4.4)', () => {

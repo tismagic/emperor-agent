@@ -16,8 +16,8 @@ while IFS= read -r script; do
   bash -n "$script"
 done < <(git ls-files '*.sh')
 
-echo "== migration parity map =="
-node scripts/check_migration_parity.mjs
+echo "== public documentation boundaries =="
+node scripts/check_public_docs.mjs
 
 echo "== core vitest =="
 npm test --workspace @emperor/core

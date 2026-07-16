@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import { DRAFT_SESSION_PREFIX } from '../sessions/constants'
+import { TurnPaused } from '../control/exceptions'
 import type { AgentLoop } from '../agent/loop'
 import { TurnBusyError } from '../runtime/active'
 import { sessionCreated, sessionTitleUpdated } from '../runtime/events'
@@ -31,6 +32,7 @@ export interface MainlineSubmitInput {
   uiHidden?: boolean | null
   taskId?: string | null
   useActiveTask?: boolean
+  signal?: AbortSignal | null
   emit?: MainlineEventSink | null
   clientDraftId?: string | null
   draftSession?: DraftSessionInput | null
@@ -51,6 +53,12 @@ export interface MainlineSubmitResult {
   activeSessionId: string | null
 }
 
+export interface MaterializedSession {
+  session: SessionEntry
+  promoted: boolean
+  clientDraftId: string | null
+}
+
 export class InvalidSessionError extends Error {
   readonly code = 'invalid_session'
   readonly sessionId: string | null
@@ -67,33 +75,50 @@ export class MainlineTurnService {
 
   constructor(loop: AgentLoop) {
     this.loop = loop
+    this.loop.goalCoordinator.setTurnSubmitter(async (input) => {
+      try {
+        await this.submit({
+          content: input.content,
+          displayContent: input.displayContent,
+          turnId: input.turnId,
+          clientMessageId: input.turnId,
+          sessionId: input.goal.scope.sessionId,
+          source: 'goal',
+          uiHidden: input.uiHidden,
+          taskId: input.taskId,
+          useActiveTask: false,
+          signal: input.signal,
+        })
+      } catch (error) {
+        if (!(error instanceof TurnPaused)) throw error
+      }
+    })
   }
 
   async submit(input: MainlineSubmitInput): Promise<MainlineSubmitResult> {
+    const source = String(input.source ?? 'chat').trim() || 'chat'
     if (
-      input.useActiveTask !== false &&
-      this.loop.activeTasks.hasActiveKind('turn')
+      source !== 'goal' &&
+      (this.loop.activeTasks.hasActiveKind('turn') ||
+        this.loop.activeTasks.hasActiveKind('goal'))
     ) {
       throw new TurnBusyError()
     }
     const turnId = input.turnId || randomUUID().replace(/-/g, '').slice(0, 16)
     const sessionId = String(input.sessionId ?? '').trim()
-    const source = String(input.source ?? 'chat').trim() || 'chat'
     const content = String(input.content ?? '')
     // P1-6：draft 首条提交在这里晋升为真实 session，先广播 session_created 再进 turn
     let promoted: SessionEntry | null = null
-    if (source === 'chat' && sessionId.startsWith(DRAFT_SESSION_PREFIX)) {
-      promoted = this.promoteDraftSession(input)
-      await this.emitSessionEvent(
-        sessionCreated(promoted as unknown as Record<string, unknown>, {
-          clientDraftId: sessionId,
-        }),
-        input.emit ?? null,
-      )
-    } else if (source === 'chat') {
-      this.activateRequiredSession(sessionId, 'chat.submit')
-    } else if (sessionId) {
+    if (source === 'chat') {
+      const materialized = await this.materializeSession(input, 'chat.submit')
+      if (materialized.promoted) promoted = materialized.session
+    } else if (sessionId && source !== 'goal') {
       this.activateOptionalSession(sessionId, `${source}.submit`)
+    } else if (sessionId && !this.loop.sessionStore.get(sessionId)) {
+      throw new InvalidSessionError(
+        `${source}.submit received unknown session ${sessionId}`,
+        sessionId,
+      )
     }
 
     // B7：超短首条消息（如 "hi"）延迟到回合结束后用回复做标题材料，避免生成无信息量标题
@@ -118,6 +143,7 @@ export class MainlineTurnService {
     try {
       const reply = await this.loop.runUserTurn(content, {
         sessionId: runSessionId,
+        restoreActiveSessionAfterTurn: source === 'goal',
         turnId,
         emit: input.emit ?? null,
         displayContent,
@@ -130,6 +156,7 @@ export class MainlineTurnService {
         requestedSkills: input.requestedSkills ?? null,
         taskId: input.taskId ?? null,
         useActiveTask: input.useActiveTask,
+        signal: input.signal ?? null,
       })
       replyResolve(reply)
       return {
@@ -143,7 +170,24 @@ export class MainlineTurnService {
     }
   }
 
-  private promoteDraftSession(input: MainlineSubmitInput): SessionEntry {
+  async materializeSession(
+    input: Pick<
+      MainlineSubmitInput,
+      'sessionId' | 'clientDraftId' | 'draftSession' | 'emit'
+    >,
+    operation = 'chat.submit',
+  ): Promise<MaterializedSession> {
+    const sessionId = String(input.sessionId ?? '').trim()
+    if (!sessionId.startsWith(DRAFT_SESSION_PREFIX)) {
+      this.activateRequiredSession(sessionId, operation)
+      const session = this.loop.sessionStore.get(sessionId)
+      if (!session)
+        throw new InvalidSessionError(
+          `${operation} received unknown session ${sessionId}`,
+          sessionId,
+        )
+      return { session, promoted: false, clientDraftId: null }
+    }
     const draft = input.draftSession ?? {}
     const project = draft.project ?? {}
     const session = this.loop.sessionStore.create('新会话', {
@@ -156,7 +200,15 @@ export class MainlineTurnService {
       },
     })
     this.loop.activateSession(session.id)
-    return session
+    const clientDraftId =
+      String(input.clientDraftId ?? sessionId).trim() || sessionId
+    await this.emitSessionEvent(
+      sessionCreated(session as unknown as Record<string, unknown>, {
+        clientDraftId,
+      }),
+      input.emit ?? null,
+    )
+    return { session, promoted: true, clientDraftId }
   }
 
   /** 首条消息后一次性生成标题；失败走 fallback，绝不让 submit 失败。 */

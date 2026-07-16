@@ -73,6 +73,7 @@ export class ReadFileTool extends Tool {
     ['path'],
   )
   override readOnly = true
+  override evidencePolicy = 'eligible' as const
   override maxResultChars = 50_000
 
   private readonly workspace: string | null
@@ -145,6 +146,7 @@ export class WriteFileTool extends Tool {
     ['path', 'content'],
   )
   override maxResultChars = 5000
+  override evidencePolicy = 'eligible' as const
 
   private readonly workspace: string | null
 
@@ -203,6 +205,7 @@ export class EditFileTool extends Tool {
     },
     ['path', 'old_text', 'new_text'],
   )
+  override evidencePolicy = 'eligible' as const
 
   private readonly workspace: string | null
 

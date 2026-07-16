@@ -1,4 +1,25 @@
-import type { AssistantMessage, SubagentState, ToolSegment } from '../types'
+import type {
+  AssistantMessage,
+  GoalProjectionState,
+  RuntimeGoalSummary,
+  SubagentState,
+  ToolSegment,
+} from '../types'
+
+export function goalById(
+  projection: GoalProjectionState,
+  goalId: string,
+): RuntimeGoalSummary | null {
+  return projection.byId[goalId] || null
+}
+
+export function activeGoalForSession(
+  projection: GoalProjectionState,
+  sessionId: string,
+): RuntimeGoalSummary | null {
+  const goalId = projection.activeBySession[sessionId]
+  return goalId ? goalById(projection, goalId) : null
+}
 
 export function findToolSegment(
   assistant: AssistantMessage | null | undefined,

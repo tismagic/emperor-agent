@@ -14,7 +14,7 @@ import { describe, expect, it } from 'vitest'
 import { TaskKind, TaskRecord, TaskStatus } from './models'
 import { TaskManager } from './manager'
 import { SidechainTranscript } from './sidechain'
-import { TaskStore } from './store'
+import { TaskStore, TaskStoreConflictError } from './store'
 
 function tmp(prefix: string): string {
   return mkdtempSync(join(tmpdir(), prefix))
@@ -87,6 +87,23 @@ describe('TaskStore (test_tasks_store.py)', () => {
     expect(legacy.session_id).toBeNull()
   })
 
+  it('rejects a stale Task revision with compare-and-swap semantics', () => {
+    const store = new TaskStore(tmp('emperor-task-cas-'))
+    const created = store.upsert(rec(1), { expectedRevision: null })
+    const first = TaskRecord.fromDict(created.toDict())
+    const stale = TaskRecord.fromDict(created.toDict())
+
+    first.progress = { writer: 'first' }
+    expect(
+      store.upsert(first, { expectedRevision: created.revision }).revision,
+    ).toBe(created.revision + 1)
+    stale.progress = { writer: 'stale' }
+    expect(() =>
+      store.upsert(stale, { expectedRevision: created.revision }),
+    ).toThrow(TaskStoreConflictError)
+    expect(store.get(created.id)?.progress).toEqual({ writer: 'first' })
+  })
+
   it('archives only terminal tasks over cap and preserves archived lookup', () => {
     const root = tmp('emperor-task-archive-')
     const store = new TaskStore(root, { maxTerminal: 5 })
@@ -99,6 +116,28 @@ describe('TaskStore (test_tasks_store.py)', () => {
       store.list().filter((task) => task.status === TaskStatus.COMPLETED),
     ).toHaveLength(5)
     expect(store.get('t0')?.status).toBe(TaskStatus.COMPLETED)
+    const archiveNames = readdirSync(store.archiveDir).sort()
+    const archiveBytes = archiveNames.map((name) =>
+      readFileSync(join(store.archiveDir, name)),
+    )
+    expect(store.inspectIncludingArchive('t0').record?.status).toBe(
+      TaskStatus.COMPLETED,
+    )
+    expect(readdirSync(store.archiveDir).sort()).toEqual(archiveNames)
+    expect(
+      archiveNames.map((name) => readFileSync(join(store.archiveDir, name))),
+    ).toEqual(archiveBytes)
+
+    const corruptPath = join(store.archiveDir, archiveNames[0]!)
+    writeFileSync(corruptPath, '{damaged archive', 'utf8')
+    const corruptBytes = readFileSync(corruptPath)
+    const corruptNames = readdirSync(store.archiveDir).sort()
+    expect(store.inspectIncludingArchive('t0')).toMatchObject({
+      record: null,
+      issue: { code: 'task_store_corrupt', path: corruptPath },
+    })
+    expect(readFileSync(corruptPath)).toEqual(corruptBytes)
+    expect(readdirSync(store.archiveDir).sort()).toEqual(corruptNames)
     const hotIds = new Set(store.list().map((task) => task.id))
     expect(hotIds.has('t100')).toBe(true)
     expect(hotIds.has('t101')).toBe(true)

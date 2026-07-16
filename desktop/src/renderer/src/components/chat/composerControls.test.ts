@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   composerModeOptions,
   composerSendDisabled,
+  composerStopPresentation,
   currentComposerMode,
 } from './composerControls'
 
@@ -63,5 +64,13 @@ describe('composer control model', () => {
       short: '编辑',
     })
     expect(currentComposerMode('normal').value).toBe('ask_before_edit')
+  })
+
+  it('uses pause semantics while the owner session Goal is running', () => {
+    expect(composerStopPresentation(true)).toEqual({
+      title: '暂停当前 Goal',
+      label: '暂停 Goal',
+    })
+    expect(composerStopPresentation(false).title).toBe('停止当前任务')
   })
 })

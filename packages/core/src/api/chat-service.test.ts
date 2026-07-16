@@ -431,6 +431,39 @@ describe('MainlineTurnService (MIG-IPC-005)', () => {
     await api.close()
   })
 
+  it('rejects ordinary mutation turns while a Goal owns the global turn slot', async () => {
+    const root = tmp('emperor-mainline-goal-busy-')
+    const api = await CoreApi.create({
+      root,
+      stateRoot: join(root, '.emperor'),
+      templatesDir: TEMPLATES_DIR,
+      modelRouter: fakeRouter(new FakeProvider()),
+    })
+    const session = api.sessions.create({ title: 'Goal owner' })
+    let release!: () => void
+    const owner = api.loop.activeTasks.run({
+      taskId: 'goal:busy',
+      kind: 'goal',
+      label: 'Goal owner',
+      sessionId: String(session.id),
+      execute: async () =>
+        await new Promise<void>((resolve) => {
+          release = resolve
+        }),
+    })
+
+    await expect(
+      api.chat.submit({
+        content: 'must not run',
+        sessionId: String(session.id),
+      }),
+    ).rejects.toMatchObject({ name: 'TurnBusyError' })
+    expect(api.loop.activeTasks.list()).toHaveLength(1)
+    release()
+    await owner
+    await api.close()
+  })
+
   it('routes scheduler agent_turn jobs through MainlineTurnService', async () => {
     const api = await CoreApi.create({
       root: tmp('emperor-mainline-'),

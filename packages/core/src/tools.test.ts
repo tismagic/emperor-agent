@@ -232,17 +232,79 @@ describe('RunCommand deny-list (audit P1-1)', () => {
       'osascript -e "display dialog 1"',
     ]) {
       const out = await r.execute({ command })
-      expect(out, command).toContain('refused by safety policy')
+      expect(out, command).toMatchObject({
+        modelContent: expect.stringContaining('refused by safety policy'),
+        isError: true,
+        metadata: { exitCode: null },
+      })
     }
   })
 
   it('refusal message requires approval without teaching script indirection', async () => {
     const r = new RunCommand(dir)
     const out = await r.execute({ command: 'python3 -c "print(1)"' })
-    expect(out).toContain('refused by safety policy')
-    expect(out).not.toContain('临时脚本文件')
-    expect(out).toContain('明确批准')
-    expect(out).toContain('不要')
+    expect(out).toMatchObject({
+      modelContent: expect.stringContaining('refused by safety policy'),
+      isError: true,
+      metadata: { exitCode: null },
+    })
+    expect((out as { modelContent: string }).modelContent).not.toContain(
+      '临时脚本文件',
+    )
+    expect((out as { modelContent: string }).modelContent).toContain('明确批准')
+    expect((out as { modelContent: string }).modelContent).toContain('不要')
+  })
+})
+
+describe('RunCommand structured results', () => {
+  it.each(['Error: command cancelled', 'Error: spawn unavailable'])(
+    'keeps zero-exit stdout collision %j successful',
+    async (stdout) => {
+      const result = await new RunCommand(dir).execute({
+        command: `printf '%s' '${stdout}'`,
+      })
+
+      expect(result).toMatchObject({
+        modelContent: stdout,
+        isError: false,
+        metadata: { exitCode: 0 },
+      })
+    },
+  )
+
+  it('returns a structured workspace refusal without invoking the process', async () => {
+    const workspace = join(dir, 'nested-workspace')
+    mkdirSync(workspace, { recursive: true })
+    const result = await new RunCommand(workspace).execute(
+      { command: 'pwd' },
+      {
+        root: dir,
+        workspaceRoot: workspace,
+        arguments: { command: 'pwd' },
+      },
+    )
+
+    expect(result).toMatchObject({
+      modelContent: expect.stringContaining(
+        'Error: command cwd blocked by workspace policy',
+      ),
+      isError: true,
+      metadata: { exitCode: null },
+    })
+  })
+
+  it('does not infer mapResult failure from user-visible stdout text', () => {
+    const result = new RunCommand(dir).mapResult('Error: command cancelled', {
+      root: dir,
+      workspaceRoot: dir,
+      arguments: { command: "printf 'Error: command cancelled'" },
+    })
+
+    expect(result).toMatchObject({
+      modelContent: 'Error: command cancelled',
+      isError: false,
+      metadata: { exitCode: 0 },
+    })
   })
 })
 
@@ -260,8 +322,14 @@ describe('RunCommand cancellation', () => {
 
     const out = await pending
 
-    expect(out).toContain('command cancelled')
-    expect(out).not.toContain('should-not-finish')
+    expect(out).toMatchObject({
+      modelContent: expect.stringContaining('command cancelled'),
+      isError: true,
+      metadata: { exitCode: null },
+    })
+    expect((out as { modelContent: string }).modelContent).not.toContain(
+      'should-not-finish',
+    )
   })
 })
 
@@ -292,9 +360,17 @@ describe('RunCommand execution environment snapshot', () => {
           executionEnvironment,
         },
       )
-      expect(output).toBe('/snapshot/bin|/snapshot/home|')
-      expect(output).not.toContain('must-not-leak')
-      expect(output).not.toContain('captured-but-not-whitelisted')
+      expect(output).toMatchObject({
+        modelContent: '/snapshot/bin|/snapshot/home|',
+        isError: false,
+        metadata: { exitCode: 0 },
+      })
+      expect((output as { modelContent: string }).modelContent).not.toContain(
+        'must-not-leak',
+      )
+      expect((output as { modelContent: string }).modelContent).not.toContain(
+        'captured-but-not-whitelisted',
+      )
     } finally {
       if (previous === undefined) delete process.env.PROCESS_ONLY_SECRET
       else process.env.PROCESS_ONLY_SECRET = previous

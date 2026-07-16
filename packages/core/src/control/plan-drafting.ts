@@ -50,7 +50,15 @@ export class PlanDraftingManager {
     enforceQuality?: boolean
   }): Interaction {
     this.cm.ensureNoPending()
+    const activeGoal = this.cm.activeGoalPlanContext()
     const planMeta = { ...(opts.meta ?? {}) }
+    delete planMeta.goal_id
+    delete planMeta.goalId
+    delete planMeta.goal_session_id
+    if (activeGoal !== null) {
+      planMeta.goal_id = activeGoal.id
+      planMeta.goal_session_id = activeGoal.scope.sessionId
+    }
     const existing = this.planRecordForMeta(planMeta) ?? this.latestDraftPlan()
     const planId =
       existing !== null
@@ -58,6 +66,8 @@ export class PlanDraftingManager {
         : `plan_${randomUUID().replace(/-/g, '').slice(0, 12)}`
     const now = nowTs()
     const structuredSteps = parsePlanSteps(opts.steps ?? [])
+    const approvalGeneration =
+      Number(existing?.metadata.approval_generation ?? 0) + 1
     const interaction = makePlanInteraction({
       title: opts.title,
       summary: opts.summary,
@@ -65,7 +75,11 @@ export class PlanDraftingManager {
       assumptions: opts.assumptions,
       riskLevel: opts.riskLevel ?? 'medium',
       parentCallId: opts.parentCallId,
-      meta: { ...planMeta, plan_id: planId },
+      meta: {
+        ...planMeta,
+        plan_id: planId,
+        approval_generation: approvalGeneration,
+      },
     })
     const draft = readyForApprovalDraft(
       existing !== null ? existing.draft : emptyDraft(),
@@ -88,15 +102,19 @@ export class PlanDraftingManager {
         updatedAt: now,
         sessionId: (scope?.session_id as string | undefined) ?? null,
         sourceInteractionId: interaction.id,
+        goalId: activeGoal?.id ?? existing?.goalId ?? null,
+        supersedesPlanId: existing?.supersedesPlanId ?? null,
         planMarkdown: interaction.planMarkdown,
         assumptions: [...interaction.assumptions],
         steps: structuredSteps,
         draft,
         metadata: metadataWithoutPlanPermissionTokens({
           ...(existing !== null ? existing.metadata : {}),
+          approval_generation: approvalGeneration,
           risk_level: interaction.riskLevel,
           ...(scope ? { scope } : {}),
         }),
+        eventSeq: existing?.eventSeq ?? 0,
       }),
     )
     this.cm.setPending(interaction)
@@ -180,13 +198,13 @@ export class PlanDraftingManager {
       lastContextRefreshAt: now,
     }
     const updated = { ...record, updatedAt: now, draft }
-    this.cm.planStore.save(updated)
-    return updated
+    return this.cm.planStore.save(updated)
   }
 
   ensurePlanDraft(): PlanRecord {
     const existing = this.latestDraftPlan()
     if (existing !== null) return existing
+    const activeGoal = this.cm.activeGoalPlanContext()
     const now = nowTs()
     const scope = this.cm.planScopeMetadata()
     const record = makePlanRecord({
@@ -197,19 +215,22 @@ export class PlanDraftingManager {
       createdAt: now,
       updatedAt: now,
       sessionId: (scope?.session_id as string | undefined) ?? null,
+      goalId: activeGoal?.id ?? null,
       draft: { ...emptyDraft(), phase: PlanDraftPhase.EXPLORING },
       metadata: { risk_level: 'medium', ...(scope ? { scope } : {}) },
     })
-    this.cm.planStore.save(record)
-    return record
+    return this.cm.planStore.save(record)
   }
 
   private latestDraftPlan(): PlanRecord | null {
+    const activeGoalId = this.cm.activeGoalPlanContext()?.id ?? null
     const plans = this.cm.planStore
       .list()
       .filter(
         (p) =>
-          p.status === PlanStatus.DRAFT && this.cm.planMatchesCurrentScope(p),
+          p.status === PlanStatus.DRAFT &&
+          p.goalId === activeGoalId &&
+          this.cm.planMatchesCurrentScope(p),
       )
     if (!plans.length) return null
     return plans.reduce((a, b) => (b.updatedAt > a.updatedAt ? b : a))
@@ -218,7 +239,12 @@ export class PlanDraftingManager {
   private planRecordForMeta(meta: Record<string, unknown>): PlanRecord | null {
     const planId = String(meta.plan_id ?? '')
     const record = planId ? this.cm.planStore.get(planId) : null
-    return record && this.cm.planMatchesCurrentScope(record) ? record : null
+    const activeGoalId = this.cm.activeGoalPlanContext()?.id ?? null
+    return record &&
+      record.goalId === activeGoalId &&
+      this.cm.planMatchesCurrentScope(record)
+      ? record
+      : null
   }
 
   recordPlanOpenQuestions(interaction: Interaction): void {
@@ -244,6 +270,12 @@ export class PlanDraftingManager {
   }
 
   recordPlanResolvedQuestions(interaction: Interaction): void {
+    if (
+      interaction.meta.goal_manual_evidence_request ||
+      interaction.meta.goal_permission_blocker_request ||
+      interaction.meta.goal_reviewer_waiver_request
+    )
+      return
     const record = this.planRecordForMeta(interaction.meta)
     if (record === null) return
     const questionIds = new Set(interaction.questions.map((q) => q.id))

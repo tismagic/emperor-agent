@@ -20,6 +20,15 @@ export interface SlashPaletteItem {
   skillName?: string
 }
 
+export type GoalSlashAction =
+  | { kind: 'start'; outcome: string }
+  | { kind: 'status' }
+  | { kind: 'list' }
+  | { kind: 'pause' }
+  | { kind: 'resume' }
+  | { kind: 'cancel' }
+  | { kind: 'missing' }
+
 export const slashCommands: SlashCommand[] = [
   {
     name: '/help',
@@ -66,6 +75,17 @@ export const slashCommands: SlashCommand[] = [
     name: '/plan',
     usage: '/plan on|off|status',
     description: '查看或切换 Plan 模式',
+  },
+  {
+    name: '/goal',
+    usage: '/goal <outcome>|status|pause|resume|cancel',
+    description: '启动或管理当前会话的 Goal',
+    aliases: ['/goal-pause', '/goal-resume', '/goal-cancel'],
+  },
+  {
+    name: '/goals',
+    usage: '/goals',
+    description: '列出当前会话的 Goal',
   },
   {
     name: '/mode',
@@ -134,6 +154,31 @@ export function parseSlashCommand(input: string) {
     (item) => item.name === normalized || item.aliases?.includes(normalized),
   )
   return { raw: trimmed, name: normalized, command, args }
+}
+
+export function parseGoalSlashCommand(input: string): GoalSlashAction | null {
+  const trimmed = input.trim()
+  if (/^\/goals$/i.test(trimmed)) return { kind: 'list' }
+  const alias = trimmed.match(/^\/goal-(pause|resume|cancel)$/i)
+  if (alias)
+    return {
+      kind: alias[1]!.toLowerCase() as 'pause' | 'resume' | 'cancel',
+    }
+  const match = trimmed.match(/^\/goal(?:\s+(.*))?$/i)
+  if (!match) return null
+  const tail = String(match[1] || '').trim()
+  if (!tail) return { kind: 'missing' }
+  const normalized = tail.toLowerCase()
+  if (normalized === 'status') return { kind: 'status' }
+  if (normalized === 'pause') return { kind: 'pause' }
+  if (normalized === 'resume') return { kind: 'resume' }
+  if (normalized === 'cancel') return { kind: 'cancel' }
+  const explicit = tail.match(/^start(?:\s+(.*))?$/i)
+  if (explicit) {
+    const outcome = String(explicit[1] || '').trim()
+    return outcome ? { kind: 'start', outcome } : { kind: 'missing' }
+  }
+  return { kind: 'start', outcome: tail }
 }
 
 export function parseSkillSlashCommand(

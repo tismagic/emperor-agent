@@ -53,6 +53,8 @@ export * from './plans/quality'
 export * from './plans/execution-state'
 export * from './plans/store'
 export * from './plans/context'
+// goals
+export * from './goals'
 // control (W05)
 export * from './control/models'
 export * from './control/store'

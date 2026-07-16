@@ -1,5 +1,10 @@
 # Emperor Agent {{tag}} · UNSIGNED-PREVIEW / 未签名预览版
 
+> 文档状态：Active<br>
+> 面向读者：安装 Preview 的用户<br>
+> 最后核验：2026-07-16<br>
+> 事实源：`.github/workflows/release-preview.yml`、Preview electron-builder 配置与发布 contract
+
 > **Unsigned Preview / 未签名预览版**  
 > `channel: preview` · `signingStatus: unsigned`
 

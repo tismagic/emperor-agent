@@ -1,4 +1,5 @@
-export type ActiveTaskKind = 'turn' | 'scheduler' | 'team' | 'watchlist'
+export type ActiveTaskKind =
+  'turn' | 'scheduler' | 'team' | 'watchlist' | 'goal'
 
 export interface ActiveTaskInfo {
   id: string

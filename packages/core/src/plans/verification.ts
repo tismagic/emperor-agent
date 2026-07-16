@@ -200,9 +200,6 @@ function evidenceRefs(evidence: Record<string, unknown>): string[] {
 
 function normalizeCommand(command: string): string {
   return String(command ?? '')
-    .split(/\s+/)
-    .filter((p) => p)
-    .join(' ')
 }
 
 // ── VerificationCommand / Result ──
@@ -252,9 +249,9 @@ export function resultFromToolOutput(
   content: string,
 ): VerificationResult {
   const text = stripToolErrorHint(String(content ?? '').trim())
-  const failed = /^Error: command exited with code (\d+)\n?([\s\S]*)$/.exec(
-    text,
-  )
+  const failed =
+    /^Error: command exited with code (\d+)\n?([\s\S]*)$/.exec(text) ??
+    /^Error \(exit (\d+)\):\n?([\s\S]*)$/.exec(text)
   if (failed) {
     return resultFromCompleted(command, {
       exitCode: Number.parseInt(failed[1]!, 10),

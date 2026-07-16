@@ -69,6 +69,7 @@ export class GlobTool extends Tool {
     ['pattern'],
   )
   override readOnly = true
+  override evidencePolicy = 'eligible' as const
   override maxResultChars = 8000
 
   private readonly workspace: string
@@ -147,6 +148,7 @@ export class GrepTool extends Tool {
     ['pattern'],
   )
   override readOnly = true
+  override evidencePolicy = 'eligible' as const
   override maxResultChars = 20_000
 
   private readonly workspace: string

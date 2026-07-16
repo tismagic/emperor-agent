@@ -25,6 +25,48 @@ export const INDEPENDENT_VERIFICATION_SOURCES = new Set([
   'verification_subagent',
 ])
 
+export function isPlanInvalidated(record: PlanRecord): boolean {
+  const metadata = record.metadata ?? {}
+  return Boolean(
+    metadata.superseded_by ||
+    metadata.replan_started ||
+    metadata.cancelled_by ||
+    metadata.rejected_by ||
+    metadata.deleted_at,
+  )
+}
+
+export function comparePlanApprovalGeneration(
+  left: PlanRecord,
+  right: PlanRecord,
+): number {
+  return (
+    Number(left.approvedAt) - Number(right.approvedAt) ||
+    left.createdAt - right.createdAt ||
+    left.id.localeCompare(right.id)
+  )
+}
+
+export function latestApprovedPlanGeneration(
+  plans: readonly PlanRecord[],
+  matchesScope: (record: PlanRecord) => boolean,
+): PlanRecord | null {
+  return plans
+    .filter(
+      (record) =>
+        record.approvedAt !== null &&
+        Number.isFinite(record.approvedAt) &&
+        matchesScope(record),
+    )
+    .reduce<PlanRecord | null>(
+      (latest, record) =>
+        latest === null || comparePlanApprovalGeneration(record, latest) > 0
+          ? record
+          : latest,
+      null,
+    )
+}
+
 // Task status string values (W14 tasks/ not migrated — values match agent/tasks TaskStatus).
 const TASK_STATUS = {
   RUNNING: 'running',
@@ -95,13 +137,22 @@ export function parsePlanSteps(
           .map((r) => String(r))
           .filter((r) => r.trim())
           .slice(0, 12),
+        dependsOn: ((item.depends_on ?? item.dependsOn ?? []) as unknown[])
+          .map((r) => String(r).trim())
+          .filter((r) => r)
+          .slice(0, 120),
         verification: (
           (item.verification ??
             item.verification_requirements ??
             []) as unknown[]
         )
           .filter((raw) => raw && typeof raw === 'object')
-          .map((raw) => requirementFromDict(raw as Record<string, unknown>))
+          .map((raw) => ({
+            ...requirementFromDict(raw as Record<string, unknown>),
+            status: 'pending',
+            evidenceRefs: [],
+            reason: '',
+          }))
           .slice(0, 20),
         risk: String(item.risk ?? 'medium')
           .trim()
@@ -232,6 +283,12 @@ export function independentVerificationRiskSignals(
     ['migrate', 'data_migration'],
     ['schema', 'data_migration'],
     ['迁移', 'data_migration'],
+    ['long-running', 'long_running'],
+    ['long running', 'long_running'],
+    ['daemon', 'long_running'],
+    ['background loop', 'long_running'],
+    ['长期运行', 'long_running'],
+    ['长时间运行', 'long_running'],
   ]
   for (const [token, signal] of tokenSignals) {
     if (text.includes(token)) appendUnique(signals, signal)

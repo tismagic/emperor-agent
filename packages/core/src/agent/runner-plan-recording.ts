@@ -7,10 +7,7 @@ import type { ToolCallRequest } from '../providers/base'
 import type { ToolResultObj } from '../tools/base'
 import type { ToolRegistry } from '../tools/registry'
 import { planToDict } from '../plans/models'
-import {
-  resultFromToolOutput,
-  type VerificationCommand,
-} from '../plans/verification'
+import { type VerificationCommand } from '../plans/verification'
 import type { ControlManagerRunnerHost } from './runner'
 import {
   discoveryEvidenceRefs,
@@ -101,7 +98,7 @@ export function planVerificationTarget(
 export function recordPlanVerification(
   cm: ControlManagerRunnerHost | null,
   call: ToolCallRequest,
-  content: string,
+  toolResult: ToolResultObj,
   target: Record<string, string> | null,
 ): {
   target: Record<string, string>
@@ -119,15 +116,20 @@ export function recordPlanVerification(
     cwd: null,
     timeoutSeconds: 300,
   }
-  const resultObj = resultFromToolOutput(command, content)
+  const exitCode = Number(toolResult.metadata.exitCode)
+  const hasExitCode = Number.isInteger(exitCode)
+  const passed = !toolResult.isError && hasExitCode && exitCode === 0
+  const stdout = toolResult.modelContent.slice(-4_000)
   const result: Record<string, unknown> = {
-    command: resultObj.command,
-    exit_code: resultObj.exitCode,
-    passed: resultObj.passed,
-    summary: resultObj.summary,
-    stdout_tail: resultObj.stdoutTail,
-    stderr_tail: resultObj.stderrTail,
-    checked_at: resultObj.checkedAt,
+    command: command.command,
+    exit_code: hasExitCode ? exitCode : null,
+    passed,
+    summary:
+      toolResult.displaySummary ||
+      (passed ? 'Command passed.' : 'Command failed.'),
+    stdout_tail: toolResult.isError ? '' : stdout,
+    stderr_tail: toolResult.isError ? stdout : '',
+    checked_at: Date.now() / 1000,
     source: 'run_command',
     tool_call_id: call.id,
   }

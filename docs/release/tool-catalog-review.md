@@ -1,5 +1,10 @@
 # ToolCatalog 发布审核清单
 
+> 文档状态：Active<br>
+> 面向读者：修改 ToolCatalog 的开发者与发布审核者<br>
+> 最后核验：2026-07-16<br>
+> 事实源：`packages/core/src/environment/tool-catalog.json`、catalog schema、环境安装 adapters
+
 `packages/core/src/environment/tool-catalog.json` 是随应用签名发布的静态执行策略，不是普通展示数据。catalog 决定可探测、下载和执行的程序；任何变更都按供应链与命令执行安全变更审核。
 
 ## 变更信息

@@ -190,6 +190,7 @@ export interface PlanStep {
   id: string
   title: string
   status: string
+  dependsOn: string[]
   description: string
   files: string[]
   commands: string[]
@@ -209,6 +210,7 @@ export function makeStep(
     id: p.id,
     title: p.title,
     status: p.status ?? PlanStepStatus.PENDING,
+    dependsOn: p.dependsOn ?? [],
     description: p.description ?? '',
     files: p.files ?? [],
     commands: p.commands ?? [],
@@ -227,6 +229,7 @@ export function stepToDict(s: PlanStep): Record<string, unknown> {
     id: s.id,
     title: s.title,
     status: s.status,
+    depends_on: s.dependsOn,
     description: s.description,
     files: s.files,
     commands: s.commands,
@@ -248,6 +251,7 @@ export function stepFromDict(raw: Record<string, unknown>): PlanStep {
     id: String(raw.id),
     title: String(raw.title),
     status: validValue(raw.status, PLAN_STEP_STATUSES, PlanStepStatus.PENDING),
+    dependsOn: stringList(raw.depends_on ?? raw.dependsOn, 120),
     description: String(raw.description ?? ''),
     files: ((raw.files ?? []) as unknown[]).map((v) => String(v)),
     commands: ((raw.commands ?? []) as unknown[]).map((v) => String(v)),
@@ -284,6 +288,9 @@ export interface PlanRecord {
   sourceInteractionId: string | null
   approvedAt: number | null
   completedAt: number | null
+  eventSeq: number
+  goalId: string | null
+  supersedesPlanId: string | null
   planMarkdown: string
   assumptions: string[]
   steps: PlanStep[]
@@ -313,6 +320,9 @@ export function makePlanRecord(
     sourceInteractionId: p.sourceInteractionId ?? null,
     approvedAt: p.approvedAt ?? null,
     completedAt: p.completedAt ?? null,
+    eventSeq: Math.max(0, Math.trunc(p.eventSeq ?? 0)),
+    goalId: p.goalId ?? null,
+    supersedesPlanId: p.supersedesPlanId ?? null,
     planMarkdown: p.planMarkdown ?? '',
     assumptions: p.assumptions ?? [],
     steps: p.steps ?? [],
@@ -334,6 +344,9 @@ export function planToDict(r: PlanRecord): Record<string, unknown> {
     source_interaction_id: r.sourceInteractionId,
     approved_at: r.approvedAt,
     completed_at: r.completedAt,
+    event_seq: r.eventSeq,
+    goal_id: r.goalId,
+    supersedes_plan_id: r.supersedesPlanId,
     plan_markdown: r.planMarkdown,
     assumptions: r.assumptions,
     steps: r.steps.map(stepToDict),
@@ -356,6 +369,14 @@ export function planFromDict(raw: Record<string, unknown>): PlanRecord {
     sourceInteractionId: (raw.source_interaction_id ?? null) as string | null,
     approvedAt: (raw.approved_at ?? null) as number | null,
     completedAt: (raw.completed_at ?? null) as number | null,
+    eventSeq: Math.max(
+      0,
+      Math.trunc(Number(raw.event_seq ?? raw.eventSeq ?? 0) || 0),
+    ),
+    goalId: (raw.goal_id ?? raw.goalId ?? null) as string | null,
+    supersedesPlanId: (raw.supersedes_plan_id ??
+      raw.supersedesPlanId ??
+      null) as string | null,
     planMarkdown: String(raw.plan_markdown ?? ''),
     assumptions: ((raw.assumptions ?? []) as unknown[]).map((v) => String(v)),
     steps: ((raw.steps ?? []) as unknown[])

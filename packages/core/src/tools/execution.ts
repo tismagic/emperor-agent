@@ -4,7 +4,7 @@
  */
 import type { ToolCallRequest } from '../providers/base'
 import { SAFETY_REFUSAL_PREFIX } from './builtin'
-import { ToolResultObj } from './base'
+import { isToolErrorText, ToolResultObj } from './base'
 import type { ToolRegistry } from './registry'
 import { TurnPaused } from '../control/exceptions'
 import * as runtimeEvents from '../agent/runtime-events'
@@ -360,7 +360,7 @@ function makeSemaphore(limit: number): () => Promise<() => void> {
 function coerceToolResult(value: ToolResultObj | string): ToolResultObj {
   if (value instanceof ToolResultObj) return value
   const text = String(value)
-  return ToolResultObj.fromText(text, { isError: text.startsWith('Error:') })
+  return ToolResultObj.fromText(text, { isError: isToolErrorText(text) })
 }
 
 function failureReasonKind(text: string): 'safety_refusal' | 'error' {

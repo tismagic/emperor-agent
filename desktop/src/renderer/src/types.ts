@@ -780,6 +780,7 @@ export interface BootstrapPayload {
   team?: TeamPayload
   scheduler?: SchedulerPayload
   control?: ControlPayload
+  goals?: BootstrapGoalsPayload
   desktopPet?: DesktopPetPayload
   runtime?: RuntimeReplayPayload
   diagnostics?: DiagnosticsPayload
@@ -1042,6 +1043,88 @@ export interface RuntimePlanEntryDecision {
   recommendedReadonlyScopes?: string[]
 }
 
+export type RuntimeGoalStatus =
+  | 'draft'
+  | 'active'
+  | 'completed'
+  | 'blocked'
+  | 'cancelled'
+  | 'stopped_by_policy'
+
+export type RuntimeGoalPhase =
+  | 'contract'
+  | 'planning'
+  | 'executing'
+  | 'verifying'
+  | 'awaiting_user'
+  | 'paused'
+  | 'terminal'
+
+export interface RuntimeGoalSummary {
+  id: string
+  status: RuntimeGoalStatus
+  phase: RuntimeGoalPhase
+  outcome: string
+  sessionId: string
+  currentPlanId: string | null
+  cyclesUsed: number
+  acceptance: {
+    passed: number
+    failed: number
+    missing: number
+    total: number
+    criteria?: ReadonlyArray<{
+      id: string
+      description: string
+      required: boolean
+      verificationKind: 'command' | 'artifact' | 'manual' | 'reviewer'
+      verdict: 'pass' | 'fail' | 'missing'
+      evidenceSummary: string | null
+    }>
+  }
+  updatedAt: string
+  lastEventSeq: number
+}
+
+export interface BootstrapGoalsPayload {
+  active: RuntimeGoalSummary | null
+  recent: RuntimeGoalSummary[]
+}
+
+export interface GoalOperationResult {
+  accepted: boolean
+  goal: RuntimeGoalSummary
+  activeTask: ActiveRuntimeTask | null
+}
+
+export interface GoalGateProjection {
+  goalId: string
+  sessionId: string
+  lastEventSeq: number
+  passed: boolean
+  reasonCodes: string[]
+  reasonCount: number
+  evaluatedAt: string
+}
+
+export interface GoalEvidenceProjection {
+  goalId: string
+  sessionId: string
+  lastEventSeq: number
+  criterionId: string
+  verdict: 'pass' | 'fail'
+  sourceCount: number
+  summary: string
+  recordedAt: string
+}
+
+export interface GoalProjectionState {
+  byId: Record<string, RuntimeGoalSummary>
+  activeBySession: Record<string, string>
+  latestGateByGoal: Record<string, GoalGateProjection | undefined>
+  latestEvidenceByGoal: Record<string, GoalEvidenceProjection | undefined>
+}
+
 export interface RuntimeTaskRecord {
   id: string
   kind: string
@@ -1291,6 +1374,13 @@ interface EnvironmentRuntimeEventFields {
   project_fingerprint?: string
 }
 
+interface GoalRuntimeEventFields {
+  goal_id: string
+  session_id: string
+  last_event_seq: number
+  updated_at: string
+}
+
 type WsEventVariants =
   | {
       event: 'ready'
@@ -1535,6 +1625,63 @@ type WsEventVariants =
       step_id?: string
       result?: Record<string, unknown>
     }
+  | (GoalRuntimeEventFields & {
+      event: 'goal_created'
+      goal: RuntimeGoalSummary
+    })
+  | (GoalRuntimeEventFields & {
+      event: 'goal_runtime_update'
+      goal: RuntimeGoalSummary
+      plan?: {
+        completed: number
+        failed: number
+        blocked: number
+        total: number
+      }
+    })
+  | (GoalRuntimeEventFields & {
+      event: 'goal_evidence_recorded'
+      goal?: RuntimeGoalSummary
+      criterion_id: string
+      verdict: 'pass' | 'fail'
+      source_count: number
+      summary: string
+    })
+  | (GoalRuntimeEventFields & {
+      event: 'goal_gate_evaluated'
+      passed: boolean
+      reason_codes: string[]
+      reason_count: number
+    })
+  | (GoalRuntimeEventFields & {
+      event: 'goal_completed'
+      goal: RuntimeGoalSummary
+      summary?: string
+    })
+  | (GoalRuntimeEventFields & {
+      event: 'goal_blocked'
+      goal: RuntimeGoalSummary
+      reason?: string
+    })
+  | (GoalRuntimeEventFields & {
+      event: 'goal_paused'
+      goal: RuntimeGoalSummary
+      reason?: string
+    })
+  | (GoalRuntimeEventFields & {
+      event: 'goal_resumed'
+      goal: RuntimeGoalSummary
+    })
+  | (GoalRuntimeEventFields & {
+      event: 'goal_cancelled'
+      goal: RuntimeGoalSummary
+      reason?: string
+    })
+  | (GoalRuntimeEventFields & {
+      event: 'goal_policy_stopped'
+      goal: RuntimeGoalSummary
+      reason?: string
+    })
   | { event: 'task_started'; task?: RuntimeTaskRecord }
   | {
       event: 'task_progress'

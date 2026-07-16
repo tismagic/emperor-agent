@@ -1,3 +1,10 @@
+import type { GoalGateReasonCode, GoalSummary } from '../goals/models'
+import type {
+  GoalRuntimeEventBase,
+  GoalRuntimePlanCounts,
+  RuntimeGoalSummary,
+} from './types'
+
 type EventPayload = Record<string, unknown>
 
 export function runtimeEvent(
@@ -332,6 +339,201 @@ export function planStepUpdate(opts: {
   })
 }
 
+export interface GoalRuntimeEventIdentity {
+  readonly goalId: string
+  readonly sessionId: string
+  readonly lastEventSeq: number
+  readonly updatedAt: string
+}
+
+export function goalCreated(
+  goal: GoalSummary,
+  opts: { lastEventSeq: number },
+): EventPayload {
+  return goalLifecycleEvent('goal_created', goal, opts)
+}
+
+export function goalRuntimeUpdate(
+  goal: GoalSummary,
+  opts: { lastEventSeq: number; plan?: GoalRuntimePlanCounts | null },
+): EventPayload {
+  return runtimeEvent('goal_runtime_update', {
+    ...goalEventBase(identityFromGoal(goal, opts.lastEventSeq)),
+    goal: runtimeGoalSummary(goal, opts.lastEventSeq),
+    plan: opts.plan ? boundedPlanCounts(opts.plan) : null,
+  })
+}
+
+export function goalEvidenceRecorded(
+  goal: GoalSummary,
+  identity: GoalRuntimeEventIdentity,
+  opts: {
+    criterionId: string
+    verdict: 'pass' | 'fail'
+    sourceCount: number
+    summary: string
+  },
+): EventPayload {
+  return runtimeEvent('goal_evidence_recorded', {
+    ...goalEventBase(identity),
+    goal: runtimeGoalSummary(goal, identity.lastEventSeq),
+    criterion_id: safeIdentifier(opts.criterionId),
+    verdict: opts.verdict,
+    source_count: boundedCount(opts.sourceCount),
+    summary: boundedText(opts.summary),
+  })
+}
+
+export function goalGateEvaluated(
+  identity: GoalRuntimeEventIdentity,
+  opts: {
+    passed: boolean
+    reasonCodes: readonly GoalGateReasonCode[]
+  },
+): EventPayload {
+  const reasonCodes = opts.reasonCodes.map((code) => safeIdentifier(code))
+  return runtimeEvent('goal_gate_evaluated', {
+    ...goalEventBase(identity),
+    passed: Boolean(opts.passed),
+    reason_codes: reasonCodes.slice(0, 20),
+    reason_count: reasonCodes.length,
+  })
+}
+
+export function goalCompleted(
+  goal: GoalSummary,
+  opts: { lastEventSeq: number; summary?: string | null },
+): EventPayload {
+  return goalLifecycleEvent('goal_completed', goal, opts, {
+    summary: opts.summary ? boundedText(opts.summary) : null,
+  })
+}
+
+export function goalBlocked(
+  goal: GoalSummary,
+  opts: { lastEventSeq: number; reason?: string | null },
+): EventPayload {
+  return goalLifecycleEvent('goal_blocked', goal, opts, {
+    reason: opts.reason ? boundedText(opts.reason) : null,
+  })
+}
+
+export function goalPaused(
+  goal: GoalSummary,
+  opts: { lastEventSeq: number; reason?: string | null },
+): EventPayload {
+  return goalLifecycleEvent('goal_paused', goal, opts, {
+    reason: opts.reason ? boundedText(opts.reason) : null,
+  })
+}
+
+export function goalResumed(
+  goal: GoalSummary,
+  opts: { lastEventSeq: number },
+): EventPayload {
+  return goalLifecycleEvent('goal_resumed', goal, opts)
+}
+
+export function goalCancelled(
+  goal: GoalSummary,
+  opts: { lastEventSeq: number; reason?: string | null },
+): EventPayload {
+  return goalLifecycleEvent('goal_cancelled', goal, opts, {
+    reason: opts.reason ? boundedText(opts.reason) : null,
+  })
+}
+
+export function goalPolicyStopped(
+  goal: GoalSummary,
+  opts: { lastEventSeq: number; reason?: string | null },
+): EventPayload {
+  return goalLifecycleEvent('goal_policy_stopped', goal, opts, {
+    reason: opts.reason ? boundedText(opts.reason) : null,
+  })
+}
+
+function goalLifecycleEvent(
+  event: string,
+  goal: GoalSummary,
+  opts: { lastEventSeq: number },
+  extra: EventPayload = {},
+): EventPayload {
+  return runtimeEvent(event, {
+    ...goalEventBase(identityFromGoal(goal, opts.lastEventSeq)),
+    goal: runtimeGoalSummary(goal, opts.lastEventSeq),
+    ...extra,
+  })
+}
+
+function identityFromGoal(
+  goal: GoalSummary,
+  lastEventSeq: number,
+): GoalRuntimeEventIdentity {
+  return {
+    goalId: goal.id,
+    sessionId: goal.sessionId,
+    lastEventSeq,
+    updatedAt: goal.updatedAt,
+  }
+}
+
+function goalEventBase(
+  identity: GoalRuntimeEventIdentity,
+): GoalRuntimeEventBase {
+  return {
+    goal_id: safeIdentifier(identity.goalId),
+    session_id: safeIdentifier(identity.sessionId),
+    last_event_seq: Math.max(0, Math.trunc(identity.lastEventSeq || 0)),
+    updated_at: String(identity.updatedAt ?? '').slice(0, 64),
+  }
+}
+
+function runtimeGoalSummary(
+  goal: GoalSummary,
+  lastEventSeq: number,
+): RuntimeGoalSummary {
+  return {
+    id: safeIdentifier(goal.id),
+    status: goal.status,
+    phase: goal.phase,
+    outcome: boundedText(goal.outcome),
+    sessionId: safeIdentifier(goal.sessionId),
+    currentPlanId: goal.currentPlanId
+      ? safeIdentifier(goal.currentPlanId)
+      : null,
+    cyclesUsed: boundedCount(goal.cyclesUsed),
+    acceptance: {
+      passed: boundedCount(goal.acceptance.passed),
+      failed: boundedCount(goal.acceptance.failed),
+      missing: boundedCount(goal.acceptance.missing),
+      total: boundedCount(goal.acceptance.total),
+      criteria: (goal.acceptance.criteria ?? [])
+        .slice(0, 20)
+        .map((criterion) => ({
+          id: safeIdentifier(criterion.id),
+          description: boundedText(criterion.description),
+          required: Boolean(criterion.required),
+          verificationKind: criterion.verificationKind,
+          verdict: criterion.verdict,
+          evidenceSummary: criterion.evidenceSummary
+            ? boundedText(criterion.evidenceSummary)
+            : null,
+        })),
+    },
+    updatedAt: String(goal.updatedAt ?? '').slice(0, 64),
+    lastEventSeq: Math.max(0, Math.trunc(lastEventSeq || 0)),
+  }
+}
+
+function boundedPlanCounts(plan: GoalRuntimePlanCounts): GoalRuntimePlanCounts {
+  return {
+    completed: boundedCount(plan.completed),
+    failed: boundedCount(plan.failed),
+    blocked: boundedCount(plan.blocked),
+    total: boundedCount(plan.total),
+  }
+}
+
 export function taskStarted(task: EventPayload): EventPayload {
   return runtimeEvent('task_started', { task })
 }
@@ -541,4 +743,8 @@ function safeDigest(value: string): string {
 
 function boundedCount(value: number): number {
   return Math.min(10_000, Math.max(0, Math.trunc(value || 0)))
+}
+
+function boundedText(value: string): string {
+  return String(value ?? '').slice(0, 500)
 }

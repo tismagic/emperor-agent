@@ -37,6 +37,7 @@ export class ManageSkillTool extends Tool {
     },
     required: ['action', 'name'],
   }
+  override evidencePolicy = 'forbidden' as const
 
   private readonly manager: SkillManager
   private readonly onSkillsChanged: (() => void) | null

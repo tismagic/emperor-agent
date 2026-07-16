@@ -3,14 +3,17 @@
  * 对齐 Python 各 sub-manager 通过 `self._cm` 访问的共享状态/方法。
  */
 import type { PlanRecord } from '../plans/models'
+import type { GoalRecord } from '../goals/models'
 import type { PlanStore } from '../plans/store'
 import type { ControlStore } from './store'
 import type { PlanPermissionTokenManager } from './plan-permissions'
 
 export interface ControlRuntimeScope {
   sessionId?: string | null
+  mode?: 'chat' | 'build' | null
   projectId?: string | null
   workspaceRoot?: string | null
+  projectFingerprint?: string | null
 }
 
 export interface TodoStoreLike {
@@ -21,6 +24,7 @@ export interface TaskManagerLike {
   store: { get(id: string): { progress: Record<string, unknown> } | null }
   appendSidechain(taskId: string, message: Record<string, unknown>): void
   updateTask(taskId: string, fields: Record<string, unknown>): unknown
+  cancelTask(taskId: string, opts?: { reason?: string }): unknown
   startTask(opts: {
     kind: string
     title: string
@@ -40,6 +44,7 @@ export interface ControlManagerHost {
   ensureNoPending(): void
   setPending(interaction: import('./models').Interaction): void
   planScopeMetadata(): Record<string, unknown> | null
+  activeGoalPlanContext(): GoalRecord | null
   planMatchesCurrentScope(record: PlanRecord): boolean
   latestExecutablePlan(): PlanRecord | null
   latestReviewablePlan(): PlanRecord | null

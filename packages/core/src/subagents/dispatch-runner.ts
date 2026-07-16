@@ -13,6 +13,10 @@ import type {
   DispatchRunner,
   DispatchRunnerFactoryArgs,
 } from '../tools/dispatch'
+import {
+  bindRunnerGoalRecordingContext,
+  type RunnerGoalRecordingHost,
+} from '../agent/runner-goal-recording'
 
 export interface RoutedDispatchRunnerFactoryOptions {
   modelRouter: Pick<ModelRouter, 'route'>
@@ -25,6 +29,7 @@ export interface RoutedDispatchRunnerFactoryOptions {
   maxContext?: number | null
   hooks?:
     ((args: DispatchRunnerFactoryArgs) => AgentRunnerHookHost | null) | null
+  goalObservationRecorder?: RunnerGoalRecordingHost | null
 }
 
 export function buildDispatchRunnerFactory(
@@ -37,6 +42,8 @@ export function buildDispatchRunner(
   args: DispatchRunnerFactoryArgs,
   opts: RoutedDispatchRunnerFactoryOptions,
 ): DispatchRunner {
+  const goalObservationRecorder =
+    args.goalObservationRecorder ?? opts.goalObservationRecorder ?? null
   const route = opts.modelRouter.route('subagent', args.spec.name, args.task)
   const runner = buildRoutedRunner({
     route,
@@ -54,10 +61,20 @@ export function buildDispatchRunner(
     workspaceRoot: args.workspaceRoot ?? null,
     sessionId: args.sessionId,
     hooks: opts.hooks?.(args) ?? null,
+    goalObservationRecorder:
+      goalObservationRecorder && args.taskId && args.agentId && args.turnId
+        ? bindRunnerGoalRecordingContext(goalObservationRecorder, {
+            expectedGoalId: args.expectedGoalId,
+            taskId: args.taskId,
+            agentId: args.agentId,
+            turnId: args.turnId,
+          })
+        : null,
   })
   return {
     step: (history) =>
       runner.stepAsync(history, {
+        turnId: args.turnId ?? null,
         executionEnvironment: args.executionEnvironment ?? null,
       }),
   }

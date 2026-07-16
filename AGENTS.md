@@ -13,12 +13,12 @@
 - Electron main 进程内托管 `@emperor/core`，renderer 通过 preload IPC 调用 CoreApi。
 - Vue 3 + TypeScript + Tailwind 桌面端提供 Chat / Build 多会话、项目级记忆、工具调用、Scheduler、MCP、Team、Ask / Plan、附件与桌宠 companion。
 - 运行数据落在本地全局私有目录（`stateRoot`，默认 `~/.emperor-agent`）里的 `memory/`、`model_config.json`、`mcp_config.json`、`emperor.local.json` 等文件中，不写入仓库或项目源码目录。
-- 旧 Python 版只作为迁移来源和 `docs/migration/ts/PARITY.md` 的冻结对账清单，不再是可运行产品线。
+- 旧 Python 版只作为迁移背景，不再是可运行产品线；公共仓库不维护旧实现的任务清单或源码对账文档。
 
 ## 2. 先看哪里
 
-1. `README.md`
-2. `docs/migration/ts/STATUS.md` + `docs/migration/ts/PARITY.md`
+1. `README.md` + `docs/README.md`
+2. `docs/architecture/overview.md` + `docs/development/README.md`
 3. `packages/core/src/api/core-api.ts` + `packages/core/src/api/services/*`
 4. `packages/core/src/agent/loop.ts` + `packages/core/src/agent/runner.ts`
 5. `packages/core/src/config/*` + `packages/core/src/model/*` + `packages/core/src/providers/*`
@@ -39,8 +39,11 @@
 - `templates/`：系统提示词、初始化用户档案和记忆模板。
 - `skills/`：项目内技能包。少数技能自带 Python helper 脚本属于技能资产，不是主 runtime。
 - `assets/`：品牌、桌宠、生成素材；生成素材必须记录到对应 `PROMPTS.md`。
-- `docs/migration/ts/`：Python → TypeScript 迁移计划、状态和冻结 parity 清单。
-- `docs/architecture/`：全局私有存储根等架构文档；私有数据位置以此为准。
+- `docs/user/`：面向当前产品入口的完整用户手册。
+- `docs/architecture/`：当前系统边界、执行链路、权限、Goal 与全局存储架构。
+- `docs/development/`：源码开发和跨层扩展清单。
+- `docs/release/`：当前 Preview、安全说明、冻结 Stable 流程和工具供应链审核。
+- `private-docs/`：仓库根目录下的本地个人开发资料，保存实施计划、审计、研究、进度和外部源码借鉴材料；整个目录被 Git 忽略。
 - `memory/`：旧版本地运行数据残留位置，永不提交。当前默认私有数据根是 `~/.emperor-agent`（`stateRoot`，可用 `EMPEROR_CONFIG_DIR` 覆盖），不再默认写入这里或项目源码目录，详见 `docs/architecture/global-state-store.md`。
 
 ## 4. 本地运行
@@ -65,7 +68,7 @@ npm run package:dir
 make check
 ```
 
-`make check` 执行 `git diff --check`、迁移 parity 校验、core vitest/typecheck、desktop vitest/typecheck/build。涉及 UI 的改动可额外跑：
+`make check` 执行 `git diff --check`、格式检查、Core/Desktop tests、typecheck、lint 和 build。涉及 UI 的改动可额外跑：
 
 ```bash
 npm --prefix desktop run screenshots
@@ -74,12 +77,12 @@ npm --prefix desktop run screenshots
 ## 5. 运行时机制
 
 - Electron main 通过 `createCoreHost()` 初始化 `CoreApi`，不再 probe/spawn/wait 外部 Python server。
-- Renderer 优先使用 `window.emperor.invokeCore()`；HTTP/WS helper 只作为 browser-only fallback，不是桌面主链路。
+- Renderer 使用 `window.emperor.invokeCore()`；`api/http.ts` 只是历史命名的 IPC 薄封装，Core bridge 不可用时直接失败，不提供 browser HTTP/WS fallback。
 - 附件原图通过 `app://attachments/{id}/raw` 读取，避免恢复旧 `/api/attachments/*` server 依赖；解析优先查 `stateRoot`，对旧安装保留只读 legacy fallback。
 - 每个 session 独立持久化 `stateRoot/sessions/<id>/history.jsonl`、`_checkpoint.json` 和 `runtime/events.jsonl`（`stateRoot` 默认 `~/.emperor-agent`，与 `runtimeRoot` 是两个独立的根，见 `docs/architecture/global-state-store.md`）。
 - 新增 CoreApi operation 时必须同步 IPC contract、preload bridge、renderer API 映射和相关类型/测试。
 - 新增 runtime event 时必须同步 `packages/core/src/runtime/events.ts`、renderer `types.ts`、`runtime/*` reducer/handlers 和 `useRuntime.ts`。
-- 正式 Release 必须通过 `.github/workflows/release.yml` 的三平台 candidate、receipt、SBOM、attestation 和最终聚合门禁；不得从平台 build job 直接发布，也不得把 `UNSIGNED-INTERNAL` artifact 转为正式包。
+- 当前公开 Preview 必须通过 `.github/workflows/release-preview.yml` 的三平台 candidate、receipt、SBOM、attestation 和最终聚合门禁。`.github/workflows/release.yml` 的受信 Stable 链仍为 Frozen；不得从平台 build job 直接发布，也不得混用 `UNSIGNED-INTERNAL`、`UNSIGNED-PREVIEW` 和 Stable 产物。
 - `packages/core/src/environment/tool-catalog.json` 属于签名静态执行策略。修改版本、来源、摘要、publisher、参数或许可时必须执行 `docs/release/tool-catalog-review.md`，renderer/model 不得提供命令、URL 或 argv。
 
 ## 6. 扩展路径
@@ -105,6 +108,8 @@ npm --prefix desktop run screenshots
 - `mcp_config.json`
 - `emperor.local.json`
 - `.env`
+- `private-docs/`；兼容旧工具的 `docs/private/`、`docs/superpowers/`、`docs/archive/` 也不得提交
+- 日期化任务计划、progress、审计、研究和外部源码借鉴材料
 - `desktop/node_modules/`
 - `desktop/out/`
 - `desktop/dist/`
@@ -118,7 +123,7 @@ npm --prefix desktop run screenshots
 2. Core IPC 不通：看 `desktop/src/main/core-host.ts`、`desktop/src/preload/core-ipc.ts` 和 renderer `api/http.ts` operation 映射。
 3. Runtime 事件异常：先看 `desktop/src/renderer/src/runtime/reducer.ts`、`handlers/*`、`useRuntime.ts`。
 4. 会话/记忆错乱：看 `packages/core/src/sessions/*`、`memory/*` store 和 `python-runtime-compat.test.ts`。
-5. 打包问题：看 `desktop/electron-builder.yml`、`desktop/src/main/runtime-root.ts` 和 `docs/release/trusted-release-runbook.md`；生产包直接读取签名 runtime defaults，不包含 Python backend。
+5. 打包问题：看 `desktop/electron-builder.yml`、`desktop/src/main/runtime-root.ts` 和 `docs/release/preview-release-runbook.md`；Stable 签名链另见 `docs/release/stable-release-runbook.md`，生产包不包含 Python backend。
 
 ## 9. 素材生成规范
 
@@ -126,3 +131,11 @@ npm --prefix desktop run screenshots
 - 最终素材必须落在 `/Users/anhuike/Documents/workspace/emperor-agent/assets` 下；分类明确则放现有分类，否则放 `assets/generated/`。
 - 默认不覆盖已有文件，使用版本化命名。
 - 每次生成/编辑完成后，把最终 prompt 记录到对应目录 `PROMPTS.md`，至少包含日期、输出文件名、工具模式和最终 prompt。
+
+## 10. 文档维护
+
+- 文档总入口是 `docs/README.md`，分类、状态和事实源映射见 `docs/DOCUMENTATION.md`。
+- 公共文档只维护当前有效的 `Active` 内容；被替代但暂留原位的说明标为 `Superseded` 并链接新入口。
+- Slash command、权限、模型 schema、CoreApi、runtime event、`stateRoot`、Goal、Release workflow 或 renderer 路由变化时，必须按事实源映射同步所有受影响的 Active 文档。
+- 多步骤实施计划、progress、检查脚本、日期化审计、研究和外部源码借鉴材料统一写入根目录 `private-docs/`；公共文档不得链接这些材料。
+- Active 文档不写固定 Preview 版本、测试数量、临时 commit 或未开放的产品入口。存在 store/service 不等于已经提供用户界面。

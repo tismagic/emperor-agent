@@ -6,6 +6,7 @@ import type { Ref } from 'vue'
 import {
   parseSkillSlashCommand,
   parseSlashCommand,
+  parseGoalSlashCommand,
   type SlashCommand,
 } from '../commands'
 import { core } from '../api/http'
@@ -14,6 +15,8 @@ import type {
   ChatSendPayload,
   CompactResult,
   PendingState,
+  GoalOperationResult,
+  RuntimeGoalSummary,
 } from '../types'
 import {
   inlineCode,
@@ -29,7 +32,9 @@ import {
   renderStatus,
   renderTokenInfo,
   renderToolsInfo,
+  renderGoalStatus,
 } from '../runtime/statusRender'
+import type { GoalCardAction } from '../runtime/goalRender'
 
 export interface SlashCommandDeps {
   boot: Ref<BootstrapPayload | null>
@@ -47,6 +52,14 @@ export interface SlashCommandDeps {
   restoreMemoryVersion: (id: string) => Promise<{ restored: { path: string } }>
   refreshAll: () => Promise<void>
   showToast: (message: string) => void
+  currentGoal: () => RuntimeGoalSummary | null
+  startGoal: (outcome: string) => Promise<GoalOperationResult>
+  listGoals: () => Promise<RuntimeGoalSummary[]>
+  getGoal: (goalId: string) => Promise<RuntimeGoalSummary>
+  runGoalAction: (
+    goalId: string,
+    action: GoalCardAction,
+  ) => Promise<GoalOperationResult>
 }
 
 export function useSlashCommands(deps: SlashCommandDeps) {
@@ -143,12 +156,19 @@ export function useSlashCommands(deps: SlashCommandDeps) {
       if (command.name === '/memory-restore')
         return await handleMemoryRestoreCommand(raw)
       if (command.name === '/plan') return await handlePlanCommand(raw)
+      if (command.name === '/goal' || command.name === '/goals')
+        return await handleGoalCommand(raw)
       if (command.name === '/mode') return await handleModeCommand(raw)
       if (command.name === '/stop') {
+        const goalActive = Boolean(deps.currentGoal())
         const stopped = await deps.stopActive()
         return deps.addLocalCommand(
           raw,
-          stopped ? '已请求停止当前运行任务。' : '当前没有正在运行的任务。',
+          stopped
+            ? goalActive
+              ? '已暂停 Goal。可使用 `/goal resume` 继续。'
+              : '已请求停止当前运行任务。'
+            : '当前没有正在运行的任务。',
         )
       }
       if (command.name === '/compact') {
@@ -174,6 +194,79 @@ export function useSlashCommands(deps: SlashCommandDeps) {
       busy.value = false
       pending.label = ''
       pending.detail = ''
+    }
+  }
+
+  async function handleGoalCommand(raw: string) {
+    const action = parseGoalSlashCommand(raw)
+    if (!action) return
+    if (action.kind === 'missing') {
+      deps.addLocalCommand(
+        raw,
+        `请提供 Outcome，例如：${inlineCode('/goal 完成迁移并通过核验')}`,
+      )
+      return
+    }
+    if (action.kind === 'list') {
+      const goals = await deps.listGoals()
+      deps.addLocalCommand(raw, renderGoalStatus(goals, deps.currentGoal()?.id))
+      return
+    }
+    if (action.kind === 'status') {
+      const active = deps.currentGoal()
+      if (!active) {
+        deps.addLocalCommand(raw, '当前会话没有 active Goal。')
+        return
+      }
+      try {
+        const goal = await deps.getGoal(active.id)
+        deps.addLocalCommand(raw, renderGoalStatus([goal], goal.id))
+      } catch (err) {
+        deps.addLocalCommand(
+          raw,
+          `Goal 状态读取失败：${err instanceof Error ? err.message : String(err)}`,
+        )
+      }
+      return
+    }
+    if (action.kind === 'start') {
+      if (deps.currentGoal()) {
+        deps.addLocalCommand(
+          raw,
+          '当前会话已有 active Goal；请先暂停后恢复，或取消后再创建。',
+        )
+        return
+      }
+      try {
+        const result = await deps.startGoal(action.outcome)
+        deps.addLocalCommand(
+          raw,
+          renderGoalStatus([result.goal], result.goal.id),
+        )
+      } catch (err) {
+        deps.addLocalCommand(
+          raw,
+          `Goal 启动失败：${err instanceof Error ? err.message : String(err)}`,
+        )
+      }
+      return
+    }
+    const active = deps.currentGoal()
+    if (!active) {
+      deps.addLocalCommand(
+        raw,
+        `当前没有可${goalActionVerb(action.kind)}的 Goal。`,
+      )
+      return
+    }
+    try {
+      const result = await deps.runGoalAction(active.id, action.kind)
+      deps.addLocalCommand(raw, renderGoalStatus([result.goal], result.goal.id))
+    } catch (err) {
+      deps.addLocalCommand(
+        raw,
+        `Goal 操作失败：${err instanceof Error ? err.message : String(err)}`,
+      )
     }
   }
 
@@ -293,4 +386,10 @@ export function useSlashCommands(deps: SlashCommandDeps) {
   }
 
   return { submitFromComposer, executeSlashCommand, setControlMode }
+}
+
+function goalActionVerb(action: GoalCardAction) {
+  if (action === 'pause') return '暂停'
+  if (action === 'resume') return '恢复'
+  return '取消'
 }

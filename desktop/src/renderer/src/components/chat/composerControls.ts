@@ -9,6 +9,18 @@ export function composerSendDisabled(opts: {
   return !opts.content.trim() && opts.attachmentCount === 0
 }
 
+export function composerStopPresentation(goalActive: boolean) {
+  return goalActive
+    ? {
+        title: '暂停当前 Goal',
+        label: '暂停 Goal',
+      }
+    : {
+        title: '停止当前任务',
+        label: '停止',
+      }
+}
+
 export type ControlModeValue =
   'ask_before_edit' | 'accept_edits' | 'auto' | 'plan'
 

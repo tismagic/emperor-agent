@@ -1,5 +1,6 @@
-import type { RuntimeEventEnvelope } from '../types'
-import { sortRuntimeEvents } from './events'
+import type { GoalProjectionState, RuntimeEventEnvelope } from '../types'
+import { isGoalRuntimeEvent, sortRuntimeEvents } from './events'
+import { applyGoalEvent, createGoalProjectionState } from './handlers/goals'
 
 export interface RuntimeReducerAction {
   event: RuntimeEventEnvelope
@@ -10,4 +11,16 @@ export function replayRuntimeEvents(
   dispatch: (action: RuntimeReducerAction) => void,
 ) {
   for (const event of sortRuntimeEvents(events)) dispatch({ event })
+}
+
+export function replayGoalRuntimeEvents(
+  events: RuntimeEventEnvelope[],
+  initial: GoalProjectionState = createGoalProjectionState(),
+): GoalProjectionState {
+  let projection = initial
+  for (const event of sortRuntimeEvents(events)) {
+    if (isGoalRuntimeEvent(event))
+      projection = applyGoalEvent(projection, event)
+  }
+  return projection
 }

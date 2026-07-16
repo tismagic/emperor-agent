@@ -6,12 +6,16 @@ import ModelSetupRequiredDialog from './components/onboarding/ModelSetupRequired
 import { shouldShowModelSetupPrompt } from './components/onboarding/modelSetupDialogModel'
 import { runInitialStartup } from './appStartup'
 import { buildSlashPaletteItems } from './commands'
+import { core } from './api/http'
 import { useBootstrap } from './composables/useBootstrap'
 import { useRuntime } from './composables/useRuntime'
 import { useSession } from './composables/useSession'
 import { useTokens } from './composables/useTokens'
 import { useSlashCommands } from './composables/useSlashCommands'
 import { provideAppContext } from './composables/useAppContext'
+import { activeGoalForSession } from './runtime/selectors'
+import { isTerminalGoal, type GoalCardAction } from './runtime/goalRender'
+import type { GoalOperationResult, RuntimeGoalSummary } from './types'
 
 const router = useRouter()
 const toast = ref('')
@@ -85,6 +89,8 @@ const {
   switchSession,
   pending,
   planProjection,
+  goalProjection,
+  sessionId,
   sessionRuntimeStates,
   runtimeText,
   eventTransportText,
@@ -99,6 +105,101 @@ const {
   addLocalCommand,
   restoreFromHistory,
 } = runtime
+
+const currentGoal = computed(() => {
+  const projected = activeGoalForSession(goalProjection, sessionId.value)
+  if (projected) return projected
+  const bootstrapActive = boot.value?.goals?.active
+  return bootstrapActive?.sessionId === sessionId.value &&
+    !goalProjection.byId[bootstrapActive.id]
+    ? bootstrapActive
+    : null
+})
+
+function applyGoalSummary(goal: RuntimeGoalSummary) {
+  goalProjection.byId[goal.id] = goal
+  if (isTerminalGoal(goal)) {
+    if (goalProjection.activeBySession[goal.sessionId] === goal.id)
+      delete goalProjection.activeBySession[goal.sessionId]
+  } else {
+    goalProjection.activeBySession[goal.sessionId] = goal.id
+  }
+  if (boot.value) {
+    const recent = [
+      goal,
+      ...(boot.value.goals?.recent || []).filter((item) => item.id !== goal.id),
+    ].slice(0, 50)
+    boot.value.goals = {
+      active: isTerminalGoal(goal)
+        ? boot.value.goals?.active?.id === goal.id
+          ? null
+          : boot.value.goals?.active || null
+        : goal,
+      recent,
+    }
+  }
+}
+
+async function startGoal(outcome: string): Promise<GoalOperationResult> {
+  const owner = sessionId.value
+  const draft = sessionStore.isDraftSessionId(owner)
+    ? sessionStore.getSession(owner)
+    : null
+  const result = await core('goals.start', {
+    outcome,
+    sessionId: owner,
+    ...(draft
+      ? {
+          clientDraftId: owner,
+          draftSession: {
+            mode:
+              draft.mode === 'build' ? ('build' as const) : ('chat' as const),
+            project: {
+              project_id: draft.project_id ?? null,
+              project_path: draft.project_path ?? null,
+              project_name: draft.project_name ?? null,
+            },
+          },
+        }
+      : {}),
+  })
+  applyGoalSummary(result.goal)
+  return result
+}
+
+async function listGoals(): Promise<RuntimeGoalSummary[]> {
+  if (sessionStore.isDraftSessionId(sessionId.value)) return []
+  const goals = await core('goals.list', { sessionId: sessionId.value })
+  for (const goal of goals) applyGoalSummary(goal)
+  return goals
+}
+
+async function getGoal(goalId: string): Promise<RuntimeGoalSummary> {
+  const goal = await core('goals.get', goalId)
+  applyGoalSummary(goal)
+  return goal
+}
+
+async function runGoalAction(
+  goalId: string,
+  action: GoalCardAction,
+): Promise<GoalOperationResult> {
+  const result =
+    action === 'pause'
+      ? await core('goals.pause', goalId)
+      : action === 'resume'
+        ? await core('goals.resume', goalId)
+        : await core('goals.cancel', goalId, 'user_confirmed_cancel')
+  applyGoalSummary(result.goal)
+  showToast(
+    action === 'pause'
+      ? 'Goal 已暂停'
+      : action === 'resume'
+        ? 'Goal 已恢复'
+        : 'Goal 已取消',
+  )
+  return result
+}
 
 async function onSessionActivate(id: string) {
   await sessionStore.activate(id)
@@ -207,6 +308,11 @@ const { submitFromComposer, setControlMode } = useSlashCommands({
   restoreMemoryVersion,
   refreshAll,
   showToast,
+  currentGoal: () => currentGoal.value,
+  startGoal,
+  listGoals,
+  getGoal,
+  runGoalAction,
 })
 
 provideAppContext({
@@ -222,6 +328,8 @@ provideAppContext({
   status,
   pending,
   planProjection,
+  goalProjection,
+  sessionId,
   sessionRuntimeStates,
   runtimeText,
   eventTransportText,
@@ -255,6 +363,7 @@ provideAppContext({
   approvePlan,
   cancelInteraction,
   stopActive,
+  runGoalAction,
   clearChat,
   submitFromComposer,
   showToast,
